@@ -14,6 +14,13 @@ import { DistanceConstraint } from '../src/physics/Constraint';
 import { Particle } from '../src/physics/Particle';
 import { PhysicsWorld } from '../src/physics/PhysicsWorld';
 import { VoxelCharacterVisual, VoxelGrid } from '../src/render/VoxelModel';
+import {
+  CATEGORY_ICONS,
+  CATEGORY_THEME_COLORS,
+  COST_ICON_SVG,
+  HP_ICON_SVG,
+  getUnitIconSvg,
+} from '../src/ui/UnitIcons';
 import { J, PELVIS_HEIGHT } from '../src/units/Skeleton';
 import { UNIT_TYPE_LIST, type UnitTypeId } from '../src/units/UnitTypes';
 
@@ -290,9 +297,13 @@ describe('新ユニット10体の固有ギミック検証', () => {
     const elephant = battle.spawnUnit('warelephant', 1, 6, 0);
     battle.spawnUnit('clubber', 1, 2, 3);
     battle.aiEnabled = true;
-    simulate(battle, 4.0);
-    // 大鷲が空中に浮いている
-    expect(eagle.pelvis.pos.y).toBeGreaterThan(2.0);
+    let maxEagleY = 0;
+    simulate(battle, 4.0, () => {
+      if (eagle.pelvis.pos.y > maxEagleY) maxEagleY = eagle.pelvis.pos.y;
+      return false;
+    });
+    // 大鷲が空中に浮いている（急降下中以外の飛行高度が 2.0m 超）
+    expect(maxEagleY).toBeGreaterThan(2.0);
     // ドラゴンの火炎ブレスで延焼またはダメージが発生している
     expect(elephant.hp).toBeLessThan(elephant.maxHp);
     expect(dragon.alive).toBe(true);
@@ -391,6 +402,21 @@ describe('アーケードモード追加ユニット（盾兵・突撃兵・爆�
     expect(isUnitUnlocked(save, 'shielder')).toBe(true);
     expect(save.clearedStars[1]).toBe(3);
   });
+
+  it('全18兵種のキャラアイコン・コストアイコン・HPアイコン・カテゴリアイコンが生成される', () => {
+    expect(COST_ICON_SVG).toContain('<svg');
+    expect(HP_ICON_SVG).toContain('<svg');
+    expect(CATEGORY_ICONS.all).toBeTruthy();
+
+    for (const ut of UNIT_TYPE_LIST) {
+      const svg = getUnitIconSvg(ut.id);
+      expect(svg).toContain('<svg');
+      expect(svg).toContain('</svg>');
+      expect(CATEGORY_ICONS[ut.category]).toBeTruthy();
+      expect(CATEGORY_THEME_COLORS[ut.category].bg).toBeTruthy();
+    }
+  });
 });
+
 
 

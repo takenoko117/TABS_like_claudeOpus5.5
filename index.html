@@ -2,23 +2,37 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>TABS風 ボクセル物理バトルシミュレーター</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="viewport"></div>
 
+    <!-- 全UI非表示時の復帰ボタン -->
+    <button id="btn-restore-hud" class="restore-hud-btn hidden" title="UIを再表示する">
+      👁 UI表示
+    </button>
+
     <!-- 上部 HUD: 両軍ステータス・開始ボタン -->
-    <header class="top-hud">
+    <header id="top-hud" class="top-hud">
       <div id="red-stats" class="team-panel red"></div>
 
       <div class="center-panel">
         <div id="phase-badge" class="phase-badge placement">配置フェーズ</div>
         <div class="main-actions">
+          <button id="btn-toggle-panel" class="ctrl-btn mode-toggle-btn active" title="ゲームモード・ステージ選択パネルの表示/非表示 (Tab)">
+            ☰ モードUI
+          </button>
           <button id="btn-start" class="start-btn">⚔ 戦闘開始 (Space)</button>
-          <button id="btn-clear" class="ctrl-btn danger">全消去</button>
-          <button id="btn-mute" class="ctrl-btn">🔊 SE: ON</button>
+          <button id="btn-touch-erase" class="ctrl-btn" title="タップでユニットを削除するモードに切り替えます">
+            🗑 削除
+          </button>
+          <button id="btn-clear" class="ctrl-btn danger" title="配置したユニットを全消去">全消去</button>
+          <button id="btn-mute" class="ctrl-btn" title="効果音のON/OFF">🔊 SE</button>
+          <button id="btn-toggle-hud" class="ctrl-btn" title="すべてのUIを非表示にして画面を広く使います (H)">
+            👁 UI隠す
+          </button>
         </div>
       </div>
 
@@ -26,7 +40,14 @@
     </header>
 
     <!-- 左上: モード切替・ステージ/プリセット選択・速度操作 -->
-    <aside class="side-panel">
+    <aside id="side-panel" class="side-panel">
+      <div class="side-panel-header">
+        <span class="side-panel-title">🎮 ゲームモード・設定</span>
+        <button id="btn-close-panel" class="panel-close-btn" title="このパネルを非表示にして戦場を広く表示します">
+          ✕ パネルを隠す
+        </button>
+      </div>
+
       <div class="panel-section">
         <div class="section-label">ゲームモード</div>
         <div class="mode-switch-group">
@@ -57,13 +78,12 @@
       </div>
       <div class="panel-section">
         <div class="section-label">視点・操作ヘルプ</div>
-        <button id="btn-cam-reset" class="ctrl-btn full">視点リセット</button>
+        <button id="btn-cam-reset" class="ctrl-btn full">🎥 視点リセット</button>
         <ul class="help-list">
-          <li><b>左クリック:</b> ユニット配置</li>
-          <li><b>右クリック:</b> ユニット削除</li>
-          <li><b>右ドラッグ / 中ドラッグ:</b> カメラ回転</li>
-          <li><b>WASD / 矢印キー:</b> カメラ移動、<b>ホイール:</b> ズーム</li>
-          <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始/戻る</li>
+          <li><b>タップ / 左クリック:</b> ユニット配置（🗑削除ON時は削除）</li>
+          <li><b>ドラッグ / 右ドラッグ:</b> カメラ回転、<b>ピンチ / ホイール:</b> ズーム</li>
+          <li><b>右クリック:</b> ユニット削除、<b>WASD / 矢印:</b> カメラ移動</li>
+          <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始、<b>Tab / H:</b> UI開閉</li>
         </ul>
       </div>
     </aside>
@@ -81,8 +101,13 @@
     </div>
 
     <!-- 下部: カテゴリタブ & 兵種パレット -->
-    <footer class="bottom-hud">
-      <div id="category-tabs" class="category-tabs"></div>
+    <footer id="bottom-hud" class="bottom-hud">
+      <div class="bottom-hud-top-row">
+        <div id="category-tabs" class="category-tabs"></div>
+        <button id="btn-toggle-unitbar" class="unitbar-collapse-btn" title="兵種パレットを折りたたむ／展開する">
+          ▼ 兵種バー
+        </button>
+      </div>
       <div id="unit-bar" class="unit-bar"></div>
     </footer>
 

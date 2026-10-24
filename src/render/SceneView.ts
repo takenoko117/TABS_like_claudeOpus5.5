@@ -110,14 +110,19 @@ export class SceneView {
   private ghostGroup: Group | null = null;
   private ghostKey = '';
 
-  // カメラ制御（オービット＋WASD 平行移動）
+  // カメラ制御（オービット＋WASD 平行移動＋スマホ用タッチ＆ピンチズーム）
   private readonly camTarget = new Vector3(0, 0.8, 0);
   private camYaw = 0;
   private camPitch = 0.58;
   private camDistance = 24;
   private isDraggingOrbit = false;
+  private isTouchOrbitPending = false;
+  private touchStartX = 0;
+  private touchStartY = 0;
   private lastPointerX = 0;
   private lastPointerY = 0;
+  private readonly activeTouches = new Map<number, { x: number; y: number }>();
+  private lastPinchDist = 0;
   private readonly keys = new Set<string>();
 
   // 地面とのレイキャスト
@@ -427,6 +432,23 @@ export class SceneView {
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
 
     dom.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') {
+        this.activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (this.activeTouches.size === 1) {
+          this.isTouchOrbitPending = true;
+          this.touchStartX = e.clientX;
+          this.touchStartY = e.clientY;
+          this.lastPointerX = e.clientX;
+          this.lastPointerY = e.clientY;
+        } else if (this.activeTouches.size === 2) {
+          this.isTouchOrbitPending = false;
+          this.isDraggingOrbit = false;
+          const pts = [...this.activeTouches.values()];
+          this.lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        }
+        return;
+      }
+
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
         this.isDraggingOrbit = true;
         this.lastPointerX = e.clientX;
@@ -434,11 +456,51 @@ export class SceneView {
       }
     });
 
-    window.addEventListener('pointerup', () => {
-      this.isDraggingOrbit = false;
-    });
+    const endPointer = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        this.activeTouches.delete(e.pointerId);
+        if (this.activeTouches.size < 2) {
+          this.lastPinchDist = 0;
+        }
+        if (this.activeTouches.size === 0) {
+          this.isDraggingOrbit = false;
+          this.isTouchOrbitPending = false;
+        }
+      } else {
+        this.isDraggingOrbit = false;
+      }
+    };
+
+    window.addEventListener('pointerup', endPointer);
+    window.addEventListener('pointercancel', endPointer);
 
     window.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' && this.activeTouches.has(e.pointerId)) {
+        this.activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (this.activeTouches.size === 2) {
+          const pts = [...this.activeTouches.values()];
+          const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          if (this.lastPinchDist > 10 && dist > 10) {
+            const ratio = this.lastPinchDist / dist;
+            this.camDistance = Math.max(6, Math.min(55, this.camDistance * ratio));
+            this.updateCameraTransform();
+          }
+          this.lastPinchDist = dist;
+          return;
+        }
+
+        if (this.activeTouches.size === 1) {
+          const movedFromStart = Math.hypot(e.clientX - this.touchStartX, e.clientY - this.touchStartY);
+          if (this.isTouchOrbitPending && movedFromStart > 8) {
+            this.isTouchOrbitPending = false;
+            this.isDraggingOrbit = true;
+            this.lastPointerX = e.clientX;
+            this.lastPointerY = e.clientY;
+          }
+        }
+      }
+
       if (!this.isDraggingOrbit) return;
       const dx = e.clientX - this.lastPointerX;
       const dy = e.clientY - this.lastPointerY;

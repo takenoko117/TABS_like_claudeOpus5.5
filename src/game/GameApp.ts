@@ -2,6 +2,13 @@ import { Vector3 } from 'three';
 import { SoundManager } from '../audio/SoundManager';
 import { SceneView } from '../render/SceneView';
 import {
+  CATEGORY_ICONS,
+  CATEGORY_THEME_COLORS,
+  COST_ICON_SVG,
+  HP_ICON_SVG,
+  getUnitIconSvg,
+} from '../ui/UnitIcons';
+import {
   CATEGORY_LABELS,
   TEAM_NAMES,
   UNIT_TYPES,
@@ -210,12 +217,24 @@ export class GameApp {
   timeScale = 1.0;
   paused = false;
 
+  /** スマホや狭い画面で視界を塞がないための UI 表示状態 */
+  sidePanelVisible = true;
+  hudHidden = false;
+  unitBarCollapsed = false;
+  touchEraseMode = false;
+
   /** 配置フェーズで置かれた編成（リトライ時に復元する） */
   private savedLineup: PlacedRecord[] = [];
   private announcedResult: BattleResult = null;
   private pointerDownPos = { x: 0, y: 0, button: -1 };
 
   // UI 要素
+  private readonly elTopHud: HTMLElement | null;
+  private readonly elSidePanel: HTMLElement | null;
+  private readonly elBottomHud: HTMLElement | null;
+  private readonly elTogglePanelBtn: HTMLButtonElement | null;
+  private readonly elTouchEraseBtn: HTMLButtonElement | null;
+  private readonly elRestoreHudBtn: HTMLButtonElement | null;
   private readonly elRedStats: HTMLElement;
   private readonly elBlueStats: HTMLElement;
   private readonly elStartBtn: HTMLButtonElement;
@@ -253,6 +272,12 @@ export class GameApp {
       this.sound.playHit(heavy, metallic, partBroken || e.killed);
     };
 
+    this.elTopHud = document.getElementById('top-hud');
+    this.elSidePanel = document.getElementById('side-panel');
+    this.elBottomHud = document.getElementById('bottom-hud');
+    this.elTogglePanelBtn = document.getElementById('btn-toggle-panel') as HTMLButtonElement | null;
+    this.elTouchEraseBtn = document.getElementById('btn-touch-erase') as HTMLButtonElement | null;
+    this.elRestoreHudBtn = document.getElementById('btn-restore-hud') as HTMLButtonElement | null;
     this.elRedStats = document.getElementById('red-stats')!;
     this.elBlueStats = document.getElementById('blue-stats')!;
     this.elStartBtn = document.getElementById('btn-start') as HTMLButtonElement;
@@ -266,7 +291,13 @@ export class GameApp {
     this.elCategoryTabs = document.getElementById('category-tabs');
     this.elUnitBar = document.getElementById('unit-bar')!;
 
+    // スマホ等の狭い画面では初期状態でゲームモードパネルを非表示にして戦場を見やすくする
+    if (window.innerWidth <= 820) {
+      this.sidePanelVisible = false;
+    }
+
     this.buildUI();
+    this.syncSidePanelUI();
     this.bindCanvasInteraction();
     this.loadArcadeStage(0);
   }
@@ -285,7 +316,71 @@ export class GameApp {
     return cost;
   }
 
+  /** ゲームモード・ステージ設定パネル（左パネル）の表示/非表示を同期 */
+  private syncSidePanelUI(): void {
+    this.elSidePanel?.classList.toggle('panel-hidden', !this.sidePanelVisible);
+    if (this.elTogglePanelBtn) {
+      this.elTogglePanelBtn.classList.toggle('active', this.sidePanelVisible);
+      this.elTogglePanelBtn.textContent = this.sidePanelVisible ? '☰ モードUI: ON' : '☰ モードUI: OFF';
+    }
+  }
+
+  /** 全UI非表示モード（観戦・スマホ広域表示）の同期 */
+  private syncHudVisibility(): void {
+    this.elTopHud?.classList.toggle('hud-hidden', this.hudHidden);
+    this.elSidePanel?.classList.toggle('hud-hidden', this.hudHidden);
+    this.elBottomHud?.classList.toggle('hud-hidden', this.hudHidden);
+    this.elRestoreHudBtn?.classList.toggle('hidden', !this.hudHidden);
+  }
+
   private buildUI(): void {
+    // ゲームモードパネル（左サイドパネル）の表示/非表示トグル
+    this.elTogglePanelBtn?.addEventListener('click', () => {
+      this.sidePanelVisible = !this.sidePanelVisible;
+      this.syncSidePanelUI();
+    });
+
+    document.getElementById('btn-close-panel')?.addEventListener('click', () => {
+      this.sidePanelVisible = false;
+      this.syncSidePanelUI();
+    });
+
+    // 全UI非表示／再表示ボタン
+    document.getElementById('btn-toggle-hud')?.addEventListener('click', () => {
+      this.hudHidden = true;
+      this.syncHudVisibility();
+    });
+
+    this.elRestoreHudBtn?.addEventListener('click', () => {
+      this.hudHidden = false;
+      this.syncHudVisibility();
+    });
+
+    // 下部兵種バーの折りたたみトグル
+    const btnToggleUnitBar = document.getElementById('btn-toggle-unitbar');
+    if (btnToggleUnitBar) {
+      btnToggleUnitBar.addEventListener('click', () => {
+        this.unitBarCollapsed = !this.unitBarCollapsed;
+        this.elUnitBar.classList.toggle('collapsed', this.unitBarCollapsed);
+        btnToggleUnitBar.textContent = this.unitBarCollapsed ? '▲ 兵種バーを開く' : '▼ 兵種バー';
+      });
+    }
+
+    // タップ削除モード切り替えボタン（スマホ操作補助）
+    if (this.elTouchEraseBtn) {
+      const syncEraseBtn = () => {
+        if (!this.elTouchEraseBtn) return;
+        this.elTouchEraseBtn.classList.toggle('danger', this.touchEraseMode);
+        this.elTouchEraseBtn.classList.toggle('active', this.touchEraseMode);
+        this.elTouchEraseBtn.textContent = this.touchEraseMode ? '🗑 削除: ON' : '🗑 削除';
+      };
+      syncEraseBtn();
+      this.elTouchEraseBtn.addEventListener('click', () => {
+        this.touchEraseMode = !this.touchEraseMode;
+        syncEraseBtn();
+      });
+    }
+
     // モード切替ボタン（アーケード / サンドボックス）
     const btnArcade = document.getElementById('btn-mode-arcade');
     const btnSandbox = document.getElementById('btn-mode-sandbox');
@@ -330,17 +425,17 @@ export class GameApp {
       });
     }
 
-    // カテゴリ切替タブを生成
+    // カテゴリ切替タブを生成（アイコン付き）
     if (this.elCategoryTabs) {
       this.elCategoryTabs.innerHTML = '';
       const cats: ReadonlyArray<{ id: UnitCategory | 'all'; label: string }> = [
-        { id: 'all', label: `すべて (${UNIT_TYPE_LIST.length})` },
-        { id: 'standard', label: CATEGORY_LABELS.standard },
-        { id: 'magic', label: CATEGORY_LABELS.magic },
-        { id: 'modern', label: CATEGORY_LABELS.modern },
-        { id: 'japanese', label: CATEGORY_LABELS.japanese },
-        { id: 'animal', label: CATEGORY_LABELS.animal },
-        { id: 'mythical', label: CATEGORY_LABELS.mythical },
+        { id: 'all', label: `${CATEGORY_ICONS.all} すべて (${UNIT_TYPE_LIST.length})` },
+        { id: 'standard', label: `${CATEGORY_ICONS.standard} ${CATEGORY_LABELS.standard}` },
+        { id: 'magic', label: `${CATEGORY_ICONS.magic} ${CATEGORY_LABELS.magic}` },
+        { id: 'modern', label: `${CATEGORY_ICONS.modern} ${CATEGORY_LABELS.modern}` },
+        { id: 'japanese', label: `${CATEGORY_ICONS.japanese} ${CATEGORY_LABELS.japanese}` },
+        { id: 'animal', label: `${CATEGORY_ICONS.animal} ${CATEGORY_LABELS.animal}` },
+        { id: 'mythical', label: `${CATEGORY_ICONS.mythical} ${CATEGORY_LABELS.mythical}` },
       ];
       cats.forEach((c) => {
         const b = document.createElement('button');
@@ -352,6 +447,12 @@ export class GameApp {
           this.elCategoryTabs?.querySelectorAll('.cat-tab').forEach((el) => {
             el.classList.toggle('active', (el as HTMLElement).dataset.cat === c.id);
           });
+          if (this.unitBarCollapsed) {
+            this.unitBarCollapsed = false;
+            this.elUnitBar.classList.remove('collapsed');
+            const toggleBtn = document.getElementById('btn-toggle-unitbar');
+            if (toggleBtn) toggleBtn.textContent = '▼ 兵種バー';
+          }
           this.renderUnitCards();
         });
         this.elCategoryTabs!.appendChild(b);
@@ -369,7 +470,13 @@ export class GameApp {
       b.className = 'ctrl-btn';
       b.textContent = p.name;
       b.title = p.description;
-      b.addEventListener('click', () => this.loadPreset(p));
+      b.addEventListener('click', () => {
+        this.loadPreset(p);
+        if (window.innerWidth <= 820) {
+          this.sidePanelVisible = false;
+          this.syncSidePanelUI();
+        }
+      });
       presetContainer.appendChild(b);
     });
 
@@ -411,7 +518,7 @@ export class GameApp {
     if (muteBtn) {
       muteBtn.addEventListener('click', () => {
         const muted = this.sound.toggleMute();
-        muteBtn.textContent = muted ? '🔇 SE: OFF' : '🔊 SE: ON';
+        muteBtn.textContent = muted ? '🔇 SE: OFF' : '🔊 SE';
       });
     }
 
@@ -423,10 +530,10 @@ export class GameApp {
     // 速度変更ボタン
     const speedContainer = document.getElementById('speed-buttons')!;
     const speeds: ReadonlyArray<{ label: string; scale: number; pause?: boolean }> = [
-      { label: '一時停止', scale: 0, pause: true },
-      { label: '0.25x スロー', scale: 0.25 },
-      { label: '1x 通常', scale: 1.0 },
-      { label: '2x 倍速', scale: 2.0 },
+      { label: '⏸ 停止', scale: 0, pause: true },
+      { label: '🐢 0.25x', scale: 0.25 },
+      { label: '▶ 1x', scale: 1.0 },
+      { label: '⏩ 2x', scale: 2.0 },
     ];
     speeds.forEach((s) => {
       const b = document.createElement('button');
@@ -442,12 +549,19 @@ export class GameApp {
       this.elSpeedButtons.push(b);
     });
 
-    // キーボードショートカット（Space: 戦闘開始/戻る、1〜9: 兵種選択）
+    // キーボードショートカット（Space: 戦闘開始/戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉）
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
         if (this.mode === 'placement') this.startBattle();
         else this.returnToPlacement();
+      } else if (e.code === 'Tab') {
+        e.preventDefault();
+        this.sidePanelVisible = !this.sidePanelVisible;
+        this.syncSidePanelUI();
+      } else if (e.code === 'KeyH') {
+        this.hudHidden = !this.hudHidden;
+        this.syncHudVisibility();
       } else if (e.code.startsWith('Digit')) {
         const n = Number(e.code.replace('Digit', '')) - 1;
         const filtered = UNIT_TYPE_LIST.filter(
@@ -477,7 +591,9 @@ export class GameApp {
         <span class="stage-stars">${starStr}</span>
       `;
       btn.title = `${st.name} (予算 ${st.budget} pt)`;
-      btn.addEventListener('click', () => this.loadArcadeStage(idx));
+      btn.addEventListener('click', () => {
+        this.loadArcadeStage(idx);
+      });
       container.appendChild(btn);
     });
   }
@@ -486,16 +602,41 @@ export class GameApp {
     const el = document.getElementById('stage-briefing');
     if (!el) return;
     const st = this.currentStage;
+
+    // 敵軍の構成をカウントしてキャラアイコン付きで表示
+    const enemyCounts = new Map<UnitTypeId, number>();
+    for (const e of st.enemies) {
+      enemyCounts.set(e.typeId, (enemyCounts.get(e.typeId) ?? 0) + 1);
+    }
+    const enemyHtml = [...enemyCounts.entries()]
+      .map(([id, count]) => {
+        const u = UNIT_TYPES[id];
+        return `<span class="enemy-unit-chip" title="${u.name} (${u.cost} pt)">
+          <span class="mini-unit-icon">${getUnitIconSvg(id)}</span>
+          <span>${u.name} ×${count}</span>
+        </span>`;
+      })
+      .join('');
+
     const featuredHtml = st.featuredUnits
       .map((id) => {
         const u = UNIT_TYPES[id];
-        return `<button class="featured-chip" data-unit="${id}" title="クリックでこの兵種を選択">★ ${u.name}</button>`;
+        return `<button class="featured-chip" data-unit="${id}" title="クリックでこの兵種を選択">
+          <span class="mini-unit-icon">${getUnitIconSvg(id)}</span>
+          <span>★ ${u.name}</span>
+          <span class="chip-cost">${COST_ICON_SVG}${u.cost}</span>
+        </button>`;
       })
       .join('');
     const rewardHtml =
       st.unlockUnits.length > 0
         ? st.unlockUnits
-            .map((id) => `<span class="reward-chip">🎁 クリア報酬: ${UNIT_TYPES[id].name}</span>`)
+            .map(
+              (id) => `<span class="reward-chip">
+                <span class="mini-unit-icon">${getUnitIconSvg(id)}</span>
+                <span>🎁 報酬: ${UNIT_TYPES[id].name}</span>
+              </span>`,
+            )
             .join('')
         : `<span class="reward-chip">🏆 最終決戦ステージ</span>`;
 
@@ -505,7 +646,11 @@ export class GameApp {
       <div class="brief-desc">${st.description}</div>
       <div class="brief-hint">${st.hint}</div>
       <div class="brief-badges">
-        <span style="font-size:10px;color:#adb5bd;">活躍兵種:</span>
+        <span class="brief-badge-label">敵軍編成:</span>
+        ${enemyHtml}
+      </div>
+      <div class="brief-badges" style="margin-top:5px;">
+        <span class="brief-badge-label">活躍兵種:</span>
         ${featuredHtml}
       </div>
       <div class="brief-badges" style="margin-top:5px;">
@@ -540,18 +685,39 @@ export class GameApp {
       btn.dataset.type = ut.id;
       const keyLabel = idx < 9 ? `${idx + 1}` : '';
       const featBadge = isFeatured ? `<span class="unit-featured-tag">★特効</span>` : '';
-      const lockLabel = !unlocked ? '🔒 ' : '';
+      const lockOverlay = !unlocked ? `<div class="unit-lock-badge">🔒</div>` : '';
+      const theme = CATEGORY_THEME_COLORS[ut.category];
+
       btn.innerHTML = `
-        <div class="unit-key">${keyLabel}</div>
-        <div class="unit-cat-badge">${CATEGORY_LABELS[ut.category]}</div>${featBadge}
-        <div class="unit-name">${lockLabel}${ut.name}</div>
-        <div class="unit-meta">コスト ${ut.cost} / HP ${ut.hp}</div>
+        <div class="unit-card-top">
+          <div class="unit-avatar" style="background:${theme.bg}; border-color:${theme.border};">
+            ${getUnitIconSvg(ut.id)}
+            ${lockOverlay}
+          </div>
+          <div class="unit-head-info">
+            <div class="unit-badges-line">
+              <span class="unit-cat-badge">${CATEGORY_ICONS[ut.category]} ${CATEGORY_LABELS[ut.category]}</span>
+              ${featBadge}
+              <span class="unit-key">${keyLabel}</span>
+            </div>
+            <div class="unit-name">${ut.name}</div>
+            <div class="unit-stats-row">
+              <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${ut.cost}</span></span>
+              <span class="stat-pill hp" title="最大HP">${HP_ICON_SVG}<span>${ut.hp}</span></span>
+            </div>
+          </div>
+        </div>
         <div class="unit-desc">${ut.description}</div>
       `;
       btn.addEventListener('click', () => {
         if (!unlocked) {
-          this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または左パネルの「🔓全解放」）で使用可能になります`);
+          this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ モードUI」内の「🔓全解放」）で使用可能になります`);
           return;
+        }
+        if (this.touchEraseMode) {
+          this.touchEraseMode = false;
+          this.elTouchEraseBtn?.classList.remove('danger', 'active');
+          if (this.elTouchEraseBtn) this.elTouchEraseBtn.textContent = '🗑 削除';
         }
         this.selectUnitType(ut.id);
       });
@@ -584,7 +750,7 @@ export class GameApp {
     const groundHit = new Vector3();
 
     dom.addEventListener('pointermove', (e) => {
-      if (this.mode !== 'placement') {
+      if (this.mode !== 'placement' || this.touchEraseMode || e.pointerType === 'touch') {
         this.view.updatePlacementGhost(null, 0, null, false);
         return;
       }
@@ -614,16 +780,22 @@ export class GameApp {
 
     dom.addEventListener('pointerup', (e) => {
       const moved = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
-      if (moved > 6 || this.mode !== 'placement') return;
+      if (moved > 8 || this.mode !== 'placement') return;
 
       const p = this.view.screenToGround(e.clientX, e.clientY, groundHit);
       if (!p) return;
+
+      if (e.button === 2 || (e.button === 0 && this.touchEraseMode)) {
+        // 右クリック、またはスマホ用削除モードON時のタップ: 最も近いユニットを削除
+        this.removeNearestUnitAt(p.x, p.z);
+        return;
+      }
 
       if (e.button === 0 && !e.altKey) {
         if (this.playStyle === 'arcade') {
           const st = this.currentStage;
           if (!isInsideStageRedZone(st, p.x, p.z)) {
-            this.flashPhaseWarning('⚠ 赤枠の配置可能エリア内にクリックしてください');
+            this.flashPhaseWarning('⚠ 赤枠の配置可能エリア内をタップ／クリックしてください');
             return;
           }
           if (!isUnitUnlocked(this.arcadeSave, this.selectedType)) {
@@ -649,9 +821,6 @@ export class GameApp {
           this.sound.playPlace();
           this.updateHUD();
         }
-      } else if (e.button === 2) {
-        // 右クリック: 最も近いユニットを削除
-        this.removeNearestUnitAt(p.x, p.z);
       }
     });
   }
@@ -662,7 +831,7 @@ export class GameApp {
 
   private removeNearestUnitAt(x: number, z: number): void {
     let bestIdx = -1;
-    let bestDist = 1.6;
+    let bestDist = 1.8;
     for (let i = 0; i < this.battle.units.length; i++) {
       const u = this.battle.units[i];
       // アーケードモードでは敵軍（青軍）は削除不可
@@ -757,6 +926,11 @@ export class GameApp {
     this.announcedResult = null;
     this.elBanner.classList.add('hidden');
     this.view.setPlacementGuidesVisible(false);
+    // スマホ等の狭い画面では戦闘開始時に自動でモードパネルを閉じて戦場を見やすくする
+    if (window.innerWidth <= 820 && this.sidePanelVisible) {
+      this.sidePanelVisible = false;
+      this.syncSidePanelUI();
+    }
     this.sound.playBattleStart();
     this.syncPhaseUI();
   }
@@ -781,19 +955,19 @@ export class GameApp {
       if (this.playStyle === 'arcade') {
         const st = this.currentStage;
         const used = this.getCurrentRedCost();
-        this.elPhaseBadge.textContent = `${st.name} ｜ 予算: ${used} / ${st.budget} pt (残り ${st.budget - used} pt)`;
+        this.elPhaseBadge.innerHTML = `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used})`;
       } else {
         this.elPhaseBadge.textContent = '配置フェーズ（左半分：赤軍 ／ 右半分：青軍）';
       }
       this.elPhaseBadge.className = 'phase-badge placement';
-      this.elStartBtn.textContent = '⚔ 戦闘開始 (Space)';
+      this.elStartBtn.textContent = '⚔ 戦闘開始';
       this.elStartBtn.className = 'start-btn';
       this.elUnitBar.classList.remove('disabled');
     } else {
       this.elPhaseBadge.textContent =
         this.playStyle === 'arcade' ? `戦闘中 - ${this.currentStage.name}` : '戦闘中';
       this.elPhaseBadge.className = 'phase-badge battle';
-      this.elStartBtn.textContent = '↺ 配置に戻る (Space)';
+      this.elStartBtn.textContent = '↺ 配置に戻る';
       this.elStartBtn.className = 'start-btn stop';
       this.elUnitBar.classList.add('disabled');
     }
@@ -825,23 +999,23 @@ export class GameApp {
     if (this.playStyle === 'arcade') {
       const budget = this.currentStage.budget;
       this.elRedStats.innerHTML = `
-        <div class="team-title">自軍 (赤): ${r.alive} / ${r.total} 体 <span class="cost-tag">(${r.cost} / ${budget} pt)</span></div>
+        <div class="team-title">🔴 自軍: ${r.alive}/${r.total}体 <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${budget}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
       `;
       this.elBlueStats.innerHTML = `
-        <div class="team-title">敵軍 (青): ${b.alive} / ${b.total} 体 <span class="cost-tag">(総コスト ${b.cost} pt)</span></div>
+        <div class="team-title">🔵 敵軍: ${b.alive}/${b.total}体 <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
       `;
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
-        this.elPhaseBadge.textContent = `${this.currentStage.name} ｜ 予算: ${r.cost} / ${budget} pt (残り ${budget - r.cost} pt)`;
+        this.elPhaseBadge.innerHTML = `${this.currentStage.name} ｜ 予算: ${COST_ICON_SVG} <b>${r.cost}</b> / ${budget} (残り ${budget - r.cost})`;
       }
     } else {
       this.elRedStats.innerHTML = `
-        <div class="team-title">赤軍: ${r.alive} / ${r.total} 体 <span class="cost-tag">(${r.cost} pt)</span></div>
+        <div class="team-title">🔴 赤軍: ${r.alive}/${r.total}体 <span class="cost-tag">${COST_ICON_SVG}${r.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
       `;
       this.elBlueStats.innerHTML = `
-        <div class="team-title">青軍: ${b.alive} / ${b.total} 体 <span class="cost-tag">(${b.cost} pt)</span></div>
+        <div class="team-title">🔵 青軍: ${b.alive}/${b.total}体 <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
       `;
     }
