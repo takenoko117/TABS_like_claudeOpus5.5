@@ -600,6 +600,68 @@ export class SoundManager {
         osc.stop(t + 0.2);
         break;
       }
+      case 'shield_block': {
+        if (!this.throttle('shield_blk', 55)) return;
+        // 鉄盾が矢や刃を弾く硬質な金属反響音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(1150 + Math.random() * 250, t);
+        osc.frequency.exponentialRampToValueAtTime(420, t + 0.11);
+        g.gain.setValueAtTime(0.24, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.13);
+        break;
+      }
+      case 'charge_leap':
+      case 'bomb_throw': {
+        if (!this.throttle('whoosh_act', 70)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(360, t + 0.12);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.14);
+        break;
+      }
+      case 'bomb_explosion': {
+        if (!this.throttle('bomb_exp', 80)) return;
+        // 重低音の爆発音＋爆風ノイズ
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'sine';
+        boom.frequency.setValueAtTime(150, t);
+        boom.frequency.exponentialRampToValueAtTime(24, t + 0.38);
+        bg.gain.setValueAtTime(0.5, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.42);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(950, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.38, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.36);
+        break;
+      }
     }
   }
 }

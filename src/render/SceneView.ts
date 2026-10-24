@@ -27,6 +27,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
+import { DEFAULT_RED_ZONES, type StageTerrainConfig } from '../game/ArcadeStages';
 import type { Battle } from '../game/Battle';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
@@ -103,8 +104,9 @@ export class SceneView {
   // 忍者の変わり身の丸太リスト
   private readonly kawariLogs: KawariLogItem[] = [];
 
-  // 配置フェーズ用の中心境界ライン・プレビューゴースト
+  // 配置フェーズ用の中心境界ライン・プレビューゴースト・ステージ地形グループ
   private readonly dividerGroup = new Group();
+  private readonly terrainGroup = new Group();
   private ghostGroup: Group | null = null;
   private ghostKey = '';
 
@@ -284,6 +286,140 @@ export class SceneView {
     makeBorder(0);
     makeBorder(1);
     this.scene.add(this.dividerGroup);
+    this.scene.add(this.terrainGroup);
+  }
+
+  /**
+   * ステージ固有の地形（石柱・一本橋の奈落）および配置可能ゾーン枠を構築・更新する。
+   */
+  setStageTerrain(terrain: StageTerrainConfig | null, isArcade: boolean): void {
+    // 1. 既存の地形メッシュをクリア
+    while (this.terrainGroup.children.length > 0) {
+      this.terrainGroup.remove(this.terrainGroup.children[0]);
+    }
+
+    const cube = new BoxGeometry(1, 1, 1);
+
+    // 2. 一本橋・奈落ステージの描画
+    if (terrain?.chasm) {
+      const c = terrain.chasm;
+      const chasmW = c.maxX - c.minX;
+      const abyssMat = new MeshBasicMaterial({ color: 0x0b1017 });
+      const cliffMat = new MeshLambertMaterial({ color: 0x495057 });
+      const bridgeMat = new MeshLambertMaterial({ color: 0x868e96 });
+      const railMat = new MeshLambertMaterial({ color: 0xadb5bd });
+
+      // 上下（北・南）の奈落の黒い谷底マスク
+      for (const sign of [-1, 1]) {
+        const zStart = c.bridgeHalfWidth;
+        const zEnd = 24;
+        const zLen = zEnd - zStart;
+        const zCenter = sign * (zStart + zLen * 0.5);
+
+        const pit = new Mesh(cube, abyssMat);
+        pit.scale.set(chasmW, 0.04, zLen);
+        pit.position.set((c.minX + c.maxX) * 0.5, 0.01, zCenter);
+        this.terrainGroup.add(pit);
+
+        // 崖の縁の岩壁
+        const edgeL = new Mesh(cube, cliffMat);
+        edgeL.scale.set(0.35, 0.22, zLen);
+        edgeL.position.set(c.minX, 0.08, zCenter);
+        const edgeR = edgeL.clone();
+        edgeR.position.set(c.maxX, 0.08, zCenter);
+        this.terrainGroup.add(edgeL, edgeR);
+      }
+
+      // 中央の石橋プレートと低い欄干縁石
+      const bridgeFloor = new Mesh(cube, bridgeMat);
+      bridgeFloor.scale.set(chasmW + 0.8, 0.08, c.bridgeHalfWidth * 2);
+      bridgeFloor.position.set((c.minX + c.maxX) * 0.5, 0.03, 0);
+      bridgeFloor.receiveShadow = true;
+      this.terrainGroup.add(bridgeFloor);
+
+      for (const sign of [-1, 1]) {
+        const curb = new Mesh(cube, railMat);
+        curb.scale.set(chasmW + 0.6, 0.18, 0.22);
+        curb.position.set((c.minX + c.maxX) * 0.5, 0.1, sign * (c.bridgeHalfWidth - 0.1));
+        curb.castShadow = true;
+        this.terrainGroup.add(curb);
+      }
+    }
+
+    // 3. 円柱障害物（ボクセル風の角柱・石柱）の描画
+    if (terrain?.obstacles) {
+      for (const obs of terrain.obstacles) {
+        const pillarGroup = new Group();
+        const col = obs.color ?? 0x868e96;
+        const mainMat = new MeshLambertMaterial({ color: col });
+        const capMat = new MeshLambertMaterial({ color: 0xadb5bd });
+        const d = obs.radius * 1.75;
+
+        // 台座
+        const base = new Mesh(cube, capMat);
+        base.scale.set(d * 1.15, 0.35, d * 1.15);
+        base.position.y = 0.175;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        pillarGroup.add(base);
+
+        // 柱身
+        const shaft = new Mesh(cube, mainMat);
+        shaft.scale.set(d, obs.height - 0.5, d);
+        shaft.position.y = obs.height * 0.5;
+        shaft.castShadow = true;
+        shaft.receiveShadow = true;
+        pillarGroup.add(shaft);
+
+        // 柱頭
+        const top = new Mesh(cube, capMat);
+        top.scale.set(d * 1.15, 0.3, d * 1.15);
+        top.position.y = obs.height - 0.15;
+        top.castShadow = true;
+        top.receiveShadow = true;
+        pillarGroup.add(top);
+
+        pillarGroup.position.set(obs.x, 0, obs.z);
+        this.terrainGroup.add(pillarGroup);
+      }
+    }
+
+    // 4. 配置ガイド枠の更新
+    while (this.dividerGroup.children.length > 0) {
+      this.dividerGroup.remove(this.dividerGroup.children[0]);
+    }
+    const lineGeo = new BoxGeometry(0.14, 0.03, 0.9);
+    const whiteMat = new MeshBasicMaterial({ color: 0xf8f8f2 });
+    for (let z = -22; z <= 22; z += 1.6) {
+      const dash = new Mesh(lineGeo, whiteMat);
+      dash.position.set(0, 0.02, z);
+      this.dividerGroup.add(dash);
+    }
+
+    const addRectBorder = (minX: number, maxX: number, minZ: number, maxZ: number, color: number, opacity = 0.55) => {
+      const mat = new MeshBasicMaterial({ color, transparent: true, opacity });
+      const w = maxX - minX;
+      const h = maxZ - minZ;
+      const cx = (minX + maxX) * 0.5;
+      const cz = (minZ + maxZ) * 0.5;
+      const topB = new Mesh(new BoxGeometry(w, 0.03, 0.16), mat);
+      topB.position.set(cx, 0.02, minZ);
+      const botB = topB.clone();
+      botB.position.set(cx, 0.02, maxZ);
+      const leftB = new Mesh(new BoxGeometry(0.16, 0.03, h), mat);
+      leftB.position.set(minX, 0.02, cz);
+      const rightB = leftB.clone();
+      rightB.position.set(maxX, 0.02, cz);
+      this.dividerGroup.add(topB, botB, leftB, rightB);
+    };
+
+    const redZones = terrain?.redZones ?? DEFAULT_RED_ZONES;
+    for (const z of redZones) {
+      addRectBorder(z.minX, z.maxX, z.minZ, z.maxZ, TEAM_COLORS[0].shirt, 0.65);
+    }
+    if (!isArcade) {
+      addRectBorder(1.2, 22, -16, 16, TEAM_COLORS[1].shirt, 0.45);
+    }
   }
 
   private setupInputListeners(): void {
@@ -758,6 +894,47 @@ export class SceneView {
             (Math.random() - 0.5) * 6,
           );
           this.pushDroppedVoxel(e.pos.clone(), vel, jellyCol, 0.065 * e.scale);
+        }
+        break;
+      }
+      case 'shield_block': {
+        // 大盾ガード時の黄金＆白銀スパーク
+        for (let i = 0; i < 10; i++) {
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 5,
+            Math.random() * 3.5 + 0.5,
+            (Math.random() - 0.5) * 5,
+          );
+          this.pushFxParticle(
+            e.pos.clone(),
+            vel,
+            i % 2 === 0 ? 0xffd43b : 0xffffff,
+            0.09,
+            0.22 + Math.random() * 0.1,
+            5,
+          );
+        }
+        break;
+      }
+      case 'charge_leap':
+      case 'bomb_throw': {
+        for (let i = 0; i < 8; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 3, Math.random() * 2 + 0.5, (Math.random() - 0.5) * 3);
+          this.pushFxParticle(e.pos.clone(), vel, 0xdee2e6, 0.11, 0.25, 1);
+        }
+        break;
+      }
+      case 'bomb_explosion': {
+        // 爆弾の閃光＋黒煙＋飛び散る破片ボクセル
+        for (let i = 0; i < 34; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.1, Math.random() - 0.5).normalize();
+          const spd = 4 + Math.random() * 8;
+          const col = i % 3 === 0 ? 0xff922b : i % 3 === 1 ? 0xffe066 : 0x343a40;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(spd), col, 0.2, 0.45 + Math.random() * 0.25, 4);
+        }
+        for (let i = 0; i < 14; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 7, 2.5 + Math.random() * 4.5, (Math.random() - 0.5) * 7);
+          this.pushDroppedVoxel(e.pos.clone(), vel, i % 2 === 0 ? 0x2b3035 : 0xd9480f, 0.065);
         }
         break;
       }

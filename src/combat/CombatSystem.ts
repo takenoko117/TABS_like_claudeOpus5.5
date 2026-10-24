@@ -1,11 +1,11 @@
 import { Vector3 } from 'three';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
-import type { Contact } from '../physics/PhysicsWorld';
+import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
 import { Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
-export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame';
+export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb';
 
 export interface HitEvent {
   kind: HitKind;
@@ -43,7 +43,11 @@ export type CombatEffectEvent =
   | { kind: 'dragon_breath'; from: Vector3; dir: Vector3 }
   | { kind: 'slime_jump'; pos: Vector3; scale: number; team: Team }
   | { kind: 'slime_slam'; pos: Vector3; scale: number; team: Team }
-  | { kind: 'slime_split'; pos: Vector3; scale: number; team: Team };
+  | { kind: 'slime_split'; pos: Vector3; scale: number; team: Team }
+  | { kind: 'shield_block'; pos: Vector3 }
+  | { kind: 'charge_leap'; pos: Vector3 }
+  | { kind: 'bomb_throw'; pos: Vector3 }
+  | { kind: 'bomb_explosion'; pos: Vector3 };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -174,8 +178,18 @@ export class CombatSystem {
       if (!attacker.canHit(victim)) continue;
 
       const isTip = weapon === attacker.weaponParticles[1];
-      const speedFactor = clamp(c.relSpeed / spec.refSpeed, 0.4, 1.6);
-      const damage = spec.damage * speedFactor * (isTip ? 1 : 0.6);
+      const speedFactor = clamp(c.relSpeed / spec.refSpeed, 0.4, 1.85);
+      let damage = spec.damage * speedFactor * (isTip ? 1 : 0.6);
+
+      // 盾兵の正面ガード判定（盾粒子への接触、または正面からの近接攻撃を軽減）
+      const hitShield = other === victim.shieldParticle;
+      const isFrontalShield =
+        victim.type.id === 'shielder' &&
+        (hitShield || victim.isAttackFromFront(attacker.pelvis.pos));
+      if (isFrontalShield) {
+        damage *= hitShield ? 0.35 : 0.5;
+        this.emitEffect({ kind: 'shield_block', pos: c.point.clone() });
+      }
 
       // ノックバック方向: 武器の運動方向と接触法線の合成 + 少し上向き
       _dir.copy(c.relVel).multiplyScalar(sign);
@@ -184,7 +198,8 @@ export class CombatSystem {
       // 戦象の牙は大きく上へカチ上げる
       _dir.y += spec.kind === 'tusks' ? 0.95 : 0.25;
       _dir.normalize();
-      const kb = (spec.knockback * speedFactor * attacker.scale) / Math.pow(victim.massScale, 0.6);
+      const shieldKbMul = isFrontalShield ? 0.45 : 1.0;
+      const kb = ((spec.knockback * speedFactor * attacker.scale) / Math.pow(victim.massScale, 0.6)) * shieldKbMul;
       _dir.multiplyScalar(kb);
 
       const killed = victim.takeDamage(damage, other, _dir, dt, attacker);
@@ -365,7 +380,7 @@ export class CombatSystem {
     return hitCount;
   }
 
-  updateArrows(dt: number, units: readonly Unit[]): void {
+  updateArrows(dt: number, units: readonly Unit[], obstacles: readonly ObstacleCylinder[] = []): void {
     const arrows = this.arrows;
     for (let i = arrows.length - 1; i >= 0; i--) {
       const a = arrows[i];
@@ -380,11 +395,26 @@ export class CombatSystem {
         if (a.vel.lengthSq() > 1e-8) a.dir.copy(a.vel).normalize();
         a.spinAngle += dt * 28;
 
+        // 石柱などの障害物との衝突判定
+        if (obstacles.length > 0 && this.checkObstacleHit(a, _from, _to, obstacles, units, dt)) {
+          if (a.life <= 0) {
+            arrows[i] = arrows[arrows.length - 1];
+            arrows.pop();
+          }
+          continue;
+        }
+
         const stopped = this.sweepHit(a, _from, _to, units, dt);
         if (!stopped) {
           a.pos.copy(_to);
           if (a.pos.y <= 0) {
-            if (a.projectileKind === 'flame') {
+            if (a.projectileKind === 'bomb') {
+              // 地面に着弾して大爆発
+              a.pos.y = 0.05;
+              this.applyRadialBlast(a.owner, a.pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion');
+              this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
+              a.life = 0;
+            } else if (a.projectileKind === 'flame') {
               // 地面に延焼ゾーンを生成して消滅
               this.spawnFireZone(a.owner, new Vector3(a.pos.x, 0.02, a.pos.z));
               a.life = 0;
@@ -412,6 +442,42 @@ export class CombatSystem {
     this.updateLightningBolts(dt);
     this.updateDelayedSlashes(dt);
     this.updateFireZones(dt, units);
+  }
+
+  /** 飛翔体が石柱などの円柱障害物に当たったか判定する */
+  private checkObstacleHit(
+    a: Arrow,
+    from: Vector3,
+    to: Vector3,
+    obstacles: readonly ObstacleCylinder[],
+    units: readonly Unit[],
+    dt: number,
+  ): boolean {
+    for (const obs of obstacles) {
+      if (from.y > obs.height && to.y > obs.height) continue;
+      const dx = to.x - from.x;
+      const dz = to.z - from.z;
+      const segLen2 = dx * dx + dz * dz;
+      const t = segLen2 > 1e-8 ? clamp(((obs.x - from.x) * dx + (obs.z - from.z) * dz) / segLen2, 0, 1) : 0;
+      const cx = from.x + dx * t - obs.x;
+      const cz = from.z + dz * t - obs.z;
+      const cy = from.y + (to.y - from.y) * t;
+      if (cy <= obs.height && cx * cx + cz * cz <= (obs.radius + 0.05) ** 2) {
+        a.pos.set(from.x + dx * t, cy, from.z + dz * t);
+        if (a.projectileKind === 'bomb') {
+          this.applyRadialBlast(a.owner, a.pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion');
+          this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
+          a.life = 0;
+        } else if (a.projectileKind === 'arrow' || a.projectileKind === 'shuriken') {
+          a.state = 'ground';
+          a.life = 3;
+        } else {
+          a.life = 0;
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   private spawnFireZone(owner: Unit, pos: Vector3): void {
@@ -567,6 +633,21 @@ export class CombatSystem {
       // 粗い判定（骨盤からの距離）
       const rough = 1.8 * u.scale + segLen;
       if (u.pelvis.pos.distanceToSquared(from) > rough * rough) continue;
+      // 盾兵の盾粒子がある場合は優先的に当たり判定を行う
+      if (u.shieldParticle) {
+        const sp = u.shieldParticle;
+        _tmp.subVectors(sp.pos, from);
+        const t = clamp(_tmp.dot(_seg) / segLen2, 0, 1);
+        const cx = from.x + _seg.x * t - sp.pos.x;
+        const cy = from.y + _seg.y * t - sp.pos.y;
+        const cz = from.z + _seg.z * t - sp.pos.z;
+        const r = sp.radius + extraRadius + 0.12 * u.scale;
+        if (cx * cx + cy * cy + cz * cz < r * r && t < bestT) {
+          bestT = t;
+          bestP = sp;
+          bestU = u;
+        }
+      }
       for (const p of u.joints) {
         _tmp.subVectors(p.pos, from);
         const t = clamp(_tmp.dot(_seg) / segLen2, 0, 1);
@@ -585,15 +666,34 @@ export class CombatSystem {
 
     a.pos.copy(from).addScaledVector(_seg, bestT);
     a.hitUnitIds.add(bestU.id);
+
+    // 爆弾兵の爆弾が直撃した場合はその場で爆発して終了
+    if (a.projectileKind === 'bomb') {
+      this.applyRadialBlast(a.owner, a.pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion');
+      this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
+      a.life = 0;
+      return true;
+    }
+
     const speed = a.vel.length();
 
     if (bestU.alive) {
+      // 盾兵の正面ガード判定（盾粒子への命中、または正面からの射撃）
+      const isShieldBlock =
+        bestU.type.id === 'shielder' &&
+        a.projectileKind !== 'flame' &&
+        (bestP === bestU.shieldParticle || bestU.isAttackFromFront(from));
+      if (isShieldBlock) {
+        this.emitEffect({ kind: 'shield_block', pos: a.pos.clone() });
+      }
+
       // スライムの弾性ボディ: 物理射撃ダメージを半減して弾き返す
       const isSlimeBounce = bestU.type.id === 'slime' && a.projectileKind !== 'flame';
+      const shieldDamageMul = isShieldBlock ? (a.projectileKind === 'sniper' ? 0.28 : 0.1) : 1.0;
       const rawDamage =
         a.projectileKind === 'flame'
           ? a.damage
-          : a.damage * clamp(speed / a.refSpeed, 0.5, 1.2) * (isSlimeBounce ? 0.5 : 1.0);
+          : a.damage * clamp(speed / a.refSpeed, 0.5, 1.2) * (isSlimeBounce ? 0.5 : 1.0) * shieldDamageMul;
 
       const kbFactor =
         a.projectileKind === 'sniper'
@@ -603,8 +703,9 @@ export class CombatSystem {
             : a.projectileKind === 'flame'
               ? 0.02
               : 0.15;
-      _dir.copy(a.dir).multiplyScalar((speed * kbFactor) / Math.pow(bestU.massScale, 0.6));
-      if (a.projectileKind === 'sniper') _dir.y += 1.6;
+      const shieldKbMul = isShieldBlock ? 0.25 : 1.0;
+      _dir.copy(a.dir).multiplyScalar(((speed * kbFactor) / Math.pow(bestU.massScale, 0.6)) * shieldKbMul);
+      if (a.projectileKind === 'sniper' && !isShieldBlock) _dir.y += 1.6;
 
       if (a.projectileKind === 'flame') {
         bestU.burnTimer = Math.max(bestU.burnTimer, 3.0);
@@ -621,8 +722,13 @@ export class CombatSystem {
         hitParticle: bestP,
         impulse: _dir.clone(),
         killed,
-        carveScale: a.carveScale,
+        carveScale: isShieldBlock ? 0.2 : a.carveScale,
       });
+
+      if (isShieldBlock && a.projectileKind === 'sniper') {
+        // 大盾は対物スナイパーの貫通も食い止める
+        a.pierceLeft = 0;
+      }
 
       if (isSlimeBounce) {
         // 弾性でポヨンと跳ね返る

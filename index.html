@@ -25,12 +25,32 @@
       <div id="blue-stats" class="team-panel blue"></div>
     </header>
 
-    <!-- 左上: プリセット & カメラ・速度操作 -->
+    <!-- 左上: モード切替・ステージ/プリセット選択・速度操作 -->
     <aside class="side-panel">
       <div class="panel-section">
+        <div class="section-label">ゲームモード</div>
+        <div class="mode-switch-group">
+          <button id="btn-mode-arcade" class="ctrl-btn active">🏆 アーケード (10面)</button>
+          <button id="btn-mode-sandbox" class="ctrl-btn">🛠 サンドボックス</button>
+        </div>
+      </div>
+
+      <!-- アーケードモード用パネル -->
+      <div id="arcade-panel" class="panel-section">
+        <div class="section-header-row">
+          <div class="section-label">ステージ選択 (1〜10面)</div>
+          <button id="btn-unlock-all" class="mini-link-btn" title="全兵種・全ステージを解放／通常進行に戻す">🔓 全解放</button>
+        </div>
+        <div id="stage-buttons" class="stage-grid"></div>
+        <div id="stage-briefing" class="stage-briefing"></div>
+      </div>
+
+      <!-- サンドボックス用プリセットパネル -->
+      <div id="sandbox-panel" class="panel-section hidden">
         <div class="section-label">プリセット編成</div>
         <div id="preset-buttons" class="btn-group"></div>
       </div>
+
       <div class="panel-section">
         <div class="section-label">ゲーム速度</div>
         <div id="speed-buttons" class="btn-group"></div>
@@ -39,20 +59,25 @@
         <div class="section-label">視点・操作ヘルプ</div>
         <button id="btn-cam-reset" class="ctrl-btn full">視点リセット</button>
         <ul class="help-list">
-          <li><b>左クリック:</b> ユニット配置（左=赤 / 右=青）</li>
+          <li><b>左クリック:</b> ユニット配置</li>
           <li><b>右クリック:</b> ユニット削除</li>
           <li><b>右ドラッグ / 中ドラッグ:</b> カメラ回転</li>
           <li><b>WASD / 矢印キー:</b> カメラ移動、<b>ホイール:</b> ズーム</li>
-          <li><b>1〜5 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始/戻る</li>
+          <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始/戻る</li>
         </ul>
       </div>
     </aside>
 
     <!-- 勝敗リザルトバナー -->
     <div id="result-banner" class="result-banner hidden">
+      <div id="result-stars" class="result-stars hidden"></div>
       <div id="result-title" class="result-title">赤軍の勝利！</div>
       <div id="result-sub" class="result-sub"></div>
-      <button id="btn-retry" class="start-btn">↺ 配置に戻る</button>
+      <div id="result-unlock" class="result-unlock hidden"></div>
+      <div class="result-actions">
+        <button id="btn-retry" class="ctrl-btn">↺ 配置に戻る</button>
+        <button id="btn-next-stage" class="start-btn hidden">▶ 次の面へ進む</button>
+      </div>
     </div>
 
     <!-- 下部: カテゴリタブ & 兵種パレット -->

@@ -341,6 +341,17 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(3, 6, 8, 7, 7, 9, 0x9aa0a8);
     // なびく陣営カラーのマフラー端
     g.fillBox(4, 0, 0, 6, 2, 2, tc.shirt);
+  } else if (type.id === 'charger') {
+    // バイキング風の2本角兜
+    g.fillBox(0, 7, 4, 1, 9, 6, 0xfaf8f0);
+    g.fillBox(9, 7, 4, 10, 9, 6, 0xfaf8f0);
+    g.set(0, 10, 5, 0xd4af37);
+    g.set(10, 10, 5, 0xd4af37);
+  } else if (type.id === 'bomber') {
+    // ゴーグル付きの爆撃兵ヘルメット
+    g.fillBox(2, 5, 8, 8, 6, 9, 0xd4af37);
+    g.set(3, 5, 9, 0xff6b1a);
+    g.set(7, 5, 9, 0xff6b1a);
   }
 
   return makeTemplate(g, 0.036, [5.5, 4.5, 5.5]);
@@ -415,6 +426,11 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     // 首元の赤いマフラーと背中の忍刀
     g.fillBox(1, 10, 1, 8, 11, 7, tc.shirt);
     g.fillBox(3, 4, 0, 5, 11, 1, 0x181820);
+  } else if (type.id === 'bomber') {
+    // 背中の火薬樽バックパック
+    g.fillBox(2, 4, 0, 7, 10, 1, 0x5c3818);
+    g.fillBox(2, 5, 0, 7, 5, 1, 0x868e96);
+    g.fillBox(2, 9, 0, 7, 9, 1, 0x868e96);
   }
 
   return makeTemplate(g, 0.04, [5, 1, 4]);
@@ -497,6 +513,17 @@ function buildWeaponGeometry(kind: WeaponKind, length: number, team: Team): Buff
     g.fillBox(6, sy - 3, 3, 7, sy - 1, 4, 0xffffff);
     return g.toGeometry(length / sy, [4.5, 1, 2.5]);
   }
+  if (kind === 'axe') {
+    // 突撃兵の両刃バトルアックス
+    const sy = 20;
+    const g = new VoxelGrid(5, sy, 7);
+    g.fillBox(2, 0, 3, 2, sy - 2, 3, 0x6b4423);
+    g.fillBox(1, sy - 8, 1, 3, sy - 2, 5, 0x9aa0a8);
+    g.fillBox(2, sy - 9, 0, 2, sy - 1, 1, 0xf4f8ff);
+    g.fillBox(2, sy - 9, 5, 2, sy - 1, 6, 0xf4f8ff);
+    g.set(2, sy - 1, 3, 0xd4af37);
+    return g.toGeometry(length / sy, [2.5, 1, 3.5]);
+  }
   // 棍棒 / 大棍棒
   const sy = 18;
   const g = new VoxelGrid(5, sy, 5);
@@ -518,6 +545,25 @@ function buildWeaponGeometry(kind: WeaponKind, length: number, team: Team): Buff
 
 function buildOffhandGeometry(type: UnitType, team: Team): BufferGeometry | null {
   const tc = TEAM_COLORS[team];
+  if (type.id === 'shielder') {
+    // 盾兵の大盾（鉄縁・陣営カラー・中央の金鋲）
+    const g = new VoxelGrid(11, 15, 3);
+    g.fillBox(0, 0, 0, 10, 14, 1, 0x6c757d);
+    g.fillBox(1, 1, 1, 9, 13, 2, tc.shirt);
+    g.fillBox(4, 1, 2, 6, 13, 2, 0xd4af37);
+    g.fillBox(1, 6, 2, 9, 8, 2, 0xd4af37);
+    return g.toGeometry(0.042, [5.5, 7.5, 1]);
+  }
+  if (type.style === 'bomb') {
+    // 爆弾兵が左手に抱える予備の黒色火薬爆弾
+    const g = new VoxelGrid(6, 7, 6);
+    g.fillBox(1, 0, 1, 4, 4, 4, 0x24292e);
+    g.fillBox(0, 1, 1, 5, 3, 4, 0x24292e);
+    g.fillBox(1, 1, 0, 4, 3, 5, 0x24292e);
+    g.set(2, 5, 2, 0xd4af37);
+    g.set(2, 6, 2, 0xff6b1a);
+    return g.toGeometry(0.042, [3, 2.5, 3]);
+  }
   if (type.style === 'bow') {
     const g = new VoxelGrid(3, 15, 7);
     const wood = 0x6e4420;
@@ -638,6 +684,15 @@ export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeo
     g.fillBox(0, 0, 0, 4, 4, 4, 0xff5900);
     g.fillBox(1, 1, 1, 3, 3, 3, 0xffd43b);
     geom = g.toGeometry(0.055, [2.5, 2.5, 2.5]);
+  } else if (kind === 'bomb') {
+    // 導火線付きの黒色火薬爆弾
+    const g = new VoxelGrid(7, 8, 7);
+    g.fillBox(1, 0, 1, 5, 5, 5, 0x212529);
+    g.fillBox(0, 1, 1, 6, 4, 5, 0x2b3035);
+    g.fillBox(1, 1, 0, 5, 4, 6, 0x2b3035);
+    g.set(3, 6, 3, 0xd4af37);
+    g.set(3, 7, 3, 0xff5900);
+    geom = g.toGeometry(0.048, [3.5, 3, 3.5]);
   } else {
     const sy = 16;
     const g = new VoxelGrid(3, sy, 3);
@@ -872,11 +927,12 @@ export class VoxelCharacterVisual {
       placeLimb(this.weaponMesh, P[J.HandR].pos, u.weaponParticles[1].pos);
     }
 
-    // 弓・銃・ガトリング・重力球（左前腕が破壊されたら非表示）
+    // 弓・銃・ガトリング・重力球・大盾（左前腕が破壊されたら非表示）
     if (this.bowMesh) {
       this.bowMesh.visible = !this.parts.forearmL.destroyed;
       _dir.subVectors(chest, pelvis);
-      placeOrientedPart(this.bowMesh, P[J.HandL].pos, _dir, shL, shR);
+      const anchorPos = u.shieldParticle ? u.shieldParticle.pos : P[J.HandL].pos;
+      placeOrientedPart(this.bowMesh, anchorPos, _dir, shL, shR);
       if (u.type.id === 'minigunner') {
         this.bowMesh.rotateZ(u.barrelSpin);
       }

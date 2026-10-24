@@ -16,6 +16,7 @@ export interface UnitSpawnOptions {
 
 /** ユニットが更新時に参照する戦場の情報（Battle が実装する） */
 export interface UnitContext {
+  readonly world: PhysicsWorld;
   readonly units: readonly Unit[];
   /** false の間は AI が停止し、その場で待機する（配置フェーズ） */
   readonly aiEnabled: boolean;
@@ -65,6 +66,8 @@ export class Unit {
   readonly joints: Particle[] = [];
   /** 武器の粒子 [中間, 先端]（遠距離兵などは空） */
   readonly weaponParticles: Particle[] = [];
+  /** 盾兵が左手に構える物理盾粒子 */
+  readonly shieldParticle: Particle | null = null;
   readonly bodyId: number;
   readonly scale: number;
   /** 標準体格に対する質量倍率 */
@@ -103,6 +106,8 @@ export class Unit {
   private burnTickTimer = 0;
   /** 変わり身の術クールダウン（からくり忍者） */
   kawariCooldown = 0;
+  /** 突撃兵の跳躍チャージクールダウン */
+  chargeCooldown = 0;
   /** スライムの伸縮アニメーション係数（1=通常, <1=潰れ, >1=伸び） */
   squash = 1.0;
   private slamPending = false;
@@ -203,6 +208,28 @@ export class Unit {
       world.addConstraint(new DistanceConstraint(hand, tip, len));
       total += mid.mass + tip.mass;
     }
+
+    // 盾兵の大盾粒子（左手と左肘・胸に拘束で保持）
+    if (type.id === 'shielder') {
+      const handL = this.joints[J.HandL];
+      const elbowL = this.joints[J.ElbowL];
+      const chest = this.joints[J.Chest];
+      const shieldPos = this.localToWorld(origin, -0.14 * s, 0.24 * s, 0.42 * s, new Vector3());
+      const sp = new Particle(shieldPos, {
+        mass: 1.4 * this.massScale,
+        radius: 0.24 * s,
+        friction: 0.4,
+        bodyId: this.bodyId,
+      });
+      sp.owner = this;
+      world.addParticle(sp);
+      this.shieldParticle = sp;
+      world.addConstraint(new DistanceConstraint(handL, sp, 0.18 * s, 0.9));
+      world.addConstraint(new DistanceConstraint(elbowL, sp, 0.34 * s, 0.7));
+      world.addConstraint(new DistanceConstraint(chest, sp, 0.46 * s, 0.6));
+      total += sp.mass;
+    }
+
     this.totalMass = total;
   }
 
@@ -237,7 +264,14 @@ export class Unit {
       return;
     }
 
+    // 断崖・奈落へ落下した場合は即死
+    if (this.pelvis.pos.y < -2.2) {
+      this.die();
+      return;
+    }
+
     if (this.kawariCooldown > 0) this.kawariCooldown = Math.max(0, this.kawariCooldown - dt);
+    if (this.chargeCooldown > 0) this.chargeCooldown = Math.max(0, this.chargeCooldown - dt);
 
     // 感電麻痺の処理
     if (this.shockTimer > 0) {
@@ -256,13 +290,13 @@ export class Unit {
       this.burnTimer = Math.max(0, this.burnTimer - dt);
       this.burnTickTimer -= dt;
       if (this.burnTickTimer <= 0) {
-        this.burnTickTimer = 0.25;
+        this.burnTickTimer = 0.22;
         const attacker = this.burnAttacker ?? this;
-        const killed = this.takeDamage(2.0, this.chest, _tmp.set(0, 0.2, 0), dt, attacker);
+        const killed = this.takeDamage(4.5, this.chest, _tmp.set(0, 0.2, 0), dt, attacker);
         ctx.combat.onHit?.({
           kind: 'magic',
           point: this.chest.pos.clone(),
-          damage: 2.0,
+          damage: 4.5,
           attacker,
           victim: this,
           hitParticle: this.chest,
@@ -339,8 +373,72 @@ export class Unit {
 
     this.desiredFacing = Math.atan2(dx, dz);
     const engage = this.engageDistance(t);
+
+    // 突撃兵 (charger) の跳躍突撃トリガー
+    if (
+      this.type.id === 'charger' &&
+      this.chargeCooldown <= 0 &&
+      this.attackPhase === 'none' &&
+      this.muscle > 0.6 &&
+      dist >= 1.8 &&
+      dist <= 5.2
+    ) {
+      this.chargeCooldown = 3.2;
+      this.attackPhase = 'windup';
+      this.phaseTime = 0;
+      const leapVel = new Vector3((dx / dist) * 7.8, 2.5, (dz / dist) * 7.8);
+      for (const p of this.joints) p.addVelocity(leapVel, dt);
+      for (const wp of this.weaponParticles) wp.addVelocity(leapVel, dt);
+      ctx.combat.emitEffect({ kind: 'charge_leap', pos: this.pelvis.pos.clone() });
+      return;
+    }
+
     if (dist > engage * 0.9) {
-      this.moveDir.set(dx / Math.max(0.001, dist), 0, dz / Math.max(0.001, dist));
+      let mx = dx / Math.max(0.001, dist);
+      let mz = dz / Math.max(0.001, dist);
+
+      // 飛行ユニット以外は奈落（一本橋ステージ）や石柱を迂回する
+      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon';
+      if (!isFlyer) {
+        const chasm = ctx.world.chasm;
+        if (chasm) {
+          const px = this.pelvis.pos.x;
+          const pz = this.pelvis.pos.z;
+          const needCross =
+            (px <= chasm.minX + 1.2 && t.pelvis.pos.x > chasm.minX) ||
+            (px >= chasm.maxX - 1.2 && t.pelvis.pos.x < chasm.maxX) ||
+            (px > chasm.minX && px < chasm.maxX);
+          if (needCross && Math.abs(pz) > chasm.bridgeHalfWidth * 0.72) {
+            const bridgeZ = clamp(pz, -chasm.bridgeHalfWidth * 0.55, chasm.bridgeHalfWidth * 0.55);
+            const bdx = 0 - px;
+            const bdz = bridgeZ - pz;
+            const bd = Math.hypot(bdx, bdz) || 1;
+            mx = bdx / bd;
+            mz = bdz / bd;
+            this.desiredFacing = Math.atan2(mx, mz);
+          }
+        }
+        // 石柱の簡易回避
+        for (const obs of ctx.world.obstacles) {
+          const odx = obs.x - this.pelvis.pos.x;
+          const odz = obs.z - this.pelvis.pos.z;
+          const od = Math.hypot(odx, odz);
+          const avoidR = obs.radius + this.bodyRadius + 0.85;
+          if (od < avoidR && od > 1e-4) {
+            const dot = (odx * mx + odz * mz) / od;
+            if (dot > 0.2) {
+              const side = -odz * mx + odx * mz >= 0 ? 1 : -1;
+              mx += (-odz / od) * side * 0.85;
+              mz += (odx / od) * side * 0.85;
+              const nl = Math.hypot(mx, mz) || 1;
+              mx /= nl;
+              mz /= nl;
+            }
+          }
+        }
+      }
+
+      this.moveDir.set(mx, 0, mz);
       this.moveSpeed = this.type.speed * (this.attackPhase === 'none' ? 1 : 0.4);
     } else {
       this.moveSpeed = 0;
@@ -357,6 +455,7 @@ export class Unit {
     const st = this.type.style;
     if (
       st === 'bow' ||
+      st === 'bomb' ||
       st === 'lightning' ||
       st === 'gravity' ||
       st === 'sniper' ||
@@ -378,9 +477,9 @@ export class Unit {
     const p = this.pelvis.pos;
     for (const u of units) {
       if (!u.alive || u.team === this.team) continue;
-      // 地上近接ユニットは高空の大鷲よりも地上の敵を優先する
+      // 地上近接ユニットや火炎ブレスは高空の敵よりも地上の敵を優先する
       const airPenalty =
-        this.type.range < 3.0 && u.pelvis.pos.y > 2.2 ? 120 : 0;
+        (this.type.range < 3.0 || this.type.style === 'breath') && u.pelvis.pos.y > 2.2 ? 160 : 0;
       const d = (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2 + airPenalty;
       if (d < bestD) {
         bestD = d;
@@ -456,6 +555,10 @@ export class Unit {
 
     if (st === 'bow') {
       if (t && t.alive) this.shootArrow(t, ctx);
+      return;
+    }
+    if (st === 'bomb') {
+      if (t && t.alive) this.throwBomb(t, ctx);
       return;
     }
     if (st === 'lightning') {
@@ -618,25 +721,27 @@ export class Unit {
           -this.forward.x * sn + this.forward.z * c,
         ).normalize();
         const from = this.head.pos.clone().addScaledVector(this.forward, 0.5 * this.scale);
-        const speed = (13 + Math.random() * 4);
+        const speed = 15 + Math.random() * 4;
         ctx.combat.fireProjectile(this, from, dir.clone().multiplyScalar(speed), 'flame', {
-          damage: 6.5,
-          gravityScale: -0.1,
-          life: 0.72,
+          damage: 9.5,
+          gravityScale: -0.05,
+          life: 0.85,
         });
         ctx.combat.emitEffect({ kind: 'dragon_breath', from, dir });
       }
     } else if (st === 'swoop' && t && t.alive && !this.grabbedUnit) {
-      // ターゲットへ向かって高速ダイブ
+      // ターゲットへ向かって高速ダイブ（骨盤高さは 2.25m 以上を維持）
       _dir.subVectors(t.chest.pos, this.pelvis.pos);
-      const d = _dir.length();
-      if (d > 0.1) {
-        _dir.divideScalar(d);
+      if (this.pelvis.pos.y < 2.35 && _dir.y < 0) _dir.y = 0;
+      const d = Math.hypot(t.chest.pos.x - this.pelvis.pos.x, t.chest.pos.z - this.pelvis.pos.z);
+      const len = _dir.length();
+      if (len > 0.1) {
+        _dir.divideScalar(len);
         for (const p of this.joints) {
           p.force.addScaledVector(_dir, 42 * p.mass);
         }
       }
-      if (d < 1.35 * this.scale + t.bodyRadius && this.canHit(t)) {
+      if (d < 1.45 * this.scale + t.bodyRadius && this.canHit(t)) {
         this.registerHit(t, 1.0);
         const imp = this.forward.clone().multiplyScalar(3.5);
         imp.y = 3.0;
@@ -861,6 +966,47 @@ export class Unit {
     ctx.fireArrow(this, from, vel);
   }
 
+  /** 爆弾兵の放物線投擲 */
+  private throwBomb(t: Unit, ctx: UnitContext): void {
+    const spec = this.type.projectile;
+    if (!spec) return;
+    const s = this.scale;
+    const from = new Vector3().copy(this.chest.pos).addScaledVector(this.forward, 0.48 * s);
+    from.y += 0.32 * s;
+    const aim = t.pelvis.pos.clone();
+    const flight = from.distanceTo(aim) / spec.speed;
+    aim.addScaledVector(t.velocity, flight * 0.65);
+    const dx = aim.x - from.x;
+    const dz = aim.z - from.z;
+    const dh = Math.max(0.01, Math.hypot(dx, dz));
+    const dy = aim.y - from.y;
+    const v = spec.speed;
+    const v2 = v * v;
+    const disc = v2 * v2 - GRAVITY * (GRAVITY * dh * dh + 2 * dy * v2);
+    const angle = disc >= 0 ? Math.atan2(v2 - Math.sqrt(disc), GRAVITY * dh) : Math.PI / 4;
+    const vel = new Vector3((dx / dh) * Math.cos(angle) * v, Math.sin(angle) * v, (dz / dh) * Math.cos(angle) * v);
+    const spread = spec.spread * v;
+    vel.x += (Math.random() * 2 - 1) * spread;
+    vel.y += (Math.random() * 2 - 1) * spread;
+    vel.z += (Math.random() * 2 - 1) * spread;
+    ctx.combat.fireProjectile(this, from, vel, 'bomb', {
+      damage: spec.damage,
+      gravityScale: 1.0,
+      life: 4.5,
+      carveScale: 2.2,
+    });
+    ctx.combat.emitEffect({ kind: 'bomb_throw', pos: from });
+  }
+
+  /** 攻撃元座標がこのユニットの正面方向（±72度以内）にあるか判定する */
+  isAttackFromFront(sourcePos: Vector3): boolean {
+    const dx = sourcePos.x - this.pelvis.pos.x;
+    const dz = sourcePos.z - this.pelvis.pos.z;
+    if (dx * dx + dz * dz < 1e-6) return true;
+    const angleToSource = Math.atan2(dx, dz);
+    return Math.abs(wrapAngle(angleToSource - this.facing)) <= 1.25;
+  }
+
   // ---------------------------------------------------------------
   // 筋肉・補助力
   // ---------------------------------------------------------------
@@ -907,9 +1053,10 @@ export class Unit {
     this.updateFrame();
 
     const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon';
-    // 足が地面付近にあれば「支えられている」とみなす（飛行ユニットは常時揚力あり）
-    const footGap = Math.min(footL.pos.y - footL.radius, footR.pos.y - footR.radius);
-    const supported = isFlyer || footGap < 0.25 * s;
+    const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
+    // 足が地面付近にあれば「支えられている」とみなす（飛行ユニットは常時揚力あり、奈落上は支えなし）
+    const footGap = overChasm ? 999 : Math.min(footL.pos.y - footL.radius, footR.pos.y - footR.radius);
+    const supported = isFlyer || (!overChasm && pelvis.pos.y > -0.15 && footGap < 0.25 * s);
 
     if (m > 0.01) {
       // 1. ホバー: 骨盤を目標の高さに保つ
@@ -918,7 +1065,7 @@ export class Unit {
         if (this.grabbedUnit) {
           targetH = 6.2;
         } else if (this.attackPhase === 'strike' && this.target) {
-          targetH = Math.max(1.1, this.target.chest.pos.y + 0.2);
+          targetH = Math.max(2.4, this.target.chest.pos.y + 0.6);
         } else {
           targetH = 3.6 + Math.sin(this.walkPhase * 1.5) * 0.22;
         }
@@ -929,9 +1076,9 @@ export class Unit {
       }
 
       if (supported && (isFlyer || pelvis.pos.y < targetH + 0.3 * s)) {
-        const springK = isFlyer ? 65 : 120;
+        const springK = this.type.id === 'giant_eagle' ? 80 : isFlyer ? 65 : 120;
         let a = GRAVITY + springK * (targetH - pelvis.pos.y) - 14 * pv.y;
-        a = clamp(a, isFlyer ? -GRAVITY * 0.8 : 0, GRAVITY * 3.2) * m;
+        a = clamp(a, isFlyer ? -GRAVITY * 0.8 : 0, GRAVITY * 3.5) * m;
         const f = M * a;
         pelvis.force.y += f * 0.6;
         chest.force.y += f * 0.4;
@@ -1003,6 +1150,18 @@ export class Unit {
       tip.force.add(_acc);
       hand.force.sub(_acc);
     }
+
+    // 6. 盾兵の盾粒子を正面左前に保持するバネ
+    if (this.shieldParticle && m > 0.01) {
+      const sp = this.shieldParticle;
+      this.localToWorld(pelvis.pos, -0.15 * s, 0.24 * s, 0.44 * s, _target);
+      sp.getVelocity(dt, _vel).sub(pv);
+      _acc.subVectors(_target, sp.pos).multiplyScalar(110 * m).addScaledVector(_vel, -12 * m);
+      clampLength(_acc, MAX_MUSCLE_ACCEL);
+      _acc.multiplyScalar(sp.mass);
+      sp.force.add(_acc);
+      pelvis.force.sub(_acc);
+    }
   }
 
   /** 現在の状態（歩行・攻撃）に応じた目標姿勢を localPose に計算する */
@@ -1054,6 +1213,12 @@ export class Unit {
     const phase = this.attackPhase;
     let twist = 0;
 
+    if (this.type.id === 'shielder') {
+      // 左手に大盾を構える姿勢
+      lp[J.HandL].set(-0.16, 0.24, 0.36);
+      lp[J.ElbowL].set(-0.28, 0.22, 0.16);
+    }
+
     if (style === 'thrust') {
       lp[J.HandR].set(0.25, 0.08, 0.22);
       lp[J.ElbowR].set(0.32, 0.15, 0.0);
@@ -1066,7 +1231,7 @@ export class Unit {
         lp[J.ElbowR].set(0.25, 0.32, 0.3);
         twist = -0.3;
       }
-    } else if (style === 'swing' || style === 'lightning') {
+    } else if (style === 'swing' || style === 'charge' || style === 'lightning') {
       if (phase === 'windup') {
         lp[J.HandR].set(0.22, 0.78, -0.15);
         lp[J.ElbowR].set(0.36, 0.52, -0.08);
@@ -1074,6 +1239,18 @@ export class Unit {
       } else if (phase === 'strike') {
         lp[J.HandR].set(0.04, 0.2, 0.55);
         lp[J.ElbowR].set(0.22, 0.32, 0.3);
+        twist = -0.35;
+      }
+    } else if (style === 'bomb') {
+      // 爆弾を頭上に掲げてオーバースロー
+      lp[J.HandR].set(0.22, 0.32, 0.26);
+      if (phase === 'windup') {
+        lp[J.HandR].set(0.2, 0.75, -0.16);
+        lp[J.ElbowR].set(0.32, 0.55, -0.08);
+        twist = 0.38;
+      } else if (phase === 'strike') {
+        lp[J.HandR].set(0.08, 0.45, 0.58);
+        lp[J.ElbowR].set(0.22, 0.4, 0.3);
         twist = -0.35;
       }
     } else if (style === 'bow' || style === 'sniper') {

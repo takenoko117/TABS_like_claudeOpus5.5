@@ -91,7 +91,7 @@ export class Battle implements UnitContext {
     for (const u of this.units) u.update(dt, this);
     this.world.step(dt);
     this.combat.processContacts(this.world.contacts, dt);
-    this.combat.updateArrows(dt, this.units);
+    this.combat.updateArrows(dt, this.units, this.world.obstacles);
     this.time += dt;
   }
 

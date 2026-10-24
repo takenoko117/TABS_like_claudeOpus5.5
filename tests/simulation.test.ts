@@ -1,5 +1,14 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
+import {
+  ARCADE_STAGES,
+  computeStageStars,
+  createInitialArcadeSave,
+  getStageEnemyCost,
+  isInsideStageRedZone,
+  isUnitUnlocked,
+  recordStageClear,
+} from '../src/game/ArcadeStages';
 import { Battle } from '../src/game/Battle';
 import { DistanceConstraint } from '../src/physics/Constraint';
 import { Particle } from '../src/physics/Particle';
@@ -301,4 +310,87 @@ describe('新ユニット10体の固有ギミック検証', () => {
     expect(children.length).toBe(2);
   });
 });
+
+describe('アーケードモード追加ユニット（盾兵・突撃兵・爆弾兵）と地形ギミック', () => {
+  it('盾兵 (shielder) が正面からの矢を大盾でガードしダメージを90%軽減する', () => {
+    const battle = new Battle();
+    const shielder = battle.spawnUnit('shielder', 0, -5, 0);
+    battle.spawnUnit('archer', 1, 5, 0);
+    let blockEvents = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'shield_block') blockEvents++;
+    };
+    battle.aiEnabled = true;
+    simulate(battle, 3.0);
+    expect(blockEvents).toBeGreaterThan(0);
+    // 通常の弓矢ダメージ(22)に対して大幅に軽減されている
+    expect(shielder.hp).toBeGreaterThan(shielder.maxHp - 10);
+  });
+
+  it('突撃兵 (charger) が跳躍チャージを発動し、爆弾兵 (bomber) が範囲爆撃を行う', () => {
+    const battle = new Battle();
+    battle.spawnUnit('charger', 0, -3.5, -2);
+    battle.spawnUnit('bomber', 0, -8, 2);
+    const e1 = battle.spawnUnit('swordsman', 1, 1.0, -2);
+    const e2 = battle.spawnUnit('clubber', 1, 4.0, 2);
+    let chargeLeaps = 0;
+    let explosions = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'charge_leap') chargeLeaps++;
+      if (ev.kind === 'bomb_explosion') explosions++;
+    };
+    battle.aiEnabled = true;
+    simulate(battle, 4.0);
+    expect(chargeLeaps).toBeGreaterThan(0);
+    expect(explosions).toBeGreaterThan(0);
+    expect(e1.hp < e1.maxHp || e2.hp < e2.maxHp).toBe(true);
+  });
+
+  it('一本橋ステージの奈落 (chasm) に落ちたユニットが落下死し、石柱 (obstacles) が飛翔体を遮る', () => {
+    const battle = new Battle();
+    battle.world.chasm = { minX: -4, maxX: 4, bridgeHalfWidth: 3.0 };
+    battle.world.obstacles = [{ x: 0, z: 0, radius: 1.2, height: 4.0 }];
+
+    // 奈落の真上 (x=0, z=6) にスポーンした地上ユニットは落下して死亡する
+    const victim = battle.spawnUnit('clubber', 1, 0, 6);
+    // 石柱を挟んで弓兵とターゲットを配置すると石柱が矢をブロックする
+    battle.spawnUnit('archer', 0, -8, 0);
+    const behindPillar = battle.spawnUnit('giant', 1, 8, 0);
+
+    battle.aiEnabled = true;
+    simulate(battle, 2.5);
+    expect(victim.alive).toBe(false);
+    expect(behindPillar.hp).toBe(behindPillar.maxHp);
+  });
+
+  it('アーケードモード全10ステージの定義・予算・スター評価・兵種アンロックが正しく機能する', () => {
+    expect(ARCADE_STAGES.length).toBe(10);
+    for (const st of ARCADE_STAGES) {
+      expect(st.enemies.length).toBeGreaterThan(0);
+      // すべての面で敵総コスト > プレイヤー予算（戦術パズル性）になっていることを確認
+      expect(getStageEnemyCost(st)).toBeGreaterThan(st.budget);
+      expect(st.star2Budget).toBeLessThanOrEqual(st.budget);
+      expect(st.star3Budget).toBeLessThanOrEqual(st.star2Budget);
+    }
+
+    // 第8面の側面奇襲エリアが配置可能ゾーンとして判定される
+    const stage8 = ARCADE_STAGES[7];
+    expect(isInsideStageRedZone(stage8, -10, 0)).toBe(true);
+    expect(isInsideStageRedZone(stage8, 10, -12)).toBe(true); // 北側の奇襲ゾーン
+    expect(isInsideStageRedZone(stage8, 10, 0)).toBe(false); // 敵本陣のど真ん中は不可
+
+    // クリアによる段階的ユニット解放とスター評価の検証
+    const save = createInitialArcadeSave();
+    expect(isUnitUnlocked(save, 'clubber')).toBe(true);
+    expect(isUnitUnlocked(save, 'shielder')).toBe(false);
+
+    const stars = computeStageStars(ARCADE_STAGES[0], 180, 0.8);
+    expect(stars).toBe(3);
+    const unlocked = recordStageClear(save, ARCADE_STAGES[0], stars);
+    expect(unlocked).toContain('shielder');
+    expect(isUnitUnlocked(save, 'shielder')).toBe(true);
+    expect(save.clearedStars[1]).toBe(3);
+  });
+});
+
 
