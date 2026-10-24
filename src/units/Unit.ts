@@ -29,6 +29,10 @@ const UP = new Vector3(0, 1, 0);
 const GRAVITY = 9.81;
 /** 姿勢バネの加速度上限（数値的な暴れを防ぐ） */
 const MAX_MUSCLE_ACCEL = 300;
+/** 火炎ブレスの空気抵抗係数（1/s）。CombatSystem の飛翔体更新と射程計算で共有する */
+export const FLAME_DRAG = 1.8;
+/** 手裏剣に掛かる重力の倍率 */
+const SHURIKEN_GRAVITY_SCALE = 0.25;
 
 const _target = new Vector3();
 const _vel = new Vector3();
@@ -111,6 +115,8 @@ export class Unit {
   /** スライムの伸縮アニメーション係数（1=通常, <1=潰れ, >1=伸び） */
   squash = 1.0;
   private slamPending = false;
+  private slamAirTime = 0;
+  private slamRestTime = 0;
   /** ガトリングの銃身回転角＆連射タイマー */
   barrelSpin = 0;
   private subAttackTimer = 0;
@@ -440,11 +446,23 @@ export class Unit {
 
       this.moveDir.set(mx, 0, mz);
       this.moveSpeed = this.type.speed * (this.attackPhase === 'none' ? 1 : 0.4);
+    } else if (this.type.id === 'spearman' && dist < engage * 0.65 && dist > 1e-3) {
+      // 槍兵は懐に潜り込まれたら少しずつ後退して槍の間合いを維持する
+      this.moveDir.set(-dx / dist, 0, -dz / dist);
+      this.moveSpeed = this.type.speed * 0.55;
     } else {
       this.moveSpeed = 0;
     }
+    const minAttackMuscle =
+      this.type.id === 'giant' || this.type.id === 'warelephant' || this.type.id === 'dragon' ? 0.25 : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
-    if (this.attackPhase === 'none' && this.cooldown <= 0 && dist <= engage && this.muscle > 0.55 && facingErr < 0.6) {
+    if (
+      this.attackPhase === 'none' &&
+      this.cooldown <= 0 &&
+      dist <= engage &&
+      this.muscle > minAttackMuscle &&
+      facingErr < 0.6
+    ) {
       this.attackPhase = 'windup';
       this.phaseTime = 0;
       this.onWindupStart(ctx);
@@ -453,6 +471,9 @@ export class Unit {
 
   private engageDistance(t: Unit): number {
     const st = this.type.style;
+    if (st === 'jump_slam') {
+      return this.type.range * (this.scale / 1.4);
+    }
     if (
       st === 'bow' ||
       st === 'bomb' ||
@@ -463,8 +484,7 @@ export class Unit {
       st === 'shuriken' ||
       st === 'breath' ||
       st === 'iaido' ||
-      st === 'swoop' ||
-      st === 'jump_slam'
+      st === 'swoop'
     ) {
       return this.type.range;
     }
@@ -510,8 +530,10 @@ export class Unit {
       this.laserActive = false;
       return;
     }
-    // 怯んだら攻撃は中断
-    if (this.muscle < 0.3) {
+    // 怯んだら攻撃は中断（大型巨獣は強靭で中断されにくい）
+    const minMuscle =
+      this.type.id === 'giant' || this.type.id === 'warelephant' || this.type.id === 'dragon' ? 0.16 : 0.3;
+    if (this.muscle < minMuscle) {
       this.attackPhase = 'none';
       this.laserActive = false;
       this.cooldown = 0.3;
@@ -607,10 +629,13 @@ export class Unit {
         this.chest.addVelocity(_tmp.set(0, 3.2, 0), dt);
         const from = this.chest.pos.clone().addScaledVector(this.forward, 0.45 * this.scale);
         from.y += 0.15 * this.scale;
-        const baseDir = new Vector3().subVectors(t.chest.pos, from);
-        baseDir.y += 0.08 * baseDir.length();
-        baseDir.normalize();
         const speed = this.type.projectile?.speed ?? 32;
+        const baseDir = new Vector3().subVectors(t.chest.pos, from);
+        // 弱い重力（gravityScale 0.25）による落下分だけ上に補正する
+        // （以前は距離×0.08 の過剰補正で、遠距離では人型の頭上を素通りしていた）
+        const flight = Math.hypot(baseDir.x, baseDir.z) / speed;
+        baseDir.y += 0.5 * GRAVITY * SHURIKEN_GRAVITY_SCALE * flight * flight;
+        baseDir.normalize();
         const angles = [-0.14, 0, 0.14];
         for (const ang of angles) {
           const c = Math.cos(ang);
@@ -620,7 +645,7 @@ export class Unit {
           const vy = baseDir.y * speed;
           ctx.combat.fireProjectile(this, from, new Vector3(vx, vy, vz), 'shuriken', {
             damage: 14,
-            gravityScale: 0.25,
+            gravityScale: SHURIKEN_GRAVITY_SCALE,
             life: 2.5,
           });
         }
@@ -633,18 +658,22 @@ export class Unit {
       return;
     }
     if (st === 'jump_slam') {
-      // スライムの大ジャンプ
+      // スライムの大ジャンプ（滞空時間から逆算して目標の真上に着地する水平速度を与える）
+      const jumpUp = 7.4;
+      const airTime = (2 * jumpUp) / GRAVITY;
       const jumpVel = new Vector3();
       if (t && t.alive) {
         jumpVel.subVectors(t.pelvis.pos, this.pelvis.pos).setY(0);
         const d = jumpVel.length();
-        if (d > 1e-4) jumpVel.divideScalar(d).multiplyScalar(clamp(d * 1.55, 3.5, 8.5));
+        if (d > 1e-4) jumpVel.divideScalar(d).multiplyScalar(clamp(d / airTime, 0.8, 8.5));
       } else {
-        jumpVel.copy(this.forward).multiplyScalar(5);
+        jumpVel.copy(this.forward).multiplyScalar(2);
       }
-      jumpVel.y = 7.4;
+      jumpVel.y = jumpUp;
       for (const p of this.joints) p.addVelocity(jumpVel, dt);
       this.slamPending = true;
+      this.slamAirTime = 0;
+      this.slamRestTime = 0;
       this.squash = 1.38;
       ctx.combat.emitEffect({ kind: 'slime_jump', pos: this.pelvis.pos.clone(), scale: this.scale, team: this.team });
       return;
@@ -656,6 +685,17 @@ export class Unit {
     }
     if (st === 'minigun' || st === 'breath' || st === 'swoop') {
       return;
+    }
+
+    // 巨人の大棍棒なぎ払い衝撃波: 懐の小型敵も含めて前方の群れをまとめて吹き飛ばす
+    if (this.type.id === 'giant') {
+      const center = new Vector3(
+        this.pelvis.pos.x + this.forward.x * 0.75 * this.scale,
+        PELVIS_HEIGHT,
+        this.pelvis.pos.z + this.forward.z * 0.75 * this.scale,
+      );
+      ctx.combat.applyRadialBlast(this, center, 1.55 * this.scale, 42, 8.0, 0.5, ctx.units, dt, 'melee');
+      ctx.combat.emitEffect({ kind: 'eagle_drop_impact', pos: new Vector3(center.x, 0.05, center.z) });
     }
 
     // 振り下ろし・突きの瞬間に手と武器へ速度を与える
@@ -697,35 +737,55 @@ export class Unit {
         aimDir.z += (Math.random() * 2 - 1) * spread;
         aimDir.normalize();
         const speed = this.type.projectile?.speed ?? 46;
+        const bulletDmg = this.type.projectile?.damage ?? 8;
         ctx.combat.fireProjectile(this, from, aimDir.multiplyScalar(speed), 'bullet', {
-          damage: 6,
+          damage: bulletDmg,
           gravityScale: 0.12,
           life: 1.2,
         });
         ctx.combat.emitEffect({ kind: 'minigun_shot', from, rightDir: this.rightDir.clone() });
-        // 連射反動で少しずつ後ろへ下がる
-        const recoil = this.forward.clone().multiplyScalar(-0.55);
+        // 連射反動で少しずつ後ろへ下がる（上体が仰け反りすぎないよう適度な反動に抑える）
+        const recoil = this.forward.clone().multiplyScalar(-0.28);
         this.pelvis.addVelocity(recoil, dt);
         this.chest.addVelocity(recoil, dt);
       }
     } else if (st === 'breath') {
       this.subAttackTimer -= dt;
       if (this.subAttackTimer <= 0) {
-        this.subAttackTimer = 0.065;
+        this.subAttackTimer = 0.1;
+        const from = this.head.pos.clone().addScaledVector(this.forward, 0.5 * this.scale);
+        // 目標の足元〜腰の高さを狙って俯角を付け、地上歩兵への直撃と地面の延焼ゾーン生成を両立する
+        let baseX = this.forward.x;
+        let baseZ = this.forward.z;
+        let horiz = this.type.range * 0.75;
+        let aimY = 0.2;
+        if (t && t.alive) {
+          const tx = t.pelvis.pos.x - from.x;
+          const tz = t.pelvis.pos.z - from.z;
+          const th = Math.hypot(tx, tz);
+          if (th > 0.3) {
+            baseX = tx / th;
+            baseZ = tz / th;
+          }
+          horiz = Math.max(0.8, th);
+          // 飛行ユニット相手なら胸の高さ、地上ユニット相手なら腰〜膝の高さを狙う
+          aimY = t.pelvis.pos.y > 1.5 ? t.chest.pos.y : t.pelvis.pos.y * 0.65;
+        }
+        const pitch = Math.atan2(aimY - from.y, horiz) + (Math.random() - 0.5) * 0.08;
         const sweepAngle = Math.sin(this.phaseTime * 5.2) * 0.42;
         const c = Math.cos(sweepAngle);
         const sn = Math.sin(sweepAngle);
-        const dir = new Vector3(
-          this.forward.x * c + this.forward.z * sn,
-          -0.22 + (Math.random() - 0.5) * 0.1,
-          -this.forward.x * sn + this.forward.z * c,
-        ).normalize();
-        const from = this.head.pos.clone().addScaledVector(this.forward, 0.5 * this.scale);
-        const speed = 15 + Math.random() * 4;
+        const cp = Math.cos(pitch);
+        const dir = new Vector3((baseX * c + baseZ * sn) * cp, Math.sin(pitch), (-baseX * sn + baseZ * c) * cp);
+        // 空気抵抗で減速する炎が目標の少し奥（地面）まで届く初速を逆算する
+        const life = 0.9;
+        const reachPerSpeed = (1 - Math.exp(-FLAME_DRAG * life)) / FLAME_DRAG;
+        const dist3 = Math.hypot(horiz, aimY - from.y);
+        const speed = clamp((dist3 * 1.3) / reachPerSpeed, 12, 30) * (0.95 + Math.random() * 0.1);
         ctx.combat.fireProjectile(this, from, dir.clone().multiplyScalar(speed), 'flame', {
-          damage: 9.5,
-          gravityScale: -0.05,
-          life: 0.85,
+          damage: 8.5,
+          gravityScale: -0.02,
+          life,
         });
         ctx.combat.emitEffect({ kind: 'dragon_breath', from, dir });
       }
@@ -784,15 +844,15 @@ export class Unit {
           if (!u.alive || u.team === this.team || u.scale >= 1.6) continue;
           if (!this.canHit(u)) continue;
           if (u.pelvis.pos.distanceToSquared(frontPos) <= trampleR2) {
-            this.registerHit(u, 0.55);
+            this.registerHit(u, 0.85);
             const push = new Vector3().subVectors(u.pelvis.pos, this.pelvis.pos).setY(0).normalize();
-            push.addScaledVector(this.forward, 0.8).normalize().multiplyScalar(5.5);
-            push.y = 3.2;
-            const killed = u.takeDamage(9, u.pelvis, push, dt, this);
+            push.addScaledVector(this.forward, 0.8).normalize().multiplyScalar(5.0);
+            push.y = 2.8;
+            const killed = u.takeDamage(6, u.pelvis, push, dt, this);
             ctx.combat.onHit?.({
               kind: 'melee',
               point: u.pelvis.pos.clone(),
-              damage: 9,
+              damage: 6,
               attacker: this,
               victim: u,
               hitParticle: u.pelvis,
@@ -828,10 +888,15 @@ export class Unit {
 
     // 3. スライムの伸縮と着地ボディプレス判定
     if (id === 'slime') {
-      if (this.attackPhase === 'windup') {
-        this.squash += (0.56 - this.squash) * Math.min(1, dt * 12);
-      } else if (this.slamPending) {
-        if (this.phaseTime > 0.18 && this.pelvis.pos.y <= PELVIS_HEIGHT * this.scale * 1.15) {
+      if (this.slamPending) {
+        // 着地判定は攻撃フェーズとは独立した滞空タイマーで行う
+        // （以前は phaseTime を使っていたため、strike 終了後に着地するとプレスが発生しなかった）
+        this.slamAirTime += dt;
+        const lowEnough = this.pelvis.pos.y <= PELVIS_HEIGHT * this.scale * 1.15;
+        // 敵や味方の上に乗って止まった場合も着地とみなす（跳躍頂点での一瞬の停止と区別するため継続時間で判定）
+        this.slamRestTime = Math.abs(this.velocity.y) < 0.6 ? this.slamRestTime + dt : 0;
+        const restingOnTop = this.slamAirTime > 0.6 && this.slamRestTime > 0.2;
+        if (this.slamAirTime > 0.25 && (lowEnough || restingOnTop)) {
           this.slamPending = false;
           this.squash = 0.45;
           const ratio = this.scale / 1.4;
@@ -852,7 +917,12 @@ export class Unit {
             scale: this.scale,
             team: this.team,
           });
+        } else if (this.slamAirTime > 4) {
+          // 何らかの理由で着地できない場合の保険
+          this.slamPending = false;
         }
+      } else if (this.attackPhase === 'windup') {
+        this.squash += (0.56 - this.squash) * Math.min(1, dt * 12);
       } else {
         const walkSquash = 1 + Math.sin(this.walkPhase * 2) * 0.08;
         this.squash += (walkSquash - this.squash) * Math.min(1, dt * 10);
@@ -946,9 +1016,9 @@ export class Unit {
     const from = new Vector3().copy(this.chest.pos).addScaledVector(this.forward, 0.4 * s);
     from.y += 0.15 * s;
     const aim = t.chest.pos.clone();
-    // 目標の移動を考慮した偏差射撃
+    // 目標の移動を考慮した偏差射撃（横方向へ高速散開する突撃兵などは振り切れるよう予測係数を適度に抑える）
     const flight = from.distanceTo(aim) / spec.speed;
-    aim.addScaledVector(t.velocity, flight * 0.8);
+    aim.addScaledVector(t.velocity, flight * 0.55);
     const dx = aim.x - from.x;
     const dz = aim.z - from.z;
     const dh = Math.max(0.01, Math.hypot(dx, dz));
@@ -974,8 +1044,12 @@ export class Unit {
     const from = new Vector3().copy(this.chest.pos).addScaledVector(this.forward, 0.48 * s);
     from.y += 0.32 * s;
     const aim = t.pelvis.pos.clone();
+    // 地上の敵は足元を狙う（腰を狙うと上振れした弾が頭上を越えて遠くに着弾し、爆風が届かなかった）
+    const airborne = t.pelvis.pos.y - PELVIS_HEIGHT * t.scale > 0.5;
+    if (!airborne) aim.y = 0.1;
     const flight = from.distanceTo(aim) / spec.speed;
     aim.addScaledVector(t.velocity, flight * 0.65);
+    aim.y = Math.max(0.1, aim.y);
     const dx = aim.x - from.x;
     const dz = aim.z - from.z;
     const dh = Math.max(0.01, Math.hypot(dx, dz));
@@ -998,13 +1072,13 @@ export class Unit {
     ctx.combat.emitEffect({ kind: 'bomb_throw', pos: from });
   }
 
-  /** 攻撃元座標がこのユニットの正面方向（±72度以内）にあるか判定する */
+  /** 攻撃元座標がこのユニットの正面方向（±56度以内）にあるか判定する */
   isAttackFromFront(sourcePos: Vector3): boolean {
     const dx = sourcePos.x - this.pelvis.pos.x;
     const dz = sourcePos.z - this.pelvis.pos.z;
     if (dx * dx + dz * dz < 1e-6) return true;
     const angleToSource = Math.atan2(dx, dz);
-    return Math.abs(wrapAngle(angleToSource - this.facing)) <= 1.25;
+    return Math.abs(wrapAngle(angleToSource - this.facing)) <= 0.98;
   }
 
   // ---------------------------------------------------------------
@@ -1369,9 +1443,12 @@ export class Unit {
 
     this.hp -= amount;
     this.hitFlash = 1;
-    // 被弾で筋力が落ちてよろめく（戦象やドラゴンは強靭でよろめきにくい）
-    const staggerMul = this.type.id === 'warelephant' || this.type.id === 'dragon' ? 0.8 : 2.2;
-    this.muscle = Math.max(0, this.muscle - (amount / this.maxHp) * staggerMul - 0.05);
+    // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴンは強靭でよろめきにくい）
+    const isSuperHeavy =
+      this.type.id === 'warelephant' || this.type.id === 'dragon' || this.type.id === 'giant';
+    const staggerMul = isSuperHeavy ? 0.7 : 2.2;
+    const flatLoss = isSuperHeavy ? 0.012 : 0.05;
+    this.muscle = Math.max(0, this.muscle - (amount / this.maxHp) * staggerMul - flatLoss);
     hitParticle.addVelocity(dv, dt);
     _tmp.copy(dv).multiplyScalar(0.3);
     for (const p of this.joints) p.addVelocity(_tmp, dt);

@@ -10,6 +10,8 @@ export interface PlacementZone {
   minZ: number;
   maxZ: number;
   label?: string;
+  /** このゾーンに配置した際の初期向き（省略時は右向き +X = Math.PI / 2） */
+  facing?: number;
 }
 
 /** ステージ固有の地形・ギミック設定 */
@@ -44,9 +46,9 @@ export interface ArcadeStage {
   unlockUnits: readonly UnitTypeId[];
   /** プレイヤーが使用できる最大予算 (pt) */
   budget: number;
-  /** ★2 獲得目安コスト（または生存率40%以上） */
+  /** ★2 獲得目安コスト（または味方生存コスト比率 45% 以上） */
   star2Budget: number;
-  /** ★3 獲得目安コスト（かつ35秒以内クリア、または生存率65%以上） */
+  /** ★3 獲得目安コスト（または star2Budget 以下 かつ 味方生存コスト比率 55% 以上） */
   star3Budget: number;
   terrain: StageTerrainConfig;
   enemies: readonly EnemySpawnRecord[];
@@ -76,43 +78,42 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     name: '第1面：農民たちの小競り合い',
     subtitle: '戦術の基本：局所集中と各個撃破',
     description:
-      '棍棒兵7体が横一列に広がって押し寄せる。真正面から同じように並べてぶつかると数の差で押し負けてしまう。',
-    hint: '【戦略】上下の片翼（端）に棍棒兵を密集配置して端から順番に多対一で袋叩きにするか、高HP・重装甲の「剣士」を主力にして質で圧倒しよう！',
-    featuredUnits: ['clubber', 'swordsman'],
+      '棍棒兵6体が北と南の2グループに分かれて押し寄せる。真正面から同じように分散してぶつかると数の差で押し負けてしまう。',
+    hint: '【戦略】北端または南端の片翼に「棍棒兵」「槍兵」「剣士」を密集配置して、手前の3体を先に多対一で袋叩き（各個撃破）にしてから残りの3体を迎え撃とう！',
+    featuredUnits: ['clubber', 'spearman', 'swordsman'],
     unlockUnits: ['shielder'],
-    budget: 240,
-    star2Budget: 220,
-    star3Budget: 200,
+    budget: 220,
+    star2Budget: 200,
+    star3Budget: 180,
     terrain: { type: 'standard' },
     enemies: [
-      { typeId: 'clubber', x: 5.0, z: -7.2 },
-      { typeId: 'clubber', x: 5.0, z: -4.8 },
-      { typeId: 'clubber', x: 5.0, z: -2.4 },
-      { typeId: 'clubber', x: 5.0, z: 0.0 },
-      { typeId: 'clubber', x: 5.0, z: 2.4 },
-      { typeId: 'clubber', x: 5.0, z: 4.8 },
-      { typeId: 'clubber', x: 5.0, z: 7.2 },
+      { typeId: 'clubber', x: 5.0, z: -9.5 },
+      { typeId: 'clubber', x: 5.5, z: -7.5 },
+      { typeId: 'clubber', x: 6.0, z: -5.5 },
+      { typeId: 'clubber', x: 6.0, z: 5.5 },
+      { typeId: 'clubber', x: 5.5, z: 7.5 },
+      { typeId: 'clubber', x: 5.0, z: 9.5 },
     ],
   },
   {
     stageNumber: 2,
     id: 'stage_2',
     name: '第2面：重装歩兵の壁',
-    subtitle: 'リーチ差とノックバックの活用',
+    subtitle: 'リーチ差と前衛・後衛の連携',
     description:
-      '鎧を着込んだ剣士4体が中央を固めて進軍してくる。短い武器で殴り合うと剣士の重い一撃に競り負ける。',
-    hint: '【戦略】剣士よりリーチが長い「槍兵」を並べてファランクス陣形を組もう。ノックバックで剣士を間合いの外に押し返し続ければ一方的に突ける！新解放の「盾兵」を前に置くのも有効。',
-    featuredUnits: ['spearman', 'shielder'],
+      '鎧を着込んだ剣士4体が中央を固めて進軍してくる。短い武器だけで殴り合うと剣士の重い一撃に競り負ける。',
+    hint: '【戦略】新解放の「盾兵」を前衛に置いて剣士の斬撃を受け止め、すぐ後ろにリーチの長い「槍兵」を並べて間合いの外から一方的に突こう！',
+    featuredUnits: ['shielder', 'spearman'],
     unlockUnits: ['charger'],
     budget: 350,
     star2Budget: 310,
     star3Budget: 280,
     terrain: { type: 'standard' },
     enemies: [
-      { typeId: 'swordsman', x: 4.5, z: -2.7 },
-      { typeId: 'swordsman', x: 4.5, z: -0.9 },
-      { typeId: 'swordsman', x: 4.5, z: 0.9 },
-      { typeId: 'swordsman', x: 4.5, z: 2.7 },
+      { typeId: 'swordsman', x: 4.8, z: -3.3 },
+      { typeId: 'swordsman', x: 4.8, z: -1.1 },
+      { typeId: 'swordsman', x: 4.8, z: 1.1 },
+      { typeId: 'swordsman', x: 4.8, z: 3.3 },
     ],
   },
   {
@@ -143,11 +144,11 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     stageNumber: 4,
     id: 'stage_4',
     name: '第4面：鉄壁のファランクス',
-    subtitle: '密集陣形崩しと遠距離引き撃ち',
+    subtitle: '密集陣形崩しと側面奇襲',
     description:
-      '前衛の盾兵2体と槍兵6体が隙間なく密集し、正面からの近接突撃を拒むハリネズミ陣形を敷いている。',
-    hint: '【戦略】密集陣形の天敵である「爆弾兵」の放物線爆弾で盾ごと吹き飛ばすか、自陣の最後方（左端）に「弓兵」を並べて長い行軍距離の間ずっと矢を浴びせよう！',
-    featuredUnits: ['bomber', 'archer', 'ninja'],
+      '前衛の盾兵2体と槍兵6体が隙間なく密集し、正面からの近接突撃や矢を拒むハリネズミ陣形を敷いている。',
+    hint: '【戦略】密集陣形の天敵である「爆弾兵」の放物線爆弾で盾ごと吹き飛ばすか、上下の端から「からくり忍者」「突撃兵」を回り込ませて盾のガードが届かない側面・背後を突こう！',
+    featuredUnits: ['bomber', 'ninja', 'shielder'],
     unlockUnits: ['giant', 'samurai'],
     budget: 480,
     star2Budget: 430,
@@ -170,20 +171,19 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     name: '第5面【中ボス】：進撃の巨人とスライム',
     subtitle: '対ボス包囲網と背後強襲',
     description:
-      '圧倒的な質量とHPを誇る「巨人」と、倒しても分裂する「キングスライム」が登場。正面に歩兵を固めると大棍棒の一振りで全滅する。',
-    hint: '【戦略】巨人は振りが遅く1方向しか攻撃できない。「槍兵」をU字型に広げて全方向から包囲して怯ませつつ、「居合の剣豪」で背後へすり抜け斬りを決め、後方の「弓兵」で削り切ろう！',
+      '圧倒的な質量とHPを誇る「巨人」と、倒しても分裂する「キングスライム」が登場。正面に歩兵を固めると大棍棒の衝撃波でまとめて吹き飛ばされる。',
+    hint: '【戦略】巨人は1方向しか攻撃できない。巨獣特効を持つ「槍兵」をU字型に広げて包囲しつつ、「居合の剣豪」で背後へすり抜け斬りを決め、後方の「弓兵」で削り切ろう！',
     featuredUnits: ['spearman', 'samurai', 'archer'],
     unlockUnits: ['archmage', 'slime'],
-    budget: 750,
+    budget: 760,
     star2Budget: 680,
     star3Budget: 600,
     terrain: { type: 'standard' },
     enemies: [
       { typeId: 'giant', x: 6.2, z: 0.5 },
       { typeId: 'slime', x: 4.5, z: -3.5 },
-      { typeId: 'clubber', x: 4.2, z: 2.5 },
-      { typeId: 'clubber', x: 4.2, z: 4.2 },
-      { typeId: 'clubber', x: 5.8, z: 3.4 },
+      { typeId: 'clubber', x: 4.5, z: 2.8 },
+      { typeId: 'clubber', x: 5.5, z: 4.2 },
     ],
   },
   {
@@ -192,23 +192,22 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     name: '第6面：疾風の奇襲部隊',
     subtitle: '相対速度カウンターと感電麻痺',
     description:
-      '突撃兵4体・居合の剣豪2体・からくり忍者2体による超高速ラッシュ編成。無防備な後衛は開幕数秒で切り刻まれる。',
-    hint: '【戦略】突撃兵の猛スピードは「槍兵」の突きで迎撃すると相対速度ボーナスで大ダメージのカウンターになる！さらに新解放「雷導師」の連鎖雷撃で感電麻痺させれば敵の機動力を完全に奪える。',
-    featuredUnits: ['spearman', 'archmage', 'slime'],
+      '突撃兵3体・居合の剣豪1体・からくり忍者2体・棍棒兵1体による超高速ラッシュ編成。無防備な後衛は開幕数秒で切り刻まれる。',
+    hint: '【戦略】突撃兵の猛スピードは「槍兵」や「盾兵」で受け止めると効果的！さらに新解放「雷導師」の連鎖雷撃で感電麻痺させ、「分裂キングスライム」を壁にすれば敵の機動力を完全に奪える。',
+    featuredUnits: ['archmage', 'slime', 'spearman', 'shielder'],
     unlockUnits: ['giant_eagle', 'sniper'],
-    budget: 880,
-    star2Budget: 800,
-    star3Budget: 720,
+    budget: 840,
+    star2Budget: 760,
+    star3Budget: 680,
     terrain: { type: 'standard' },
     enemies: [
-      { typeId: 'charger', x: 4.2, z: -6.2 },
-      { typeId: 'charger', x: 4.2, z: -4.2 },
-      { typeId: 'charger', x: 4.2, z: 4.2 },
-      { typeId: 'charger', x: 4.2, z: 6.2 },
-      { typeId: 'samurai', x: 5.2, z: -1.5 },
-      { typeId: 'samurai', x: 5.2, z: 1.5 },
-      { typeId: 'ninja', x: 8.5, z: -3.0 },
-      { typeId: 'ninja', x: 8.5, z: 3.0 },
+      { typeId: 'charger', x: 4.5, z: -5.5 },
+      { typeId: 'charger', x: 4.5, z: 0.0 },
+      { typeId: 'charger', x: 4.5, z: 5.5 },
+      { typeId: 'clubber', x: 5.5, z: -2.5 },
+      { typeId: 'samurai', x: 7.8, z: 1.5 },
+      { typeId: 'ninja', x: 9.5, z: -3.5 },
+      { typeId: 'ninja', x: 9.5, z: 3.5 },
     ],
   },
   {
@@ -218,12 +217,12 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     subtitle: '地形ギミック：奈落への場外突き落とし',
     description:
       '戦場中央が深い谷で分断され、幅6.4mの石橋しか道がない！橋の上を盾兵と剣士の重装部隊が塞ぎ、後方からガトリング重装兵が弾幕を張る。',
-    hint: '【戦略】谷底へ落ちたユニットはHPに関係なく即死する！「巨人」の強ノックバックや「爆弾兵」の爆風で敵を橋の左右へ吹き飛ばすか、空を飛ぶ「大鷲」で敵を鷲掴みにして谷へ落とそう！',
+    hint: '【戦略】谷底へ落ちたユニットはHPに関係なく即死する！「巨人」の大棍棒なぎ払いや「爆弾兵」の爆風で敵を橋の左右へ吹き飛ばすか、空を飛ぶ「大鷲」で敵を鷲掴みにして谷へ落とそう！',
     featuredUnits: ['giant', 'bomber', 'giant_eagle'],
     unlockUnits: ['minigunner', 'gravimancer'],
     budget: 850,
     star2Budget: 760,
-    star3Budget: 680,
+    star3Budget: 660,
     terrain: {
       type: 'bridge',
       chasm: { minX: -3.8, maxX: 3.8, bridgeHalfWidth: 3.2 },
@@ -233,10 +232,9 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       { typeId: 'shielder', x: 4.8, z: -0.7 },
       { typeId: 'shielder', x: 4.8, z: 0.7 },
       { typeId: 'shielder', x: 4.8, z: 2.1 },
-      { typeId: 'swordsman', x: 6.6, z: -2.1 },
-      { typeId: 'swordsman', x: 6.6, z: -0.7 },
-      { typeId: 'swordsman', x: 6.6, z: 0.7 },
-      { typeId: 'swordsman', x: 6.6, z: 2.1 },
+      { typeId: 'swordsman', x: 6.6, z: -1.8 },
+      { typeId: 'swordsman', x: 6.6, z: 0.0 },
+      { typeId: 'swordsman', x: 6.6, z: 1.8 },
       { typeId: 'minigunner', x: 10.2, z: 0.0 },
     ],
   },
@@ -247,7 +245,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     subtitle: '地形ギミック：遮蔽物の利用と側面奇襲ゾーン',
     description:
       '中央に矢や銃弾を遮る6本の古代石柱がそびえ立つ。敵陣最後列の「対物スナイパー」3体が直線上のユニットを貫通銃撃し、前衛を盾兵と雷導師が守る。',
-    hint: '【戦略】この面では敵陣北側（上側）にある「奇襲配置エリア」にも赤軍を配置できる！正面は石柱の陰と盾兵で耐えつつ、奇襲エリアに「突撃兵」「居合の剣豪」「忍者」を置いてスナイパーを横から狩り尽くそう！',
+    hint: '【戦略】この面では敵陣北側（上側）にある「奇襲配置エリア」にも自軍を配置できる！正面は石柱の陰と盾兵で耐えつつ、奇襲エリアに「突撃兵」「居合の剣豪」「忍者」を置いてスナイパーを横から狩り尽くそう！',
     featuredUnits: ['charger', 'samurai', 'ninja', 'shielder'],
     unlockUnits: ['warelephant'],
     budget: 1200,
@@ -265,7 +263,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       ],
       redZones: [
         { minX: -22, maxX: -2.8, minZ: -16, maxZ: 16, label: '正面本陣エリア' },
-        { minX: 4.5, maxX: 17.5, minZ: -15.5, maxZ: -9.2, label: '★側面奇襲エリア' },
+        { minX: 4.5, maxX: 17.5, minZ: -15.5, maxZ: -9.2, label: '★側面奇襲エリア', facing: 0 },
       ],
     },
     enemies: [
@@ -287,12 +285,12 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     subtitle: '重力コントロールと超重量突破',
     description:
       '中央の鉄壁ファランクス（盾兵＋槍兵）、後衛の爆弾兵＆重力術師、さらに南翼から超重量の「鎧戦象」、北翼から突撃兵が回り込む大軍勢。',
-    hint: '【戦略】新解放された「重力術師」のブラックホールで敵中央の密集部隊をひとまとめに吸い寄せて「爆弾兵」「ガトリング重装兵」で一掃しよう！敵の鎧戦象には「対物スナイパー」と「槍兵」の集中砲火、または味方の「鎧戦象」をぶつけよう！',
+    hint: '【戦略】新解放された「重力術師」のブラックホールで敵中央の密集部隊を吸い寄せて「爆弾兵」「ガトリング重装兵」で一掃しよう！敵の鎧戦象には「鎧戦象」をぶつけるか、「槍兵」＋「対物スナイパー」で迎撃しよう！',
     featuredUnits: ['gravimancer', 'warelephant', 'sniper', 'minigunner'],
     unlockUnits: ['dragon'],
-    budget: 1750,
-    star2Budget: 1580,
-    star3Budget: 1420,
+    budget: 1800,
+    star2Budget: 1620,
+    star3Budget: 1440,
     terrain: {
       type: 'fortress',
       obstacles: [
@@ -301,10 +299,9 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       ],
     },
     enemies: [
-      { typeId: 'shielder', x: 4.5, z: -2.4 },
-      { typeId: 'shielder', x: 4.5, z: -0.8 },
-      { typeId: 'shielder', x: 4.5, z: 0.8 },
-      { typeId: 'shielder', x: 4.5, z: 2.4 },
+      { typeId: 'shielder', x: 4.5, z: -2.0 },
+      { typeId: 'shielder', x: 4.5, z: 0.0 },
+      { typeId: 'shielder', x: 4.5, z: 2.0 },
       { typeId: 'spearman', x: 6.0, z: -2.4 },
       { typeId: 'spearman', x: 6.0, z: -0.8 },
       { typeId: 'spearman', x: 6.0, z: 0.8 },
@@ -323,13 +320,13 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     name: '第10面【最終面】：三大巨獣と帝国近衛軍団',
     subtitle: '全18兵種総力戦：非対称配置と一点突破',
     description:
-      '紅蓮ドラゴン・鎧戦象・巨人の「三大巨獣」を筆頭に、盾兵・居合の剣豪・雷導師・対物スナイパーが揃った帝国最強の最終防衛ライン（総コスト 3,490 pt）。',
-    hint: '【戦略】900pt近いコスト差を覆す鍵は「囮と一点突破」！片翼の巨獣には安価な「盾兵」や分裂する「キングスライム」を当てて時間を稼ぎ、その隙に「紅蓮ドラゴン」「鎧戦象」「重力術師」「対物スナイパー」などの主力をもう片翼〜中央へ集中させて各個撃破しよう！',
-    featuredUnits: ['dragon', 'warelephant', 'gravimancer', 'sniper'],
+      '紅蓮ドラゴン・鎧戦象・巨人の「三大巨獣」を筆頭に、盾兵・雷導師・対物スナイパーが揃った帝国最強の最終防衛ライン（総コスト 2,850 pt）。',
+    hint: '【戦略】勝利の鍵は「囮と一点突破」！南端の離れた巨人には「盾兵」や「キングスライム」を囮に当てて足止めし、北翼〜中央へ「鎧戦象」「紅蓮ドラゴン」「雷導師」「居合の剣豪」などの主力を集中させて各個撃破しよう！',
+    featuredUnits: ['dragon', 'warelephant', 'archmage', 'samurai'],
     unlockUnits: [],
-    budget: 2600,
-    star2Budget: 2350,
-    star3Budget: 2100,
+    budget: 2700,
+    star2Budget: 2450,
+    star3Budget: 2200,
     terrain: {
       type: 'ruins',
       obstacles: [
@@ -338,17 +335,13 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       ],
     },
     enemies: [
-      { typeId: 'dragon', x: 8.5, z: 0.0 },
-      { typeId: 'warelephant', x: 6.8, z: -4.8 },
-      { typeId: 'giant', x: 6.8, z: 4.8 },
-      { typeId: 'shielder', x: 4.2, z: -2.2 },
-      { typeId: 'shielder', x: 4.2, z: 0.0 },
-      { typeId: 'shielder', x: 4.2, z: 2.2 },
-      { typeId: 'samurai', x: 5.2, z: -7.5 },
-      { typeId: 'samurai', x: 5.2, z: 7.5 },
-      { typeId: 'archmage', x: 12.0, z: 0.0 },
-      { typeId: 'sniper', x: 16.5, z: -3.8 },
-      { typeId: 'sniper', x: 16.5, z: 3.8 },
+      { typeId: 'dragon', x: 10.5, z: 0.0 },
+      { typeId: 'warelephant', x: 6.5, z: -5.0 },
+      { typeId: 'giant', x: 10.5, z: 9.5 },
+      { typeId: 'shielder', x: 4.5, z: -2.0 },
+      { typeId: 'shielder', x: 4.5, z: 2.0 },
+      { typeId: 'archmage', x: 12.5, z: 2.5 },
+      { typeId: 'sniper', x: 16.5, z: 0.0 },
     ],
   },
 ];
@@ -386,6 +379,17 @@ export function isInsideStageRedZone(stage: ArcadeStage | null, x: number, z: nu
     }
   }
   return false;
+}
+
+/** 指定座標 (x, z) が属する赤軍配置ゾーンの初期向き (facing) を返す */
+export function getStageZoneFacing(stage: ArcadeStage | null, x: number, z: number): number | undefined {
+  const zones = stage?.terrain.redZones ?? DEFAULT_RED_ZONES;
+  for (const zone of zones) {
+    if (x >= zone.minX && x <= zone.maxX && z >= zone.minZ && z <= zone.maxZ) {
+      return zone.facing;
+    }
+  }
+  return undefined;
 }
 
 /**

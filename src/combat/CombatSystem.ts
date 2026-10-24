@@ -1,7 +1,7 @@
 import { Vector3 } from 'three';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
 import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
-import { Unit } from '../units/Unit';
+import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
@@ -178,8 +178,11 @@ export class CombatSystem {
       if (!attacker.canHit(victim)) continue;
 
       const isTip = weapon === attacker.weaponParticles[1];
-      const speedFactor = clamp(c.relSpeed / spec.refSpeed, 0.4, 1.85);
-      let damage = spec.damage * speedFactor * (isTip ? 1 : 0.6);
+      const maxSpeedFactor = spec.kind === 'spear' ? 2.4 : 1.85;
+      const speedFactor = clamp(c.relSpeed / spec.refSpeed, 0.4, maxSpeedFactor);
+      const antiBeastMul =
+        spec.kind === 'spear' && (victim.type.id === 'warelephant' || victim.type.id === 'giant') ? 1.35 : 1.0;
+      let damage = spec.damage * speedFactor * antiBeastMul * (isTip ? 1 : 0.65);
 
       // 盾兵の正面ガード判定（盾粒子への接触、または正面からの近接攻撃を軽減）
       const hitShield = other === victim.shieldParticle;
@@ -389,7 +392,7 @@ export class CombatSystem {
         a.vel.y -= GRAVITY * a.gravityScale * dt;
         if (a.projectileKind === 'flame') {
           // 火炎ブレスは空気抵抗で減速しつつ少し揺らぐ
-          a.vel.multiplyScalar(Math.max(0, 1 - 1.8 * dt));
+          a.vel.multiplyScalar(Math.max(0, 1 - FLAME_DRAG * dt));
         }
         _to.copy(a.pos).addScaledVector(a.vel, dt);
         if (a.vel.lengthSq() > 1e-8) a.dir.copy(a.vel).normalize();

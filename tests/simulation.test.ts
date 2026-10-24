@@ -5,6 +5,7 @@ import {
   computeStageStars,
   createInitialArcadeSave,
   getStageEnemyCost,
+  getStageZoneFacing,
   isInsideStageRedZone,
   isUnitUnlocked,
   recordStageClear,
@@ -384,10 +385,12 @@ describe('アーケードモード追加ユニット（盾兵・突撃兵・爆�
       expect(st.star3Budget).toBeLessThanOrEqual(st.star2Budget);
     }
 
-    // 第8面の側面奇襲エリアが配置可能ゾーンとして判定される
+    // 第8面の側面奇襲エリアが配置可能ゾーンとして判定され、南向き(0)の初期向きが返る
     const stage8 = ARCADE_STAGES[7];
     expect(isInsideStageRedZone(stage8, -10, 0)).toBe(true);
+    expect(getStageZoneFacing(stage8, -10, 0)).toBeUndefined();
     expect(isInsideStageRedZone(stage8, 10, -12)).toBe(true); // 北側の奇襲ゾーン
+    expect(getStageZoneFacing(stage8, 10, -12)).toBe(0);
     expect(isInsideStageRedZone(stage8, 10, 0)).toBe(false); // 敵本陣のど真ん中は不可
 
     // クリアによる段階的ユニット解放とスター評価の検証

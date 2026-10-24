@@ -20,6 +20,7 @@ import {
 import {
   ARCADE_STAGES,
   computeStageStars,
+  getStageZoneFacing,
   isInsideStageRedZone,
   isUnitUnlocked,
   loadArcadeSave,
@@ -35,6 +36,7 @@ interface PlacedRecord {
   team: Team;
   x: number;
   z: number;
+  facing?: number;
 }
 
 export interface PresetScenario {
@@ -549,12 +551,14 @@ export class GameApp {
       this.elSpeedButtons.push(b);
     });
 
-    // キーボードショートカット（Space: 戦闘開始/戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉）
+    // キーボードショートカット（Space: 戦闘開始/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉）
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
         if (this.mode === 'placement') this.startBattle();
         else this.returnToPlacement();
+      } else if (e.code === 'KeyR') {
+        if (this.mode !== 'placement') this.returnToPlacement();
       } else if (e.code === 'Tab') {
         e.preventDefault();
         this.sidePanelVisible = !this.sidePanelVisible;
@@ -646,6 +650,11 @@ export class GameApp {
       <div class="brief-desc">${st.description}</div>
       <div class="brief-hint">${st.hint}</div>
       <div class="brief-badges">
+        <span class="brief-badge-label">評価目標:</span>
+        <span class="reward-chip" title="このコスト以下で勝利すると★3獲得">★★★ ≤ ${st.star3Budget} pt</span>
+        <span class="enemy-unit-chip" title="このコスト以下（または生存率45%以上）で★2獲得">★★☆ ≤ ${st.star2Budget} pt</span>
+      </div>
+      <div class="brief-badges" style="margin-top:5px;">
         <span class="brief-badge-label">敵軍編成:</span>
         ${enemyHtml}
       </div>
@@ -808,8 +817,9 @@ export class GameApp {
             this.flashPhaseWarning(`⚠ 予算オーバー！ (残り ${st.budget - used} pt / 必要 ${unitCost} pt)`);
             return;
           }
-          this.battle.spawnUnit(this.selectedType, 0, p.x, p.z);
-          this.savedLineup.push({ typeId: this.selectedType, team: 0, x: p.x, z: p.z });
+          const facing = getStageZoneFacing(st, p.x, p.z);
+          this.battle.spawnUnit(this.selectedType, 0, p.x, p.z, facing);
+          this.savedLineup.push({ typeId: this.selectedType, team: 0, x: p.x, z: p.z, facing });
           this.sound.playPlace();
           this.updateHUD();
         } else {
@@ -881,9 +891,10 @@ export class GameApp {
       team: 1 as Team,
       x: e.x,
       z: e.z,
+      facing: e.facing,
     }));
     for (const u of this.savedLineup) {
-      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z);
+      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
     }
 
     this.renderArcadeStageButtons();
@@ -944,10 +955,22 @@ export class GameApp {
     this.battle.clear();
     this.view.clearDebris();
     for (const u of this.savedLineup) {
-      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z);
+      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
     }
     this.syncPhaseUI();
     this.updateHUD();
+  }
+
+  private formatArcadeBudgetBadge(st: ArcadeStage, used: number): string {
+    const starPreview =
+      used === 0
+        ? `★3目安 ≤${st.star3Budget}`
+        : used <= st.star3Budget
+          ? '★★★圏内'
+          : used <= st.star2Budget
+            ? '★★☆圏内'
+            : '★☆☆圏内';
+    return `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used} ｜ ${starPreview})`;
   }
 
   private syncPhaseUI(): void {
@@ -955,7 +978,7 @@ export class GameApp {
       if (this.playStyle === 'arcade') {
         const st = this.currentStage;
         const used = this.getCurrentRedCost();
-        this.elPhaseBadge.innerHTML = `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used})`;
+        this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(st, used);
       } else {
         this.elPhaseBadge.textContent = '配置フェーズ（左半分：赤軍 ／ 右半分：青軍）';
       }
@@ -1007,7 +1030,7 @@ export class GameApp {
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
       `;
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
-        this.elPhaseBadge.innerHTML = `${this.currentStage.name} ｜ 予算: ${COST_ICON_SVG} <b>${r.cost}</b> / ${budget} (残り ${budget - r.cost})`;
+        this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(this.currentStage, r.cost);
       }
     } else {
       this.elRedStats.innerHTML = `
