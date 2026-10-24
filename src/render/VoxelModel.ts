@@ -1,0 +1,1186 @@
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Color,
+  Group,
+  Mesh,
+  MeshLambertMaterial,
+  Quaternion,
+  Vector3,
+} from 'three';
+import type { ProjectileKind } from '../combat/CombatSystem';
+import type { Particle } from '../physics/Particle';
+import { J } from '../units/Skeleton';
+import type { Unit } from '../units/Unit';
+import { TEAM_COLORS, type Team, type UnitType, type UnitTypeId, type WeaponKind } from '../units/UnitTypes';
+
+/** 損壊によって剥がれ落ちる不透明ボクセル 1 個分の初期データ */
+export interface DroppedVoxelSeed {
+  pos: Vector3;
+  color: number;
+  size: number;
+}
+
+/**
+ * 3D ボクセルグリッドから頂点カラー付きの単一 BufferGeometry を生成するビルダー。
+ * 隣接セルに隠れる内側の面をカリングすることで軽量なボクセルメッシュを作る。
+ */
+export class VoxelGrid {
+  readonly data: Int32Array;
+
+  constructor(
+    readonly sx: number,
+    readonly sy: number,
+    readonly sz: number,
+    source?: Int32Array,
+  ) {
+    this.data = source ? new Int32Array(source) : new Int32Array(sx * sy * sz);
+  }
+
+  /** グリッドのディープコピーを返す（部位破壊・欠損で個別編集するため） */
+  clone(): VoxelGrid {
+    return new VoxelGrid(this.sx, this.sy, this.sz, this.data);
+  }
+
+  private idx(x: number, y: number, z: number): number {
+    return x + this.sx * (y + this.sy * z);
+  }
+
+  set(x: number, y: number, z: number, color: number): void {
+    if (x < 0 || x >= this.sx || y < 0 || y >= this.sy || z < 0 || z >= this.sz) return;
+    this.data[this.idx(x, y, z)] = color;
+  }
+
+  get(x: number, y: number, z: number): number {
+    if (x < 0 || x >= this.sx || y < 0 || y >= this.sy || z < 0 || z >= this.sz) return 0;
+    return this.data[this.idx(x, y, z)];
+  }
+
+  /** 直方体領域を塗りつぶす（x1, y1, z1 を含む） */
+  fillBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): void {
+    for (let z = z0; z <= z1; z++) {
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          this.set(x, y, z, color);
+        }
+      }
+    }
+  }
+
+  /** 残存している非空ボクセルの総数を返す */
+  countFilled(): number {
+    let n = 0;
+    for (let i = 0; i < this.data.length; i++) {
+      if (this.data[i] !== 0) n++;
+    }
+    return n;
+  }
+
+  /**
+   * ボクセルデータを BufferGeometry に変換する。
+   * @param voxelSize 1 ボクセルのワールド寸法
+   * @param pivot グリッド内の原点位置（省略時は底面中央 [sx/2, 0, sz/2]）
+   */
+  toGeometry(voxelSize: number, pivot?: readonly [number, number, number]): BufferGeometry {
+    const px = pivot ? pivot[0] : this.sx / 2;
+    const py = pivot ? pivot[1] : 0;
+    const pz = pivot ? pivot[2] : this.sz / 2;
+
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    const col = new Color();
+
+    // 6 方向の面定義: [法線, 4頂点のオフセット, 面ごとの明暗シェード]
+    const faces: ReadonlyArray<{
+      dir: readonly [number, number, number];
+      corners: ReadonlyArray<readonly [number, number, number]>;
+      shade: number;
+    }> = [
+      { dir: [1, 0, 0], corners: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]], shade: 0.92 },
+      { dir: [-1, 0, 0], corners: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], shade: 0.86 },
+      { dir: [0, 1, 0], corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], shade: 1.0 },
+      { dir: [0, -1, 0], corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], shade: 0.72 },
+      { dir: [0, 0, 1], corners: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], shade: 0.96 },
+      { dir: [0, 0, -1], corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]], shade: 0.82 },
+    ];
+
+    for (let z = 0; z < this.sz; z++) {
+      for (let y = 0; y < this.sy; y++) {
+        for (let x = 0; x < this.sx; x++) {
+          const c = this.get(x, y, z);
+          if (c === 0) continue;
+          col.setHex(c);
+          // ボクセルごとに微妙な色ムラを入れて立体感を出す
+          const jitter = 0.96 + (((x * 73 + y * 151 + z * 283) & 15) / 15) * 0.08;
+          for (const f of faces) {
+            if (this.get(x + f.dir[0], y + f.dir[1], z + f.dir[2]) !== 0) continue;
+            const base = positions.length / 3;
+            const s = f.shade * jitter;
+            for (const corner of f.corners) {
+              positions.push(
+                (x + corner[0] - px) * voxelSize,
+                (y + corner[1] - py) * voxelSize,
+                (z + corner[2] - pz) * voxelSize,
+              );
+              normals.push(f.dir[0], f.dir[1], f.dir[2]);
+              colors.push(col.r * s, col.g * s, col.b * s);
+            }
+            indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+          }
+        }
+      }
+    }
+
+    const geom = new BufferGeometry();
+    geom.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+    geom.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
+    geom.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
+    geom.setIndex(indices);
+    return geom;
+  }
+}
+
+// ---------------------------------------------------------------
+// 部位ごとのボクセルテンプレートとキャッシュ
+// ---------------------------------------------------------------
+
+interface VoxelPartTemplate {
+  grid: VoxelGrid;
+  voxelSize: number;
+  pivot: readonly [number, number, number];
+  geometry: BufferGeometry;
+}
+
+interface UnitTemplateSet {
+  head: VoxelPartTemplate;
+  torso: VoxelPartTemplate;
+  upperArm: VoxelPartTemplate;
+  forearm: VoxelPartTemplate;
+  thigh: VoxelPartTemplate;
+  shin: VoxelPartTemplate;
+  weapon: BufferGeometry | null;
+  bow: BufferGeometry | null;
+}
+
+const templateCache = new Map<string, UnitTemplateSet>();
+
+function makeTemplate(
+  grid: VoxelGrid,
+  voxelSize: number,
+  pivot: readonly [number, number, number],
+): VoxelPartTemplate {
+  return {
+    grid,
+    voxelSize,
+    pivot,
+    geometry: grid.toGeometry(voxelSize, pivot),
+  };
+}
+
+function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
+  const look = type.look;
+  const tc = TEAM_COLORS[team];
+  const eyeWhite = 0xffffff;
+  const pupil = 0x181820;
+
+  // 1. 鎧戦象の頭部（大きな耳・兜・長い鼻）
+  if (type.id === 'warelephant') {
+    const g = new VoxelGrid(13, 11, 12);
+    // 頭部本体
+    g.fillBox(3, 2, 2, 9, 8, 8, look.skin);
+    // 左右の大きな象の耳
+    g.fillBox(0, 2, 3, 2, 7, 5, 0x686d76);
+    g.fillBox(10, 2, 3, 12, 7, 5, 0x686d76);
+    // 黄金の戦兜・額当て
+    g.fillBox(3, 8, 2, 9, 9, 8, 0xd4af37);
+    g.fillBox(5, 5, 8, 7, 8, 9, 0xd4af37);
+    g.fillBox(5, 9, 4, 7, 10, 7, tc.shirt);
+    // 垂れ下がる鼻と左右の牙の根元
+    g.fillBox(5, 0, 8, 7, 5, 11, look.skin);
+    g.fillBox(3, 1, 8, 4, 2, 11, 0xfaf8f0);
+    g.fillBox(8, 1, 8, 9, 2, 11, 0xfaf8f0);
+    // 目
+    g.fillBox(3, 5, 8, 4, 6, 8, eyeWhite);
+    g.fillBox(8, 5, 8, 9, 6, 8, eyeWhite);
+    g.set(3, 5, 8, pupil);
+    g.set(9, 5, 8, pupil);
+    return makeTemplate(g, 0.038, [6.5, 4.5, 5]);
+  }
+
+  // 2. 大鷲の頭部（白い羽毛と黄色い鉤クチバシ）
+  if (type.id === 'giant_eagle') {
+    const g = new VoxelGrid(9, 9, 11);
+    g.fillBox(2, 2, 1, 6, 7, 7, 0xf4f4f6);
+    // 鋭い鉤クチバシ
+    g.fillBox(3, 3, 7, 5, 5, 10, 0xf5b82e);
+    g.fillBox(3, 2, 9, 5, 3, 10, 0xe09f1f);
+    // 凛々しい目
+    g.fillBox(2, 5, 6, 2, 6, 7, 0xffd43b);
+    g.fillBox(6, 5, 6, 6, 6, 7, 0xffd43b);
+    g.set(2, 5, 7, pupil);
+    g.set(6, 5, 7, pupil);
+    return makeTemplate(g, 0.036, [4.5, 4.5, 4.5]);
+  }
+
+  // 3. 紅蓮ドラゴンの頭部（2本角・顎・発光する口内）
+  if (type.id === 'dragon') {
+    const g = new VoxelGrid(11, 11, 12);
+    g.fillBox(2, 2, 2, 8, 7, 8, look.skin);
+    // 前に突き出た顎と口内の灼熱色
+    g.fillBox(3, 4, 8, 7, 6, 11, look.skin);
+    g.fillBox(3, 2, 8, 7, 2, 11, 0xe6a122);
+    g.fillBox(4, 3, 8, 6, 3, 10, 0xff7b1c);
+    // 後方へ伸びる2本の黄金角
+    g.fillBox(2, 7, 1, 3, 9, 4, 0xe6a122);
+    g.fillBox(7, 7, 1, 8, 9, 4, 0xe6a122);
+    g.fillBox(2, 9, 0, 3, 10, 2, 0xffd43b);
+    g.fillBox(7, 9, 0, 8, 10, 2, 0xffd43b);
+    // 黄色く光る竜の目
+    g.fillBox(2, 5, 7, 3, 6, 8, 0xffe042);
+    g.fillBox(7, 5, 7, 8, 6, 8, 0xffe042);
+    g.set(2, 5, 8, pupil);
+    g.set(8, 5, 8, pupil);
+    return makeTemplate(g, 0.038, [5.5, 4.5, 5]);
+  }
+
+  // 4. 分裂キングスライムの頭部（王冠とゼリー上部）
+  if (type.id === 'slime') {
+    const g = new VoxelGrid(11, 10, 11);
+    const jelly = team === 0 ? 0x4cd97b : 0x38d996;
+    g.fillBox(1, 0, 1, 9, 6, 9, jelly);
+    // ぎょろ目
+    g.fillBox(2, 3, 8, 4, 5, 9, eyeWhite);
+    g.fillBox(6, 3, 8, 8, 5, 9, eyeWhite);
+    g.set(3, 4, 9, pupil);
+    g.set(7, 4, 9, pupil);
+    // 黄金のキング王冠
+    g.fillBox(3, 7, 3, 7, 7, 7, 0xffd43b);
+    g.set(3, 8, 3, 0xffd43b);
+    g.set(5, 8, 3, 0xffd43b);
+    g.set(7, 8, 3, 0xffd43b);
+    g.set(3, 8, 7, 0xffd43b);
+    g.set(7, 8, 7, 0xffd43b);
+    g.set(5, 8, 7, tc.shirt);
+    return makeTemplate(g, 0.04, [5.5, 4.5, 5.5]);
+  }
+
+  const g = new VoxelGrid(11, 12, 11);
+  // 頭部本体（7×7×7, 中心を x=2..8, y=1..7, z=2..8 に配置）
+  g.fillBox(2, 1, 2, 8, 7, 8, look.skin);
+
+  // TABS 風のぎょろ目（白目 + 黒目）
+  g.fillBox(3, 4, 8, 4, 5, 9, eyeWhite);
+  g.fillBox(6, 4, 8, 7, 5, 9, eyeWhite);
+  g.set(3, 4, 9, pupil);
+  g.set(7, 4, 9, pupil);
+
+  // 髪
+  if (look.hair !== null) {
+    g.fillBox(2, 7, 2, 8, 8, 8, look.hair);
+    g.fillBox(2, 4, 1, 8, 7, 2, look.hair);
+    g.fillBox(2, 6, 2, 8, 6, 9, tc.shirt);
+  }
+
+  // 兜
+  if (look.helmet !== null && type.id !== 'samurai' && type.id !== 'minigunner' && type.id !== 'sniper') {
+    g.fillBox(1, 5, 1, 9, 8, 9, look.helmet);
+    g.fillBox(1, 2, 1, 9, 5, 3, look.helmet);
+    g.fillBox(1, 2, 1, 2, 5, 7, look.helmet);
+    g.fillBox(8, 2, 1, 9, 5, 7, look.helmet);
+    g.fillBox(5, 3, 8, 5, 6, 9, look.helmet);
+    g.fillBox(5, 8, 2, 5, 8, 8, tc.shirt);
+  }
+
+  // フード
+  if (look.hood !== null) {
+    g.fillBox(1, 5, 1, 9, 8, 9, look.hood);
+    g.fillBox(1, 1, 1, 9, 5, 3, look.hood);
+    g.fillBox(1, 1, 1, 2, 5, 8, look.hood);
+    g.fillBox(8, 1, 1, 9, 5, 8, look.hood);
+    g.fillBox(4, 8, 2, 6, 8, 7, tc.shirt);
+  }
+
+  // 髭
+  if (look.beard !== null) {
+    g.fillBox(2, 0, 7, 8, 3, 9, look.beard);
+    g.fillBox(3, 0, 9, 7, 2, 9, look.beard);
+  }
+
+  // 兵種固有の頭部装飾
+  if (type.id === 'archmage') {
+    // とんがり魔法帽
+    g.fillBox(0, 6, 0, 10, 6, 10, 0x4b2e83);
+    g.fillBox(2, 7, 2, 8, 8, 8, 0xd4af37);
+    g.fillBox(3, 9, 3, 7, 10, 7, 0x4b2e83);
+    g.fillBox(4, 11, 4, 6, 11, 6, tc.shirt);
+  } else if (type.id === 'gravimancer') {
+    // 黄金の星冠と紫に輝く目
+    g.fillBox(3, 4, 9, 4, 5, 9, 0xc066ff);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0xc066ff);
+    g.fillBox(2, 8, 2, 8, 9, 8, 0xd4af37);
+  } else if (type.id === 'sniper') {
+    // 暗視スコープゴーグルとギリーフード
+    g.fillBox(2, 4, 8, 8, 5, 9, 0x1a2026);
+    g.fillBox(3, 4, 9, 4, 5, 9, 0x38d9a9);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0x38d9a9);
+  } else if (type.id === 'minigunner') {
+    // 重装甲フルフェイスヘルメット＋オレンジのスリットバイザー
+    g.fillBox(1, 1, 1, 9, 8, 9, 0x424852);
+    g.fillBox(2, 4, 9, 8, 5, 9, 0xff922b);
+    g.fillBox(4, 8, 2, 6, 9, 8, tc.shirt);
+  } else if (type.id === 'samurai') {
+    // 陣笠（浪人笠）と前立て
+    g.fillBox(0, 6, 0, 10, 7, 10, 0x2b2b36);
+    g.fillBox(2, 8, 2, 8, 8, 8, 0x2b2b36);
+    g.fillBox(4, 7, 9, 6, 9, 10, 0xd4af37);
+  } else if (type.id === 'ninja') {
+    // 忍び覆面と額当て
+    g.fillBox(2, 1, 7, 8, 3, 9, 0x1e2029);
+    g.fillBox(3, 6, 8, 7, 7, 9, 0x9aa0a8);
+    // なびく陣営カラーのマフラー端
+    g.fillBox(4, 0, 0, 6, 2, 2, tc.shirt);
+  }
+
+  return makeTemplate(g, 0.036, [5.5, 4.5, 5.5]);
+}
+
+function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
+  const look = type.look;
+  const tc = TEAM_COLORS[team];
+
+  // 鎧戦象の巨躯と鞍
+  if (type.id === 'warelephant') {
+    const g = new VoxelGrid(12, 12, 10);
+    g.fillBox(1, 0, 1, 10, 10, 8, look.skin);
+    // 陣営カラーの鞍掛けと金縁
+    g.fillBox(0, 4, 2, 11, 11, 7, tc.shirt);
+    g.fillBox(0, 4, 2, 11, 4, 7, 0xd4af37);
+    return makeTemplate(g, 0.042, [6, 1, 5]);
+  }
+
+  // 分裂キングスライムのゼリー胴体（内部にコアが透けて見える）
+  if (type.id === 'slime') {
+    const g = new VoxelGrid(12, 12, 10);
+    const jelly = team === 0 ? 0x3bc96b : 0x28c986;
+    g.fillBox(0, 0, 0, 11, 11, 9, jelly);
+    // 中心の輝くスライムコア
+    g.fillBox(4, 4, 3, 7, 7, 6, tc.shirt);
+    g.fillBox(5, 5, 4, 6, 6, 5, 0xffe066);
+    return makeTemplate(g, 0.044, [6, 1, 5]);
+  }
+
+  // 骨盤(y=0)から胸(y=0.42)を覆う胴体
+  const g = new VoxelGrid(10, 12, 8);
+
+  // 腰・ベルト
+  g.fillBox(1, 0, 2, 8, 2, 5, tc.pants);
+  g.fillBox(1, 2, 2, 8, 2, 5, 0x3b2614);
+  g.fillBox(4, 2, 5, 5, 2, 6, tc.accent);
+
+  const chestColor =
+    type.id === 'giant' || type.id === 'giant_eagle' || type.id === 'dragon' ? look.skin : tc.shirt;
+  g.fillBox(0, 3, 1, 9, 11, 6, chestColor);
+
+  if (type.id === 'giant') {
+    for (let y = 3; y <= 11; y++) {
+      const x = Math.min(8, Math.max(1, Math.floor(((y - 3) / 8) * 7) + 1));
+      g.fillBox(x, y, 1, Math.min(9, x + 1), y, 6, tc.shirt);
+    }
+  }
+
+  // 胸当て鎧
+  if (look.armor !== null) {
+    g.fillBox(0, 4, 1, 9, 11, 6, look.armor);
+    g.fillBox(4, 5, 6, 5, 10, 6, tc.shirt);
+    g.fillBox(3, 8, 6, 6, 9, 6, tc.accent);
+  }
+
+  // 兵種固有の背面・胸部ディテール
+  if (type.id === 'minigunner') {
+    // 背中の大型弾薬バックパック
+    g.fillBox(1, 4, 0, 8, 10, 1, 0x343a40);
+    g.fillBox(2, 6, 0, 7, 8, 0, 0xd4af37);
+  } else if (type.id === 'dragon') {
+    // 黄金の腹鱗と背びれ・尻尾の付け根
+    g.fillBox(2, 3, 6, 7, 10, 6, 0xe6a122);
+    g.fillBox(4, 1, 0, 5, 9, 1, 0xe6a122);
+  } else if (type.id === 'samurai') {
+    // 陣営カラーの羽織と左腰の黒鞘
+    g.fillBox(0, 4, 1, 2, 11, 6, tc.shirt);
+    g.fillBox(7, 4, 1, 9, 11, 6, tc.shirt);
+    g.fillBox(0, 1, 0, 1, 3, 7, 0x181820);
+  } else if (type.id === 'ninja') {
+    // 首元の赤いマフラーと背中の忍刀
+    g.fillBox(1, 10, 1, 8, 11, 7, tc.shirt);
+    g.fillBox(3, 4, 0, 5, 11, 1, 0x181820);
+  }
+
+  return makeTemplate(g, 0.04, [5, 1, 4]);
+}
+
+function buildLimbTemplate(
+  sx: number,
+  sy: number,
+  sz: number,
+  bottomColor: number,
+  topColor: number,
+  length: number,
+): VoxelPartTemplate {
+  const g = new VoxelGrid(sx, sy, sz);
+  const split = Math.floor(sy * 0.45);
+  g.fillBox(0, 0, 0, sx - 1, split, sz - 1, bottomColor);
+  g.fillBox(0, split + 1, 0, sx - 1, sy - 1, sz - 1, topColor);
+  return makeTemplate(g, length / sy, [sx / 2, 0, sz / 2]);
+}
+
+/** 大鷲やドラゴン用の翼パーツテンプレート */
+function buildWingTemplate(mainColor: number, subColor: number, length: number): VoxelPartTemplate {
+  const g = new VoxelGrid(4, 8, 8);
+  g.fillBox(1, 0, 2, 2, 7, 4, mainColor);
+  // 風切羽（後方へ広がる翼面）
+  g.fillBox(1, 1, 0, 2, 7, 2, subColor);
+  return makeTemplate(g, length / 8, [2, 0, 3.5]);
+}
+
+function buildWeaponGeometry(kind: WeaponKind, length: number, team: Team): BufferGeometry {
+  const tc = TEAM_COLORS[team];
+  if (kind === 'sword' || kind === 'katana') {
+    const sy = 24;
+    const g = new VoxelGrid(5, sy, 3);
+    // 柄・鍔・刀身
+    const hilt = kind === 'katana' ? 0x1c1c24 : 0x5a3518;
+    g.fillBox(2, 0, 1, 2, 5, 1, hilt);
+    g.fillBox(2, 0, 1, 2, 0, 1, tc.accent);
+    g.fillBox(1, 6, 1, 3, 6, 1, 0xd4af37);
+    if (kind === 'katana') {
+      // 日本刀の細身で反りのある白銀刀身
+      for (let y = 7; y < sy; y++) {
+        const curveZ = y > sy - 5 ? 2 : 1;
+        g.set(2, y, curveZ, 0xf4f8ff);
+        if (y < sy - 2) g.set(1, y, curveZ, 0xc8d2e0);
+      }
+    } else {
+      g.fillBox(1, 6, 1, 3, sy - 3, 1, 0xd8dee8);
+      g.fillBox(2, 6, 1, 2, sy - 2, 1, 0xf4f8ff);
+      g.set(2, sy - 1, 1, 0xf4f8ff);
+    }
+    return g.toGeometry(length / sy, [2.5, 1, 1.5]);
+  }
+  if (kind === 'spear') {
+    const sy = 28;
+    const g = new VoxelGrid(5, sy, 3);
+    g.fillBox(2, 0, 1, 2, sy - 6, 1, 0x7c5128);
+    g.fillBox(2, sy - 8, 1, 4, sy - 6, 1, tc.shirt);
+    g.fillBox(1, sy - 5, 1, 3, sy - 3, 1, 0xd8dee8);
+    g.fillBox(2, sy - 2, 1, 2, sy - 1, 1, 0xf4f8ff);
+    return g.toGeometry(length / sy, [2.5, 1, 1.5]);
+  }
+  if (kind === 'staff') {
+    // 雷導師の魔導スタッフ（先端に輝く青白い雷晶石）
+    const sy = 26;
+    const g = new VoxelGrid(5, sy, 5);
+    g.fillBox(2, 0, 2, 2, sy - 6, 2, 0x4a2e1b);
+    g.fillBox(1, sy - 6, 1, 3, sy - 5, 3, 0xd4af37);
+    g.fillBox(1, sy - 4, 1, 3, sy - 2, 3, 0x66f0ff);
+    g.set(2, sy - 1, 2, 0xffffff);
+    return g.toGeometry(length / sy, [2.5, 1, 2.5]);
+  }
+  if (kind === 'tusks') {
+    // 鎧戦象の2本の白い巨牙
+    const sy = 18;
+    const g = new VoxelGrid(9, sy, 5);
+    g.fillBox(1, 0, 2, 2, sy - 3, 3, 0xfaf8f0);
+    g.fillBox(6, 0, 2, 7, sy - 3, 3, 0xfaf8f0);
+    g.fillBox(1, sy - 3, 3, 2, sy - 1, 4, 0xffffff);
+    g.fillBox(6, sy - 3, 3, 7, sy - 1, 4, 0xffffff);
+    return g.toGeometry(length / sy, [4.5, 1, 2.5]);
+  }
+  // 棍棒 / 大棍棒
+  const sy = 18;
+  const g = new VoxelGrid(5, sy, 5);
+  const wood = kind === 'bigclub' ? 0x5c3818 : 0x7a4a21;
+  g.fillBox(2, 0, 2, 2, 6, 2, wood);
+  g.fillBox(1, 7, 1, 3, sy - 2, 3, wood);
+  g.fillBox(1, sy - 1, 1, 3, sy - 1, 3, wood);
+  if (kind === 'bigclub') {
+    const stud = 0x9aa0a8;
+    g.set(0, 11, 2, stud);
+    g.set(4, 11, 2, stud);
+    g.set(2, 11, 0, stud);
+    g.set(2, 11, 4, stud);
+    g.set(0, 14, 2, stud);
+    g.set(4, 14, 2, stud);
+  }
+  return g.toGeometry(length / sy, [2.5, 1, 2.5]);
+}
+
+function buildOffhandGeometry(type: UnitType, team: Team): BufferGeometry | null {
+  const tc = TEAM_COLORS[team];
+  if (type.style === 'bow') {
+    const g = new VoxelGrid(3, 15, 7);
+    const wood = 0x6e4420;
+    const stringCol = 0xe8e4d8;
+    for (let y = 0; y < 15; y++) {
+      const d = Math.abs(y - 7);
+      const z = d <= 2 ? 5 : d <= 4 ? 4 : d <= 6 ? 3 : 2;
+      g.set(1, y, z, y >= 6 && y <= 8 ? tc.shirt : wood);
+    }
+    for (let y = 1; y < 14; y++) {
+      g.set(1, y, 1, stringCol);
+    }
+    return g.toGeometry(0.04, [1.5, 7.5, 4]);
+  }
+  if (type.style === 'sniper') {
+    // 対物スナイパーライフル（長い銃身・スコープ・マズルブレーキ）
+    const g = new VoxelGrid(3, 7, 26);
+    g.fillBox(1, 2, 0, 1, 4, 6, 0x2b3038); // ストック
+    g.fillBox(1, 3, 6, 1, 4, 24, 0x1a1d24); // バレル
+    g.fillBox(0, 3, 24, 2, 4, 25, 0x343a40); // マズルブレーキ
+    g.fillBox(1, 5, 8, 1, 6, 14, 0x2b3038); // スコープ
+    g.set(1, 5, 14, 0x38d9a9); // レンズ
+    return g.toGeometry(0.04, [1.5, 3.5, 6]);
+  }
+  if (type.style === 'minigun') {
+    // 6銃身ガトリング砲
+    const g = new VoxelGrid(7, 7, 18);
+    g.fillBox(1, 1, 0, 5, 5, 6, 0x343a40);
+    g.fillBox(2, 2, 0, 4, 4, 6, tc.shirt);
+    // 6本の回転銃身
+    g.fillBox(3, 5, 6, 3, 5, 17, 0x868e96);
+    g.fillBox(3, 1, 6, 3, 1, 17, 0x868e96);
+    g.fillBox(1, 3, 6, 1, 3, 17, 0x868e96);
+    g.fillBox(5, 3, 6, 5, 3, 17, 0x868e96);
+    g.fillBox(1, 1, 14, 5, 5, 15, 0x495057);
+    return g.toGeometry(0.04, [3.5, 3.5, 4]);
+  }
+  if (type.style === 'gravity') {
+    // 重力術師が手に浮かべるミニ重力球
+    const g = new VoxelGrid(5, 5, 5);
+    g.fillBox(1, 1, 1, 3, 3, 3, 0x180828);
+    g.set(2, 4, 2, 0xb042ff);
+    g.set(2, 0, 2, 0xb042ff);
+    g.set(0, 2, 2, 0xb042ff);
+    g.set(4, 2, 2, 0xb042ff);
+    return g.toGeometry(0.04, [2.5, 2.5, 2.5]);
+  }
+  return null;
+}
+
+function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
+  const key = `${type.id}:${team}`;
+  let set = templateCache.get(key);
+  if (set) return set;
+  const tc = TEAM_COLORS[team];
+  const isWinged = type.id === 'giant_eagle' || type.id === 'dragon';
+  const sleeve =
+    type.look.armor ?? (type.id === 'giant' || type.id === 'warelephant' || type.id === 'slime' ? type.look.skin : tc.shirt);
+  const legColor =
+    type.id === 'warelephant' || type.id === 'dragon' || type.id === 'slime'
+      ? type.look.skin
+      : type.id === 'giant_eagle'
+        ? 0xf5b82e
+        : tc.pants;
+
+  set = {
+    head: buildHeadTemplate(type, team),
+    torso: buildTorsoTemplate(type, team),
+    upperArm: isWinged
+      ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
+      : buildLimbTemplate(3, 7, 3, type.look.skin, sleeve, 0.29),
+    forearm: isWinged
+      ? buildWingTemplate(type.look.armor ?? tc.shirt, type.look.skin, 0.32)
+      : buildLimbTemplate(3, 6, 3, type.look.skin, type.look.skin, 0.26),
+    thigh: buildLimbTemplate(4, 8, 4, legColor, legColor, 0.41),
+    shin: buildLimbTemplate(
+      3,
+      8,
+      4,
+      type.id === 'giant_eagle' || type.id === 'warelephant' || type.id === 'slime' ? legColor : 0x3b2614,
+      legColor,
+      0.4,
+    ),
+    weapon: type.weapon ? buildWeaponGeometry(type.weapon.kind, type.weapon.length, team) : null,
+    bow: buildOffhandGeometry(type, team),
+  };
+  templateCache.set(key, set);
+  return set;
+}
+
+/** 飛翔体（矢・銃弾・徹甲弾・手裏剣・火炎球）のジオメトリキャッシュ */
+const projectileGeoCache = new Map<ProjectileKind, BufferGeometry>();
+
+export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeometry {
+  const cached = projectileGeoCache.get(kind);
+  if (cached) return cached;
+
+  let geom: BufferGeometry;
+  if (kind === 'bullet') {
+    const g = new VoxelGrid(2, 6, 2);
+    g.fillBox(0, 0, 0, 1, 5, 1, 0xffe066);
+    geom = g.toGeometry(0.032, [1, 6, 1]);
+  } else if (kind === 'sniper') {
+    const g = new VoxelGrid(2, 12, 2);
+    g.fillBox(0, 0, 0, 1, 7, 1, 0xff922b);
+    g.fillBox(0, 8, 0, 1, 11, 1, 0xffffff);
+    geom = g.toGeometry(0.035, [1, 12, 1]);
+  } else if (kind === 'shuriken') {
+    // 十字手裏剣
+    const g = new VoxelGrid(7, 2, 7);
+    g.fillBox(2, 0, 2, 4, 0, 4, 0x495057);
+    g.fillBox(3, 0, 0, 3, 0, 6, 0xd8dee8);
+    g.fillBox(0, 0, 3, 6, 0, 3, 0xd8dee8);
+    g.set(3, 0, 3, 0x181820);
+    geom = g.toGeometry(0.035, [3.5, 0.5, 3.5]);
+  } else if (kind === 'flame') {
+    const g = new VoxelGrid(5, 5, 5);
+    g.fillBox(0, 0, 0, 4, 4, 4, 0xff5900);
+    g.fillBox(1, 1, 1, 3, 3, 3, 0xffd43b);
+    geom = g.toGeometry(0.055, [2.5, 2.5, 2.5]);
+  } else {
+    const sy = 16;
+    const g = new VoxelGrid(3, sy, 3);
+    g.fillBox(0, 0, 1, 2, 2, 1, 0xf2f2f2);
+    g.fillBox(1, 0, 0, 1, 2, 2, 0xf2f2f2);
+    g.fillBox(1, 2, 1, 1, sy - 4, 1, 0x8a5a2b);
+    g.fillBox(1, sy - 3, 1, 1, sy - 1, 1, 0xd8dee8);
+    geom = g.toGeometry(0.04, [1.5, sy, 1.5]);
+  }
+  projectileGeoCache.set(kind, geom);
+  return geom;
+}
+
+export function getArrowGeometry(): BufferGeometry {
+  return getProjectileGeometry('arrow');
+}
+
+let kawariLogGeo: BufferGeometry | null = null;
+/** からくり忍者の「変わり身の丸太」ボクセルジオメトリ */
+export function getKawariLogGeometry(): BufferGeometry {
+  if (kawariLogGeo) return kawariLogGeo;
+  const g = new VoxelGrid(6, 12, 6);
+  // 樹皮と切り口の年輪
+  g.fillBox(0, 0, 0, 5, 11, 5, 0x6b4423);
+  g.fillBox(1, 0, 1, 4, 11, 4, 0xd9a76a);
+  // 葉っぱが1枚ついている
+  g.fillBox(4, 6, 5, 5, 8, 5, 0x409142);
+  kawariLogGeo = g.toGeometry(0.045, [3, 6, 3]);
+  return kawariLogGeo;
+}
+
+// ---------------------------------------------------------------
+// ユニット 1 体分の描画オブジェクトと部位破壊（ボクセル損壊）
+// ---------------------------------------------------------------
+
+export type BodyPartId =
+  | 'head'
+  | 'torso'
+  | 'upperArmL'
+  | 'forearmL'
+  | 'upperArmR'
+  | 'forearmR'
+  | 'thighL'
+  | 'shinL'
+  | 'thighR'
+  | 'shinR';
+
+interface DestructiblePart {
+  id: BodyPartId;
+  mesh: Mesh;
+  template: VoxelPartTemplate;
+  /** 損壊が発生したときのみ複製される個別グリッド */
+  mutableGrid: VoxelGrid | null;
+  ownsGeometry: boolean;
+  hp: number;
+  maxHp: number;
+  destroyed: boolean;
+  /** この部位が破壊されたときに連動して脱落する末端部位 */
+  childPart: BodyPartId | null;
+}
+
+const UP = new Vector3(0, 1, 0);
+const _dir = new Vector3();
+const _up = new Vector3();
+const _right = new Vector3();
+const _fwd = new Vector3();
+const _quat = new Quaternion();
+const _localHit = new Vector3();
+const _voxelWorld = new Vector3();
+
+function makeMesh(geom: BufferGeometry, mat: MeshLambertMaterial, scale: number): Mesh {
+  const m = new Mesh(geom, mat);
+  m.scale.setScalar(scale);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+}
+
+/** 2 点 a→b に沿ってメッシュを配置・回転する（モデルの +Y 軸を a→b に合わせる） */
+function placeLimb(mesh: Mesh, a: Vector3, b: Vector3): void {
+  mesh.position.copy(a);
+  _dir.subVectors(b, a);
+  const len = _dir.length();
+  if (len < 1e-5) return;
+  _dir.divideScalar(len);
+  _quat.setFromUnitVectors(UP, _dir);
+  mesh.quaternion.copy(_quat);
+}
+
+/** 骨盤→胸のベクトルと肩の並びから、ねじれを含む直交基底でメッシュを配置する */
+function placeOrientedPart(mesh: Mesh, origin: Vector3, upDir: Vector3, shoulderL: Vector3, shoulderR: Vector3): void {
+  mesh.position.copy(origin);
+  _up.copy(upDir).normalize();
+  _right.subVectors(shoulderR, shoulderL);
+  // _up に直交化
+  _right.addScaledVector(_up, -_right.dot(_up));
+  if (_right.lengthSq() < 1e-6) {
+    _quat.setFromUnitVectors(UP, _up);
+    mesh.quaternion.copy(_quat);
+    return;
+  }
+  _right.normalize();
+  _fwd.crossVectors(_up, _right).normalize();
+  // 回転行列 [right, up, fwd] からクォータニオンを求める
+  const m00 = _right.x, m01 = _up.x, m02 = _fwd.x;
+  const m10 = _right.y, m11 = _up.y, m12 = _fwd.y;
+  const m20 = _right.z, m21 = _up.z, m22 = _fwd.z;
+  const tr = m00 + m11 + m22;
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1.0) * 2;
+    _quat.set((m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25 * s);
+  } else if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1.0 + m00 - m11 - m22) * 2;
+    _quat.set(0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s);
+  } else if (m11 > m22) {
+    const s = Math.sqrt(1.0 + m11 - m00 - m22) * 2;
+    _quat.set((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s);
+  } else {
+    const s = Math.sqrt(1.0 + m22 - m00 - m11) * 2;
+    _quat.set((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s);
+  }
+  mesh.quaternion.copy(_quat);
+}
+
+/**
+ * 物理ラグドールの各関節位置に合わせてボクセルパーツを毎フレーム追従させ、
+ * 被弾時にはボクセルの欠損・部位破壊を適用するクラス。
+ */
+export class VoxelCharacterVisual {
+  readonly group = new Group();
+  private readonly material: MeshLambertMaterial;
+  private readonly parts: Record<BodyPartId, DestructiblePart>;
+  private readonly weaponMesh: Mesh | null;
+  private readonly bowMesh: Mesh | null;
+
+  constructor(readonly unit: Unit) {
+    const set = getUnitTemplateSet(unit.type, unit.team);
+    const s = unit.scale;
+    const maxHp = unit.maxHp;
+    this.material = new MeshLambertMaterial({ vertexColors: true });
+
+    const createPart = (
+      id: BodyPartId,
+      tmpl: VoxelPartTemplate,
+      hpRatio: number,
+      childPart: BodyPartId | null = null,
+    ): DestructiblePart => {
+      const mesh = makeMesh(tmpl.geometry, this.material, s);
+      this.group.add(mesh);
+      return {
+        id,
+        mesh,
+        template: tmpl,
+        mutableGrid: null,
+        ownsGeometry: false,
+        hp: maxHp * hpRatio,
+        maxHp: maxHp * hpRatio,
+        destroyed: false,
+        childPart,
+      };
+    };
+
+    // 各部位の耐久値を設定（四肢や頭は集中攻撃や強打で部位破壊が起きるバランス）
+    this.parts = {
+      head: createPart('head', set.head, 0.42),
+      torso: createPart('torso', set.torso, 0.85),
+      upperArmL: createPart('upperArmL', set.upperArm, 0.34, 'forearmL'),
+      forearmL: createPart('forearmL', set.forearm, 0.3),
+      upperArmR: createPart('upperArmR', set.upperArm, 0.38, 'forearmR'),
+      forearmR: createPart('forearmR', set.forearm, 0.34),
+      thighL: createPart('thighL', set.thigh, 0.38, 'shinL'),
+      shinL: createPart('shinL', set.shin, 0.34),
+      thighR: createPart('thighR', set.thigh, 0.38, 'shinR'),
+      shinR: createPart('shinR', set.shin, 0.34),
+    };
+
+    if (set.weapon) {
+      this.weaponMesh = makeMesh(set.weapon, this.material, s);
+      this.group.add(this.weaponMesh);
+    } else {
+      this.weaponMesh = null;
+    }
+
+    if (set.bow) {
+      this.bowMesh = makeMesh(set.bow, this.material, s);
+      this.group.add(this.bowMesh);
+    } else {
+      this.bowMesh = null;
+    }
+
+    this.sync();
+  }
+
+  /** 物理粒子の現在位置に合わせて各ボクセルメッシュの座標・回転・発光色を更新する */
+  sync(): void {
+    const u = this.unit;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+    const head = P[J.Head].pos;
+    const shL = P[J.ShoulderL].pos;
+    const shR = P[J.ShoulderR].pos;
+
+    // 胴体と頭（肩の向きから正面方向を決定）
+    _dir.subVectors(chest, pelvis);
+    placeOrientedPart(this.parts.torso.mesh, pelvis, _dir, shL, shR);
+    _dir.subVectors(head, chest);
+    placeOrientedPart(this.parts.head.mesh, head, _dir, shL, shR);
+
+    // スライムのスクワッシュ＆ストレッチ変形
+    if (u.type.id === 'slime') {
+      const sq = u.squash;
+      const xz = u.scale / Math.sqrt(Math.max(0.35, sq));
+      const y = u.scale * sq;
+      this.parts.torso.mesh.scale.set(xz, y, xz);
+      this.parts.head.mesh.scale.set(xz, y, xz);
+    }
+
+    // 四肢
+    placeLimb(this.parts.upperArmL.mesh, shL, P[J.ElbowL].pos);
+    placeLimb(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos);
+    placeLimb(this.parts.upperArmR.mesh, shR, P[J.ElbowR].pos);
+    placeLimb(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos);
+    placeLimb(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos);
+    placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
+    placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
+    placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
+
+    // 近接武器（右前腕が破壊されたら非表示）
+    if (this.weaponMesh && u.weaponParticles.length === 2) {
+      this.weaponMesh.visible = !this.parts.forearmR.destroyed;
+      placeLimb(this.weaponMesh, P[J.HandR].pos, u.weaponParticles[1].pos);
+    }
+
+    // 弓・銃・ガトリング・重力球（左前腕が破壊されたら非表示）
+    if (this.bowMesh) {
+      this.bowMesh.visible = !this.parts.forearmL.destroyed;
+      _dir.subVectors(chest, pelvis);
+      placeOrientedPart(this.bowMesh, P[J.HandL].pos, _dir, shL, shR);
+      if (u.type.id === 'minigunner') {
+        this.bowMesh.rotateZ(u.barrelSpin);
+      }
+    }
+
+    // 被弾フラッシュ・感電・炎上発光と死亡時の暗転
+    if (u.hitFlash > 0) {
+      this.material.emissive.setRGB(u.hitFlash * 0.7, u.hitFlash * 0.15, u.hitFlash * 0.1);
+    } else if (u.shockTimer > 0) {
+      this.material.emissive.setRGB(0.15, 0.55, 0.85);
+    } else if (u.burnTimer > 0) {
+      this.material.emissive.setRGB(0.65, 0.22, 0.02);
+    } else {
+      this.material.emissive.setRGB(0, 0, 0);
+    }
+    if (!u.alive) {
+      this.material.color.setRGB(0.62, 0.62, 0.65);
+    } else {
+      this.material.color.setRGB(1, 1, 1);
+    }
+  }
+
+  /**
+   * 被弾箇所のボクセルを削り取り（または部位ごと破壊し）、
+   * ドロップする不透明ボクセルパーティクルのリストを返す。
+   */
+  applyHitDamage(
+    hitParticle: Particle,
+    worldPoint: Vector3,
+    damage: number,
+    killed: boolean,
+    carveScale = 1.0,
+  ): { drops: DroppedVoxelSeed[]; partBroken: boolean } {
+    this.group.updateMatrixWorld(true);
+    const drops: DroppedVoxelSeed[] = [];
+    let partBroken = false;
+
+    const targetPart = this.resolveTargetPart(hitParticle, worldPoint);
+    if (!targetPart) {
+      return { drops, partBroken: false };
+    }
+
+    targetPart.hp -= damage * carveScale;
+
+    // 1. 部位の耐久値が尽きた場合（または致命傷で頭部・四肢に当たった場合）は部位ごと粉砕する
+    if (targetPart.hp <= 0 && targetPart.id !== 'torso') {
+      this.shatterPart(targetPart, drops, 42);
+      partBroken = true;
+      if (targetPart.childPart) {
+        const child = this.parts[targetPart.childPart];
+        if (!child.destroyed) {
+          this.shatterPart(child, drops, 28);
+        }
+      }
+    } else {
+      // 2. 部位の一部のボクセルをクレーター状に削り取ってドロップさせる
+      const dmgRatio = Math.min(1.5, damage / Math.max(1, this.unit.maxHp));
+      const baseRadius =
+        targetPart.id === 'torso' || targetPart.id === 'head' ? 1.5 + dmgRatio * 2.8 : 1.3 + dmgRatio * 2.2;
+      const carveRadius = baseRadius * Math.sqrt(carveScale);
+      const carved = this.carveVoxelsAt(targetPart, worldPoint, carveRadius, drops);
+
+      // 胴体以外の部位で残存ボクセルが 30% 未満になったら完全破壊に移行
+      if (targetPart.id !== 'torso' && targetPart.mutableGrid) {
+        const remain = targetPart.mutableGrid.countFilled();
+        const initial = targetPart.template.grid.countFilled();
+        if (remain < initial * 0.3) {
+          this.shatterPart(targetPart, drops, 30);
+          partBroken = true;
+        }
+      }
+
+      // 万一かすり当たり等で削れたボクセル数が少ない場合も、表面のボクセル片を数個ドロップさせる
+      if (carved < 5) {
+        const worldVoxelSize = targetPart.template.voxelSize * this.unit.scale;
+        const fallbackColor = TEAM_COLORS[this.unit.team].shirt;
+        const extra = 6 - carved;
+        for (let i = 0; i < extra; i++) {
+          drops.push({
+            pos: worldPoint.clone().add(
+              new Vector3(
+                (Math.random() - 0.5) * 0.12,
+                (Math.random() - 0.5) * 0.12,
+                (Math.random() - 0.5) * 0.12,
+              ),
+            ),
+            color: i % 2 === 0 ? fallbackColor : this.unit.type.look.skin,
+            size: worldVoxelSize,
+          });
+        }
+      }
+    }
+
+    // 3. 撃破（死亡）時はさらに派手な部位損壊を追加
+    if (killed) {
+      partBroken = true;
+      if (!this.parts.torso.destroyed) {
+        this.carveVoxelsAt(this.parts.torso, this.unit.chest.pos, 2.8, drops);
+      }
+      const anyBroken = Object.values(this.parts).some((p) => p.destroyed);
+      if (!anyBroken) {
+        const victimPart = !this.parts.head.destroyed ? this.parts.head : this.parts.upperArmR;
+        this.shatterPart(victimPart, drops, 36);
+      }
+    }
+
+    return { drops, partBroken };
+  }
+
+  /** 被弾した関節粒子（または座標）から対応する部位を特定する */
+  private resolveTargetPart(hitParticle: Particle, worldPoint: Vector3): DestructiblePart | null {
+    const idx = this.unit.joints.indexOf(hitParticle);
+    const map: Readonly<Record<number, BodyPartId>> = {
+      [J.Head]: 'head',
+      [J.Chest]: 'torso',
+      [J.Pelvis]: 'torso',
+      [J.ShoulderL]: 'upperArmL',
+      [J.ElbowL]: 'forearmL',
+      [J.HandL]: 'forearmL',
+      [J.ShoulderR]: 'upperArmR',
+      [J.ElbowR]: 'forearmR',
+      [J.HandR]: 'forearmR',
+      [J.HipL]: 'thighL',
+      [J.KneeL]: 'shinL',
+      [J.FootL]: 'shinL',
+      [J.HipR]: 'thighR',
+      [J.KneeR]: 'shinR',
+      [J.FootR]: 'shinR',
+    };
+    const primaryId = map[idx];
+    if (primaryId && !this.parts[primaryId].destroyed) {
+      return this.parts[primaryId];
+    }
+    let best: DestructiblePart | null = null;
+    let bestDist = Infinity;
+    for (const part of Object.values(this.parts)) {
+      if (part.destroyed) continue;
+      const d = part.mesh.position.distanceToSquared(worldPoint);
+      if (d < bestDist) {
+        bestDist = d;
+        best = part;
+      }
+    }
+    return best;
+  }
+
+  /** 指定部位のワールド座標 worldPoint 周辺のボクセルを球状に削り取り、メッシュを再構築する */
+  private carveVoxelsAt(
+    part: DestructiblePart,
+    worldPoint: Vector3,
+    gridRadius: number,
+    outDrops: DroppedVoxelSeed[],
+  ): number {
+    if (part.destroyed) return 0;
+    if (!part.mutableGrid) {
+      part.mutableGrid = part.template.grid.clone();
+    }
+    const grid = part.mutableGrid;
+    const vs = part.template.voxelSize;
+    const pivot = part.template.pivot;
+    const worldVoxelSize = vs * this.unit.scale;
+
+    part.mesh.updateMatrixWorld();
+    _localHit.copy(worldPoint);
+    part.mesh.worldToLocal(_localHit);
+
+    const gx = _localHit.x / vs + pivot[0];
+    const gy = _localHit.y / vs + pivot[1];
+    const gz = _localHit.z / vs + pivot[2];
+
+    let bestDist2 = Infinity;
+    let cx = Math.round(gx);
+    let cy = Math.round(gy);
+    let cz = Math.round(gz);
+    for (let z = 0; z < grid.sz; z++) {
+      for (let y = 0; y < grid.sy; y++) {
+        for (let x = 0; x < grid.sx; x++) {
+          if (grid.get(x, y, z) === 0) continue;
+          const d2 = (x + 0.5 - gx) ** 2 + (y + 0.5 - gy) ** 2 + (z + 0.5 - gz) ** 2;
+          if (d2 < bestDist2) {
+            bestDist2 = d2;
+            cx = x;
+            cy = y;
+            cz = z;
+          }
+        }
+      }
+    }
+
+    const r2 = gridRadius * gridRadius;
+    const x0 = Math.max(0, Math.floor(cx - gridRadius));
+    const x1 = Math.min(grid.sx - 1, Math.ceil(cx + gridRadius));
+    const y0 = Math.max(0, Math.floor(cy - gridRadius));
+    const y1 = Math.min(grid.sy - 1, Math.ceil(cy + gridRadius));
+    const z0 = Math.max(0, Math.floor(cz - gridRadius));
+    const z1 = Math.min(grid.sz - 1, Math.ceil(cz + gridRadius));
+
+    let removed = 0;
+    for (let z = z0; z <= z1; z++) {
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const col = grid.get(x, y, z);
+          if (col === 0) continue;
+          const d2 = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2;
+          if (d2 <= r2) {
+            grid.set(x, y, z, 0);
+            removed++;
+            _voxelWorld.set(
+              (x + 0.5 - pivot[0]) * vs,
+              (y + 0.5 - pivot[1]) * vs,
+              (z + 0.5 - pivot[2]) * vs,
+            );
+            part.mesh.localToWorld(_voxelWorld);
+            outDrops.push({
+              pos: _voxelWorld.clone(),
+              color: col,
+              size: worldVoxelSize,
+            });
+          }
+        }
+      }
+    }
+
+    if (removed > 0) {
+      if (part.ownsGeometry) {
+        part.mesh.geometry.dispose();
+      }
+      part.mesh.geometry = grid.toGeometry(vs, pivot);
+      part.ownsGeometry = true;
+    }
+    return removed;
+  }
+
+  /** 部位全体を破壊し、残っている全ボクセルを不透明パーティクルとして放出する */
+  private shatterPart(part: DestructiblePart, outDrops: DroppedVoxelSeed[], maxDrops: number): void {
+    if (part.destroyed) return;
+    part.destroyed = true;
+    part.mesh.visible = false;
+
+    const grid = part.mutableGrid ?? part.template.grid;
+    const vs = part.template.voxelSize;
+    const pivot = part.template.pivot;
+    const worldVoxelSize = vs * this.unit.scale;
+    part.mesh.updateMatrixWorld();
+
+    const candidates: DroppedVoxelSeed[] = [];
+    for (let z = 0; z < grid.sz; z++) {
+      for (let y = 0; y < grid.sy; y++) {
+        for (let x = 0; x < grid.sx; x++) {
+          const col = grid.get(x, y, z);
+          if (col === 0) continue;
+          _voxelWorld.set(
+            (x + 0.5 - pivot[0]) * vs,
+            (y + 0.5 - pivot[1]) * vs,
+            (z + 0.5 - pivot[2]) * vs,
+          );
+          part.mesh.localToWorld(_voxelWorld);
+          candidates.push({
+            pos: _voxelWorld.clone(),
+            color: col,
+            size: worldVoxelSize,
+          });
+        }
+      }
+    }
+
+    const step = Math.max(1, Math.ceil(candidates.length / maxDrops));
+    for (let i = 0; i < candidates.length; i += step) {
+      outDrops.push(candidates[i]);
+    }
+
+    if (part.ownsGeometry) {
+      part.mesh.geometry.dispose();
+      part.ownsGeometry = false;
+    }
+  }
+
+  dispose(): void {
+    for (const part of Object.values(this.parts)) {
+      if (part.ownsGeometry) {
+        part.mesh.geometry.dispose();
+      }
+    }
+    this.material.dispose();
+  }
+}
+
+/** 配置プレビュー用の半透明ゴーストモデルを生成する */
+export function createPreviewGhost(type: UnitType, team: Team): Group {
+  const set = getUnitTemplateSet(type, team);
+  const mat = new MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.65,
+  });
+  const s = type.scale;
+  const g = new Group();
+  const torso = makeMesh(set.torso.geometry, mat, s);
+  torso.position.set(0, 0.96 * s, 0);
+  const head = makeMesh(set.head.geometry, mat, s);
+  head.position.set(0, 1.74 * s, 0);
+  g.add(torso, head);
+  g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+  return g;
+}
+
+export type { UnitTypeId };
