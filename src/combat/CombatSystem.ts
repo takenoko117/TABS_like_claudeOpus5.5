@@ -983,11 +983,11 @@ export class CombatSystem {
   }
 
   /** 天落神サハクィエルの落天爆弾投下 */
-  fireAngelBomb(owner: Unit, from: Vector3, velocity: Vector3, damage: number): void {
+  fireAngelBomb(owner: Unit, from: Vector3, velocity: Vector3, damage: number, gravityScale: number = 0.5): void {
     this.fireProjectile(owner, from, velocity, 'angel_bomb', {
       damage,
-      gravityScale: 0.15,
-      life: 5.0,
+      gravityScale,
+      life: 6.0,
     });
   }
 
@@ -1047,9 +1047,9 @@ export class CombatSystem {
     const from = owner.joints[J.HandR].pos.clone();
     this.emitEffect({ kind: 'sachiel_pile', from, to: targetPos.clone() });
     if (target && target.alive && target.team !== owner.team) {
-      const dmg = (95 + Math.random() * 20) * owner.damageMul;
+      const dmg = (110 + Math.random() * 25) * owner.damageMul;
       const dir = new Vector3().subVectors(targetPos, from).normalize();
-      target.takeDamage(dmg, target.chest, dir.clone().multiplyScalar(10.0), dt, owner);
+      target.takeDamage(dmg, target.chest, dir.clone().multiplyScalar(12.0), dt, owner);
       this.onHit?.({
         kind: 'melee',
         point: targetPos.clone(),
@@ -1057,19 +1057,19 @@ export class CombatSystem {
         attacker: owner,
         victim: target,
         hitParticle: target.chest,
-        impulse: dir.multiplyScalar(10.0),
+        impulse: dir.multiplyScalar(12.0),
         killed: !target.alive,
       });
     }
-    // 十字架状の閃光クロス爆発
+    // 十字架状の閃光クロス爆発（大威力＆広範囲）
     this.emitEffect({ kind: 'sachiel_cross', pos: targetPos.clone() });
-    this.applyRadialBlast(owner, targetPos, 3.2, 70 * owner.damageMul, 10.5, 0.7, units, dt, 'explosion', facilities, owner.team);
+    this.applyRadialBlast(owner, targetPos, 4.0, 95 * owner.damageMul, 12.0, 0.8, units, dt, 'explosion', facilities, owner.team);
   }
 
   /** 拒絶神ゼルエルの帯状リボンカッター */
   executeZeruelCutter(owner: Unit, forwardDir: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
     const from = owner.chest.pos.clone();
-    const reach = 6.2;
+    const reach = 10.5;
     this.emitEffect({ kind: 'zeruel_ribbon', from, dir: forwardDir.clone(), reach });
     // 前方扇状〜直線範囲の敵を高速両断
     for (const u of units) {
@@ -1078,8 +1078,8 @@ export class CombatSystem {
       const d = diff.length();
       if (d <= reach * owner.scale) {
         const dot = diff.normalize().dot(forwardDir);
-        if (dot > 0.45) {
-          const dmg = (120 + Math.random() * 30) * owner.damageMul;
+        if (dot > -0.2) {
+          const dmg = (220 + Math.random() * 40) * owner.damageMul;
           const impulse = forwardDir.clone().multiplyScalar(11.0).add(new Vector3(0, 4.0, 0));
           u.takeDamage(dmg, u.chest, impulse, dt, owner);
           this.onHit?.({

@@ -324,7 +324,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       '紅蓮ドラゴン・鎧戦象・巨人の「三大巨獣」を筆頭に、盾兵・雷導師・対物スナイパーが揃った帝国最強の最終防衛ライン（総コスト 2,850 pt）。',
     hint: '【戦略】勝利の鍵は「囮と一点突破」！南端の離れた巨人には「盾兵」や「キングスライム」を囮に当てて足止めし、北翼〜中央へ「鎧戦象」「紅蓮ドラゴン」「雷導師」「居合の剣豪」などの主力を集中させて各個撃破しよう！',
     featuredUnits: ['dragon', 'warelephant', 'archmage', 'samurai'],
-    unlockUnits: [],
+    unlockUnits: ['angel_ramiel', 'angel_sachiel', 'angel_zeruel', 'angel_sahaquiel'],
     budget: 2700,
     star2Budget: 2450,
     star3Budget: 2200,

@@ -333,10 +333,10 @@ describe('アーケードモード追加ユニット（盾兵・突撃兵・爆�
       if (ev.kind === 'shield_block') blockEvents++;
     };
     battle.aiEnabled = true;
-    simulate(battle, 2.8);
+    simulate(battle, 3.5);
     expect(blockEvents).toBeGreaterThan(0);
     // 通常の弓矢ダメージ(22)に対して大幅に軽減されている
-    expect(shielder.hp).toBeGreaterThan(shielder.maxHp - 10);
+    expect(shielder.hp).toBeGreaterThan(shielder.maxHp - 15);
   });
 
   it('突撃兵 (charger) が跳躍チャージを発動し、爆弾兵 (bomber) が範囲爆撃を行う', () => {

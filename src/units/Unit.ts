@@ -821,24 +821,39 @@ export class Unit {
       return;
     }
     if (st === 'sahaquiel_drop') {
+      const isTargetAirborne = t && t.alive && t.pelvis.pos.y > 2.0;
       const aim =
         t && t.alive
-          ? t.pelvis.pos.clone()
+          ? (isTargetAirborne ? t.chest.pos.clone() : t.pelvis.pos.clone().setY(0.1))
           : fac && fac.alive
-          ? fac.pos.clone()
-          : this.pelvis.pos.clone().addScaledVector(this.forward, 5.0).setY(0);
-      const from = this.pelvis.pos.clone().addScaledVector(this.forward, 0.4);
+          ? fac.pos.clone().setY(fac.height * 0.4)
+          : this.pelvis.pos.clone().addScaledVector(this.forward, 6.0).setY(0.1);
+      const from = this.pelvis.pos.clone().addScaledVector(this.forward, 0.5);
+      from.y -= 0.3;
+
+      const spec = this.type.projectile;
+      const speed = spec?.speed ?? 26;
+
       for (let i = -1; i <= 1; i++) {
-        const spreadOffset = new Vector3(-this.forward.z * i * 1.5, 0, this.forward.x * i * 1.5);
+        const spreadOffset = new Vector3(-this.forward.z * i * 1.4, 0, this.forward.x * i * 1.4);
         const targetPoint = aim.clone().add(spreadOffset);
-        const dir = new Vector3().subVectors(targetPoint, from);
-        const dist = Math.hypot(dir.x, dir.z);
-        const speed = this.type.projectile?.speed ?? 18;
-        const flight = Math.max(0.5, dist / speed);
-        dir.y = -from.y / flight + 0.5 * GRAVITY * flight;
-        dir.normalize();
-        const vel = dir.multiplyScalar(speed);
-        ctx.combat.fireAngelBomb(this, from, vel, this.type.projectile?.damage ?? 90);
+
+        let vel: Vector3;
+        if (isTargetAirborne) {
+          vel = new Vector3().subVectors(targetPoint, from).normalize().multiplyScalar(speed);
+          ctx.combat.fireAngelBomb(this, from, vel, spec?.damage ?? 95, 0.04);
+        } else {
+          const dx = targetPoint.x - from.x;
+          const dz = targetPoint.z - from.z;
+          const dh = Math.max(0.1, Math.hypot(dx, dz));
+          const flight = Math.max(0.35, dh / speed);
+          const vx = dx / flight;
+          const vz = dz / flight;
+          const g = GRAVITY * 0.5;
+          const vy = (targetPoint.y - from.y) / flight + 0.5 * g * flight;
+          vel = new Vector3(vx, vy, vz);
+          ctx.combat.fireAngelBomb(this, from, vel, spec?.damage ?? 95, 0.5);
+        }
       }
       return;
     }
