@@ -1,3 +1,4 @@
+import { FACILITY_TYPES, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { ChasmSpec, ObstacleCylinder } from '../physics/PhysicsWorld';
 import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
 
@@ -26,7 +27,8 @@ export interface StageTerrainConfig {
 }
 
 export interface EnemySpawnRecord {
-  typeId: UnitTypeId;
+  typeId?: UnitTypeId;
+  facilityId?: FacilityTypeId;
   x: number;
   z: number;
   facing?: number;
@@ -69,7 +71,7 @@ export const DEFAULT_RED_ZONES: readonly PlacementZone[] = [
 ];
 
 /**
- * アーケードモード全10ステージの定義。
+ * アーケードモード全20ステージの定義。
  * 各面ごとに活躍するユニット・物理ギミック・戦術パズルを盛り込んでいる。
  */
 export const ARCADE_STAGES: readonly ArcadeStage[] = [
@@ -318,13 +320,13 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
   {
     stageNumber: 10,
     id: 'stage_10',
-    name: '第10面【最終面】：三大巨獣と帝国近衛軍団',
-    subtitle: '全18兵種総力戦：非対称配置と一点突破',
+    name: '第10面【第1部決戦】：三大巨獣と帝国近衛軍団',
+    subtitle: '巨獣総力戦：非対称配置と一点突破',
     description:
-      '紅蓮ドラゴン・鎧戦象・巨人の「三大巨獣」を筆頭に、盾兵・雷導師・対物スナイパーが揃った帝国最強の最終防衛ライン（総コスト 2,850 pt）。',
+      '紅蓮ドラゴン・鎧戦象・巨人の「三大巨獣」を筆頭に、盾兵・雷導師・対物スナイパーが揃った帝国最強の防衛ライン（総コスト 2,850 pt）。ここを突破すれば未知の近代兵器・使徒決戦へと道が開かれる！',
     hint: '【戦略】勝利の鍵は「囮と一点突破」！南端の離れた巨人には「盾兵」や「キングスライム」を囮に当てて足止めし、北翼〜中央へ「鎧戦象」「紅蓮ドラゴン」「雷導師」「居合の剣豪」などの主力を集中させて各個撃破しよう！',
     featuredUnits: ['dragon', 'warelephant', 'archmage', 'samurai'],
-    unlockUnits: ['angel_ramiel', 'angel_sachiel', 'angel_zeruel', 'angel_sahaquiel'],
+    unlockUnits: ['rocket_soldier'],
     budget: 2700,
     star2Budget: 2450,
     star3Budget: 2200,
@@ -345,13 +347,424 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       { typeId: 'sniper', x: 16.5, z: 0.0 },
     ],
   },
+  {
+    stageNumber: 11,
+    id: 'stage_11',
+    name: '第11面：荒野の爆走愚連隊',
+    subtitle: '超高速機動とデコイの罠・スラローム迎撃',
+    description:
+      '暴走バギー5台と突撃兵が最高速度で突入してくる！敵陣手前には藁人形デコイが立ち並び、こちらの初撃や照準を吸い寄せる陽動を仕掛けてくる。',
+    hint: '【戦略】敵バギーは直進速度が凄まじいが旋回は苦手。砂岩の石柱を壁にして突進を防ぎつつ、「槍兵」の長槍カウンターや「重力術師」のブラックホールで進路を乱して一気に討ち取ろう！',
+    featuredUnits: ['spearman', 'gravimancer', 'shielder'],
+    unlockUnits: ['giant_tank'],
+    budget: 1300,
+    star2Budget: 1150,
+    star3Budget: 1000,
+    terrain: {
+      type: 'ruins',
+      obstacles: [
+        { x: 0.0, z: -6.0, radius: 1.1, height: 3.5, color: 0xd4a373 },
+        { x: 0.0, z: 6.0, radius: 1.1, height: 3.5, color: 0xd4a373 },
+        { x: 4.0, z: 0.0, radius: 1.3, height: 4.0, color: 0xc49a6c },
+        { x: -3.0, z: -10.0, radius: 0.9, height: 3.0, color: 0xd4a373 },
+        { x: -3.0, z: 10.0, radius: 0.9, height: 3.0, color: 0xd4a373 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.5, minZ: -16, maxZ: 16, label: '荒野迎撃本陣' },
+      ],
+    },
+    enemies: [
+      { typeId: 'decoy', x: 3.0, z: -3.0 },
+      { typeId: 'decoy', x: 3.0, z: 0.0 },
+      { typeId: 'decoy', x: 3.0, z: 3.0 },
+      { typeId: 'buggy', x: 8.0, z: -8.0 },
+      { typeId: 'buggy', x: 8.0, z: -4.0 },
+      { typeId: 'buggy', x: 9.0, z: 0.0 },
+      { typeId: 'buggy', x: 8.0, z: 4.0 },
+      { typeId: 'buggy', x: 8.0, z: 8.0 },
+      { typeId: 'charger', x: 12.0, z: -6.0 },
+      { typeId: 'charger', x: 12.0, z: -2.0 },
+      { typeId: 'charger', x: 12.0, z: 2.0 },
+      { typeId: 'charger', x: 12.0, z: 6.0 },
+    ],
+  },
+  {
+    stageNumber: 12,
+    id: 'stage_12',
+    name: '第12面：天空の死角と双眸の峡谷',
+    subtitle: '奈落の二重橋と空陸同時強襲（大鷲＆巨大アナコンダ）',
+    description:
+      '戦場中央を深い奈落の谷が分断！渡れるのは中央の細い吊り橋のみ。上空からは急降下する大鷲の編隊、地上からは巨躯をくねらせる巨大アナコンダが迫る！',
+    hint: '【戦略】大鷲は近接攻撃が届かない上空から急降下して味方を掴み、谷底へ落とそうとする！対空射撃が得意な「弓兵」「対物スナイパー」「雷導師」で撃ち落とし、狭い橋を這い上がるアナコンダには「盾兵」で足止めして集中砲火を浴びせよう！',
+    featuredUnits: ['sniper', 'archer', 'archmage', 'shielder'],
+    unlockUnits: ['satellite_soldier'],
+    budget: 1600,
+    star2Budget: 1420,
+    star3Budget: 1250,
+    terrain: {
+      type: 'bridge',
+      chasm: { minX: -4.0, maxX: 4.0, bridgeHalfWidth: 2.6 },
+      obstacles: [
+        { x: 4.2, z: -5.0, radius: 0.9, height: 3.2, color: 0x5a6268 },
+        { x: 4.2, z: 5.0, radius: 0.9, height: 3.2, color: 0x5a6268 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.8, minZ: -16, maxZ: 16, label: '西側高台陣地' },
+      ],
+    },
+    enemies: [
+      { typeId: 'giant_eagle', x: 10.0, z: -7.0 },
+      { typeId: 'giant_eagle', x: 10.0, z: -2.5 },
+      { typeId: 'giant_eagle', x: 10.0, z: 2.5 },
+      { typeId: 'giant_eagle', x: 10.0, z: 7.0 },
+      { typeId: 'anaconda', x: 6.0, z: 0.0 },
+      { typeId: 'anaconda', x: 8.5, z: -3.5 },
+      { typeId: 'anaconda', x: 8.5, z: 3.5 },
+      { typeId: 'ninja', x: 13.0, z: -5.0 },
+      { typeId: 'ninja', x: 13.0, z: 0.0 },
+      { typeId: 'ninja', x: 13.0, z: 5.0 },
+    ],
+  },
+  {
+    stageNumber: 13,
+    id: 'stage_13',
+    name: '第13面：要塞トーチカとロケット砲火',
+    subtitle: '敵防衛キャノン砲台＆南北挟撃オペレーション',
+    description:
+      '敵陣中央に強固な「防衛キャノン砲台」がそびえ、前衛の盾兵と後方のロケットランチャー兵が弾幕を形成。真正面からの歩兵進軍は爆風で消し飛ばされる！',
+    hint: '【戦略】正面本陣だけでなく、敵の死角である「北翼奇襲エリア」と「南翼奇襲エリア」が使用可能！正面におとりや盾兵を立てて敵砲火を引きつけ、南北から「からくり忍者」「居合の剣豪」を潜入させてキャノン砲台とロケット兵を背後から強襲しよう！',
+    featuredUnits: ['ninja', 'samurai', 'decoy', 'bomber'],
+    unlockUnits: ['giant_robot'],
+    budget: 1750,
+    star2Budget: 1550,
+    star3Budget: 1380,
+    terrain: {
+      type: 'fortress',
+      obstacles: [
+        { x: 4.0, z: -3.5, radius: 0.9, height: 2.8, color: 0x495057 },
+        { x: 4.0, z: 3.5, radius: 0.9, height: 2.8, color: 0x495057 },
+        { x: 7.5, z: -1.8, radius: 0.85, height: 3.2, color: 0x495057 },
+        { x: 7.5, z: 1.8, radius: 0.85, height: 3.2, color: 0x495057 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.5, minZ: -9, maxZ: 9, label: '正面牽制エリア' },
+        { minX: -10, maxX: 12, minZ: -16, maxZ: -11.5, label: '★北翼奇襲エリア', facing: Math.PI },
+        { minX: -10, maxX: 12, minZ: 11.5, maxZ: 16, label: '★南翼奇襲エリア', facing: 0 },
+      ],
+    },
+    enemies: [
+      { facilityId: 'cannon_tower', x: 9.0, z: -2.8 },
+      { facilityId: 'cannon_tower', x: 9.0, z: 2.8 },
+      { typeId: 'rocket_soldier', x: 14.0, z: -4.5 },
+      { typeId: 'rocket_soldier', x: 14.0, z: -1.5 },
+      { typeId: 'rocket_soldier', x: 14.0, z: 1.5 },
+      { typeId: 'rocket_soldier', x: 14.0, z: 4.5 },
+      { typeId: 'shielder', x: 3.0, z: -2.5 },
+      { typeId: 'shielder', x: 3.0, z: -0.8 },
+      { typeId: 'shielder', x: 3.0, z: 0.8 },
+      { typeId: 'shielder', x: 3.0, z: 2.5 },
+      { typeId: 'swordsman', x: 5.5, z: -2.0 },
+      { typeId: 'swordsman', x: 5.5, z: 0.0 },
+      { typeId: 'swordsman', x: 5.5, z: 2.0 },
+    ],
+  },
+  {
+    stageNumber: 14,
+    id: 'stage_14',
+    name: '第14面：鋼鉄の進撃：超重機甲師団',
+    subtitle: '超巨大戦車とガトリング重装部隊の市街地包囲',
+    description:
+      '重量級の超重戦車（HP 1400）が地響きとともに砲撃進軍！両脇をガトリング重装兵と重装歩兵が固め、あらゆる近接突撃を圧倒的な火力と質量で跳ね返す。',
+    hint: '【戦略】戦車の主砲は長射程で高威力だが旋回と装填に時間がかかる。新解放の「超巨大戦車」をこちらも出して正面から砲撃戦を挑むか、「ドラゴン」の火炎ブレスでガトリング兵ごと焼き払い、「槍兵」の質量特効突きで戦車を仕留めよう！',
+    featuredUnits: ['giant_tank', 'dragon', 'spearman', 'gravimancer'],
+    unlockUnits: ['angel_sachiel'],
+    budget: 2100,
+    star2Budget: 1880,
+    star3Budget: 1680,
+    terrain: {
+      type: 'ruins',
+      obstacles: [
+        { x: 0.0, z: -5.0, radius: 1.2, height: 4.0, color: 0x343a40 },
+        { x: 0.0, z: 5.0, radius: 1.2, height: 4.0, color: 0x343a40 },
+        { x: 6.0, z: -8.0, radius: 1.0, height: 3.5, color: 0x495057 },
+        { x: 6.0, z: 8.0, radius: 1.0, height: 3.5, color: 0x495057 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -3.0, minZ: -16, maxZ: 16, label: '対戦車展開エリア' },
+      ],
+    },
+    enemies: [
+      { typeId: 'giant_tank', x: 10.0, z: 0.0 },
+      { typeId: 'minigunner', x: 7.5, z: -4.5 },
+      { typeId: 'minigunner', x: 8.0, z: 0.0 },
+      { typeId: 'minigunner', x: 7.5, z: 4.5 },
+      { typeId: 'shielder', x: 4.5, z: -3.0 },
+      { typeId: 'shielder', x: 4.5, z: -1.0 },
+      { typeId: 'shielder', x: 4.5, z: 1.0 },
+      { typeId: 'shielder', x: 4.5, z: 3.0 },
+      { typeId: 'rocket_soldier', x: 13.0, z: -3.0 },
+      { typeId: 'rocket_soldier', x: 13.0, z: 3.0 },
+    ],
+  },
+  {
+    stageNumber: 15,
+    id: 'stage_15',
+    name: '第15面：軌道衛星照射作戦：光の処刑場',
+    subtitle: '射程40m天頂レーザー＆加護トーテム防壁＆超前線強襲',
+    description:
+      '敵陣最深部から「衛星攻撃兵士」が天頂衛星を誘導し、極太レーザーを照射！中央には敵を継続回復・強化する「加護のトーテム」と大量のデコイが居座る。',
+    hint: '【戦略】放っておけば衛星ビームで部隊が焼き払われる！このステージ限定の「超前線急襲エリア」に最速の「暴走バギー」や「突撃兵」「大鷲」を配置し、レーザーが降り注ぐ前に敵の衛星攻撃兵を速攻で轢き倒そう！',
+    featuredUnits: ['buggy', 'giant_eagle', 'charger', 'ninja'],
+    unlockUnits: ['angel_ramiel'],
+    budget: 2000,
+    star2Budget: 1780,
+    star3Budget: 1560,
+    terrain: {
+      type: 'fortress',
+      obstacles: [
+        { x: 3.0, z: 0.0, radius: 1.1, height: 3.2, color: 0x6c757d },
+        { x: 8.0, z: -6.0, radius: 1.0, height: 3.5, color: 0x495057 },
+        { x: 8.0, z: 6.0, radius: 1.0, height: 3.5, color: 0x495057 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -8.0, minZ: -16, maxZ: 16, label: '後方本陣' },
+        { minX: -5.0, maxX: -0.5, minZ: -14, maxZ: 14, label: '★超前線急襲エリア' },
+      ],
+    },
+    enemies: [
+      { facilityId: 'buff_totem', x: 10.0, z: 0.0 },
+      { typeId: 'satellite_soldier', x: 17.0, z: -5.0 },
+      { typeId: 'satellite_soldier', x: 18.0, z: 0.0 },
+      { typeId: 'satellite_soldier', x: 17.0, z: 5.0 },
+      { typeId: 'decoy', x: 4.5, z: -5.0 },
+      { typeId: 'decoy', x: 4.5, z: -2.5 },
+      { typeId: 'decoy', x: 4.5, z: 0.0 },
+      { typeId: 'decoy', x: 4.5, z: 2.5 },
+      { typeId: 'decoy', x: 4.5, z: 5.0 },
+      { typeId: 'decoy', x: 7.0, z: 0.0 },
+      { typeId: 'shielder', x: 6.0, z: -3.5 },
+      { typeId: 'shielder', x: 6.0, z: -1.2 },
+      { typeId: 'shielder', x: 6.0, z: 1.2 },
+      { typeId: 'shielder', x: 6.0, z: 3.5 },
+      { typeId: 'sniper', x: 14.0, z: -3.0 },
+      { typeId: 'sniper', x: 14.0, z: 0.0 },
+      { typeId: 'sniper', x: 14.0, z: 3.0 },
+      { typeId: 'charger', x: 5.0, z: -2.0 },
+      { typeId: 'charger', x: 5.0, z: 2.0 },
+    ],
+  },
+  {
+    stageNumber: 16,
+    id: 'stage_16',
+    name: '第16面：鋼鉄の決戦巨人：ロケットパンチ乱舞',
+    subtitle: '巨大ロボット部隊＆無限召喚ポータル攻防戦',
+    description:
+      '推進バーニア付きロケットパンチを撃ち放つ2機の「巨大ロボット」が登場！さらに敵陣深くに「召喚ポータル」が設置され、前線へ無限に増援を送り込んでくる。',
+    hint: '【戦略】敵ロボットのロケットパンチは18m先から吹き飛ばしてくる。「雷導師」の連鎖雷撃でロボットを感電麻痺させて動きを封じ、「巨大ロボット」同士のパンチ対決か「対物スナイパー」の装甲貫通弾で仕留め、早急にポータルを破壊しよう！',
+    featuredUnits: ['giant_robot', 'archmage', 'sniper', 'warelephant'],
+    unlockUnits: ['angel_sahaquiel'],
+    budget: 2800,
+    star2Budget: 2500,
+    star3Budget: 2220,
+    terrain: {
+      type: 'ruins',
+      obstacles: [
+        { x: -2.0, z: -7.0, radius: 1.1, height: 4.5, color: 0x4a5568 },
+        { x: -2.0, z: 7.0, radius: 1.1, height: 4.5, color: 0x4a5568 },
+        { x: 4.0, z: -5.0, radius: 1.1, height: 4.0, color: 0x2d3748 },
+        { x: 4.0, z: 5.0, radius: 1.1, height: 4.0, color: 0x2d3748 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.0, minZ: -16, maxZ: 16, label: '主陣地' },
+      ],
+    },
+    enemies: [
+      { facilityId: 'barracks', x: 15.0, z: 0.0 },
+      { typeId: 'giant_robot', x: 8.5, z: -4.0 },
+      { typeId: 'giant_robot', x: 8.5, z: 4.0 },
+      { typeId: 'rocket_soldier', x: 12.0, z: -5.0 },
+      { typeId: 'rocket_soldier', x: 12.0, z: 0.0 },
+      { typeId: 'rocket_soldier', x: 12.0, z: 5.0 },
+      { typeId: 'charger', x: 5.0, z: -6.0 },
+      { typeId: 'charger', x: 5.0, z: -2.0 },
+      { typeId: 'charger', x: 5.0, z: 2.0 },
+      { typeId: 'charger', x: 5.0, z: 6.0 },
+    ],
+  },
+  {
+    stageNumber: 17,
+    id: 'stage_17',
+    name: '第17面【使徒襲来Ⅰ】：漆黒の光杭と十字架の閃光',
+    subtitle: '使徒神サキエル襲来・ATフィールド貫通包囲網',
+    description:
+      '未知の神性生命体「使徒神サキエル」が光臨。右腕の光杭パイルランスと天を突く十字架閃光爆発で前線を蹂躙し、巨大アナコンダの群れが周囲を固める！',
+    hint: '【戦略】サキエルはATフィールドでダメージを25%軽減し、近寄る部隊をクロス爆発で吹き飛ばす！新解放の「使徒神サキエル」をぶつけて相討ちを狙うか、「ドラゴン」の継続燃焼と「重力術師」で拘束し、取り巻きの大蛇を各個撃破しよう！',
+    featuredUnits: ['angel_sachiel', 'dragon', 'gravimancer', 'spearman'],
+    unlockUnits: ['angel_zeruel'],
+    budget: 2900,
+    star2Budget: 2600,
+    star3Budget: 2320,
+    terrain: {
+      type: 'ruins',
+      obstacles: [
+        { x: 0.0, z: -9.0, radius: 1.3, height: 3.8, color: 0x1a202c },
+        { x: 0.0, z: 9.0, radius: 1.3, height: 3.8, color: 0x1a202c },
+        { x: 7.0, z: 0.0, radius: 1.4, height: 4.2, color: 0x2d3748 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -2.0, minZ: -16, maxZ: 16, label: '迎撃防衛線' },
+      ],
+    },
+    enemies: [
+      { typeId: 'angel_sachiel', x: 9.0, z: 0.0 },
+      { typeId: 'anaconda', x: 5.5, z: -4.5 },
+      { typeId: 'anaconda', x: 6.0, z: 0.0 },
+      { typeId: 'anaconda', x: 5.5, z: 4.5 },
+      { typeId: 'slime', x: 7.5, z: -6.0 },
+      { typeId: 'slime', x: 7.5, z: 6.0 },
+      { typeId: 'archmage', x: 13.0, z: -3.0 },
+      { typeId: 'archmage', x: 13.0, z: 3.0 },
+      { typeId: 'swordsman', x: 4.0, z: -2.0 },
+      { typeId: 'swordsman', x: 4.0, z: 2.0 },
+    ],
+  },
+  {
+    stageNumber: 18,
+    id: 'stage_18',
+    name: '第18面【使徒襲来Ⅱ】：幾何神の加粒子砲台',
+    subtitle: '超長距離狙撃射程36m・死角からの遮蔽裏強襲',
+    description:
+      '蒼く輝く正八面体「幾何神ラミエル」が滞空。36mもの長射程からATフィールドで守られた加粒子砲ビームを撃ち放ち、接近するユニットを瞬時に蒸発させる！',
+    hint: '【戦略】ラミエルの正面に立つのは自殺行為！中央の巨大岩柱の陰に隠れつつ、「居合の剣豪」のすり抜け無敵ダッシュや「からくり忍者」の変わり身で接近するか、南側死角奇襲エリアから一気に肉薄して懐へ潜り込もう！',
+    featuredUnits: ['samurai', 'ninja', 'giant_tank', 'gravimancer'],
+    unlockUnits: [],
+    budget: 3000,
+    star2Budget: 2700,
+    star3Budget: 2400,
+    terrain: {
+      type: 'ruins',
+      obstacles: [
+        { x: -1.0, z: -2.5, radius: 1.4, height: 5.0, color: 0x334e68 },
+        { x: -1.0, z: 2.5, radius: 1.4, height: 5.0, color: 0x334e68 },
+        { x: 5.0, z: -7.0, radius: 1.2, height: 4.0, color: 0x486581 },
+        { x: 5.0, z: 7.0, radius: 1.2, height: 4.0, color: 0x486581 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.0, minZ: -16, maxZ: 16, label: '岩陰本陣エリア' },
+        { minX: 3.0, maxX: 14.0, minZ: 10.0, maxZ: 15.5, label: '★南側死角奇襲エリア', facing: 0 },
+      ],
+    },
+    enemies: [
+      { typeId: 'angel_ramiel', x: 14.0, z: 0.0 },
+      { facilityId: 'cannon_tower', x: 8.0, z: -4.0 },
+      { facilityId: 'cannon_tower', x: 8.0, z: 4.0 },
+      { typeId: 'shielder', x: 4.0, z: -3.0 },
+      { typeId: 'shielder', x: 4.0, z: -1.0 },
+      { typeId: 'shielder', x: 4.0, z: 1.0 },
+      { typeId: 'shielder', x: 4.0, z: 3.0 },
+      { typeId: 'sniper', x: 11.0, z: -3.0 },
+      { typeId: 'sniper', x: 11.0, z: 0.0 },
+      { typeId: 'sniper', x: 11.0, z: 3.0 },
+      { typeId: 'minigunner', x: 10.0, z: -5.0 },
+      { typeId: 'minigunner', x: 10.0, z: 5.0 },
+      { typeId: 'charger', x: 5.0, z: -1.5 },
+      { typeId: 'charger', x: 5.0, z: 1.5 },
+    ],
+  },
+  {
+    stageNumber: 19,
+    id: 'stage_19',
+    name: '第19面【使徒襲来Ⅲ】：天より墜ちる巨眼と増殖ラッシュ',
+    subtitle: '落天肉体爆弾の雨＆増殖ゲート(x2)倍増バギー軍団',
+    description:
+      '超上空から目玉紋様の使徒「天落神サハクィエル」が肉体爆弾を連続投下！さらに前線に設置された「増殖ゲート」を敵の暴走バギーが通過し、2倍に増殖して雪崩れ込んでくる！',
+    hint: '【戦略】空からは爆弾、地上からは倍増バギーの地獄絵図！地上は「盾兵」と「鎧戦象」でゲート前を塞いでバギーを圧殺し、上空のサハクィエルには「幾何神ラミエル」の加粒子砲や「衛星攻撃兵士」のビームで撃ち落とそう！',
+    featuredUnits: ['angel_ramiel', 'warelephant', 'satellite_soldier', 'shielder'],
+    unlockUnits: [],
+    budget: 3600,
+    star2Budget: 3200,
+    star3Budget: 2850,
+    terrain: {
+      type: 'fortress',
+      obstacles: [
+        { x: 1.5, z: -5.0, radius: 1.0, height: 3.0, color: 0x9c4221 },
+        { x: 1.5, z: 5.0, radius: 1.0, height: 3.0, color: 0x9c4221 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -3.5, minZ: -16, maxZ: -2.0, label: '北側迎撃陣地' },
+        { minX: -22, maxX: -3.5, minZ: 2.0, maxZ: 16, label: '南側対空陣地' },
+      ],
+    },
+    enemies: [
+      { typeId: 'angel_sahaquiel', x: 12.0, z: 0.0 },
+      { facilityId: 'multiplier_gate', x: 6.0, z: -3.5 },
+      { facilityId: 'multiplier_gate', x: 6.0, z: 3.5 },
+      { typeId: 'buggy', x: 10.0, z: -5.5 },
+      { typeId: 'buggy', x: 10.0, z: -3.5 },
+      { typeId: 'buggy', x: 10.0, z: -1.5 },
+      { typeId: 'buggy', x: 10.0, z: 1.5 },
+      { typeId: 'buggy', x: 10.0, z: 3.5 },
+      { typeId: 'buggy', x: 10.0, z: 5.5 },
+      { typeId: 'rocket_soldier', x: 13.0, z: -2.5 },
+      { typeId: 'rocket_soldier', x: 13.0, z: 2.5 },
+      { typeId: 'charger', x: 14.0, z: -5.0 },
+      { typeId: 'charger', x: 14.0, z: -2.0 },
+      { typeId: 'charger', x: 14.0, z: 2.0 },
+      { typeId: 'charger', x: 14.0, z: 5.0 },
+    ],
+  },
+  {
+    stageNumber: 20,
+    id: 'stage_20',
+    name: '第20面【終末最終決戦】：拒絶神ゼルエルと神託の軍勢',
+    subtitle: '最強の拒絶タイプ＆終末の決戦部隊・三軍同時突入',
+    description:
+      '最強の拒絶神「ゼルエル」を中核に、巨大ロボ・超重戦車・ドラゴン・衛星攻撃兵が勢揃いした究極の最終決戦（敵軍総コスト 5,300 pt超）！帯状リボンカッターがあらゆる軍勢を両断する！',
+    hint: '【戦略】正面からゼルエルのリボンカッターに突っ込めば一瞬で全滅する！「北翼包囲」「中央決戦」「南翼包囲」の三方面から全兵種を結集して包囲せよ！ゼルエルの背後を突き、神々の使徒と近代兵器の総力戦でアーケード完全制覇を果たせ！',
+    featuredUnits: ['angel_zeruel', 'angel_ramiel', 'giant_robot', 'giant_tank'],
+    unlockUnits: [],
+    budget: 5000,
+    star2Budget: 4500,
+    star3Budget: 4000,
+    terrain: {
+      type: 'ruins',
+      chasm: { minX: -2.0, maxX: 2.0, bridgeHalfWidth: 4.5 },
+      obstacles: [
+        { x: -5.0, z: -8.0, radius: 1.2, height: 4.8, color: 0x212529 },
+        { x: -5.0, z: 8.0, radius: 1.2, height: 4.8, color: 0x212529 },
+        { x: 5.0, z: -7.0, radius: 1.2, height: 4.8, color: 0x212529 },
+        { x: 5.0, z: 7.0, radius: 1.2, height: 4.8, color: 0x212529 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.5, minZ: -16, maxZ: -6.0, label: '★北翼包囲軍', facing: Math.PI / 3 },
+        { minX: -22, maxX: -4.5, minZ: -4.5, maxZ: 4.5, label: '★中央決戦本隊', facing: Math.PI / 2 },
+        { minX: -22, maxX: -4.5, minZ: 6.0, maxZ: 16, label: '★南翼包囲軍', facing: 2 * Math.PI / 3 },
+      ],
+    },
+    enemies: [
+      { typeId: 'angel_zeruel', x: 8.5, z: 0.0 },
+      { typeId: 'giant_robot', x: 10.0, z: -5.5 },
+      { typeId: 'giant_tank', x: 10.0, z: 5.5 },
+      { typeId: 'dragon', x: 14.0, z: 0.0 },
+      { typeId: 'satellite_soldier', x: 16.5, z: -3.5 },
+      { typeId: 'satellite_soldier', x: 16.5, z: 3.5 },
+      { typeId: 'shielder', x: 4.5, z: -3.0 },
+      { typeId: 'shielder', x: 4.5, z: -1.0 },
+      { typeId: 'shielder', x: 4.5, z: 1.0 },
+      { typeId: 'shielder', x: 4.5, z: 3.0 },
+    ],
+  },
 ];
 
 /** 指定ステージの敵軍の合計コストを計算する */
 export function getStageEnemyCost(stage: ArcadeStage): number {
   let sum = 0;
   for (const e of stage.enemies) {
-    sum += UNIT_TYPES[e.typeId].cost;
+    if (e.facilityId && e.facilityId in FACILITY_TYPES) {
+      sum += FACILITY_TYPES[e.facilityId].cost;
+    } else if (e.typeId && e.typeId in UNIT_TYPES) {
+      sum += UNIT_TYPES[e.typeId].cost;
+    }
   }
   return sum;
 }

@@ -246,7 +246,9 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   /** 兵力を生み出せる、または攻撃可能な施設が生存しているか */
   hasActiveSpawner(team: Team): boolean {
-    return this.facilities.some((f) => f.alive && f.team === team && f.type.id === 'barracks');
+    return this.facilities.some(
+      (f) => f.alive && f.team === team && (f.type.id === 'barracks' || f.type.id === 'cannon_tower'),
+    );
   }
 
   /** 勝敗判定（決着前は null） */

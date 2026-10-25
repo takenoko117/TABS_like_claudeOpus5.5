@@ -703,10 +703,15 @@ export class GameApp {
 
     // 敵軍の構成をカウントしてキャラアイコン付きで表示
     const enemyCounts = new Map<UnitTypeId, number>();
+    const facilityCounts = new Map<FacilityTypeId, number>();
     for (const e of st.enemies) {
-      enemyCounts.set(e.typeId, (enemyCounts.get(e.typeId) ?? 0) + 1);
+      if (e.facilityId) {
+        facilityCounts.set(e.facilityId, (facilityCounts.get(e.facilityId) ?? 0) + 1);
+      } else if (e.typeId) {
+        enemyCounts.set(e.typeId, (enemyCounts.get(e.typeId) ?? 0) + 1);
+      }
     }
-    const enemyHtml = [...enemyCounts.entries()]
+    const enemyUnitsHtml = [...enemyCounts.entries()]
       .map(([id, count]) => {
         const u = UNIT_TYPES[id];
         return `<span class="enemy-unit-chip" title="${u.name} (${u.cost} pt)">
@@ -715,6 +720,16 @@ export class GameApp {
         </span>`;
       })
       .join('');
+    const enemyFacilitiesHtml = [...facilityCounts.entries()]
+      .map(([id, count]) => {
+        const f = FACILITY_TYPES[id];
+        return `<span class="enemy-unit-chip enemy-facility-chip" title="【防衛施設】${f.name} (${f.cost} pt)">
+          <span class="mini-unit-icon">${getFacilityIconSvg(id)}</span>
+          <span>${f.name} ×${count}</span>
+        </span>`;
+      })
+      .join('');
+    const enemyHtml = enemyUnitsHtml + enemyFacilitiesHtml;
 
     const featuredHtml = st.featuredUnits
       .map((id) => {
@@ -1048,7 +1063,7 @@ export class GameApp {
     }
   }
 
-  /** アーケードモードの指定ステージ（0〜9）を読み込む */
+  /** アーケードモードの指定ステージを読み込む */
   loadArcadeStage(stageIndex: number): void {
     this.playStyle = 'arcade';
     this.currentStageIndex = Math.max(0, Math.min(ARCADE_STAGES.length - 1, stageIndex));
@@ -1075,13 +1090,16 @@ export class GameApp {
     // 敵（青軍）の固定配置を生成
     this.savedLineup = st.enemies.map((e) => ({
       typeId: e.typeId,
+      facilityId: e.facilityId,
       team: 1 as Team,
       x: e.x,
       z: e.z,
       facing: e.facing,
     }));
     for (const u of this.savedLineup) {
-      if (u.typeId) {
+      if (u.facilityId) {
+        this.battle.spawnFacility(u.facilityId, u.team, u.x, u.z, u.facing);
+      } else if (u.typeId) {
         this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
       }
     }
