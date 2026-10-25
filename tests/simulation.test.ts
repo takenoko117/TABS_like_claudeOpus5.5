@@ -333,7 +333,7 @@ describe('アーケードモード追加ユニット（盾兵・突撃兵・爆�
       if (ev.kind === 'shield_block') blockEvents++;
     };
     battle.aiEnabled = true;
-    simulate(battle, 4.2);
+    simulate(battle, 2.8);
     expect(blockEvents).toBeGreaterThan(0);
     // 通常の弓矢ダメージ(22)に対して大幅に軽減されている
     expect(shielder.hp).toBeGreaterThan(shielder.maxHp - 10);
@@ -406,7 +406,7 @@ describe('アーケードモード追加ユニット（盾兵・突撃兵・爆�
     expect(save.clearedStars[1]).toBe(3);
   });
 
-  it('全25兵種のキャラアイコン・コストアイコン・HPアイコン・カテゴリアイコンが生成される', () => {
+  it('全29兵種のキャラアイコン・コストアイコン・HPアイコン・カテゴリアイコンが生成される', () => {
     expect(COST_ICON_SVG).toContain('<svg');
     expect(HP_ICON_SVG).toContain('<svg');
     expect(CATEGORY_ICONS.all).toBeTruthy();

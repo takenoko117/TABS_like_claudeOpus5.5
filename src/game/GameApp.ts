@@ -177,6 +177,24 @@ export const PRESETS: readonly PresetScenario[] = [
     ],
   },
   {
+    name: '使徒神の降臨（エヴァ使徒ライク）',
+    description: '幾何神ラミエル・使徒神サキエル・拒絶神ゼルエル・天落神サハクィエルが降臨！強大なATフィールドと神話的破壊力に現代・神話連合軍が挑む',
+    units: [
+      { typeId: 'giant_robot', team: 0, x: -9.0, z: 0.0 },
+      { typeId: 'giant_tank', team: 0, x: -11.5, z: -3.5 },
+      { typeId: 'dragon', team: 0, x: -7.0, z: -3.0 },
+      { typeId: 'satellite_soldier', team: 0, x: -14.0, z: 2.5 },
+      { typeId: 'sniper', team: 0, x: -14.5, z: -2.0 },
+      { typeId: 'archmage', team: 0, x: -11.0, z: 3.0 },
+      { typeId: 'warelephant', team: 0, x: -6.5, z: 3.5 },
+
+      { typeId: 'angel_ramiel', team: 1, x: 13.0, z: 0.0 },
+      { typeId: 'angel_sachiel', team: 1, x: 6.5, z: -3.0 },
+      { typeId: 'angel_zeruel', team: 1, x: 6.0, z: 3.0 },
+      { typeId: 'angel_sahaquiel', team: 1, x: 10.5, z: 3.5 },
+    ],
+  },
+  {
     name: '全15兵種カオス大合戦',
     description: '魔法・現代兵器・和風・動物・架空生物の全15ユニットが一堂に会する頂上決戦',
     units: [
@@ -509,6 +527,7 @@ export class GameApp {
         { id: 'japanese', label: `${CATEGORY_ICONS.japanese} ${CATEGORY_LABELS.japanese}` },
         { id: 'animal', label: `${CATEGORY_ICONS.animal} ${CATEGORY_LABELS.animal}` },
         { id: 'mythical', label: `${CATEGORY_ICONS.mythical} ${CATEGORY_LABELS.mythical}` },
+        { id: 'divine', label: `${CATEGORY_ICONS.divine} ${CATEGORY_LABELS.divine}` },
         { id: 'facility', label: `${CATEGORY_ICONS.facility} 施設 (${FACILITY_TYPE_LIST.length})` },
       ];
       cats.forEach((c) => {

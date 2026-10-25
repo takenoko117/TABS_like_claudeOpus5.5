@@ -1,3 +1,4 @@
+import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { Battle } from '../src/game/Battle';
 import type { Unit, UnitContext } from '../src/units/Unit';
@@ -282,6 +283,91 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(targets).toBeGreaterThan(0);
     expect(beams).toBeGreaterThan(0);
     expect(damage).toBeGreaterThan(80);
+  });
+
+
+  it('幾何神ラミエルが加粒子砲（荷電粒子ビーム）を照射し遠距離の敵に直撃大ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const ramiel = battle.spawnUnit('angel_ramiel', 0, -15, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 12, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let beamFired = 0;
+    let totalDmg = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'ramiel_beam') beamFired++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === ramiel && e.victim === dummy) totalDmg += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(beamFired).toBeGreaterThan(0);
+    expect(dummy.hp).toBeLessThan(1e7);
+  });
+
+  it('使徒神サキエルが光杭パイルランスと閃光クロス爆発を放つ', () => {
+    const battle = new DiagBattle();
+    battle.spawnUnit('angel_sachiel', 0, -3, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 1, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let pileFired = 0;
+    let crossFired = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'sachiel_pile') pileFired++;
+      if (e.kind === 'sachiel_cross') crossFired++;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 6; i++) battle.step(battle.fixedDt);
+    expect(pileFired).toBeGreaterThan(0);
+    expect(crossFired).toBeGreaterThan(0);
+  });
+
+  it('拒絶神ゼルエルがリボンカッターで前方を薙ぎ払い敵を両断する', () => {
+    const battle = new DiagBattle();
+    battle.spawnUnit('angel_zeruel', 0, -4, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 1, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let ribbonFired = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'zeruel_ribbon') ribbonFired++;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 6; i++) battle.step(battle.fixedDt);
+    expect(ribbonFired).toBeGreaterThan(0);
+  });
+
+  it('天落神サハクィエルが落天爆弾（angel_bomb）を投下し爆発させる', () => {
+    const battle = new DiagBattle();
+    battle.spawnUnit('angel_sahaquiel', 0, -10, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 5, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let bombExploded = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'sahaquiel_bomb') bombExploded++;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(bombExploded).toBeGreaterThan(0);
+  });
+
+  it('使徒神のATフィールドが被ダメージを軽減しエフェクトを発生させる', () => {
+    const battle = new DiagBattle();
+    const ramiel = battle.spawnUnit('angel_ramiel', 0, 0, 0);
+    const dummyAttacker = battle.spawnUnit('swordsman', 1, 2, 0);
+    let atFieldTriggered = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'at_field') atFieldTriggered++;
+    };
+    const initHp = ramiel.hp;
+    // 100ダメージを与える
+    ramiel.takeDamage(100, ramiel.chest, new Vector3(0, 0, 0), battle.fixedDt, dummyAttacker);
+    // 35%カットされているはず（被ダメージ65）
+    expect(ramiel.hp).toBeCloseTo(initHp - 65, 0);
+    expect(atFieldTriggered).toBeGreaterThan(0);
   });
 
   it('巨大ロボットがロケットパンチを射出して敵に着弾し爆発ダメージを与える', () => {

@@ -463,7 +463,7 @@ export class Unit {
       let mz = dz / Math.max(0.001, dist);
 
       // 飛行ユニット以外は奈落（一本橋ステージ）や石柱を迂回する
-      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon';
+      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
       if (!isFlyer) {
         const chasm = ctx.world.chasm;
         if (chasm) {
@@ -556,7 +556,7 @@ export class Unit {
       st === 'tank_cannon' ||
       st === 'rocket' ||
       st === 'satellite_strike' ||
-      st === 'rocket_punch'
+      st === 'rocket_punch' || st === 'ramiel_beam' || st === 'sahaquiel_drop'
     ) {
       return this.type.range;
     }
@@ -597,7 +597,7 @@ export class Unit {
       st === 'tank_cannon' ||
       st === 'rocket' ||
       st === 'satellite_strike' ||
-      st === 'rocket_punch'
+      st === 'rocket_punch' || st === 'ramiel_beam' || st === 'sahaquiel_drop'
     ) {
       return this.type.range;
     }
@@ -793,6 +793,56 @@ export class Unit {
       }
       return;
     }
+    if (st === 'ramiel_beam') {
+      const aim =
+        t && t.alive
+          ? t.chest.pos.clone()
+          : fac && fac.alive
+          ? fac.pos.clone().setY(fac.height * 0.5)
+          : null;
+      if (aim) {
+        const from = this.pelvis.pos.clone();
+        ctx.combat.fireRamielBeam(this, from, aim, ctx.units, ctx.facilities ?? [], dt);
+      }
+      return;
+    }
+    if (st === 'sachiel_strike') {
+      const aim =
+        t && t.alive
+          ? t.chest.pos.clone()
+          : fac && fac.alive
+          ? fac.pos.clone().setY(fac.height * 0.4)
+          : this.pelvis.pos.clone().addScaledVector(this.forward, 3.0);
+      ctx.combat.executeSachielStrike(this, t, aim, ctx.units, ctx.facilities ?? [], dt);
+      return;
+    }
+    if (st === 'zeruel_cutter') {
+      ctx.combat.executeZeruelCutter(this, this.forward.clone(), ctx.units, ctx.facilities ?? [], dt);
+      return;
+    }
+    if (st === 'sahaquiel_drop') {
+      const aim =
+        t && t.alive
+          ? t.pelvis.pos.clone()
+          : fac && fac.alive
+          ? fac.pos.clone()
+          : this.pelvis.pos.clone().addScaledVector(this.forward, 5.0).setY(0);
+      const from = this.pelvis.pos.clone().addScaledVector(this.forward, 0.4);
+      for (let i = -1; i <= 1; i++) {
+        const spreadOffset = new Vector3(-this.forward.z * i * 1.5, 0, this.forward.x * i * 1.5);
+        const targetPoint = aim.clone().add(spreadOffset);
+        const dir = new Vector3().subVectors(targetPoint, from);
+        const dist = Math.hypot(dir.x, dir.z);
+        const speed = this.type.projectile?.speed ?? 18;
+        const flight = Math.max(0.5, dist / speed);
+        dir.y = -from.y / flight + 0.5 * GRAVITY * flight;
+        dir.normalize();
+        const vel = dir.multiplyScalar(speed);
+        ctx.combat.fireAngelBomb(this, from, vel, this.type.projectile?.damage ?? 90);
+      }
+      return;
+    }
+
     if (st === 'shuriken') {
       const aim = t && t.alive ? t.chest.pos : fac && fac.alive ? fac.pos.clone().setY(fac.height * 0.5) : null;
       if (aim) {
@@ -1556,7 +1606,7 @@ export class Unit {
     const pv = pelvis.getVelocity(dt, this.velocity);
     this.updateFrame();
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
     const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
     // 足が地面付近にあれば「支えられている」とみなす（飛行ユニットは常時揚力あり、奈落上は支えなし）
     const footGap = overChasm ? 999 : Math.min(footL.pos.y - footL.radius, footR.pos.y - footR.radius);
@@ -1682,7 +1732,7 @@ export class Unit {
       lp[i].set(p[0], p[1], p[2]);
     }
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
     // 歩行・羽ばたきサイクル
     const w = isFlyer ? 1.0 : clamp(speedH / (1.2 * s), 0, 1);
     const phaseRate = isFlyer ? 9.5 : (Math.PI * 2 * speedH) / (1.0 * s);
@@ -1943,6 +1993,23 @@ export class Unit {
       return false;
     }
 
+    // 使徒・神（divine）の「ATフィールド」パッシブダメージカット＆エフェクト
+    if (this.type.category === 'divine') {
+      let cutRatio = 0.3;
+      if (this.type.id === 'angel_ramiel') cutRatio = 0.35;
+      else if (this.type.id === 'angel_sachiel') cutRatio = 0.25;
+      else if (this.type.id === 'angel_zeruel') cutRatio = 0.4;
+      else if (this.type.id === 'angel_sahaquiel') cutRatio = 0.3;
+      amount *= (1 - cutRatio);
+
+      if (this.context) {
+        this.context.combat.emitEffect({
+          kind: 'at_field',
+          pos: hitParticle.pos.clone(),
+          scale: this.scale,
+        });
+      }
+    }
     this.hp -= amount;
     this.hitFlash = 1;
     // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴン・大蛇・バギーは強靭でよろめきにくい）
@@ -1951,7 +2018,7 @@ export class Unit {
       this.type.id === 'dragon' ||
       this.type.id === 'giant' ||
       this.type.id === 'anaconda' ||
-      this.type.id === 'buggy';
+      this.type.id === 'buggy' || this.type.category === 'divine';
     const staggerMul = isSuperHeavy ? 0.7 : 2.2;
     const flatLoss = isSuperHeavy ? 0.012 : 0.05;
     this.muscle = Math.max(0, this.muscle - (amount / this.maxHp) * staggerMul - flatLoss);

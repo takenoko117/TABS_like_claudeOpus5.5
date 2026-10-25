@@ -1343,6 +1343,103 @@ export class SceneView {
         }
         break;
       }
+      case 'at_field': {
+        const r = 1.35 * e.scale;
+        const ringN = 16;
+        for (let i = 0; i < ringN; i++) {
+          const ang = (i / ringN) * Math.PI * 2;
+          const p = e.pos.clone().add(new Vector3(Math.cos(ang) * r, Math.sin(ang) * r, 0));
+          this.pushFxParticle(p, new Vector3(Math.cos(ang) * 0.6, Math.sin(ang) * 0.6, 0), 0xffa94d, 0.22, 0.38, 0);
+        }
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          const p = e.pos.clone().add(new Vector3(Math.cos(ang) * (r * 0.55), Math.sin(ang) * (r * 0.55), 0));
+          this.pushFxParticle(p, new Vector3(0, 0, 0), 0xffd43b, 0.18, 0.28, 0);
+        }
+        break;
+      }
+      case 'ramiel_charge': {
+        for (let i = 0; i < 4; i++) {
+          const dist = 2.2 * (1.0 - e.progress * 0.65);
+          const ang = Math.random() * Math.PI * 2;
+          const elev = (Math.random() - 0.5) * Math.PI;
+          const offset = new Vector3(
+            Math.cos(ang) * Math.cos(elev) * dist,
+            Math.sin(elev) * dist,
+            Math.sin(ang) * Math.cos(elev) * dist,
+          );
+          const vel = offset.clone().multiplyScalar(-3.0);
+          this.pushFxParticle(e.pos.clone().add(offset), vel, Math.random() < 0.5 ? 0x4dabf7 : 0xffffff, 0.15, 0.3, 0);
+        }
+        break;
+      }
+      case 'ramiel_beam': {
+        const dir = new Vector3().subVectors(e.to, e.from);
+        const dist = dir.length();
+        dir.normalize();
+        const step = 0.5;
+        for (let d = 0; d <= dist; d += step) {
+          const p = e.from.clone().addScaledVector(dir, d);
+          p.add(new Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3));
+          this.pushFxParticle(p, new Vector3(0, 0, 0), Math.random() < 0.7 ? 0xffffff : 0x4dabf7, 0.38, 0.45, 0);
+        }
+        for (let i = 0; i < 36; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 12, 2.0 + Math.random() * 9, (Math.random() - 0.5) * 12);
+          this.pushFxParticle(e.to.clone(), vel, i % 2 === 0 ? 0x4dabf7 : 0xffffff, 0.28, 0.6, 5.0);
+        }
+        break;
+      }
+      case 'sachiel_pile': {
+        const dir = new Vector3().subVectors(e.to, e.from);
+        const dist = dir.length();
+        dir.normalize();
+        for (let d = 0; d <= dist; d += 0.3) {
+          const p = e.from.clone().addScaledVector(dir, d);
+          this.pushFxParticle(p, dir.clone().multiplyScalar(4.0), Math.random() < 0.5 ? 0xffffff : 0x74c0fc, 0.22, 0.35, 0);
+        }
+        break;
+      }
+      case 'sachiel_cross': {
+        for (let y = -4; y <= 16; y += 0.8) {
+          this.pushFxParticle(e.pos.clone().add(new Vector3(0, y, 0)), new Vector3(0, 1.2, 0), 0xff6b6b, 0.35, 0.5, 0);
+        }
+        for (let x = -6; x <= 6; x += 0.8) {
+          this.pushFxParticle(e.pos.clone().add(new Vector3(x, 2, 0)), new Vector3(x * 0.5, 0, 0), 0xff8787, 0.3, 0.45, 0);
+        }
+        for (let i = 0; i < 28; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 10, 3 + Math.random() * 8, (Math.random() - 0.5) * 10);
+          this.pushFxParticle(e.pos.clone(), vel, 0xffd43b, 0.2, 0.45, 4.0);
+        }
+        break;
+      }
+      case 'zeruel_ribbon': {
+        const n = 18;
+        for (let i = 0; i < n; i++) {
+          const frac = i / n;
+          const p = e.from.clone().addScaledVector(e.dir, frac * e.reach);
+          const right = new Vector3(-e.dir.z, 0, e.dir.x).multiplyScalar((frac - 0.5) * 3.5);
+          p.add(right);
+          this.pushFxParticle(p, e.dir.clone().multiplyScalar(10.0), frac < 0.5 ? 0xffffff : 0xd90429, 0.26, 0.32, 0);
+        }
+        break;
+      }
+      case 'sahaquiel_bomb': {
+        for (let i = 0; i < 48; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).normalize();
+          const spd = 6 + Math.random() * 11;
+          const col = i % 3 === 0 ? 0xf76707 : i % 3 === 1 ? 0xffd43b : 0xff0000;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(spd), col, 0.32, 0.6, 4.0);
+        }
+        const ringN = 32;
+        for (let i = 0; i < ringN; i++) {
+          const ang = (i / ringN) * Math.PI * 2;
+          const dir = new Vector3(Math.cos(ang), 0.05, Math.sin(ang));
+          const p = e.pos.clone().addScaledVector(dir, 0.3);
+          const vel = dir.clone().multiplyScalar(9.5);
+          this.pushFxParticle(p, vel, 0xf76707, 0.26, 0.55, 1.2);
+        }
+        break;
+      }
       case 'robot_punch_impact': {
         // ロケットパンチ直撃の大爆発・金属衝撃波・破片飛散
         for (let i = 0; i < 44; i++) {
@@ -1401,6 +1498,12 @@ export class SceneView {
         const smokePos = a.pos.clone().add(backDir);
         const smokeVel = backDir.clone().multiplyScalar(2).add(new Vector3((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8));
         this.pushFxParticle(smokePos, smokeVel, Math.random() < 0.4 ? 0xff922b : 0xd8dee8, 0.12, 0.28, -0.5);
+      }
+      if (a.state === 'flying' && a.projectileKind === 'angel_bomb') {
+        const backDir = a.dir.clone().multiplyScalar(-0.4);
+        const trailPos = a.pos.clone().add(backDir);
+        const trailVel = backDir.clone().multiplyScalar(2.5).add(new Vector3((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8));
+        this.pushFxParticle(trailPos, trailVel, Math.random() < 0.6 ? 0xf76707 : 0xffd43b, 0.22, 0.35, -0.2);
       }
       if (a.state === 'flying' && a.projectileKind === 'rocket_punch') {
         const backDir = a.dir.clone().multiplyScalar(-0.5);

@@ -29,10 +29,14 @@ export type AttackStyle =
   | 'tank_cannon'
   | 'rocket'
   | 'satellite_strike'
-  | 'rocket_punch';
+  | 'rocket_punch'
+  | 'ramiel_beam'
+  | 'sachiel_strike'
+  | 'zeruel_cutter'
+  | 'sahaquiel_drop';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
-export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical';
+export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical' | 'divine';
 type Dir3 = readonly [number, number, number];
 
 /** 近接武器の仕様（武器は物理粒子として手に接続される） */
@@ -99,7 +103,11 @@ export type UnitTypeId =
   | 'giant_tank'
   | 'rocket_soldier'
   | 'satellite_soldier'
-  | 'giant_robot';
+  | 'giant_robot'
+  | 'angel_ramiel'
+  | 'angel_sachiel'
+  | 'angel_zeruel'
+  | 'angel_sahaquiel';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -108,6 +116,7 @@ export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   japanese: '和風',
   animal: '動物',
   mythical: '架空生物',
+  divine: '使徒・神',
 };
 
 export interface UnitType {
@@ -762,7 +771,91 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     strikeImpulse: 0,
     look: { skin: SKIN, hair: null, helmet: 0x1f2937, hood: 0x374151, armor: 0x111827, beard: null },
   },
-  giant_robot: {
+    angel_ramiel: {
+    id: 'angel_ramiel',
+    name: '幾何神ラミエル',
+    category: 'divine',
+    description: '浮遊する正八面体結晶。強固なATフィールドで身を守り、超長距離から高威力の加粒子砲（荷電粒子ビーム照射）で敵軍を薙ぎ払う。',
+    cost: 1200,
+    scale: 2.2,
+    massMul: 2.2,
+    hp: 1500,
+    speed: 1.2,
+    style: 'ramiel_beam',
+    weapon: null,
+    projectile: null,
+    range: 35,
+    windup: 1.5,
+    strike: 0.45,
+    recover: 0.6,
+    cooldown: 2.5,
+    strikeImpulse: 0,
+    look: { skin: 0x339af0, hair: null, helmet: null, hood: null, armor: 0x1c7ed6, beard: null },
+  },
+  angel_sachiel: {
+    id: 'angel_sachiel',
+    name: '使徒神サキエル',
+    category: 'divine',
+    description: '白い仮面と漆黒の巨躯を持つ使徒。右腕の光杭パイルランスで敵を串刺しにし、眼窩から天を突く十字架状の閃光クロス爆発を放つ。',
+    cost: 850,
+    scale: 1.9,
+    massMul: 1.8,
+    hp: 1200,
+    speed: 2.0,
+    style: 'sachiel_strike',
+    weapon: null,
+    projectile: null,
+    range: 3.5,
+    windup: 0.7,
+    strike: 0.25,
+    recover: 0.45,
+    cooldown: 1.6,
+    strikeImpulse: 0,
+    look: { skin: 0x141517, hair: null, helmet: 0xf8f9fa, hood: null, armor: 0x212529, beard: null },
+  },
+  angel_zeruel: {
+    id: 'angel_zeruel',
+    name: '拒絶神ゼルエル',
+    category: 'divine',
+    description: '最強の拒絶タイプと呼ばれる使徒。極厚のATフィールドと装甲を誇り、帯状の超高速リボンカッターで前方の敵を一瞬にして両断する。',
+    cost: 1400,
+    scale: 2.5,
+    massMul: 3.0,
+    hp: 2000,
+    speed: 1.35,
+    style: 'zeruel_cutter',
+    weapon: null,
+    projectile: null,
+    range: 5.5,
+    windup: 0.8,
+    strike: 0.2,
+    recover: 0.5,
+    cooldown: 1.8,
+    strikeImpulse: 0,
+    look: { skin: 0x25262b, hair: null, helmet: 0xf1f3f5, hood: null, armor: 0x2b2b2b, beard: null },
+  },
+  angel_sahaquiel: {
+    id: 'angel_sahaquiel',
+    name: '天落神サハクィエル',
+    category: 'divine',
+    description: '上空を高高度旋回する巨大幾何学目玉紋様の使徒。自身の肉体の一部を落天爆弾として地上へ連続投下し、広範囲を爆砕する。',
+    cost: 1300,
+    scale: 2.6,
+    massMul: 2.0,
+    hp: 1400,
+    speed: 1.6,
+    style: 'sahaquiel_drop',
+    weapon: null,
+    projectile: { speed: 18, damage: 90, spread: 0.08 },
+    range: 22,
+    windup: 0.9,
+    strike: 0.3,
+    recover: 0.6,
+    cooldown: 2.2,
+    strikeImpulse: 0,
+    look: { skin: 0xf76707, hair: null, helmet: 0xffd43b, hood: null, armor: 0xd9480f, beard: null },
+  },
+giant_robot: {
     id: 'giant_robot',
     name: '巨大ロボット',
     category: 'modern',

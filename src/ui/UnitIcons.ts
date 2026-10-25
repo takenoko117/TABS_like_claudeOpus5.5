@@ -12,6 +12,7 @@ export const CATEGORY_ICONS: Readonly<Record<PaletteCategory | 'all', string>> =
   japanese: '⛩️',
   animal: '🐾',
   mythical: '🐉',
+  divine: '👁️',
   facility: '🏛️',
 };
 
@@ -23,6 +24,7 @@ export const CATEGORY_THEME_COLORS: Readonly<Record<PaletteCategory, { bg: strin
   japanese: { bg: 'linear-gradient(135deg, #4a1d2e, #2b121c)', border: '#ff85c0' },
   animal: { bg: 'linear-gradient(135deg, #4a3723, #2d2115)', border: '#fcc419' },
   mythical: { bg: 'linear-gradient(135deg, #4f1d1d, #2d1010)', border: '#ff6b6b' },
+  divine: { bg: 'linear-gradient(135deg, #341a4a, #1a0d26)', border: '#845ef7' },
   facility: { bg: 'linear-gradient(135deg, #2a3a40, #17242a)', border: '#38d9a9' },
 };
 
@@ -539,6 +541,39 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <rect x="16.5" y="21.5" width="5" height="5" fill="#38d9a9"/>
       </svg>`;
 
+    case 'angel_ramiel':
+      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+        <polygon points="24,4 40,24 24,44 8,24" stroke="#339af0" stroke-width="2.5" fill="#1c7ed6" fill-opacity="0.25"/>
+        <line points="24,4 24,44" stroke="#a5d8ff" stroke-width="1.5" stroke-dasharray="2 2"/>
+        <line points="8,24 40,24" stroke="#a5d8ff" stroke-width="1.5"/>
+        <circle cx="24" cy="24" r="4.5" fill="#d90429"/>
+      </svg>`;
+    case 'angel_sachiel':
+      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+        <path d="M24,6 C16,6 13,14 13,24 C13,34 18,42 24,44 C30,42 35,34 35,24 C35,14 32,6 24,6 Z" fill="#141517" stroke="#343a40" stroke-width="2"/>
+        <polygon points="24,10 18,22 24,36 30,22" fill="#f8f9fa"/>
+        <circle cx="21" cy="20" r="2" fill="#141517"/>
+        <circle cx="27" cy="20" r="2" fill="#141517"/>
+        <circle cx="24" cy="28" r="3.2" fill="#ff1744"/>
+      </svg>`;
+    case 'angel_zeruel':
+      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+        <path d="M12,10 L36,10 L40,28 L34,42 L14,42 L8,28 Z" fill="#212529" stroke="#495057" stroke-width="2"/>
+        <circle cx="24" cy="20" r="8" fill="#f1f3f5"/>
+        <circle cx="21" cy="18" r="2.2" fill="#ff1744"/>
+        <circle cx="27" cy="18" r="2.2" fill="#ff1744"/>
+        <path d="M6,22 Q12,32 6,42 M42,22 Q36,32 42,42" stroke="#ced4da" stroke-width="2.5" fill="none"/>
+        <circle cx="24" cy="34" r="3.5" fill="#d90429"/>
+      </svg>`;
+    case 'angel_sahaquiel':
+      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+        <ellipse cx="24" cy="24" rx="20" ry="12" fill="#f76707" stroke="#ffd43b" stroke-width="2"/>
+        <circle cx="24" cy="24" r="7.5" fill="#ffffff"/>
+        <circle cx="24" cy="24" r="4.5" fill="#1971c2"/>
+        <circle cx="24" cy="24" r="2" fill="#ff0000"/>
+        <circle cx="10" cy="24" r="3" fill="#ffd43b"/>
+        <circle cx="38" cy="24" r="3" fill="#ffd43b"/>
+      </svg>`;
     case 'giant_robot':
       // 巨大ロボット: V字アンテナ＋発光ツインアイ＋重装甲ショルダー＋ロケットナックル
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">

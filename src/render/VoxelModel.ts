@@ -412,6 +412,69 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.042, [6, 4, 6]);
   }
 
+  // 11. 幾何神ラミエル: 正八面体上部ピラミッドの頂点部
+  if (type.id === 'angel_ramiel') {
+    const g = new VoxelGrid(7, 7, 7);
+    const crystal = 0x339af0;
+    const highlight = 0xa5d8ff;
+    g.fillBox(2, 2, 2, 4, 4, 4, crystal);
+    g.set(3, 3, 5, highlight);
+    g.set(3, 5, 3, highlight);
+    return makeTemplate(g, 0.035, [3, 3, 3]);
+  }
+
+  // 12. 使徒神サキエル: 白い嘴状仮面と漆黒の後頭部
+  if (type.id === 'angel_sachiel') {
+    const g = new VoxelGrid(11, 13, 13);
+    const black = 0x141517;
+    const mask = 0xf8f9fa;
+    const maskShadow = 0xced4da;
+    g.fillBox(2, 2, 1, 8, 8, 7, black);
+    g.fillBox(2, 2, 7, 8, 8, 8, mask);
+    g.fillBox(3, 1, 8, 7, 7, 10, mask);
+    g.fillBox(4, 0, 10, 6, 5, 12, mask);
+    g.fillBox(4, 0, 9, 6, 1, 10, maskShadow);
+    g.fillBox(3, 5, 8, 4, 6, 9, black);
+    g.fillBox(6, 5, 8, 7, 6, 9, black);
+    g.set(3, 6, 8, 0xd90429);
+    g.set(7, 6, 8, 0xd90429);
+    g.fillBox(4, 8, 2, 6, 10, 5, black);
+    return makeTemplate(g, 0.04, [5, 4, 6]);
+  }
+
+  // 13. 拒絶神ゼルエル: ドクロ状の白い仮面と赤い眼光
+  if (type.id === 'angel_zeruel') {
+    const g = new VoxelGrid(13, 13, 13);
+    const bone = 0xf1f3f5;
+    const dark = 0x1f1f23;
+    g.fillBox(2, 2, 1, 10, 9, 7, dark);
+    g.fillBox(3, 2, 7, 9, 9, 9, bone);
+    g.fillBox(4, 1, 8, 8, 3, 10, bone);
+    g.fillBox(4, 5, 9, 5, 6, 10, dark);
+    g.fillBox(7, 5, 9, 8, 6, 10, dark);
+    g.set(4, 5, 9, 0xff1744);
+    g.set(8, 5, 9, 0xff1744);
+    g.fillBox(1, 4, 3, 2, 7, 7, dark);
+    g.fillBox(10, 4, 3, 11, 7, 7, dark);
+    return makeTemplate(g, 0.042, [6, 4, 6]);
+  }
+
+  // 14. 天落神サハクィエル: 巨大な使徒の瞳孔と幾何学翼頭部
+  if (type.id === 'angel_sahaquiel') {
+    const g = new VoxelGrid(15, 11, 13);
+    const orange = 0xf76707;
+    const yellow = 0xffd43b;
+    const dark = 0x141517;
+    g.fillBox(2, 2, 1, 12, 8, 8, orange);
+    g.fillBox(1, 3, 2, 13, 7, 7, yellow);
+    g.fillBox(3, 2, 8, 11, 8, 9, 0xffffff);
+    g.fillBox(4, 3, 9, 10, 7, 10, 0x1971c2);
+    g.fillBox(6, 4, 10, 8, 6, 11, dark);
+    g.set(7, 5, 11, 0xff0000);
+    g.fillBox(6, 8, 3, 8, 10, 6, yellow);
+    return makeTemplate(g, 0.045, [7, 5, 6]);
+  }
+
   // 10. 衛星攻撃兵士のハイテク通信バイザーヘルメット
   if (type.id === 'satellite_soldier') {
     const g = new VoxelGrid(11, 13, 11);
@@ -658,6 +721,92 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.set(7, 3, 0, 0x38d9a9);
     g.set(8, 3, 0, 0x38d9a9);
     return makeTemplate(g, 0.046, [5.5, 1.0, 4.5]);
+  }
+
+  // 幾何神ラミエル: 浮遊する完全な正八面体結晶ボディ
+  if (type.id === 'angel_ramiel') {
+    const size = 19;
+    const g = new VoxelGrid(size, size, size);
+    const cx = 9;
+    const cy = 9;
+    const cz = 9;
+    const r = 8.5;
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const dist1 = Math.abs(x - cx) + Math.abs(y - cy) + Math.abs(z - cz);
+          if (dist1 <= r) {
+            const dCore = Math.hypot(x - cx, y - cy, z - cz);
+            if (dCore <= 2.8) {
+              g.set(x, y, z, 0xd90429);
+            } else if (dist1 >= r - 1.2) {
+              g.set(x, y, z, (x + y + z) % 2 === 0 ? 0x4dabf7 : 0x74c0fc);
+            } else {
+              g.set(x, y, z, 0x1971c2);
+            }
+          }
+        }
+      }
+    }
+    return makeTemplate(g, 0.05, [cx, 3.5, cz]);
+  }
+
+  // 使徒神サキエル: 漆黒の巨躯と深紅に光る使徒コア
+  if (type.id === 'angel_sachiel') {
+    const g = new VoxelGrid(12, 14, 11);
+    const black = 0x141517;
+    const darkGray = 0x25262b;
+    const coreRed = 0xff1744;
+    g.fillBox(2, 0, 2, 9, 12, 8, black);
+    g.fillBox(4, 5, 8, 7, 8, 9, coreRed);
+    g.fillBox(5, 6, 9, 6, 7, 10, 0xff8787);
+    g.fillBox(3, 4, 8, 8, 4, 8, darkGray);
+    g.fillBox(3, 9, 8, 8, 9, 8, darkGray);
+    g.fillBox(5, 2, 0, 6, 13, 1, 0x343a40);
+    g.fillBox(2, 6, 0, 9, 7, 1, darkGray);
+    g.fillBox(2, 10, 0, 9, 11, 1, darkGray);
+    g.fillBox(0, 10, 3, 2, 13, 7, darkGray);
+    g.fillBox(9, 10, 3, 11, 13, 7, darkGray);
+    return makeTemplate(g, 0.045, [5.5, 1.0, 4.5]);
+  }
+
+  // 拒絶神ゼルエル: 巨大なマント状肩装甲・露出コア・肋骨ガード
+  if (type.id === 'angel_zeruel') {
+    const g = new VoxelGrid(16, 15, 12);
+    const dark = 0x1f1f23;
+    const armor = 0x2b2b2b;
+    const bone = 0xf1f3f5;
+    const core = 0xd90429;
+    g.fillBox(3, 0, 2, 12, 12, 8, dark);
+    g.fillBox(0, 7, 1, 3, 14, 9, armor);
+    g.fillBox(12, 7, 1, 15, 14, 9, armor);
+    g.fillBox(1, 14, 2, 14, 15, 8, armor);
+    g.fillBox(6, 4, 8, 9, 7, 9, core);
+    g.fillBox(7, 5, 9, 8, 6, 10, 0xff6b6b);
+    g.fillBox(4, 3, 8, 5, 8, 9, bone);
+    g.fillBox(10, 3, 8, 11, 8, 9, bone);
+    g.fillBox(5, 8, 8, 10, 9, 8, bone);
+    g.fillBox(4, 2, 0, 11, 13, 2, 0x141517);
+    return makeTemplate(g, 0.046, [7.5, 1.0, 5.0]);
+  }
+
+  // 天落神サハクィエル: 巨大な幾何学使徒ボディ
+  if (type.id === 'angel_sahaquiel') {
+    const g = new VoxelGrid(18, 14, 14);
+    const orange = 0xf76707;
+    const yellow = 0xffd43b;
+    const dark = 0x141517;
+    g.fillBox(2, 1, 2, 15, 11, 11, orange);
+    g.fillBox(1, 4, 1, 16, 8, 12, yellow);
+    g.fillBox(3, 0, 3, 14, 12, 10, orange);
+    g.fillBox(5, 3, 11, 12, 9, 12, 0xffffff);
+    g.fillBox(6, 4, 12, 11, 8, 13, 0x1971c2);
+    g.fillBox(7, 5, 13, 10, 7, 13, dark);
+    g.fillBox(8, 6, 13, 9, 6, 13, 0xff0000);
+    g.fillBox(4, 0, 5, 5, 1, 7, dark);
+    g.fillBox(8, 0, 5, 9, 1, 7, dark);
+    g.fillBox(12, 0, 5, 13, 1, 7, dark);
+    return makeTemplate(g, 0.05, [8.5, 1.0, 6.0]);
   }
 
   // 骨盤(y=0)から胸(y=0.42)を覆う胴体
@@ -1142,6 +1291,14 @@ export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeo
     g.fillBox(3, 0, 3, 5, 1, 5, 0x74c0fc);
     g.set(4, 0, 4, 0xffffff);
     geom = g.toGeometry(0.048, [4.5, 14, 4.5]);
+  } else if (kind === 'angel_bomb') {
+    const g = new VoxelGrid(7, 7, 7);
+    g.fillBox(1, 1, 1, 5, 5, 5, 0xf76707);
+    g.fillBox(2, 0, 2, 4, 6, 4, 0xffd43b);
+    g.fillBox(0, 2, 2, 6, 4, 4, 0xffd43b);
+    g.fillBox(2, 2, 0, 4, 4, 6, 0xffd43b);
+    g.fillBox(2, 2, 2, 4, 4, 4, 0xff0000);
+    geom = g.toGeometry(0.065, [3.5, 3.5, 3.5]);
   } else {
     const sy = 16;
     const g = new VoxelGrid(3, sy, 3);

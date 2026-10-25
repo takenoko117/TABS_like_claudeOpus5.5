@@ -1,3 +1,4 @@
+import { J } from '../units/Skeleton';
 import { Vector3 } from 'three';
 import type { Facility } from '../facilities/Facility';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
@@ -6,7 +7,7 @@ import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
-export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell' | 'rocket_punch';
+export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell' | 'rocket_punch' | 'angel_bomb';
 
 export interface HitEvent {
   kind: HitKind;
@@ -67,7 +68,15 @@ export type CombatEffectEvent =
   | { kind: 'satellite_target'; pos: Vector3; progress: number }
   | { kind: 'satellite_beam'; pos: Vector3; radius: number }
   | { kind: 'robot_punch_fire'; pos: Vector3; dir: Vector3 }
-  | { kind: 'robot_punch_impact'; pos: Vector3 };
+  | { kind: 'robot_punch_impact'; pos: Vector3 }
+  | { kind: 'at_field'; pos: Vector3; scale: number }
+  | { kind: 'ramiel_charge'; pos: Vector3; progress: number }
+  | { kind: 'ramiel_beam'; from: Vector3; to: Vector3 }
+  | { kind: 'sachiel_pile'; from: Vector3; to: Vector3 }
+  | { kind: 'sachiel_cross'; pos: Vector3 }
+  | { kind: 'zeruel_ribbon'; from: Vector3; dir: Vector3; reach: number }
+  | { kind: 'sahaquiel_bomb'; pos: Vector3 }
+;
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -503,6 +512,9 @@ export class CombatSystem {
     } else if (a.projectileKind === 'tank_shell') {
       this.applyRadialBlast(a.owner, pos, 4.4, a.damage, 13.5, 0.85, units, dt, 'explosion', facilities, a.team);
       this.emitEffect({ kind: 'tank_explosion', pos: pos.clone() });
+    } else if (a.projectileKind === 'angel_bomb') {
+      this.applyRadialBlast(a.owner, pos, 4.2, a.damage, 12.0, 0.8, units, dt, 'explosion', facilities, a.team);
+      this.emitEffect({ kind: 'sahaquiel_bomb', pos: pos.clone() });
     } else if (a.projectileKind === 'rocket_punch') {
       this.applyRadialBlast(a.owner, pos, 3.8, a.damage, 14.0, 0.85, units, dt, 'explosion', facilities, a.team);
       this.emitEffect({ kind: 'robot_punch_impact', pos: pos.clone() });
@@ -566,7 +578,7 @@ export class CombatSystem {
         if (!stopped) {
           a.pos.copy(_to);
           if (a.pos.y <= 0) {
-            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
+            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
               // 地面に着弾して爆発
               a.pos.y = 0.05;
               this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
@@ -626,7 +638,7 @@ export class CombatSystem {
         const killed = fac.takeDamage(dmg, a.owner);
         this.emitEffect({ kind: 'facility_hit', pos: a.pos.clone(), damage: dmg });
 
-        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
+        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
           this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
         } else if (a.projectileKind === 'sniper') {
           // スナイパーは施設にも大ダメージを与えつつ少し貫通
@@ -673,7 +685,7 @@ export class CombatSystem {
       const cy = from.y + (to.y - from.y) * t;
       if (cy <= obs.height && cx * cx + cz * cz <= (obs.radius + 0.05) ** 2) {
         a.pos.set(from.x + dx * t, cy, from.z + dz * t);
-        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
+        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
           this.triggerExplosiveProjectileHit(a, a.pos, units, [], dt);
         } else if (a.projectileKind === 'arrow' || a.projectileKind === 'shuriken') {
           a.state = 'ground';
@@ -875,7 +887,7 @@ export class CombatSystem {
     a.hitUnitIds.add(bestU.id);
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
-    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
+    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
       const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0);
       if (bestU.alive && bestU.team !== a.team) {
         bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined);
@@ -969,4 +981,130 @@ export class CombatSystem {
     a.life = 6;
     return true;
   }
+
+  /** 天落神サハクィエルの落天爆弾投下 */
+  fireAngelBomb(owner: Unit, from: Vector3, velocity: Vector3, damage: number): void {
+    this.fireProjectile(owner, from, velocity, 'angel_bomb', {
+      damage,
+      gravityScale: 0.15,
+      life: 5.0,
+    });
+  }
+
+  /** 幾何神ラミエルの加粒子砲照射 */
+  fireRamielBeam(owner: Unit, from: Vector3, to: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
+    this.emitEffect({ kind: 'ramiel_beam', from: from.clone(), to: to.clone() });
+    const dir = new Vector3().subVectors(to, from);
+    const dist = dir.length();
+    if (dist > 0.001) dir.normalize();
+
+    // 軌道上のユニットへの直撃貫通ダメージ
+    const beamRadius = 1.35;
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const toU = new Vector3().subVectors(u.pelvis.pos, from);
+      const proj = toU.dot(dir);
+      if (proj >= 0 && proj <= dist) {
+        const perp = toU.clone().addScaledVector(dir, -proj);
+        if (perp.length() <= beamRadius * u.scale) {
+          const dmg = (145 + Math.random() * 25) * owner.damageMul;
+          const impulse = dir.clone().multiplyScalar(9.0);
+          u.takeDamage(dmg, u.chest, impulse, dt, owner);
+          this.onHit?.({
+            kind: 'magic',
+            point: u.chest.pos.clone(),
+            damage: dmg,
+            attacker: owner,
+            victim: u,
+            hitParticle: u.chest,
+            impulse,
+            killed: !u.alive,
+          });
+        }
+      }
+    }
+
+    // 施設への貫通ダメージ
+    for (const f of facilities) {
+      if (!f.alive || f.team === owner.team) continue;
+      const toF = new Vector3().subVectors(f.pos, from);
+      const proj = toF.dot(dir);
+      if (proj >= 0 && proj <= dist) {
+        const perp = toF.clone().addScaledVector(dir, -proj);
+        if (perp.length() <= (f.radius + 1.2)) {
+          f.takeDamage((180 + Math.random() * 40) * owner.damageMul, owner);
+          this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: 180 });
+        }
+      }
+    }
+
+    // 着弾点の大爆発
+    this.applyRadialBlast(owner, to, 3.8, 110 * owner.damageMul, 13.0, 0.85, units, dt, 'explosion', facilities, owner.team);
+  }
+
+  /** 使徒神サキエルの光杭＆閃光クロス爆発 */
+  executeSachielStrike(owner: Unit, target: Unit | null, targetPos: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
+    const from = owner.joints[J.HandR].pos.clone();
+    this.emitEffect({ kind: 'sachiel_pile', from, to: targetPos.clone() });
+    if (target && target.alive && target.team !== owner.team) {
+      const dmg = (95 + Math.random() * 20) * owner.damageMul;
+      const dir = new Vector3().subVectors(targetPos, from).normalize();
+      target.takeDamage(dmg, target.chest, dir.clone().multiplyScalar(10.0), dt, owner);
+      this.onHit?.({
+        kind: 'melee',
+        point: targetPos.clone(),
+        damage: dmg,
+        attacker: owner,
+        victim: target,
+        hitParticle: target.chest,
+        impulse: dir.multiplyScalar(10.0),
+        killed: !target.alive,
+      });
+    }
+    // 十字架状の閃光クロス爆発
+    this.emitEffect({ kind: 'sachiel_cross', pos: targetPos.clone() });
+    this.applyRadialBlast(owner, targetPos, 3.2, 70 * owner.damageMul, 10.5, 0.7, units, dt, 'explosion', facilities, owner.team);
+  }
+
+  /** 拒絶神ゼルエルの帯状リボンカッター */
+  executeZeruelCutter(owner: Unit, forwardDir: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
+    const from = owner.chest.pos.clone();
+    const reach = 6.2;
+    this.emitEffect({ kind: 'zeruel_ribbon', from, dir: forwardDir.clone(), reach });
+    // 前方扇状〜直線範囲の敵を高速両断
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const diff = new Vector3().subVectors(u.pelvis.pos, from);
+      const d = diff.length();
+      if (d <= reach * owner.scale) {
+        const dot = diff.normalize().dot(forwardDir);
+        if (dot > 0.45) {
+          const dmg = (120 + Math.random() * 30) * owner.damageMul;
+          const impulse = forwardDir.clone().multiplyScalar(11.0).add(new Vector3(0, 4.0, 0));
+          u.takeDamage(dmg, u.chest, impulse, dt, owner);
+          this.onHit?.({
+            kind: 'slash',
+            point: u.chest.pos.clone(),
+            damage: dmg,
+            attacker: owner,
+            victim: u,
+            hitParticle: u.chest,
+            impulse,
+            killed: !u.alive,
+          });
+        }
+      }
+    }
+    for (const f of facilities) {
+      if (!f.alive || f.team === owner.team) continue;
+      const diff = new Vector3().subVectors(f.pos, from);
+      if (diff.length() <= reach + f.radius) {
+        if (diff.clone().normalize().dot(forwardDir) > 0.4) {
+          f.takeDamage((130 + Math.random() * 25) * owner.damageMul, owner);
+          this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: 130 });
+        }
+      }
+    }
+  }
+
 }
