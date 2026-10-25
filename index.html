@@ -100,10 +100,33 @@
       </div>
     </div>
 
-    <!-- 下部: カテゴリタブ & 兵種パレット -->
+    <!-- 下部: カテゴリタブ & 兵種パレット & ユニット詳細説明オーバーレイ -->
     <footer id="bottom-hud" class="bottom-hud">
+      <!-- ユニット選択時の詳細説明オーバーレイ -->
+      <div id="unit-detail-overlay" class="unit-detail-overlay hidden" role="region" aria-label="ユニット詳細情報">
+        <div class="unit-detail-main">
+          <div id="detail-avatar" class="unit-detail-avatar"></div>
+          <div class="unit-detail-body">
+            <div class="unit-detail-header-row">
+              <div class="unit-detail-title-line">
+                <span id="detail-name" class="unit-detail-name"></span>
+                <span id="detail-cat-badge" class="unit-cat-badge"></span>
+                <span id="detail-featured-tag" class="unit-featured-tag hidden">★特効</span>
+              </div>
+              <button id="btn-close-detail" class="unit-detail-close-btn" title="詳細説明を閉じる" aria-label="詳細説明を閉じる">✕</button>
+            </div>
+            <div id="detail-stats-row" class="unit-detail-stats-row"></div>
+            <div id="detail-desc" class="unit-detail-desc"></div>
+            <div id="detail-featured-note" class="unit-detail-featured-note hidden"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="bottom-hud-top-row">
         <div id="category-tabs" class="category-tabs"></div>
+        <button id="btn-toggle-detail" class="detail-toggle-btn active" title="ユニット詳細説明の表示/非表示">
+          ℹ️ 詳細
+        </button>
         <button id="btn-toggle-unitbar" class="unitbar-collapse-btn" title="兵種パレットを折りたたむ／展開する">
           ▼ 兵種バー
         </button>

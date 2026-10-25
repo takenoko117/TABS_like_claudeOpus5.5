@@ -8,6 +8,7 @@ import {
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
 import { SceneView } from '../render/SceneView';
+import { getPlaceableDetail } from '../ui/UnitDetailHelper';
 import {
   CATEGORY_ICONS,
   CATEGORY_THEME_COLORS,
@@ -299,6 +300,7 @@ export class GameApp {
   hudHidden = false;
   unitBarCollapsed = false;
   touchEraseMode = false;
+  unitDetailVisible = true;
 
   /** 配置フェーズで置かれた編成（リトライ時に復元する） */
   private savedLineup: PlacedRecord[] = [];
@@ -325,6 +327,18 @@ export class GameApp {
   private readonly elCategoryTabs: HTMLElement | null;
   private readonly elUnitBar: HTMLElement;
   private readonly elSpeedButtons: HTMLButtonElement[] = [];
+
+  // ユニット詳細オーバーレイ UI 要素
+  private readonly elUnitDetailOverlay: HTMLElement | null;
+  private readonly elDetailAvatar: HTMLElement | null;
+  private readonly elDetailName: HTMLElement | null;
+  private readonly elDetailCatBadge: HTMLElement | null;
+  private readonly elDetailFeaturedTag: HTMLElement | null;
+  private readonly elDetailCloseBtn: HTMLButtonElement | null;
+  private readonly elDetailStatsRow: HTMLElement | null;
+  private readonly elDetailDesc: HTMLElement | null;
+  private readonly elDetailFeaturedNote: HTMLElement | null;
+  private readonly elToggleDetailBtn: HTMLButtonElement | null;
 
   constructor(viewport: HTMLElement) {
     this.view = new SceneView(viewport);
@@ -372,6 +386,18 @@ export class GameApp {
     this.elNextStageBtn = document.getElementById('btn-next-stage') as HTMLButtonElement | null;
     this.elCategoryTabs = document.getElementById('category-tabs');
     this.elUnitBar = document.getElementById('unit-bar')!;
+
+    // ユニット詳細オーバーレイ要素の取得
+    this.elUnitDetailOverlay = document.getElementById('unit-detail-overlay');
+    this.elDetailAvatar = document.getElementById('detail-avatar');
+    this.elDetailName = document.getElementById('detail-name');
+    this.elDetailCatBadge = document.getElementById('detail-cat-badge');
+    this.elDetailFeaturedTag = document.getElementById('detail-featured-tag');
+    this.elDetailCloseBtn = document.getElementById('btn-close-detail') as HTMLButtonElement | null;
+    this.elDetailStatsRow = document.getElementById('detail-stats-row');
+    this.elDetailDesc = document.getElementById('detail-desc');
+    this.elDetailFeaturedNote = document.getElementById('detail-featured-note');
+    this.elToggleDetailBtn = document.getElementById('btn-toggle-detail') as HTMLButtonElement | null;
 
     // スマホ等の狭い画面では初期状態でゲームモードパネルを非表示にして戦場を見やすくする
     if (window.innerWidth <= 820) {
@@ -422,9 +448,20 @@ export class GameApp {
     this.elSidePanel?.classList.toggle('hud-hidden', this.hudHidden);
     this.elBottomHud?.classList.toggle('hud-hidden', this.hudHidden);
     this.elRestoreHudBtn?.classList.toggle('hidden', !this.hudHidden);
+    this.syncUnitDetailOverlay();
   }
 
   private buildUI(): void {
+    // ユニット詳細説明オーバーレイの閉じるボタン
+    this.elDetailCloseBtn?.addEventListener('click', () => {
+      this.hideUnitDetailOverlay();
+    });
+
+    // ユニット詳細説明の表示/非表示トグルボタン
+    this.elToggleDetailBtn?.addEventListener('click', () => {
+      this.toggleUnitDetailOverlay();
+    });
+
     // ゲームモードパネル（左サイドパネル）の表示/非表示トグル
     this.elTogglePanelBtn?.addEventListener('click', () => {
       this.sidePanelVisible = !this.sidePanelVisible;
@@ -645,9 +682,13 @@ export class GameApp {
       this.elSpeedButtons.push(b);
     });
 
-    // キーボードショートカット（Space: 戦闘開始/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉）
+    // キーボードショートカット（Space: 戦闘開始/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') {
+      if (e.code === 'Escape') {
+        if (this.unitDetailVisible) {
+          this.hideUnitDetailOverlay();
+        }
+      } else if (e.code === 'Space') {
         e.preventDefault();
         if (this.mode === 'placement') this.startBattle();
         else this.returnToPlacement();
@@ -804,6 +845,7 @@ export class GameApp {
           (isFeatured ? ' featured' : '') +
           (!unlocked ? ' locked' : '');
         btn.dataset.type = ut.id;
+        btn.title = `${ut.name} - ${ut.description}（クリックで詳細表示）`;
         const keyLabel = idx < 9 ? `${idx + 1}` : '';
         const featBadge = isFeatured ? `<span class="unit-featured-tag">★特効</span>` : '';
         const lockOverlay = !unlocked ? `<div class="unit-lock-badge">🔒</div>` : '';
@@ -828,7 +870,7 @@ export class GameApp {
               </div>
             </div>
           </div>
-          <div class="unit-desc">${ut.description}</div>
+          <div class="unit-desc" title="${ut.description}">${ut.description}</div>
         `;
         btn.addEventListener('click', () => {
           if (!unlocked) {
@@ -852,6 +894,7 @@ export class GameApp {
         const btn = document.createElement('button');
         btn.className = 'unit-card' + (fac.id === this.selectedId ? ' active' : '');
         btn.dataset.type = fac.id;
+        btn.title = `${fac.name} - ${fac.description}（クリックで詳細表示）`;
         const theme = CATEGORY_THEME_COLORS.facility;
         const keyLabel = this.selectedCategory === 'facility' && fIdx < 9 ? `${fIdx + 1}` : '';
 
@@ -872,7 +915,7 @@ export class GameApp {
               </div>
             </div>
           </div>
-          <div class="unit-desc">${fac.description}</div>
+          <div class="unit-desc" title="${fac.description}">${fac.description}</div>
         `;
         btn.addEventListener('click', () => {
           if (this.touchEraseMode) {
@@ -896,6 +939,82 @@ export class GameApp {
     cards.forEach((c) => {
       c.classList.toggle('active', c.dataset.type === id);
     });
+    this.updateUnitDetailOverlay(id);
+    this.showUnitDetailOverlay();
+  }
+
+  /** 選択中ユニット・施設の詳細説明オーバーレイの内容を最新に更新 */
+  private updateUnitDetailOverlay(id: UnitTypeId | FacilityTypeId): void {
+    const isArc = this.playStyle === 'arcade';
+    const isFeatured = isArc && !isFacilityTypeId(id) && this.currentStage.featuredUnits.includes(id);
+    const detail = getPlaceableDetail(id, isFeatured, '★このステージの特効ユニット！');
+
+    if (this.elDetailAvatar) {
+      this.elDetailAvatar.innerHTML = detail.iconSvg;
+      this.elDetailAvatar.style.background = detail.theme.bg;
+      this.elDetailAvatar.style.borderColor = detail.theme.border;
+    }
+
+    if (this.elDetailName) {
+      this.elDetailName.textContent = detail.name;
+    }
+
+    if (this.elDetailCatBadge) {
+      this.elDetailCatBadge.textContent = `${detail.categoryIcon} ${detail.categoryLabel}`;
+    }
+
+    if (this.elDetailFeaturedTag) {
+      this.elDetailFeaturedTag.classList.toggle('hidden', !detail.isFeatured);
+    }
+
+    if (this.elDetailStatsRow) {
+      this.elDetailStatsRow.innerHTML = '';
+      detail.statPills.forEach((pill) => {
+        const span = document.createElement('span');
+        span.className = pill.className;
+        span.title = pill.title;
+        if (pill.iconSvg) {
+          span.innerHTML = `${pill.iconSvg}<span>${pill.value}</span>`;
+        } else {
+          span.textContent = `${pill.value}`;
+        }
+        this.elDetailStatsRow!.appendChild(span);
+      });
+    }
+
+    if (this.elDetailDesc) {
+      this.elDetailDesc.textContent = detail.description;
+    }
+
+    if (this.elDetailFeaturedNote) {
+      if (detail.featuredNote) {
+        this.elDetailFeaturedNote.textContent = detail.featuredNote;
+        this.elDetailFeaturedNote.classList.remove('hidden');
+      } else {
+        this.elDetailFeaturedNote.classList.add('hidden');
+      }
+    }
+  }
+
+  showUnitDetailOverlay(): void {
+    this.unitDetailVisible = true;
+    this.syncUnitDetailOverlay();
+  }
+
+  hideUnitDetailOverlay(): void {
+    this.unitDetailVisible = false;
+    this.syncUnitDetailOverlay();
+  }
+
+  toggleUnitDetailOverlay(): void {
+    this.unitDetailVisible = !this.unitDetailVisible;
+    this.syncUnitDetailOverlay();
+  }
+
+  private syncUnitDetailOverlay(): void {
+    const shouldHide = !this.unitDetailVisible || this.hudHidden || this.mode === 'battle';
+    this.elUnitDetailOverlay?.classList.toggle('hidden', shouldHide);
+    this.elToggleDetailBtn?.classList.toggle('active', this.unitDetailVisible);
   }
 
   private selectUnitType(id: UnitTypeId): void {
@@ -1107,6 +1226,8 @@ export class GameApp {
     this.renderArcadeStageButtons();
     this.renderStageBriefing();
     this.renderUnitCards();
+    this.updateUnitDetailOverlay(this.selectedId);
+    this.syncUnitDetailOverlay();
     this.syncPhaseUI();
     this.updateHUD();
   }
@@ -1131,6 +1252,8 @@ export class GameApp {
       }
     }
     this.renderUnitCards();
+    this.updateUnitDetailOverlay(this.selectedId);
+    this.syncUnitDetailOverlay();
     this.syncPhaseUI();
     this.updateHUD();
   }
@@ -1157,6 +1280,7 @@ export class GameApp {
     }
     this.sound.playBattleStart();
     this.syncPhaseUI();
+    this.syncUnitDetailOverlay();
   }
 
   returnToPlacement(): void {
@@ -1175,6 +1299,7 @@ export class GameApp {
       }
     }
     this.syncPhaseUI();
+    this.syncUnitDetailOverlay();
     this.updateHUD();
   }
 
