@@ -520,7 +520,8 @@ export class Unit {
       this.type.id === 'warelephant' ||
       this.type.id === 'dragon' ||
       this.type.id === 'anaconda' ||
-      this.type.id === 'buggy'
+      this.type.id === 'buggy' ||
+      this.type.id === 'giant_tank'
         ? 0.25
         : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
@@ -550,7 +551,10 @@ export class Unit {
       st === 'shuriken' ||
       st === 'breath' ||
       st === 'iaido' ||
-      st === 'swoop'
+      st === 'swoop' ||
+      st === 'tank_cannon' ||
+      st === 'rocket' ||
+      st === 'satellite_strike'
     ) {
       return this.type.range;
     }
@@ -587,7 +591,10 @@ export class Unit {
       st === 'shuriken' ||
       st === 'breath' ||
       st === 'iaido' ||
-      st === 'swoop'
+      st === 'swoop' ||
+      st === 'tank_cannon' ||
+      st === 'rocket' ||
+      st === 'satellite_strike'
     ) {
       return this.type.range;
     }
@@ -641,7 +648,8 @@ export class Unit {
       this.type.id === 'warelephant' ||
       this.type.id === 'dragon' ||
       this.type.id === 'anaconda' ||
-      this.type.id === 'buggy'
+      this.type.id === 'buggy' ||
+      this.type.id === 'giant_tank'
         ? 0.16
         : 0.3;
     if (this.muscle < minMuscle) {
@@ -653,14 +661,28 @@ export class Unit {
     this.phaseTime += dt;
     const ty = this.type;
 
-    // 対物スナイパーの照準レーザー更新
-    if (ty.style === 'sniper' && this.attackPhase === 'windup') {
+    // 対物スナイパー・衛星攻撃兵士の照準レーザー更新
+    if ((ty.style === 'sniper' || ty.style === 'satellite_strike') && this.attackPhase === 'windup') {
       if (this.target && this.target.alive) {
         this.laserActive = true;
         this.laserAimPos.copy(this.target.chest.pos);
+        if (ty.style === 'satellite_strike') {
+          ctx.combat.emitEffect({
+            kind: 'satellite_target',
+            pos: this.target.pelvis.pos.clone(),
+            progress: this.phaseTime / ty.windup,
+          });
+        }
       } else if (this.targetFacility && this.targetFacility.alive) {
         this.laserActive = true;
         this.laserAimPos.copy(this.targetFacility.pos).setY(this.targetFacility.height * 0.5);
+        if (ty.style === 'satellite_strike') {
+          ctx.combat.emitEffect({
+            kind: 'satellite_target',
+            pos: this.targetFacility.pos.clone(),
+            progress: this.phaseTime / ty.windup,
+          });
+        }
       } else {
         this.laserActive = false;
       }
@@ -824,6 +846,75 @@ export class Unit {
       this.slamRestTime = 0;
       this.squash = 1.38;
       ctx.combat.emitEffect({ kind: 'slime_jump', pos: this.pelvis.pos.clone(), scale: this.scale, team: this.team });
+      return;
+    }
+    if (st === 'tank_cannon') {
+      const aim =
+        t && t.alive
+          ? t.pelvis.pos.clone().addScaledVector(t.velocity, 0.15)
+          : fac && fac.alive
+          ? fac.pos.clone().setY(fac.height * 0.4)
+          : null;
+      if (aim) {
+        const from = this.head.pos.clone().addScaledVector(this.forward, 1.8 * this.scale);
+        from.y += 0.2 * this.scale;
+        const speed = this.type.projectile?.speed ?? 45;
+        const dir = new Vector3().subVectors(aim, from);
+        const dist = Math.hypot(dir.x, dir.z);
+        const flight = dist / speed;
+        dir.y += 0.5 * GRAVITY * 0.35 * flight * flight;
+        dir.normalize();
+        const vel = dir.multiplyScalar(speed);
+        ctx.combat.fireProjectile(this, from, vel, 'tank_shell', {
+          damage: this.type.projectile?.damage ?? 95,
+          gravityScale: 0.35,
+          life: 4.0,
+        });
+        ctx.combat.emitEffect({ kind: 'tank_fire', pos: from, dir: this.forward.clone() });
+        const recoil = this.forward.clone().multiplyScalar(-3.5);
+        for (const p of this.joints) p.addVelocity(recoil, dt);
+      }
+      return;
+    }
+    if (st === 'rocket') {
+      const aim =
+        t && t.alive
+          ? t.chest.pos.clone().addScaledVector(t.velocity, 0.1)
+          : fac && fac.alive
+          ? fac.pos.clone().setY(fac.height * 0.5)
+          : null;
+      if (aim) {
+        const from = this.joints[J.ShoulderR].pos.clone().addScaledVector(this.forward, 0.6 * this.scale);
+        from.y += 0.1 * this.scale;
+        const speed = this.type.projectile?.speed ?? 38;
+        const dir = new Vector3().subVectors(aim, from);
+        const dist = Math.hypot(dir.x, dir.z);
+        const flight = dist / speed;
+        dir.y += 0.5 * GRAVITY * 0.08 * flight * flight;
+        dir.normalize();
+        const vel = dir.multiplyScalar(speed);
+        ctx.combat.fireProjectile(this, from, vel, 'rocket', {
+          damage: this.type.projectile?.damage ?? 75,
+          gravityScale: 0.08,
+          life: 3.5,
+        });
+        ctx.combat.emitEffect({ kind: 'rocket_fire', pos: from, dir: this.forward.clone() });
+        const recoil = this.forward.clone().multiplyScalar(-1.8);
+        this.chest.addVelocity(recoil, dt);
+        this.pelvis.addVelocity(recoil, dt);
+      }
+      return;
+    }
+    if (st === 'satellite_strike') {
+      const aim =
+        t && t.alive
+          ? t.pelvis.pos.clone()
+          : fac && fac.alive
+          ? fac.pos.clone()
+          : null;
+      if (aim) {
+        ctx.combat.callSatelliteStrike(this, aim, ctx.units, ctx.facilities ?? [], dt);
+      }
       return;
     }
     if (st === 'trample') {
@@ -1096,6 +1187,42 @@ export class Unit {
               const recoil = this.forward.clone().multiplyScalar(-3.0);
               for (const p of this.joints) p.addVelocity(recoil, dt);
             }
+          }
+        }
+      }
+    }
+
+    // 1-3. 戦車（超巨大）の履帯踏み潰しと地響き
+    if (id === 'giant_tank' && ctx.aiEnabled) {
+      const speedH = Math.hypot(this.velocity.x, this.velocity.z);
+      if (speedH > 0.5) {
+        this.stepDustTimer -= dt;
+        if (this.stepDustTimer <= 0) {
+          this.stepDustTimer = 0.28;
+          ctx.combat.emitEffect({ kind: 'elephant_step', pos: new Vector3(this.pelvis.pos.x, 0.05, this.pelvis.pos.z) });
+        }
+        const frontPos = this.pelvis.pos.clone().addScaledVector(this.forward, 0.9 * this.scale);
+        const trampleR2 = (1.2 * this.scale) ** 2;
+        for (const u of ctx.units) {
+          if (!u.alive || u.team === this.team || u.scale >= 2.0) continue;
+          if (!this.canHit(u)) continue;
+          if (u.pelvis.pos.distanceToSquared(frontPos) <= trampleR2) {
+            this.registerHit(u, 0.5);
+            const push = new Vector3().subVectors(u.pelvis.pos, this.pelvis.pos).setY(0).normalize();
+            push.addScaledVector(this.forward, 0.9).normalize().multiplyScalar(6.5);
+            push.y = 2.4;
+            const dmg = 18 * this.damageMul;
+            const killed = u.takeDamage(dmg, u.pelvis, push, dt, this);
+            ctx.combat.onHit?.({
+              kind: 'melee',
+              point: u.pelvis.pos.clone(),
+              damage: dmg,
+              attacker: this,
+              victim: u,
+              hitParticle: u.pelvis,
+              impulse: push,
+              killed,
+            });
           }
         }
       }

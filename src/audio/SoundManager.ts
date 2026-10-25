@@ -864,6 +864,162 @@ export class SoundManager {
         noise.stop(t + 0.48);
         break;
       }
+      case 'tank_fire': {
+        if (!this.throttle('tank_fr', 100)) return;
+        // 超巨大戦車の重砲撃音（超低音ドォォン）
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'sine';
+        boom.frequency.setValueAtTime(150, t);
+        boom.frequency.exponentialRampToValueAtTime(24, t + 0.35);
+        bg.gain.setValueAtTime(0.6, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.4);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(900, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.55, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.3);
+        break;
+      }
+      case 'tank_explosion': {
+        if (!this.throttle('tank_exp', 80)) return;
+        // 戦車榴弾の大轟音爆発
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'triangle';
+        boom.frequency.setValueAtTime(130, t);
+        boom.frequency.exponentialRampToValueAtTime(18, t + 0.48);
+        bg.gain.setValueAtTime(0.65, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.52);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.55);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1100, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.6, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.45);
+        break;
+      }
+      case 'rocket_fire': {
+        if (!this.throttle('rkt_fr', 60)) return;
+        // ロケット発射・噴射音（シュオォォン）
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(800, t);
+        bp.frequency.exponentialRampToValueAtTime(1600, t + 0.15);
+        bp.Q.value = 2.0;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.45, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.3);
+        break;
+      }
+      case 'rocket_explosion': {
+        if (!this.throttle('rkt_exp', 60)) return;
+        // ロケット弾爆発音
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'triangle';
+        boom.frequency.setValueAtTime(160, t);
+        boom.frequency.exponentialRampToValueAtTime(30, t + 0.3);
+        bg.gain.setValueAtTime(0.5, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.35);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1200, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.48, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.28);
+        break;
+      }
+      case 'satellite_target': {
+        if (!this.throttle('sat_tgt', 180)) return;
+        // 衛星照準ピピピッ音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1400, t);
+        osc.frequency.setValueAtTime(1750, t + 0.04);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.09);
+        break;
+      }
+      case 'satellite_beam': {
+        if (!this.throttle('sat_beam', 150)) return;
+        // 軌道衛星からの荷電粒子ビーム照射音（高エネルギー地鳴り）
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(600, t);
+        osc.frequency.exponentialRampToValueAtTime(45, t + 0.4);
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.48);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1600, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.65, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.52);
+        break;
+      }
     }
   }
 }

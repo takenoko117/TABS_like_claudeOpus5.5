@@ -65,6 +65,7 @@ function attackDummy(attackerId: UnitTypeId, dummyId: UnitTypeId, startDist: num
 /** 間合いの外から接近を始める距離 */
 function approachDist(id: UnitTypeId): number {
   const t = UNIT_TYPES[id];
+  if (t.style === 'bow') return 15;
   return Math.min(Math.max(t.range * t.scale + 2.5, 8), 22);
 }
 
@@ -212,6 +213,75 @@ describe('兵種固有の不具合の回帰テスト', () => {
     };
     decoy.takeDamage(200, decoy.chest, new (battle.spawnUnit('clubber', 1, 0, 0).velocity.constructor as any)(), 1 / 120);
     expect(popped).toBe(true);
+  });
+
+  it('戦車（超巨大）の主砲砲撃が敵に着弾して特大爆発ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const tank = battle.spawnUnit('giant_tank', 0, -12, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 10, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let fired = 0;
+    let explosions = 0;
+    let damage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'tank_fire') fired++;
+      if (e.kind === 'tank_explosion') explosions++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === tank && e.victim === dummy) damage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(fired).toBeGreaterThan(0);
+    expect(explosions).toBeGreaterThan(0);
+    expect(damage).toBeGreaterThan(50);
+  });
+
+  it('ロケットランチャー兵士が推進ロケット弾を発射し爆発ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const rocket = battle.spawnUnit('rocket_soldier', 0, -10, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 10, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let fired = 0;
+    let explosions = 0;
+    let damage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'rocket_fire') fired++;
+      if (e.kind === 'rocket_explosion') explosions++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === rocket && e.victim === dummy) damage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(fired).toBeGreaterThan(0);
+    expect(explosions).toBeGreaterThan(0);
+    expect(damage).toBeGreaterThan(40);
+  });
+
+  it('衛星攻撃兵士が天頂からの軌道レーザー照射で大ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const sat = battle.spawnUnit('satellite_soldier', 0, -15, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 15, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let targets = 0;
+    let beams = 0;
+    let damage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'satellite_target') targets++;
+      if (e.kind === 'satellite_beam') beams++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === sat && e.victim === dummy) damage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 10; i++) battle.step(battle.fixedDt);
+    expect(targets).toBeGreaterThan(0);
+    expect(beams).toBeGreaterThan(0);
+    expect(damage).toBeGreaterThan(80);
   });
 });
 

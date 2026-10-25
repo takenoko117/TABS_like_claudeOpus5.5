@@ -25,7 +25,10 @@ export type AttackStyle =
   | 'trample'
   | 'swoop'
   | 'breath'
-  | 'jump_slam';
+  | 'jump_slam'
+  | 'tank_cannon'
+  | 'rocket'
+  | 'satellite_strike';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical';
@@ -91,7 +94,10 @@ export type UnitTypeId =
   | 'slime'
   | 'buggy'
   | 'anaconda'
-  | 'decoy';
+  | 'decoy'
+  | 'giant_tank'
+  | 'rocket_soldier'
+  | 'satellite_soldier';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -691,6 +697,69 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     strikeImpulse: 0,
     look: { skin: 0xd4a373, hair: 0xeddcd2, helmet: 0xb08968, hood: null, armor: 0xfaedcd, beard: null },
   },
+  giant_tank: {
+    id: 'giant_tank',
+    name: '戦車（超巨大）',
+    category: 'modern',
+    description: '圧倒的な巨体と重装甲を誇る超重戦車。大口径主砲の榴弾爆撃と超重量の無限軌道で敵軍を踏み潰す。',
+    cost: 950,
+    scale: 2.3,
+    massMul: 3.2,
+    hp: 1400,
+    speed: 1.55,
+    style: 'tank_cannon',
+    weapon: null,
+    projectile: { speed: 45, damage: 95, spread: 0.02 },
+    range: 30,
+    windup: 1.1,
+    strike: 0.2,
+    recover: 0.6,
+    cooldown: 2.2,
+    strikeImpulse: 0,
+    look: { skin: 0x3d4a3e, hair: null, helmet: 0x2b362c, hood: null, armor: 0x4f5e50, beard: null },
+  },
+  rocket_soldier: {
+    id: 'rocket_soldier',
+    name: 'ロケットランチャー兵士',
+    category: 'modern',
+    description: '肩撃ち式ロケットランチャーから直進推進弾を発射。密集陣形や大型兵器を着弾の爆風で消し飛ばす。',
+    cost: 230,
+    scale: 1.05,
+    massMul: 1.05,
+    hp: 105,
+    speed: 2.1,
+    style: 'rocket',
+    weapon: null,
+    projectile: { speed: 38, damage: 75, spread: 0.02 },
+    range: 26,
+    windup: 0.75,
+    strike: 0.1,
+    recover: 0.45,
+    cooldown: 1.9,
+    strikeImpulse: 0,
+    look: { skin: SKIN, hair: null, helmet: 0x3b443b, hood: null, armor: 0x4a554a, beard: 0x2b2b2b },
+  },
+  satellite_soldier: {
+    id: 'satellite_soldier',
+    name: '衛星攻撃兵士',
+    category: 'modern',
+    description: '携行レーザー端末で衛星へ座標送信。天頂の軌道衛星から極太の荷電粒子ビームを垂直照射し敵を一掃する。',
+    cost: 360,
+    scale: 1.0,
+    massMul: 0.95,
+    hp: 80,
+    speed: 2.15,
+    style: 'satellite_strike',
+    weapon: null,
+    projectile: null,
+    range: 40,
+    windup: 1.6,
+    strike: 0.35,
+    recover: 0.6,
+    cooldown: 3.2,
+    strikeImpulse: 0,
+    look: { skin: SKIN, hair: null, helmet: 0x1f2937, hood: 0x374151, armor: 0x111827, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -715,4 +784,7 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.buggy,
   UNIT_TYPES.anaconda,
   UNIT_TYPES.decoy,
+  UNIT_TYPES.giant_tank,
+  UNIT_TYPES.rocket_soldier,
+  UNIT_TYPES.satellite_soldier,
 ];

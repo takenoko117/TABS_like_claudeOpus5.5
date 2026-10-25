@@ -1251,6 +1251,88 @@ export class SceneView {
         }
         break;
       }
+      case 'tank_fire': {
+        // 超巨大戦車の主砲発砲（特大マズルフラッシュ＋砲煙リング）
+        for (let i = 0; i < 28; i++) {
+          const spread = e.dir.clone().add(new Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6)).normalize();
+          const vel = spread.multiplyScalar(5.0 + Math.random() * 9.0);
+          const col = i % 3 === 0 ? 0xffd43b : i % 2 === 0 ? 0xff922b : 0xf1f3f5;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.24, 0.4 + Math.random() * 0.3, 1.0);
+        }
+        break;
+      }
+      case 'tank_explosion': {
+        // 戦車榴弾の超巨大爆発（炎・黒煙・飛散破片・衝撃波）
+        for (let i = 0; i < 48; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize();
+          const spd = 5 + Math.random() * 11;
+          const col = i % 3 === 0 ? 0xff6b1a : i % 3 === 1 ? 0xffe066 : 0x212529;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(spd), col, 0.26, 0.55 + Math.random() * 0.35, 3.5);
+        }
+        for (let i = 0; i < 18; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 9, 3.0 + Math.random() * 6.0, (Math.random() - 0.5) * 9);
+          this.pushDroppedVoxel(e.pos.clone(), vel, i % 2 === 0 ? 0x3d4a3e : 0xd4af37, 0.08);
+        }
+        break;
+      }
+      case 'rocket_fire': {
+        // ロケットランチャー発射（後方バックブラスト火炎・煙＋前方煙）
+        const backDir = e.dir.clone().multiplyScalar(-1);
+        for (let i = 0; i < 16; i++) {
+          const vel = backDir.clone().add(new Vector3((Math.random() - 0.5) * 0.7, (Math.random() - 0.5) * 0.7, (Math.random() - 0.5) * 0.7)).normalize().multiplyScalar(4 + Math.random() * 5);
+          this.pushFxParticle(e.pos.clone(), vel, i % 2 === 0 ? 0xff922b : 0xced4da, 0.16, 0.35, 1.0);
+        }
+        break;
+      }
+      case 'rocket_explosion': {
+        // ロケット弾爆発
+        for (let i = 0; i < 36; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.15, Math.random() - 0.5).normalize();
+          const spd = 4 + Math.random() * 8.5;
+          const col = i % 3 === 0 ? 0xff922b : i % 3 === 1 ? 0xffd43b : 0x343a40;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(spd), col, 0.2, 0.45 + Math.random() * 0.25, 4.0);
+        }
+        for (let i = 0; i < 10; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 7, 2.5 + Math.random() * 5, (Math.random() - 0.5) * 7);
+          this.pushDroppedVoxel(e.pos.clone(), vel, 0x3d4a3e, 0.06);
+        }
+        break;
+      }
+      case 'satellite_target': {
+        // 衛星照準リング（目標足元に収束するリング状光粒子）
+        const r = 2.5 * (1.0 - e.progress * 0.65);
+        for (let i = 0; i < 6; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const pos = e.pos.clone().add(new Vector3(Math.cos(ang) * r, 0.08, Math.sin(ang) * r));
+          this.pushFxParticle(pos, new Vector3(0, 0.4, 0), 0xff3b30, 0.12, 0.2, 0);
+        }
+        break;
+      }
+      case 'satellite_beam': {
+        // 宇宙軌道からの超巨大垂直ビーム柱＆プラズマ衝撃波！
+        const topY = 32;
+        const groundY = e.pos.y;
+        // 垂直ビーム柱（天頂から地面まで連続配置）
+        for (let y = groundY; y <= topY; y += 0.8) {
+          const pos = new Vector3(e.pos.x + (Math.random() - 0.5) * 0.35, y, e.pos.z + (Math.random() - 0.5) * 0.35);
+          this.pushFxParticle(pos, new Vector3(0, -6.0, 0), Math.random() < 0.6 ? 0xffffff : 0x38d9a9, 0.32, 0.5, 0);
+        }
+        // 地面プラズマ衝撃波リング
+        const ringN = 32;
+        for (let i = 0; i < ringN; i++) {
+          const ang = (i / ringN) * Math.PI * 2;
+          const dir = new Vector3(Math.cos(ang), 0.05, Math.sin(ang));
+          const p = e.pos.clone().addScaledVector(dir, 0.3);
+          const vel = dir.clone().multiplyScalar(7.5);
+          this.pushFxParticle(p, vel, i % 2 === 0 ? 0x38d9a9 : 0x74c0fc, 0.22, 0.6, 1.0);
+        }
+        // 激しく吹き飛ぶプラズマ火花
+        for (let i = 0; i < 28; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 8, 4.0 + Math.random() * 8, (Math.random() - 0.5) * 8);
+          this.pushFxParticle(e.pos.clone(), vel, 0xffffff, 0.16, 0.4, 8);
+        }
+        break;
+      }
     }
   }
 
@@ -1279,6 +1361,12 @@ export class SceneView {
       } else {
         _quat.setFromUnitVectors(UP, a.dir);
         mesh.quaternion.copy(_quat);
+      }
+      if (a.state === 'flying' && a.projectileKind === 'rocket') {
+        const backDir = a.dir.clone().multiplyScalar(-0.4);
+        const smokePos = a.pos.clone().add(backDir);
+        const smokeVel = backDir.clone().multiplyScalar(2).add(new Vector3((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8));
+        this.pushFxParticle(smokePos, smokeVel, Math.random() < 0.4 ? 0xff922b : 0xd8dee8, 0.12, 0.28, -0.5);
       }
     }
   }

@@ -466,6 +466,78 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <circle cx="18" cy="23" r="3.2" fill="#ffffff"/>
         <circle cx="18" cy="23" r="1.5" fill="#e03131"/>
       </svg>`;
+
+    case 'giant_tank':
+      // 戦車（超巨大）: 巨大な装甲車体・キャタピラ・旋回砲塔・長大な主砲
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 左右の履帯（キャタピラ） -->
+        <rect x="2" y="24" width="32" height="9" rx="3" fill="#212529" stroke="#121416" stroke-width="1"/>
+        <circle cx="6" cy="28.5" r="2.5" fill="#495057"/>
+        <circle cx="12" cy="28.5" r="2.5" fill="#495057"/>
+        <circle cx="18" cy="28.5" r="2.5" fill="#495057"/>
+        <circle cx="24" cy="28.5" r="2.5" fill="#495057"/>
+        <circle cx="30" cy="28.5" r="2.5" fill="#495057"/>
+        <!-- 重装甲車体シャーシ -->
+        <polygon points="4,24 7,16 29,16 32,24" fill="#3d4a3e" stroke="#283329" stroke-width="1"/>
+        <!-- チームカラーの識別ストライプ -->
+        <rect x="8" y="20" width="20" height="2.5" fill="#e0473a"/>
+        <!-- 旋回砲塔 -->
+        <rect x="10" y="10" width="16" height="7" rx="1.5" fill="#283329" stroke="#182019" stroke-width="1"/>
+        <!-- 長大な主砲バレル＆マズルブレーキ -->
+        <rect x="24" y="12" width="11" height="3" fill="#182019"/>
+        <rect x="33" y="11" width="2.5" height="5" rx="0.5" fill="#495057"/>
+        <!-- コマンダーハッチ -->
+        <rect x="13" y="8" width="5" height="2.5" rx="1" fill="#e0473a"/>
+      </svg>`;
+
+    case 'rocket_soldier':
+      // ロケットランチャー兵士: ヘルメット＋ゴーグル＋肩担ぎRPG
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 胴体ベスト -->
+        <rect x="8" y="22" width="14" height="11" fill="#4a554a"/>
+        <rect x="10" y="24" width="10" height="5" fill="#e0473a"/>
+        <!-- 顔 -->
+        <rect x="9" y="11" width="12" height="11" fill="#f0c39c"/>
+        <!-- 目 -->
+        <rect x="11" y="16" width="3" height="2.5" fill="#181820"/>
+        <rect x="16" y="16" width="3" height="2.5" fill="#181820"/>
+        <!-- コンバットヘルメット -->
+        <rect x="7" y="6" width="16" height="7" rx="1" fill="#3b443b"/>
+        <!-- タクティカルゴーグル（額） -->
+        <rect x="8" y="9" width="14" height="3" rx="0.8" fill="#212529"/>
+        <rect x="10" y="9.5" width="4" height="2" fill="#ff922b"/>
+        <rect x="16" y="9.5" width="4" height="2" fill="#ff922b"/>
+        <!-- 肩担ぎロケットランチャー -->
+        <g transform="rotate(-18 24 16)">
+          <rect x="16" y="13" width="18" height="5" rx="1" fill="#283329" stroke="#182019" stroke-width="0.8"/>
+          <rect x="14" y="12" width="3" height="7" rx="0.5" fill="#212529"/>
+          <!-- 突き出たロケット弾頭 -->
+          <polygon points="34,13 38,15.5 34,18" fill="#ff922b"/>
+          <rect x="22" y="11" width="4" height="2" fill="#495057"/>
+        </g>
+      </svg>`;
+
+    case 'satellite_soldier':
+      // 衛星攻撃兵士: 近未来バイザーヘルメット＋PDA端末＋天頂ビーム
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 天頂からの細い誘導光線 -->
+        <line x1="28" y1="0" x2="28" y2="36" stroke="#38d9a9" stroke-width="1.8" stroke-dasharray="2 1.5"/>
+        <circle cx="28" cy="32" r="3.5" fill="none" stroke="#38d9a9" stroke-width="1.2"/>
+        <!-- 胴体スーツ -->
+        <rect x="6" y="22" width="13" height="11" fill="#111827"/>
+        <rect x="8" y="24" width="9" height="5" fill="#e0473a"/>
+        <!-- 顔・ヘルメット -->
+        <rect x="6" y="10" width="13" height="12" rx="2" fill="#1f2937"/>
+        <!-- 発光アイバイザー -->
+        <rect x="7" y="13" width="11" height="4" rx="1" fill="#38d9a9"/>
+        <rect x="9" y="14" width="2" height="2" fill="#ffffff"/>
+        <!-- 通信アンテナ -->
+        <line x1="16" y1="10" x2="16" y2="3" stroke="#9ca3af" stroke-width="1.5"/>
+        <circle cx="16" cy="2.5" r="1.2" fill="#ff6b6b"/>
+        <!-- 手元の戦術PDA端末 -->
+        <rect x="15" y="20" width="8" height="10" rx="1" fill="#1f2937" stroke="#38d9a9" stroke-width="0.8"/>
+        <rect x="16.5" y="21.5" width="5" height="5" fill="#38d9a9"/>
+      </svg>`;
   }
 }
 
