@@ -10,6 +10,7 @@ export const TEAM_COLORS = [
 ] as const;
 
 export type AttackStyle =
+  | 'none'
   | 'swing'
   | 'thrust'
   | 'bow'
@@ -87,7 +88,10 @@ export type UnitTypeId =
   | 'warelephant'
   | 'giant_eagle'
   | 'dragon'
-  | 'slime';
+  | 'slime'
+  | 'buggy'
+  | 'anaconda'
+  | 'decoy';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -584,7 +588,7 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
   },
   dragon: {
     id: 'dragon',
-    name: '紅蓮ドラゴン',
+    name: 'ドラゴン',
     category: 'mythical',
     description: '翼で低空を滑空し、首を振りながら扇状に灼熱の火炎ブレスを吐いて戦場を焼き払う。',
     cost: 850,
@@ -624,6 +628,69 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     strikeImpulse: 5,
     look: { skin: 0x38d976, hair: null, helmet: 0xffd43b, hood: null, armor: 0x26b860, beard: null },
   },
+  buggy: {
+    id: 'buggy',
+    name: '暴走バギー',
+    category: 'modern',
+    description: 'エンジンを轟かせ猛スピードで爆走する戦闘車両。敵陣に突入して軽量兵を跳ね飛ばし蹂躙する。',
+    cost: 280,
+    scale: 1.35,
+    massMul: 2.2,
+    hp: 420,
+    speed: 5.8,
+    style: 'trample',
+    weapon: null,
+    projectile: null,
+    range: 1.8,
+    windup: 0.2,
+    strike: 0.35,
+    recover: 0.25,
+    cooldown: 0.6,
+    strikeImpulse: 7,
+    look: { skin: 0x212529, hair: null, helmet: 0xffd166, hood: null, armor: 0x495057, beard: null },
+  },
+  anaconda: {
+    id: 'anaconda',
+    name: '巨大アナコンダ',
+    category: 'animal',
+    description: '地を這う大蛇。猛然と飛びかかり、毒牙の噛みつきと強靭な巻き付きで敵を絞め殺す。',
+    cost: 450,
+    scale: 1.7,
+    massMul: 1.6,
+    hp: 680,
+    speed: 2.8,
+    style: 'thrust',
+    weapon: null,
+    projectile: null,
+    range: 2.4,
+    windup: 0.32,
+    strike: 0.24,
+    recover: 0.38,
+    cooldown: 0.75,
+    strikeImpulse: 6.5,
+    look: { skin: 0x245a30, hair: null, helmet: 0x1b4332, hood: null, armor: 0x40916c, beard: null },
+  },
+  decoy: {
+    id: 'decoy',
+    name: 'おとり',
+    category: 'standard',
+    description: '戦闘能力を一切持たない藁人形のデコイ。敵の注意を引きつけ、味方への攻撃の身代わりとなる。',
+    cost: 20,
+    scale: 0.95,
+    massMul: 0.85,
+    hp: 120,
+    speed: 1.8,
+    style: 'none',
+    weapon: null,
+    projectile: null,
+    range: 1.0,
+    windup: 0.5,
+    strike: 0.1,
+    recover: 0.5,
+    cooldown: 1.0,
+    strikeImpulse: 0,
+    look: { skin: 0xd4a373, hair: 0xeddcd2, helmet: 0xb08968, hood: null, armor: 0xfaedcd, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -645,4 +712,7 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.giant_eagle,
   UNIT_TYPES.dragon,
   UNIT_TYPES.slime,
+  UNIT_TYPES.buggy,
+  UNIT_TYPES.anaconda,
+  UNIT_TYPES.decoy,
 ];

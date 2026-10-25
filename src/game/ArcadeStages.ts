@@ -54,12 +54,13 @@ export interface ArcadeStage {
   enemies: readonly EnemySpawnRecord[];
 }
 
-/** アーケードモード開始時点で最初から使える基本4兵種 */
+/** アーケードモード開始時点で最初から使える基本5兵種 */
 export const INITIAL_UNLOCKED_UNITS: readonly UnitTypeId[] = [
   'clubber',
   'swordsman',
   'spearman',
   'archer',
+  'decoy',
 ];
 
 /** 標準の赤軍配置ゾーン */
@@ -219,7 +220,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       '戦場中央が深い谷で分断され、幅6.4mの石橋しか道がない！橋の上を盾兵と剣士の重装部隊が塞ぎ、後方からガトリング重装兵が弾幕を張る。',
     hint: '【戦略】谷底へ落ちたユニットはHPに関係なく即死する！「巨人」の大棍棒なぎ払いや「爆弾兵」の爆風で敵を橋の左右へ吹き飛ばすか、空を飛ぶ「大鷲」で敵を鷲掴みにして谷へ落とそう！',
     featuredUnits: ['giant', 'bomber', 'giant_eagle'],
-    unlockUnits: ['minigunner', 'gravimancer'],
+    unlockUnits: ['minigunner', 'gravimancer', 'buggy'],
     budget: 850,
     star2Budget: 760,
     star3Budget: 660,
@@ -247,7 +248,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       '中央に矢や銃弾を遮る6本の古代石柱がそびえ立つ。敵陣最後列の「対物スナイパー」3体が直線上のユニットを貫通銃撃し、前衛を盾兵と雷導師が守る。',
     hint: '【戦略】この面では敵陣北側（上側）にある「奇襲配置エリア」にも自軍を配置できる！正面は石柱の陰と盾兵で耐えつつ、奇襲エリアに「突撃兵」「居合の剣豪」「忍者」を置いてスナイパーを横から狩り尽くそう！',
     featuredUnits: ['charger', 'samurai', 'ninja', 'shielder'],
-    unlockUnits: ['warelephant'],
+    unlockUnits: ['warelephant', 'anaconda'],
     budget: 1200,
     star2Budget: 1080,
     star3Budget: 950,
@@ -497,7 +498,7 @@ export function isUnitUnlocked(save: ArcadeSaveData, typeId: UnitTypeId): boolea
   return save.unlockedUnits.includes(typeId);
 }
 
-/** 全18ユニットのID一覧を返す */
+/** 全ユニットのID一覧を返す */
 export function getAllUnitIds(): UnitTypeId[] {
   return UNIT_TYPE_LIST.map((u) => u.id);
 }

@@ -600,6 +600,93 @@ export class SoundManager {
         osc.stop(t + 0.2);
         break;
       }
+      case 'buggy_ram': {
+        if (!this.throttle('buggy_ram', 90)) return;
+        // バギー激突音: ガシャーンという金属クラッシュと重低音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.exponentialRampToValueAtTime(45, t + 0.22);
+        g.gain.setValueAtTime(0.35, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.25);
+        break;
+      }
+      case 'buggy_smoke': {
+        if (!this.throttle('buggy_smoke', 140)) return;
+        // タイヤ摩擦音
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        const g = ctx.createGain();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(800, t);
+        bp.Q.setValueAtTime(2.0, t);
+        g.gain.setValueAtTime(0.12, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+        noise.connect(bp);
+        bp.connect(g);
+        g.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.12);
+        break;
+      }
+      case 'anaconda_hiss': {
+        if (!this.throttle('anaconda_hiss', 200)) return;
+        // アナコンダのシャーッという威嚇音
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        const g = ctx.createGain();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(2800, t);
+        bp.frequency.exponentialRampToValueAtTime(1400, t + 0.24);
+        bp.Q.setValueAtTime(3.5, t);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+        noise.connect(bp);
+        bp.connect(g);
+        g.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.25);
+        break;
+      }
+      case 'anaconda_bite': {
+        if (!this.throttle('anaconda_bite', 80)) return;
+        // 毒牙の噛みつき音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(360, t);
+        osc.frequency.exponentialRampToValueAtTime(85, t + 0.12);
+        g.gain.setValueAtTime(0.3, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.15);
+        break;
+      }
+      case 'decoy_pop': {
+        if (!this.throttle('decoy_pop', 80)) return;
+        // おとり破壊時のパフッという藁破裂音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(280, t);
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.15);
+        g.gain.setValueAtTime(0.32, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.17);
+        break;
+      }
       case 'shield_block': {
         if (!this.throttle('shield_blk', 55)) return;
         // 鉄盾が矢や刃を弾く硬質な金属反響音

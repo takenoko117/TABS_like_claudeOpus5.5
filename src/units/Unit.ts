@@ -122,6 +122,10 @@ export class Unit {
   burnTimer = 0;
   burnAttacker: Unit | null = null;
   private burnTickTimer = 0;
+  /** 毒残り時間（巨大アナコンダ） */
+  poisonTimer = 0;
+  poisonAttacker: Unit | null = null;
+  private poisonTickTimer = 0;
   /** 変わり身の術クールダウン（からくり忍者） */
   kawariCooldown = 0;
   /** 突撃兵の跳躍チャージクールダウン */
@@ -335,6 +339,28 @@ export class Unit {
       }
     }
 
+    // 毒（巨大アナコンダ）の処理
+    if (this.poisonTimer > 0) {
+      this.poisonTimer = Math.max(0, this.poisonTimer - dt);
+      this.poisonTickTimer -= dt;
+      if (this.poisonTickTimer <= 0) {
+        this.poisonTickTimer = 0.28;
+        const attacker = this.poisonAttacker ?? this;
+        const killed = this.takeDamage(6.0, this.chest, _tmp.set(0, 0.1, 0), dt, attacker);
+        ctx.combat.onHit?.({
+          kind: 'magic',
+          point: this.chest.pos.clone(),
+          damage: 6.0,
+          attacker,
+          victim: this,
+          hitParticle: this.chest,
+          impulse: new Vector3(0, 0.1, 0),
+          killed,
+        });
+        if (!this.alive) return;
+      }
+    }
+
     // 大鷲から落とされたユニットの着地衝撃判定
     if (this.fallingFromEagle) {
       if (this.pelvis.pos.y <= PELVIS_HEIGHT * this.scale * 1.05) {
@@ -486,10 +512,20 @@ export class Unit {
     } else {
       this.moveSpeed = 0;
     }
+    if (this.poisonTimer > 0) {
+      this.moveSpeed *= 0.65;
+    }
     const minAttackMuscle =
-      this.type.id === 'giant' || this.type.id === 'warelephant' || this.type.id === 'dragon' ? 0.25 : 0.55;
+      this.type.id === 'giant' ||
+      this.type.id === 'warelephant' ||
+      this.type.id === 'dragon' ||
+      this.type.id === 'anaconda' ||
+      this.type.id === 'buggy'
+        ? 0.25
+        : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
     if (
+      this.type.style !== 'none' &&
       this.attackPhase === 'none' &&
       this.cooldown <= 0 &&
       dist <= engage &&
@@ -588,6 +624,8 @@ export class Unit {
       ctx.combat.emitEffect({ kind: 'eagle_cry', pos: this.head.pos.clone() });
     } else if (id === 'dragon') {
       ctx.combat.emitEffect({ kind: 'dragon_roar', pos: this.head.pos.clone() });
+    } else if (id === 'anaconda') {
+      ctx.combat.emitEffect({ kind: 'anaconda_hiss', pos: this.head.pos.clone() });
     }
   }
 
@@ -599,7 +637,13 @@ export class Unit {
     }
     // 怯んだら攻撃は中断（大型巨獣は強靭で中断されにくい）
     const minMuscle =
-      this.type.id === 'giant' || this.type.id === 'warelephant' || this.type.id === 'dragon' ? 0.16 : 0.3;
+      this.type.id === 'giant' ||
+      this.type.id === 'warelephant' ||
+      this.type.id === 'dragon' ||
+      this.type.id === 'anaconda' ||
+      this.type.id === 'buggy'
+        ? 0.16
+        : 0.3;
     if (this.muscle < minMuscle) {
       this.attackPhase = 'none';
       this.laserActive = false;
@@ -783,9 +827,52 @@ export class Unit {
       return;
     }
     if (st === 'trample') {
-      // 戦象の牙・鼻カチ上げ範囲攻撃
-      const center = this.chest.pos.clone().addScaledVector(this.forward, 1.3 * this.scale);
-      ctx.combat.applyRadialBlast(this, center, 2.1 * this.scale, 65, 9.5, 0.85, ctx.units, dt, 'melee');
+      if (this.type.id === 'buggy') {
+        // バギーの急加速体当たり（ブースト）
+        const boost = this.forward.clone().multiplyScalar(9.0 * Math.sqrt(this.scale));
+        boost.y = 1.0;
+        for (const p of this.joints) p.addVelocity(boost, dt);
+        const center = this.chest.pos.clone().addScaledVector(this.forward, 1.4 * this.scale);
+        ctx.combat.applyRadialBlast(this, center, 1.8 * this.scale, 42, 10.0, 0.85, ctx.units, dt, 'melee');
+        ctx.combat.emitEffect({ kind: 'buggy_ram', pos: center });
+      } else {
+        // 戦象の牙・鼻カチ上げ範囲攻撃
+        const center = this.chest.pos.clone().addScaledVector(this.forward, 1.3 * this.scale);
+        ctx.combat.applyRadialBlast(this, center, 2.1 * this.scale, 65, 9.5, 0.85, ctx.units, dt, 'melee');
+      }
+    }
+
+    // 巨大アナコンダの飛びかかり毒牙噛みつき
+    if (this.type.id === 'anaconda') {
+      const lunge = this.forward.clone().multiplyScalar(8.0 * Math.sqrt(this.scale));
+      lunge.y = 1.2;
+      for (const p of this.joints) p.addVelocity(lunge, dt);
+      const bitePos = this.head.pos.clone().addScaledVector(this.forward, 1.1 * this.scale);
+      ctx.combat.emitEffect({ kind: 'anaconda_bite', pos: bitePos });
+      const biteR = 1.85 * this.scale;
+      const biteR2 = biteR * biteR;
+      for (const u of ctx.units) {
+        if (!u.alive || u.team === this.team) continue;
+        if (u.pelvis.pos.distanceToSquared(bitePos) <= biteR2) {
+          this.registerHit(u, 0.6);
+          const push = this.forward.clone().multiplyScalar(6.5);
+          push.y = 2.0;
+          const dmg = 52 * this.damageMul;
+          const killed = u.takeDamage(dmg, u.chest, push, dt, this);
+          u.poisonTimer = 3.5;
+          u.poisonAttacker = this;
+          ctx.combat.onHit?.({
+            kind: 'melee',
+            point: u.chest.pos.clone(),
+            damage: dmg,
+            attacker: this,
+            victim: u,
+            hitParticle: u.chest,
+            impulse: push,
+            killed,
+          });
+        }
+      }
     }
     if (st === 'minigun' || st === 'breath' || st === 'swoop') {
       return;
@@ -967,6 +1054,48 @@ export class Unit {
               impulse: push,
               killed,
             });
+          }
+        }
+      }
+    }
+
+    // 1-2. 暴走バギーの高速激突蹂躙とタイヤスモーク
+    if (id === 'buggy' && ctx.aiEnabled) {
+      const speedH = Math.hypot(this.velocity.x, this.velocity.z);
+      if (speedH > 1.2) {
+        this.stepDustTimer -= dt;
+        if (this.stepDustTimer <= 0) {
+          this.stepDustTimer = 0.16;
+          ctx.combat.emitEffect({ kind: 'buggy_smoke', pos: this.pelvis.pos.clone() });
+        }
+        const frontPos = this.pelvis.pos.clone().addScaledVector(this.forward, 0.95 * this.scale);
+        const ramR2 = (1.25 * this.scale) ** 2;
+        for (const u of ctx.units) {
+          if (!u.alive || u.team === this.team) continue;
+          if (!this.canHit(u)) continue;
+          if (u.pelvis.pos.distanceToSquared(frontPos) <= ramR2) {
+            this.registerHit(u, 0.65);
+            const isHeavy = u.scale >= 1.6;
+            const push = new Vector3().subVectors(u.pelvis.pos, this.pelvis.pos).setY(0).normalize();
+            push.addScaledVector(this.forward, 1.2).normalize().multiplyScalar(isHeavy ? 3.5 : 8.0);
+            push.y = isHeavy ? 1.2 : 3.8;
+            const ramDmg = (22 + speedH * 2.5) * this.damageMul;
+            const killed = u.takeDamage(ramDmg, u.pelvis, push, dt, this);
+            ctx.combat.emitEffect({ kind: 'buggy_ram', pos: frontPos });
+            ctx.combat.onHit?.({
+              kind: 'melee',
+              point: u.pelvis.pos.clone(),
+              damage: ramDmg,
+              attacker: this,
+              victim: u,
+              hitParticle: u.pelvis,
+              impulse: push,
+              killed,
+            });
+            if (isHeavy) {
+              const recoil = this.forward.clone().multiplyScalar(-3.0);
+              for (const p of this.joints) p.addVelocity(recoil, dt);
+            }
           }
         }
       }
@@ -1253,6 +1382,10 @@ export class Unit {
         targetH = PELVIS_HEIGHT * s * 1.32 + Math.sin(this.walkPhase * 1.6) * 0.15;
       } else if (this.type.id === 'samurai' && this.attackPhase === 'windup') {
         targetH = PELVIS_HEIGHT * s * 0.82;
+      } else if (this.type.id === 'buggy') {
+        targetH = PELVIS_HEIGHT * s * 0.58;
+      } else if (this.type.id === 'anaconda') {
+        targetH = PELVIS_HEIGHT * s * 0.38;
       }
 
       if (supported && (isFlyer || pelvis.pos.y < targetH + 0.3 * s)) {
@@ -1265,7 +1398,8 @@ export class Unit {
       }
 
       // 2. 直立補助: 頭を上へ、足を下へ引っ張る（TABS 風のバランス）
-      const fu = M * 2.5 * m;
+      const isCrawlerOrVehicle = this.type.id === 'buggy' || this.type.id === 'anaconda';
+      const fu = M * (isCrawlerOrVehicle ? 0.7 : 2.5) * m;
       head.force.y += fu * 0.5;
       chest.force.y += fu * 0.5;
       footL.force.y -= fu * 0.5;
@@ -1359,7 +1493,47 @@ export class Unit {
     const phaseRate = isFlyer ? 9.5 : (Math.PI * 2 * speedH) / (1.0 * s);
     this.walkPhase += phaseRate * dt;
 
-    if (isFlyer) {
+    if (this.type.id === 'buggy') {
+      // 暴走バギーの4輪ビークルポーズ
+      lp[J.Chest].set(0, 0.12, 0.05);
+      lp[J.Head].set(0, 0.32, 0.12);
+      // 前輪左右（腕関節）
+      lp[J.ShoulderL].set(-0.32, 0.1, 0.3);
+      lp[J.ElbowL].set(-0.36, -0.05, 0.35);
+      lp[J.HandL].set(-0.38, -0.15, 0.35);
+      lp[J.ShoulderR].set(0.32, 0.1, 0.3);
+      lp[J.ElbowR].set(0.36, -0.05, 0.35);
+      lp[J.HandR].set(0.38, -0.15, 0.35);
+      // 後輪左右（脚関節）
+      lp[J.HipL].set(-0.32, -0.05, -0.28);
+      lp[J.KneeL].set(-0.36, -0.15, -0.32);
+      lp[J.FootL].set(-0.38, -0.25, -0.32);
+      lp[J.HipR].set(0.32, -0.05, -0.28);
+      lp[J.KneeR].set(0.36, -0.15, -0.32);
+      lp[J.FootR].set(0.38, -0.25, -0.32);
+    } else if (this.type.id === 'anaconda') {
+      // 巨大アナコンダの這い（うねり）ポーズ
+      const sn = Math.sin(this.walkPhase * 2.2);
+      const cs = Math.cos(this.walkPhase * 2.2);
+      lp[J.Chest].set(sn * 0.12, 0.08, 0.32);
+      const headZ = this.attackPhase === 'strike' ? 0.95 : this.attackPhase === 'windup' ? 0.45 : 0.65;
+      const headY = this.attackPhase === 'windup' ? 0.35 : 0.15;
+      lp[J.Head].set(-sn * 0.16, headY, headZ);
+      // 前半身節（腕関節）
+      lp[J.ShoulderL].set(-0.16 + cs * 0.1, 0.06, 0.18);
+      lp[J.ElbowL].set(-0.22 + cs * 0.12, 0.02, 0.12);
+      lp[J.HandL].set(-0.26 + cs * 0.14, -0.04, 0.06);
+      lp[J.ShoulderR].set(0.16 + cs * 0.1, 0.06, 0.18);
+      lp[J.ElbowR].set(0.22 + cs * 0.12, 0.02, 0.12);
+      lp[J.HandR].set(0.26 + cs * 0.14, -0.04, 0.06);
+      // 後半身・尾節（脚関節）
+      lp[J.HipL].set(-0.14 - sn * 0.12, -0.04, -0.25);
+      lp[J.KneeL].set(-0.16 - sn * 0.16, -0.08, -0.45);
+      lp[J.FootL].set(-0.12 - sn * 0.2, -0.12, -0.68);
+      lp[J.HipR].set(0.14 - sn * 0.12, -0.04, -0.25);
+      lp[J.KneeR].set(0.16 - sn * 0.16, -0.08, -0.45);
+      lp[J.FootR].set(0.12 - sn * 0.2, -0.12, -0.68);
+    } else if (isFlyer) {
       // 翼（両腕）の大きな羽ばたきモーション
       const flap = Math.sin(this.walkPhase);
       lp[J.ElbowL].set(-0.42, 0.36 + flap * 0.22, 0.0);
@@ -1564,9 +1738,13 @@ export class Unit {
 
     this.hp -= amount;
     this.hitFlash = 1;
-    // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴンは強靭でよろめきにくい）
+    // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴン・大蛇・バギーは強靭でよろめきにくい）
     const isSuperHeavy =
-      this.type.id === 'warelephant' || this.type.id === 'dragon' || this.type.id === 'giant';
+      this.type.id === 'warelephant' ||
+      this.type.id === 'dragon' ||
+      this.type.id === 'giant' ||
+      this.type.id === 'anaconda' ||
+      this.type.id === 'buggy';
     const staggerMul = isSuperHeavy ? 0.7 : 2.2;
     const flatLoss = isSuperHeavy ? 0.012 : 0.05;
     this.muscle = Math.max(0, this.muscle - (amount / this.maxHp) * staggerMul - flatLoss);
@@ -1589,6 +1767,11 @@ export class Unit {
     this.target = null;
     this.laserActive = false;
     this.grabbedUnit = null;
+
+    // おとり（デコイ）破壊時の藁破裂
+    if (this.type.id === 'decoy' && this.context) {
+      this.context.combat.emitEffect({ kind: 'decoy_pop', pos: this.chest.pos.clone(), team: this.team });
+    }
 
     // 分裂キングスライムの増殖ギミック（世代 0 → 1 → 2）
     if (this.type.id === 'slime' && this.splitGen < 2 && this.context && this.context.aiEnabled) {

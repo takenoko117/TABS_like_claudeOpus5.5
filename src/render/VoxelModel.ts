@@ -225,12 +225,13 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.036, [4.5, 4.5, 4.5]);
   }
 
-  // 3. 紅蓮ドラゴンの頭部（2本角・顎・発光する口内）
+  // 3. ドラゴンの頭部（2本角・顎・発光する口内・チームカラー）
   if (type.id === 'dragon') {
     const g = new VoxelGrid(11, 11, 12);
-    g.fillBox(2, 2, 2, 8, 7, 8, look.skin);
+    const dragonSkin = tc.shirt;
+    g.fillBox(2, 2, 2, 8, 7, 8, dragonSkin);
     // 前に突き出た顎と口内の灼熱色
-    g.fillBox(3, 4, 8, 7, 6, 11, look.skin);
+    g.fillBox(3, 4, 8, 7, 6, 11, dragonSkin);
     g.fillBox(3, 2, 8, 7, 2, 11, 0xe6a122);
     g.fillBox(4, 3, 8, 6, 3, 10, 0xff7b1c);
     // 後方へ伸びる2本の黄金角
@@ -246,7 +247,73 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.038, [5.5, 4.5, 5]);
   }
 
-  // 4. 分裂キングスライムの頭部（王冠とゼリー上部）
+  // 4. 暴走バギーの頭部（ルーフ・ロールケージ・イエロー大型フォグランプ）
+  if (type.id === 'buggy') {
+    const g = new VoxelGrid(10, 8, 8);
+    // ロールケージ（パイプフレーム）
+    g.fillBox(1, 0, 1, 2, 5, 2, 0x495057);
+    g.fillBox(7, 0, 1, 8, 5, 2, 0x495057);
+    g.fillBox(1, 0, 5, 2, 5, 6, 0x495057);
+    g.fillBox(7, 0, 5, 8, 5, 6, 0x495057);
+    // ルーフ天板
+    g.fillBox(1, 5, 1, 8, 6, 6, tc.shirt);
+    // 前面オフロード・フォグランプ（左右に光るイエローライト）
+    g.fillBox(2, 6, 5, 3, 7, 6, 0xffe066);
+    g.fillBox(6, 6, 5, 7, 7, 6, 0xffe066);
+    return makeTemplate(g, 0.042, [4.5, 1.0, 3.5]);
+  }
+
+  // 5. 巨大アナコンダの頭部（三角形の蛇頭・大口と毒牙・二又舌・鋭い蛇眼）
+  if (type.id === 'anaconda') {
+    const g = new VoxelGrid(11, 8, 14);
+    // 扁平な三角頭部
+    g.fillBox(2, 2, 1, 8, 5, 8, look.skin);
+    // 上顎と鼻先
+    g.fillBox(3, 3, 8, 7, 5, 12, look.skin);
+    g.fillBox(4, 3, 12, 6, 4, 13, look.skin);
+    // 下顎
+    g.fillBox(3, 1, 7, 7, 2, 12, 0x1b4332);
+    // 口内の赤
+    g.fillBox(4, 2, 8, 6, 3, 11, 0x991b1b);
+    // 鋭い2本の白い毒牙
+    g.fillBox(3, 2, 11, 3, 3, 11, 0xf8f9fa);
+    g.fillBox(7, 2, 11, 7, 3, 11, 0xf8f9fa);
+    // 赤く突き出た二又の舌
+    g.fillBox(4, 2, 12, 6, 2, 13, 0xe03131);
+    g.set(3, 2, 14, 0xe03131);
+    g.set(7, 2, 14, 0xe03131);
+    // 鋭い黄色い蛇眼
+    g.fillBox(2, 4, 7, 2, 5, 8, 0xffd43b);
+    g.fillBox(8, 4, 7, 8, 5, 8, 0xffd43b);
+    g.set(2, 4, 8, pupil);
+    g.set(8, 4, 8, pupil);
+    return makeTemplate(g, 0.038, [5.5, 2.5, 5.5]);
+  }
+
+  // 6. おとりの頭部（つば広麦わら帽子・麻袋ヘッド・つぎはぎボタン目）
+  if (type.id === 'decoy') {
+    const g = new VoxelGrid(10, 10, 10);
+    // 麻袋の頭
+    g.fillBox(2, 1, 2, 7, 6, 7, look.skin);
+    // 麦わら帽子のつば
+    g.fillBox(0, 6, 0, 9, 6, 9, 0xb08968);
+    // 帽子のクラウン（山）
+    g.fillBox(2, 7, 2, 7, 9, 7, 0xb08968);
+    // 帽子リボン（チームカラー）
+    g.fillBox(2, 7, 1, 7, 7, 1, tc.shirt);
+    g.fillBox(2, 7, 8, 7, 7, 8, tc.shirt);
+    g.fillBox(1, 7, 2, 1, 7, 7, tc.shirt);
+    g.fillBox(8, 7, 2, 8, 7, 7, tc.shirt);
+    // ボタンの目（黒の×印風）
+    g.set(3, 4, 8, 0x212529);
+    g.set(6, 4, 8, 0x212529);
+    // 麻紐の縫い目（口）
+    g.set(4, 2, 8, 0x7f5539);
+    g.set(5, 2, 8, 0x7f5539);
+    return makeTemplate(g, 0.038, [4.5, 2.0, 4.5]);
+  }
+
+  // 7. 分裂キングスライムの頭部（王冠とゼリー上部）
   if (type.id === 'slime') {
     const g = new VoxelGrid(11, 10, 11);
     const jelly = team === 0 ? 0x4cd97b : 0x38d996;
@@ -372,6 +439,57 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.042, [6, 1, 5]);
   }
 
+  // 暴走バギーのシャーシ・カウル・ブルバー
+  if (type.id === 'buggy') {
+    const g = new VoxelGrid(12, 10, 14);
+    // シャーシ底面フレーム
+    g.fillBox(1, 1, 1, 10, 3, 12, 0x212529);
+    // チームカラーのボディカウル（ボンネット・サイドフェンダー）
+    g.fillBox(1, 3, 2, 10, 6, 12, tc.shirt);
+    // エンジンフード（中央のブラックライン）
+    g.fillBox(4, 6, 7, 7, 7, 12, 0x343a40);
+    // 前面ブルバー（頑丈なガードバー）
+    g.fillBox(1, 2, 13, 10, 5, 13, 0x495057);
+    g.fillBox(0, 3, 12, 1, 4, 13, 0xced4da);
+    g.fillBox(10, 3, 12, 11, 4, 13, 0xced4da);
+    // 運転席コクピット（座席シートとステアリング）
+    g.fillBox(3, 4, 3, 8, 8, 6, 0x1f1f1f);
+    g.fillBox(4, 5, 7, 7, 6, 7, 0x495057);
+    // 背面のツイン排気マフラー
+    g.fillBox(2, 2, 0, 3, 3, 1, 0xced4da);
+    g.fillBox(8, 2, 0, 9, 3, 1, 0xced4da);
+    return makeTemplate(g, 0.042, [5.5, 1.5, 6.5]);
+  }
+
+  // 巨大アナコンダの胴体（太い蛇腹と背面のチームカラー鱗模様）
+  if (type.id === 'anaconda') {
+    const g = new VoxelGrid(12, 10, 12);
+    // 蛇の胴体ベース（深緑）
+    g.fillBox(1, 1, 1, 10, 8, 10, look.skin);
+    // 腹面の淡色（蛇腹）
+    g.fillBox(2, 0, 2, 9, 1, 9, 0xb7e4c7);
+    // 背面のチームカラー菱形鱗模様
+    g.fillBox(4, 8, 3, 7, 9, 8, tc.shirt);
+    g.fillBox(3, 7, 4, 8, 8, 7, tc.accent);
+    return makeTemplate(g, 0.044, [5.5, 2.0, 5.5]);
+  }
+
+  // おとりの胴体（藁束・ターゲットマーク・チームカラー帯）
+  if (type.id === 'decoy') {
+    const g = new VoxelGrid(10, 12, 8);
+    // 藁束の胴体
+    g.fillBox(1, 1, 1, 8, 11, 6, look.skin);
+    // 胴体の縦木支柱
+    g.fillBox(4, 0, 2, 5, 11, 4, 0x7f5539);
+    // チームカラーの腰帯
+    g.fillBox(1, 1, 1, 8, 3, 6, tc.shirt);
+    // 正面の「的（ターゲットマーク）」（同心円: 赤・白・赤）
+    g.fillBox(2, 5, 7, 7, 10, 7, 0xe03131);
+    g.fillBox(3, 6, 7, 6, 9, 7, 0xffffff);
+    g.fillBox(4, 7, 7, 5, 8, 7, 0xe03131);
+    return makeTemplate(g, 0.038, [4.5, 1.0, 3.5]);
+  }
+
   // 分裂キングスライムのゼリー胴体（内部にコアが透けて見える）
   if (type.id === 'slime') {
     const g = new VoxelGrid(12, 12, 10);
@@ -392,7 +510,7 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   g.fillBox(4, 2, 5, 5, 2, 6, tc.accent);
 
   const chestColor =
-    type.id === 'giant' || type.id === 'giant_eagle' || type.id === 'dragon' ? look.skin : tc.shirt;
+    type.id === 'giant' || type.id === 'giant_eagle' ? look.skin : tc.shirt;
   g.fillBox(0, 3, 1, 9, 11, 6, chestColor);
 
   if (type.id === 'giant') {
@@ -450,6 +568,28 @@ function buildLimbTemplate(
   g.fillBox(0, 0, 0, sx - 1, split, sz - 1, bottomColor);
   g.fillBox(0, split + 1, 0, sx - 1, sy - 1, sz - 1, topColor);
   return makeTemplate(g, length / sy, [sx / 2, 0, sz / 2]);
+}
+
+/** バギー用の円形ボクセル車輪パーツテンプレート */
+function buildWheelTemplate(radius: number, width: number): VoxelPartTemplate {
+  const size = radius * 2 + 1;
+  const g = new VoxelGrid(width, size, size);
+  const r2 = radius * radius;
+  const hubR2 = (radius * 0.45) ** 2;
+  const cx = radius;
+  const cz = radius;
+  for (let z = 0; z < size; z++) {
+    for (let y = 0; y < size; y++) {
+      const d2 = (y - cx) ** 2 + (z - cz) ** 2;
+      if (d2 <= r2) {
+        const col = d2 <= hubR2 ? 0xced4da : 0x1f1f1f;
+        for (let x = 0; x < width; x++) {
+          g.set(x, y, z, col);
+        }
+      }
+    }
+  }
+  return makeTemplate(g, 0.038, [width / 2, radius, radius]);
 }
 
 /** 大鷲やドラゴン用の翼パーツテンプレート */
@@ -624,30 +764,70 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
   const sleeve =
     type.look.armor ?? (type.id === 'giant' || type.id === 'warelephant' || type.id === 'slime' ? type.look.skin : tc.shirt);
   const legColor =
-    type.id === 'warelephant' || type.id === 'dragon' || type.id === 'slime'
-      ? type.look.skin
-      : type.id === 'giant_eagle'
-        ? 0xf5b82e
-        : tc.pants;
+    type.id === 'dragon'
+      ? tc.shirt
+      : type.id === 'warelephant' || type.id === 'slime'
+        ? type.look.skin
+        : type.id === 'giant_eagle'
+          ? 0xf5b82e
+          : type.id === 'decoy'
+            ? 0x7f5539
+            : tc.pants;
 
-  set = {
-    head: buildHeadTemplate(type, team),
-    torso: buildTorsoTemplate(type, team),
-    upperArm: isWinged
+  let upperArm: VoxelPartTemplate;
+  let forearm: VoxelPartTemplate;
+  let thigh: VoxelPartTemplate;
+  let shin: VoxelPartTemplate;
+
+  if (type.id === 'buggy') {
+    // 暴走バギーの4輪タイヤ
+    upperArm = buildWheelTemplate(4, 3);
+    forearm = buildWheelTemplate(4, 3);
+    thigh = buildWheelTemplate(5, 4);
+    shin = buildWheelTemplate(5, 4);
+  } else if (type.id === 'anaconda') {
+    // 巨大アナコンダの蛇身・尾
+    upperArm = buildLimbTemplate(4, 6, 4, 0xb7e4c7, type.look.skin, 0.28);
+    forearm = buildLimbTemplate(4, 6, 4, 0xb7e4c7, type.look.skin, 0.26);
+    thigh = buildLimbTemplate(4, 7, 4, 0xb7e4c7, type.look.skin, 0.38);
+    shin = buildLimbTemplate(3, 8, 3, 0xb7e4c7, type.look.skin, 0.42);
+  } else if (type.id === 'dragon') {
+    // ドラゴンのチームカラー翼と脚
+    upperArm = buildWingTemplate(tc.shirt, 0xe6a122, 0.35);
+    forearm = buildWingTemplate(0xe6a122, tc.shirt, 0.33);
+    thigh = buildLimbTemplate(4, 8, 4, tc.shirt, tc.shirt, 0.41);
+    shin = buildLimbTemplate(3, 8, 4, tc.shirt, tc.shirt, 0.4);
+  } else if (type.id === 'decoy') {
+    // おとりの木と藁の手足
+    upperArm = buildLimbTemplate(3, 7, 3, type.look.skin, 0x7f5539, 0.29);
+    forearm = buildLimbTemplate(3, 6, 3, type.look.skin, type.look.skin, 0.26);
+    thigh = buildLimbTemplate(3, 8, 3, 0x7f5539, 0x7f5539, 0.4);
+    shin = buildLimbTemplate(3, 8, 3, 0x7f5539, 0x7f5539, 0.4);
+  } else {
+    upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
-      : buildLimbTemplate(3, 7, 3, type.look.skin, sleeve, 0.29),
-    forearm: isWinged
+      : buildLimbTemplate(3, 7, 3, type.look.skin, sleeve, 0.29);
+    forearm = isWinged
       ? buildWingTemplate(type.look.armor ?? tc.shirt, type.look.skin, 0.32)
-      : buildLimbTemplate(3, 6, 3, type.look.skin, type.look.skin, 0.26),
-    thigh: buildLimbTemplate(4, 8, 4, legColor, legColor, 0.41),
-    shin: buildLimbTemplate(
+      : buildLimbTemplate(3, 6, 3, type.look.skin, type.look.skin, 0.26);
+    thigh = buildLimbTemplate(4, 8, 4, legColor, legColor, 0.41);
+    shin = buildLimbTemplate(
       3,
       8,
       4,
       type.id === 'giant_eagle' || type.id === 'warelephant' || type.id === 'slime' ? legColor : 0x3b2614,
       legColor,
       0.4,
-    ),
+    );
+  }
+
+  set = {
+    head: buildHeadTemplate(type, team),
+    torso: buildTorsoTemplate(type, team),
+    upperArm,
+    forearm,
+    thigh,
+    shin,
     weapon: type.weapon ? buildWeaponGeometry(type.weapon.kind, type.weapon.length, team) : null,
     bow: buildOffhandGeometry(type, team),
   };

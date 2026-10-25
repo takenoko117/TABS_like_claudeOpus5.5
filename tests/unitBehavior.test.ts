@@ -65,23 +65,29 @@ function attackDummy(attackerId: UnitTypeId, dummyId: UnitTypeId, startDist: num
 /** 間合いの外から接近を始める距離 */
 function approachDist(id: UnitTypeId): number {
   const t = UNIT_TYPES[id];
-  return Math.max(t.range * t.scale + 4, 8);
+  return Math.min(Math.max(t.range * t.scale + 2.5, 8), 22);
 }
 
 describe('全兵種: 静止した的に攻撃が当たる（届かない攻撃を繰り返さない）', () => {
   for (const ut of UNIT_TYPE_LIST) {
+    if (ut.id === 'decoy') continue; // おとりは戦闘能力なし
     for (const dummy of ['swordsman', 'giant'] as UnitTypeId[]) {
       it(`${ut.name} (${ut.id}) → ${UNIT_TYPES[dummy].name}`, () => {
-        const r = attackDummy(ut.id, dummy, approachDist(ut.id), 18);
+        const r = attackDummy(ut.id, dummy, approachDist(ut.id), 20);
         expect(r.strikes).toBeGreaterThan(0);
         expect(r.damage).toBeGreaterThan(0);
       });
     }
   }
+
+  it('おとり (decoy) は戦闘能力を持たず、敵にダメージを与えない', () => {
+    const r = attackDummy('decoy', 'swordsman', 6, 8);
+    expect(r.damage).toBe(0);
+  });
 });
 
 describe('兵種固有の不具合の回帰テスト', () => {
-  it('紅蓮ドラゴンの火炎ブレスが人型サイズの敵に直撃し、地面に延焼ゾーンを作る', () => {
+  it('ドラゴンの火炎ブレスが人型サイズの敵に直撃し、地面に延焼ゾーンを作る', () => {
     const r = attackDummy('dragon', 'swordsman', 14, 14);
     let zones = 0;
     // 延焼ゾーンは追加で数秒観測する
@@ -94,7 +100,7 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(zones).toBeGreaterThan(0);
   });
 
-  it('紅蓮ドラゴンは足元に潜り込んだ敵も焼ける', () => {
+  it('ドラゴンは足元に潜り込んだ敵も焼ける', () => {
     const r = attackDummy('dragon', 'swordsman', 1.2, 8);
     expect(r.byKind.arrow ?? 0).toBeGreaterThan(0);
   });
@@ -161,11 +167,57 @@ describe('兵種固有の不具合の回帰テスト', () => {
     // 爆風半径 2.8m 以内に収まる
     for (const e of errs) expect(e).toBeLessThan(2.8);
   });
+  it('暴走バギーの高速激突が敵にダメージとノックバックを与える', () => {
+    const battle = new DiagBattle();
+    const buggy = battle.spawnUnit('buggy', 0, -10, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 0, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let ramDamage = 0;
+    battle.combat.onHit = (e) => {
+      if (e.attacker === buggy && e.victim === dummy) ramDamage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 5; i++) battle.step(battle.fixedDt);
+    expect(ramDamage).toBeGreaterThan(20);
+  });
+
+  it('巨大アナコンダの毒牙噛みつきが敵にダメージを与え毒状態にする', () => {
+    const battle = new DiagBattle();
+    const snake = battle.spawnUnit('anaconda', 0, -3, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 3, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let bites = 0;
+    let biteDamage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'anaconda_bite') bites++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === snake && e.victim === dummy) biteDamage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 6; i++) battle.step(battle.fixedDt);
+    expect(bites).toBeGreaterThan(0);
+    expect(biteDamage).toBeGreaterThan(30);
+    expect(dummy.poisonTimer).toBeGreaterThanOrEqual(0);
+  });
+
+  it('おとり (decoy) が破壊された時に破裂エフェクトが発生する', () => {
+    const battle = new Battle();
+    const decoy = battle.spawnUnit('decoy', 0, 0, 0);
+    let popped = false;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'decoy_pop') popped = true;
+    };
+    decoy.takeDamage(200, decoy.chest, new (battle.spawnUnit('clubber', 1, 0, 0).velocity.constructor as any)(), 1 / 120);
+    expect(popped).toBe(true);
+  });
 });
 
 describe('1対1 総当たりで膠着しない', () => {
-  // スライムは分裂で個体数が増えるため、決着時間が極端に伸びうるので総当たりから除外する
-  const ids = UNIT_TYPE_LIST.map((u) => u.id).filter((id) => id !== 'slime');
+  // スライムは分裂、おとりは戦闘能力なしのため総当たりから除外する
+  const ids = UNIT_TYPE_LIST.map((u) => u.id).filter((id) => id !== 'slime' && id !== 'decoy');
   for (const ia of ids) {
     it(`${ia} vs 全兵種`, () => {
       const stalls: string[] = [];

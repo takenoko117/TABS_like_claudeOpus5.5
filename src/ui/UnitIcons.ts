@@ -363,14 +363,16 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
 
     case 'dragon':
-      // 紅蓮ドラゴン: 2本の黄金角・赤い鱗の竜頭・灼熱の火炎ブレス
+      // ドラゴン: 2本の黄金角・気高き竜頭・火炎ブレス
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
         <!-- 2本の黄金の角 -->
         <polygon points="8,11 4,2 13,8" fill="#ffd43b" stroke="#e6a122" stroke-width="1"/>
         <polygon points="24,11 28,2 19,8" fill="#ffd43b" stroke="#e6a122" stroke-width="1"/>
-        <!-- ドラゴンの赤い頭部と首 -->
-        <rect x="8" y="21" width="16" height="12" fill="#961e17"/>
-        <rect x="7" y="8" width="18" height="15" rx="2" fill="#b82820"/>
+        <!-- ドラゴンの頭部と首（赤と青のツートン／中立竜カラー） -->
+        <rect x="8" y="21" width="16" height="12" fill="#5c2d91"/>
+        <rect x="7" y="8" width="18" height="15" rx="2" fill="#7048e8"/>
+        <!-- 額の黄金鱗 -->
+        <polygon points="16,8 20,8 18,13" fill="#ffd43b"/>
         <!-- 黄色く光る竜の目 -->
         <polygon points="9,13 14,14 9,16" fill="#ffe042"/>
         <polygon points="23,13 18,14 23,16" fill="#ffe042"/>
@@ -393,6 +395,76 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <rect x="11" y="19" width="3" height="4" rx="1" fill="#181820"/>
         <rect x="22" y="19" width="3" height="4" rx="1" fill="#181820"/>
         <rect x="15" y="24" width="6" height="2.5" rx="1" fill="#1b4332"/>
+      </svg>`;
+
+    case 'buggy':
+      // 暴走バギー: オフロードタイヤ・ロールケージ・フォグランプ
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 後輪・前輪タイヤ -->
+        <rect x="3" y="18" width="7" height="15" rx="2.5" fill="#1f1f1f" stroke="#495057" stroke-width="1"/>
+        <rect x="26" y="18" width="7" height="15" rx="2.5" fill="#1f1f1f" stroke="#495057" stroke-width="1"/>
+        <circle cx="6.5" cy="25.5" r="2.5" fill="#ced4da"/>
+        <circle cx="29.5" cy="25.5" r="2.5" fill="#ced4da"/>
+        <!-- 車体シャーシ＆ボンネット -->
+        <rect x="8" y="19" width="20" height="9" rx="2" fill="#212529"/>
+        <rect x="10" y="21" width="16" height="6" fill="#e0473a"/>
+        <!-- フロントブルバー -->
+        <rect x="6" y="26" width="24" height="3" rx="1.5" fill="#495057"/>
+        <rect x="14" y="24" width="8" height="2" fill="#ced4da"/>
+        <!-- ロールバー（パイプフレーム） -->
+        <path d="M11,19 L13,10 L23,10 L25,19" fill="none" stroke="#495057" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- ルーフ天板 -->
+        <rect x="13" y="8" width="10" height="3" rx="1" fill="#343a40"/>
+        <!-- 大型オフロード・フォグランプ -->
+        <circle cx="15" cy="7" r="2.2" fill="#ffe066" stroke="#ffd43b" stroke-width="0.8"/>
+        <circle cx="21" cy="7" r="2.2" fill="#ffe066" stroke="#ffd43b" stroke-width="0.8"/>
+      </svg>`;
+
+    case 'anaconda':
+      // 巨大アナコンダ: 鋭い蛇眼・開いた大口と毒牙・二又舌
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- うねる胴体の奥 -->
+        <path d="M6,29 Q12,23 18,29 T30,28" fill="none" stroke="#1b4332" stroke-width="7" stroke-linecap="round"/>
+        <path d="M6,29 Q12,23 18,29 T30,28" fill="none" stroke="#2d6a4f" stroke-width="5" stroke-linecap="round"/>
+        <!-- 蛇頭部（三角形） -->
+        <polygon points="18,6 29,18 7,18" fill="#245a30"/>
+        <!-- 蛇腹（ペールグリーン） -->
+        <polygon points="18,10 24,18 12,18" fill="#b7e4c7"/>
+        <!-- 開いた大口（赤） -->
+        <polygon points="18,13 25,24 11,24" fill="#991b1b"/>
+        <!-- 鋭い白い毒牙 -->
+        <polygon points="13,18 15,18 14,23" fill="#f8f9fa"/>
+        <polygon points="21,18 23,18 22,23" fill="#f8f9fa"/>
+        <!-- 赤い二又の舌 -->
+        <path d="M18,22 L18,27 M18,27 L15,31 M18,27 L21,31" stroke="#e03131" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        <!-- 鋭い黄色い蛇眼（縦長の瞳） -->
+        <ellipse cx="12" cy="14" rx="2.2" ry="3" fill="#ffd43b"/>
+        <ellipse cx="24" cy="14" rx="2.2" ry="3" fill="#ffd43b"/>
+        <rect x="11.5" y="12" width="1" height="4" fill="#181820"/>
+        <rect x="23.5" y="12" width="1" height="4" fill="#181820"/>
+      </svg>`;
+
+    case 'decoy':
+      // おとり: 麦わら帽子・藁人形・同心円のターゲットマーク
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 木製の腕・脚棒 -->
+        <line x1="4" y1="18" x2="32" y2="18" stroke="#7f5539" stroke-width="3" stroke-linecap="round"/>
+        <line x1="18" y1="20" x2="18" y2="33" stroke="#7f5539" stroke-width="3" stroke-linecap="round"/>
+        <!-- 麦わら帽子のつば -->
+        <ellipse cx="18" cy="10" rx="14" ry="4" fill="#b08968" stroke="#7f5539" stroke-width="1"/>
+        <ellipse cx="18" cy="8.5" rx="7" ry="3" fill="#ddb892"/>
+        <!-- 帽子リボン -->
+        <rect x="12" y="8" width="12" height="1.8" fill="#e0473a"/>
+        <!-- 麻袋の頭 -->
+        <circle cx="18" cy="13.5" r="4.5" fill="#d4a373"/>
+        <circle cx="16" cy="13" r="0.9" fill="#212529"/>
+        <circle cx="20" cy="13" r="0.9" fill="#212529"/>
+        <!-- 藁の胴体 -->
+        <rect x="12" y="17" width="12" height="12" rx="2" fill="#d4a373"/>
+        <!-- 胸のターゲットマーク（同心円） -->
+        <circle cx="18" cy="23" r="5" fill="#e03131"/>
+        <circle cx="18" cy="23" r="3.2" fill="#ffffff"/>
+        <circle cx="18" cy="23" r="1.5" fill="#e03131"/>
       </svg>`;
   }
 }

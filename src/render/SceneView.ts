@@ -1103,6 +1103,51 @@ export class SceneView {
         }
         break;
       }
+      case 'buggy_smoke': {
+        // バギー走行時のタイヤスモークと土煙
+        for (let i = 0; i < 6; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 2.5, 0.5 + Math.random() * 1.5, (Math.random() - 0.5) * 2.5);
+          const col = i % 2 === 0 ? 0xadb5bd : 0x868e96;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.14, 0.35 + Math.random() * 0.15, -1.0);
+        }
+        break;
+      }
+      case 'buggy_ram': {
+        // バギー激突時の火花と破片
+        for (let i = 0; i < 18; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 7.5, 2.5 + Math.random() * 4.5, (Math.random() - 0.5) * 7.5);
+          const col = i % 3 === 0 ? 0xff922b : i % 3 === 1 ? 0xffd43b : 0x495057;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.12, 0.3 + Math.random() * 0.2, 5.0);
+        }
+        break;
+      }
+      case 'anaconda_hiss': {
+        // アナコンダ威嚇の毒気
+        for (let i = 0; i < 8; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 2.0, 0.8 + Math.random() * 1.5, (Math.random() - 0.5) * 2.0);
+          this.pushFxParticle(e.pos.clone(), vel, 0x40c057, 0.12, 0.4 + Math.random() * 0.2, -1.5);
+        }
+        break;
+      }
+      case 'anaconda_bite': {
+        // 毒牙噛みつきの毒飛沫
+        for (let i = 0; i < 16; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 5.5, 1.8 + Math.random() * 3.5, (Math.random() - 0.5) * 5.5);
+          const col = i % 2 === 0 ? 0x2f9e44 : 0x51cf66;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.11, 0.35 + Math.random() * 0.15, 6.0);
+        }
+        break;
+      }
+      case 'decoy_pop': {
+        // おとり破壊時の藁・木片・リボンの大破裂
+        const teamCol = TEAM_COLORS[e.team].shirt;
+        for (let i = 0; i < 28; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 7.0, 2.2 + Math.random() * 5.0, (Math.random() - 0.5) * 7.0);
+          const col = i % 4 === 0 ? teamCol : i % 4 === 1 ? 0xb08968 : i % 4 === 2 ? 0xd4a373 : 0x7f5539;
+          this.pushDroppedVoxel(e.pos.clone(), vel, col, 0.055 + Math.random() * 0.035);
+        }
+        break;
+      }
       case 'shield_block': {
         // 大盾ガード時の黄金＆白銀スパーク
         for (let i = 0; i < 10; i++) {

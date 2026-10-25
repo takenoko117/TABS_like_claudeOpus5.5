@@ -54,7 +54,12 @@ export type CombatEffectEvent =
   | { kind: 'gate_multiply'; pos: Vector3; team: Team }
   | { kind: 'cannon_fire'; pos: Vector3; dir: Vector3 }
   | { kind: 'facility_hit'; pos: Vector3; damage: number }
-  | { kind: 'facility_destroy'; pos: Vector3; team: Team; radius: number };
+  | { kind: 'facility_destroy'; pos: Vector3; team: Team; radius: number }
+  | { kind: 'buggy_smoke'; pos: Vector3 }
+  | { kind: 'buggy_ram'; pos: Vector3 }
+  | { kind: 'anaconda_hiss'; pos: Vector3 }
+  | { kind: 'anaconda_bite'; pos: Vector3 }
+  | { kind: 'decoy_pop'; pos: Vector3; team: Team };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -188,7 +193,14 @@ export class CombatSystem {
       const maxSpeedFactor = spec.kind === 'spear' ? 2.4 : 1.85;
       const speedFactor = clamp(c.relSpeed / spec.refSpeed, 0.4, maxSpeedFactor);
       const antiBeastMul =
-        spec.kind === 'spear' && (victim.type.id === 'warelephant' || victim.type.id === 'giant') ? 1.35 : 1.0;
+        spec.kind === 'spear' &&
+        (victim.type.id === 'warelephant' ||
+          victim.type.id === 'giant' ||
+          victim.type.id === 'dragon' ||
+          victim.type.id === 'anaconda' ||
+          victim.type.id === 'buggy')
+          ? 1.35
+          : 1.0;
       let damage = spec.damage * speedFactor * antiBeastMul * (isTip ? 1 : 0.65);
 
       // 盾兵の正面ガード判定（盾粒子への接触、または正面からの近接攻撃を軽減）
