@@ -28,7 +28,8 @@ export type AttackStyle =
   | 'jump_slam'
   | 'tank_cannon'
   | 'rocket'
-  | 'satellite_strike';
+  | 'satellite_strike'
+  | 'rocket_punch';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical';
@@ -97,7 +98,8 @@ export type UnitTypeId =
   | 'decoy'
   | 'giant_tank'
   | 'rocket_soldier'
-  | 'satellite_soldier';
+  | 'satellite_soldier'
+  | 'giant_robot';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -760,6 +762,27 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     strikeImpulse: 0,
     look: { skin: SKIN, hair: null, helmet: 0x1f2937, hood: 0x374151, armor: 0x111827, beard: null },
   },
+  giant_robot: {
+    id: 'giant_robot',
+    name: '巨大ロボット',
+    category: 'modern',
+    description: '最新鋭の超重二足歩行型決戦兵器。推進バーニア付き巨大ロケットパンチで敵陣を粉砕し、巨躯の踏み込みで近接兵を蹴散らす。',
+    cost: 1100,
+    scale: 2.4,
+    massMul: 2.8,
+    hp: 1600,
+    speed: 1.45,
+    style: 'rocket_punch',
+    weapon: null,
+    projectile: { speed: 36, damage: 110, spread: 0.015 },
+    range: 18,
+    windup: 0.85,
+    strike: 0.15,
+    recover: 0.55,
+    cooldown: 2.2,
+    strikeImpulse: 0,
+    look: { skin: 0x4a5568, hair: null, helmet: 0x2d3748, hood: null, armor: 0x718096, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -787,4 +810,5 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.giant_tank,
   UNIT_TYPES.rocket_soldier,
   UNIT_TYPES.satellite_soldier,
+  UNIT_TYPES.giant_robot,
 ];

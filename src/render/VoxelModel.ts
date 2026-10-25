@@ -377,6 +377,41 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.038, [5, 4, 5]);
   }
 
+  // 巨大ロボットのメカニカルヘッド（V字ブレードアンテナ・発光ツインアイ・チタン装甲）
+  if (type.id === 'giant_robot') {
+    const g = new VoxelGrid(13, 14, 13);
+    const darkSteel = 0x212529;
+    const armorPlate = 0x495057;
+    const lightPlate = 0x6c757d;
+    // 頭部本体ブロック
+    g.fillBox(3, 1, 3, 9, 7, 9, armorPlate);
+    // フェイスマスク・顎ガード
+    g.fillBox(4, 1, 9, 8, 3, 10, darkSteel);
+    g.set(6, 2, 10, 0xadb5bd); // ダクト
+    // 発光ツインアイ（シアン/エメラルド発光）
+    g.fillBox(4, 4, 9, 5, 5, 9, 0x38d9a9);
+    g.fillBox(7, 4, 9, 8, 5, 9, 0x38d9a9);
+    g.set(4, 4, 10, 0xffffff);
+    g.set(7, 4, 10, 0xffffff);
+    // 側頭部バルカン/インテーク
+    g.fillBox(2, 2, 4, 2, 6, 8, darkSteel);
+    g.fillBox(10, 2, 4, 10, 6, 8, darkSteel);
+    g.set(2, 4, 8, 0xff922b);
+    g.set(10, 4, 8, 0xff922b);
+    // ヘルメット天頂・ひさし装甲（チームカラー）
+    g.fillBox(3, 7, 3, 9, 8, 9, tc.shirt);
+    g.fillBox(4, 6, 9, 8, 7, 10, tc.shirt);
+    // 頭頂部V字ブレードアンテナ
+    g.fillBox(5, 8, 9, 7, 9, 9, tc.accent); // アンテナ基部
+    g.fillBox(3, 10, 9, 4, 11, 9, tc.accent); // 左翼ブレード
+    g.fillBox(1, 12, 9, 2, 13, 9, tc.accent);
+    g.fillBox(8, 10, 9, 9, 11, 9, tc.accent); // 右翼ブレード
+    g.fillBox(10, 12, 9, 11, 13, 9, tc.accent);
+    // 後頭部ダクト
+    g.fillBox(4, 3, 2, 8, 6, 2, lightPlate);
+    return makeTemplate(g, 0.042, [6, 4, 6]);
+  }
+
   // 10. 衛星攻撃兵士のハイテク通信バイザーヘルメット
   if (type.id === 'satellite_soldier') {
     const g = new VoxelGrid(11, 13, 11);
@@ -587,6 +622,42 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(2, 6, 0, 3, 8, 2, steel);
     g.fillBox(14, 6, 0, 15, 8, 2, steel);
     return makeTemplate(g, 0.048, [8.5, 3.0, 11.0]);
+  }
+
+  // 巨大ロボットの重装甲メカ胴体＆ツインスラスターバックパック
+  if (type.id === 'giant_robot') {
+    const g = new VoxelGrid(12, 13, 10);
+    const darkSteel = 0x212529;
+    const armorPlate = 0x495057;
+    const lightPlate = 0x6c757d;
+    // 骨盤・スカートアーマー（y=0..3）
+    g.fillBox(2, 0, 2, 9, 3, 7, darkSteel);
+    // フロントスカート（チームカラー）
+    g.fillBox(3, 0, 7, 8, 3, 8, tc.shirt);
+    // サイドスカートアーマー
+    g.fillBox(1, 1, 2, 2, 4, 7, armorPlate);
+    g.fillBox(9, 1, 2, 10, 4, 7, armorPlate);
+    // 腹部・ウエストフレーム（y=3..5）
+    g.fillBox(3, 3, 3, 8, 5, 6, lightPlate);
+    // 胸部重装甲ブロック（y=5..11）
+    g.fillBox(2, 5, 2, 9, 11, 7, armorPlate);
+    // 胸部コックピットハッチ（チームカラー）
+    g.fillBox(4, 6, 7, 7, 10, 8, tc.shirt);
+    g.fillBox(5, 7, 8, 6, 9, 8, tc.accent);
+    // 胸部左右のエアインテーク（ダクト）
+    g.fillBox(2, 7, 7, 3, 9, 7, 0xff922b);
+    g.fillBox(8, 7, 7, 9, 9, 7, 0xff922b);
+    // 背面ツインジェットバーニア・バックパック（y=5..12, z=0..2）
+    g.fillBox(3, 5, 0, 8, 12, 2, darkSteel);
+    // 左スラスターノズル
+    g.fillBox(3, 3, 0, 4, 5, 1, lightPlate);
+    g.set(3, 3, 0, 0x38d9a9);
+    g.set(4, 3, 0, 0x38d9a9);
+    // 右スラスターノズル
+    g.fillBox(7, 3, 0, 8, 5, 1, lightPlate);
+    g.set(7, 3, 0, 0x38d9a9);
+    g.set(8, 3, 0, 0x38d9a9);
+    return makeTemplate(g, 0.046, [5.5, 1.0, 4.5]);
   }
 
   // 骨盤(y=0)から胸(y=0.42)を覆う胴体
@@ -923,6 +994,12 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm = buildWheelTemplate(5, 4);
     thigh = buildWheelTemplate(6, 5);
     shin = buildWheelTemplate(6, 5);
+  } else if (type.id === 'giant_robot') {
+    // 巨大ロボットの重装甲メカ四肢（ショルダーアーマー・ロケットナックル・ヘビーフット）
+    upperArm = buildLimbTemplate(4, 7, 4, 0x495057, tc.shirt, 0.32);
+    forearm = buildLimbTemplate(4, 6, 4, 0x212529, 0x495057, 0.28);
+    thigh = buildLimbTemplate(4, 8, 4, 0x343a40, 0x495057, 0.42);
+    shin = buildLimbTemplate(4, 8, 5, 0x212529, tc.shirt, 0.43);
   } else if (type.id === 'buggy') {
     // 暴走バギーの4輪タイヤ
     upperArm = buildWheelTemplate(4, 3);
@@ -1041,6 +1118,30 @@ export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeo
     g.fillBox(1, 9, 1, 3, 10, 3, 0x495057);
     g.set(2, 11, 2, 0xced4da);
     geom = g.toGeometry(0.048, [2.5, 12, 2.5]);
+  } else if (kind === 'rocket_punch') {
+    // 巨大ロボットのロケットパンチ（鋼鉄ナックル＋ナックルガード＋推進スラスターノズル）
+    const g = new VoxelGrid(9, 14, 9);
+    const darkSteel = 0x212529;
+    const armorPlate = 0x495057;
+    const lightPlate = 0x868e96;
+    // 前方ナックル・握り拳（y=7..13）
+    g.fillBox(2, 7, 2, 6, 12, 6, armorPlate);
+    // 拳のナックルガード（前部装甲突起）
+    g.fillBox(2, 11, 7, 6, 13, 7, darkSteel);
+    g.fillBox(2, 12, 2, 6, 13, 6, lightPlate);
+    // 指関節ディテール
+    g.fillBox(3, 8, 7, 3, 10, 7, lightPlate);
+    g.fillBox(5, 8, 7, 5, 10, 7, lightPlate);
+    // 中央アームスリーブ＆識別リング（y=4..6）
+    g.fillBox(2, 4, 2, 6, 6, 6, darkSteel);
+    g.fillBox(1, 5, 1, 7, 5, 7, 0xffd43b); // ゴールドリング
+    // 後部円形ロケット推進ノズル（y=0..3）
+    g.fillBox(2, 1, 2, 6, 3, 6, darkSteel);
+    g.fillBox(1, 0, 1, 7, 1, 7, 0x1f2420);
+    // 噴射口内部のプラズマコア（高熱の青白色）
+    g.fillBox(3, 0, 3, 5, 1, 5, 0x74c0fc);
+    g.set(4, 0, 4, 0xffffff);
+    geom = g.toGeometry(0.048, [4.5, 14, 4.5]);
   } else {
     const sy = 16;
     const g = new VoxelGrid(3, sy, 3);

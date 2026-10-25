@@ -521,7 +521,8 @@ export class Unit {
       this.type.id === 'dragon' ||
       this.type.id === 'anaconda' ||
       this.type.id === 'buggy' ||
-      this.type.id === 'giant_tank'
+      this.type.id === 'giant_tank' ||
+      this.type.id === 'giant_robot'
         ? 0.25
         : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
@@ -554,7 +555,8 @@ export class Unit {
       st === 'swoop' ||
       st === 'tank_cannon' ||
       st === 'rocket' ||
-      st === 'satellite_strike'
+      st === 'satellite_strike' ||
+      st === 'rocket_punch'
     ) {
       return this.type.range;
     }
@@ -594,7 +596,8 @@ export class Unit {
       st === 'swoop' ||
       st === 'tank_cannon' ||
       st === 'rocket' ||
-      st === 'satellite_strike'
+      st === 'satellite_strike' ||
+      st === 'rocket_punch'
     ) {
       return this.type.range;
     }
@@ -649,7 +652,8 @@ export class Unit {
       this.type.id === 'dragon' ||
       this.type.id === 'anaconda' ||
       this.type.id === 'buggy' ||
-      this.type.id === 'giant_tank'
+      this.type.id === 'giant_tank' ||
+      this.type.id === 'giant_robot'
         ? 0.16
         : 0.3;
     if (this.muscle < minMuscle) {
@@ -914,6 +918,34 @@ export class Unit {
           : null;
       if (aim) {
         ctx.combat.callSatelliteStrike(this, aim, ctx.units, ctx.facilities ?? [], dt);
+      }
+      return;
+    }
+    if (st === 'rocket_punch') {
+      const aim =
+        t && t.alive
+          ? t.chest.pos.clone().addScaledVector(t.velocity, 0.12)
+          : fac && fac.alive
+          ? fac.pos.clone().setY(fac.height * 0.45)
+          : null;
+      if (aim) {
+        const from = this.joints[J.HandR].pos.clone().addScaledVector(this.forward, 0.5 * this.scale);
+        const speed = this.type.projectile?.speed ?? 36;
+        const dir = new Vector3().subVectors(aim, from);
+        const dist = Math.hypot(dir.x, dir.z);
+        const flight = dist / speed;
+        dir.y += 0.5 * GRAVITY * 0.12 * flight * flight;
+        dir.normalize();
+        const vel = dir.multiplyScalar(speed);
+        ctx.combat.fireProjectile(this, from, vel, 'rocket_punch', {
+          damage: this.type.projectile?.damage ?? 110,
+          gravityScale: 0.12,
+          life: 3.5,
+        });
+        ctx.combat.emitEffect({ kind: 'robot_punch_fire', pos: from, dir: this.forward.clone() });
+        const recoil = this.forward.clone().multiplyScalar(-2.2);
+        this.chest.addVelocity(recoil, dt);
+        this.pelvis.addVelocity(recoil, dt);
       }
       return;
     }
@@ -1212,6 +1244,42 @@ export class Unit {
             push.addScaledVector(this.forward, 0.9).normalize().multiplyScalar(6.5);
             push.y = 2.4;
             const dmg = 18 * this.damageMul;
+            const killed = u.takeDamage(dmg, u.pelvis, push, dt, this);
+            ctx.combat.onHit?.({
+              kind: 'melee',
+              point: u.pelvis.pos.clone(),
+              damage: dmg,
+              attacker: this,
+              victim: u,
+              hitParticle: u.pelvis,
+              impulse: push,
+              killed,
+            });
+          }
+        }
+      }
+    }
+
+    // 1-4. 巨大ロボットの重歩行・地響きと踏み潰し
+    if (id === 'giant_robot' && ctx.aiEnabled) {
+      const speedH = Math.hypot(this.velocity.x, this.velocity.z);
+      if (speedH > 0.4) {
+        this.stepDustTimer -= dt;
+        if (this.stepDustTimer <= 0) {
+          this.stepDustTimer = 0.35;
+          ctx.combat.emitEffect({ kind: 'elephant_step', pos: new Vector3(this.pelvis.pos.x, 0.05, this.pelvis.pos.z) });
+        }
+        const frontPos = this.pelvis.pos.clone().addScaledVector(this.forward, 0.7 * this.scale);
+        const trampleR2 = (1.1 * this.scale) ** 2;
+        for (const u of ctx.units) {
+          if (!u.alive || u.team === this.team || u.scale >= 2.0) continue;
+          if (!this.canHit(u)) continue;
+          if (u.pelvis.pos.distanceToSquared(frontPos) <= trampleR2) {
+            this.registerHit(u, 0.4);
+            const push = new Vector3().subVectors(u.pelvis.pos, this.pelvis.pos).setY(0).normalize();
+            push.addScaledVector(this.forward, 0.8).normalize().multiplyScalar(7.0);
+            push.y = 2.8;
+            const dmg = 22 * this.damageMul;
             const killed = u.takeDamage(dmg, u.pelvis, push, dt, this);
             ctx.combat.onHit?.({
               kind: 'melee',
@@ -1790,6 +1858,18 @@ export class Unit {
     } else if (style === 'breath' && phase === 'strike') {
       twist = Math.sin(this.phaseTime * 5.2) * 0.42;
       lp[J.Head].z += 0.14;
+    } else if (style === 'rocket_punch') {
+      if (phase === 'windup') {
+        lp[J.HandR].set(0.28, 0.35, -0.22);
+        lp[J.ElbowR].set(0.35, 0.38, -0.15);
+        lp[J.HandL].set(-0.25, 0.22, 0.32);
+        twist = 0.35;
+      } else if (phase === 'strike' || phase === 'recover') {
+        lp[J.HandR].set(0.18, 0.42, 0.85);
+        lp[J.ElbowR].set(0.25, 0.42, 0.45);
+        lp[J.HandL].set(-0.28, 0.15, -0.1);
+        twist = -0.4;
+      }
     }
 
     if (phase === 'strike' && this.type.weapon !== null) {

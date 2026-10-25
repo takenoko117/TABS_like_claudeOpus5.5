@@ -6,7 +6,7 @@ import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
-export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell';
+export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell' | 'rocket_punch';
 
 export interface HitEvent {
   kind: HitKind;
@@ -65,7 +65,9 @@ export type CombatEffectEvent =
   | { kind: 'rocket_fire'; pos: Vector3; dir: Vector3 }
   | { kind: 'rocket_explosion'; pos: Vector3 }
   | { kind: 'satellite_target'; pos: Vector3; progress: number }
-  | { kind: 'satellite_beam'; pos: Vector3; radius: number };
+  | { kind: 'satellite_beam'; pos: Vector3; radius: number }
+  | { kind: 'robot_punch_fire'; pos: Vector3; dir: Vector3 }
+  | { kind: 'robot_punch_impact'; pos: Vector3 };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -501,6 +503,9 @@ export class CombatSystem {
     } else if (a.projectileKind === 'tank_shell') {
       this.applyRadialBlast(a.owner, pos, 4.4, a.damage, 13.5, 0.85, units, dt, 'explosion', facilities, a.team);
       this.emitEffect({ kind: 'tank_explosion', pos: pos.clone() });
+    } else if (a.projectileKind === 'rocket_punch') {
+      this.applyRadialBlast(a.owner, pos, 3.8, a.damage, 14.0, 0.85, units, dt, 'explosion', facilities, a.team);
+      this.emitEffect({ kind: 'robot_punch_impact', pos: pos.clone() });
     }
     a.life = 0;
   }
@@ -561,7 +566,7 @@ export class CombatSystem {
         if (!stopped) {
           a.pos.copy(_to);
           if (a.pos.y <= 0) {
-            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell') {
+            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
               // 地面に着弾して爆発
               a.pos.y = 0.05;
               this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
@@ -621,7 +626,7 @@ export class CombatSystem {
         const killed = fac.takeDamage(dmg, a.owner);
         this.emitEffect({ kind: 'facility_hit', pos: a.pos.clone(), damage: dmg });
 
-        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell') {
+        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
           this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
         } else if (a.projectileKind === 'sniper') {
           // スナイパーは施設にも大ダメージを与えつつ少し貫通
@@ -668,7 +673,7 @@ export class CombatSystem {
       const cy = from.y + (to.y - from.y) * t;
       if (cy <= obs.height && cx * cx + cz * cz <= (obs.radius + 0.05) ** 2) {
         a.pos.set(from.x + dx * t, cy, from.z + dz * t);
-        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell') {
+        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
           this.triggerExplosiveProjectileHit(a, a.pos, units, [], dt);
         } else if (a.projectileKind === 'arrow' || a.projectileKind === 'shuriken') {
           a.state = 'ground';
@@ -870,7 +875,7 @@ export class CombatSystem {
     a.hitUnitIds.add(bestU.id);
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
-    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell') {
+    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch') {
       const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0);
       if (bestU.alive && bestU.team !== a.team) {
         bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined);

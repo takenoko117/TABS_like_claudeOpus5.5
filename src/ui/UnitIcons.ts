@@ -538,6 +538,45 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <rect x="15" y="20" width="8" height="10" rx="1" fill="#1f2937" stroke="#38d9a9" stroke-width="0.8"/>
         <rect x="16.5" y="21.5" width="5" height="5" fill="#38d9a9"/>
       </svg>`;
+
+    case 'giant_robot':
+      // 巨大ロボット: V字アンテナ＋発光ツインアイ＋重装甲ショルダー＋ロケットナックル
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 巨大ショルダーアーマー（左肩） -->
+        <polygon points="2,16 9,14 8,24 1,23" fill="#e0473a" stroke="#b02518" stroke-width="0.8"/>
+        <!-- 重装甲胸部ボディ＆コックピット -->
+        <rect x="7" y="19" width="14" height="14" rx="2" fill="#343a40" stroke="#212529" stroke-width="1"/>
+        <rect x="10" y="21" width="8" height="6" fill="#e0473a"/>
+        <rect x="12" y="23" width="4" height="2" fill="#ffd43b"/>
+        <!-- ロボット頭部本体 -->
+        <rect x="9" y="8" width="10" height="11" rx="1" fill="#495057" stroke="#212529" stroke-width="0.8"/>
+        <!-- フェイスマスク＆ダクト -->
+        <rect x="11" y="14" width="6" height="4" fill="#212529"/>
+        <line x1="14" y1="14.5" x2="14" y2="17.5" stroke="#adb5bd" stroke-width="0.8"/>
+        <!-- 発光ツインアイ（シアン） -->
+        <rect x="10.5" y="11" width="2.5" height="2" fill="#38d9a9"/>
+        <rect x="15" y="11" width="2.5" height="2" fill="#38d9a9"/>
+        <!-- ヘルメットひさし（チームカラー） -->
+        <polygon points="8,9 14,7 20,9 18,10.5 10,10.5" fill="#e0473a"/>
+        <!-- V字ブレードアンテナ -->
+        <polygon points="13,8 14,4 15,8" fill="#ffd43b"/>
+        <polygon points="12,7 6,2 8,5 13,8" fill="#ffd43b"/>
+        <polygon points="16,7 22,2 20,5 15,8" fill="#ffd43b"/>
+        <!-- 前方に射出されるロケットパンチ（右腕ナックル＋噴射炎） -->
+        <g>
+          <!-- 推進バーニア炎 -->
+          <polygon points="20,24 23,26 20,28" fill="#4dabf7"/>
+          <polygon points="21,24.5 24,26 21,27.5" fill="#ffffff"/>
+          <!-- ロケットナックル本体 -->
+          <rect x="23" y="21" width="9" height="10" rx="2" fill="#212529" stroke="#121416" stroke-width="0.8"/>
+          <!-- ナックルプレート（チームカラー） -->
+          <rect x="25" y="22" width="6" height="8" rx="1" fill="#e0473a"/>
+          <!-- 拳の指関節ガード -->
+          <rect x="31" y="22" width="2.5" height="2" fill="#adb5bd"/>
+          <rect x="31" y="25" width="2.5" height="2" fill="#adb5bd"/>
+          <rect x="31" y="28" width="2.5" height="2" fill="#adb5bd"/>
+        </g>
+      </svg>`;
   }
 }
 

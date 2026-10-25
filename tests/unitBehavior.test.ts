@@ -283,6 +283,29 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(beams).toBeGreaterThan(0);
     expect(damage).toBeGreaterThan(80);
   });
+
+  it('巨大ロボットがロケットパンチを射出して敵に着弾し爆発ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const robot = battle.spawnUnit('giant_robot', 0, -10, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 10, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let fired = 0;
+    let impacts = 0;
+    let damage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'robot_punch_fire') fired++;
+      if (e.kind === 'robot_punch_impact') impacts++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === robot && e.victim === dummy) damage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(fired).toBeGreaterThan(0);
+    expect(impacts).toBeGreaterThan(0);
+    expect(damage).toBeGreaterThan(60);
+  });
 });
 
 describe('1対1 総当たりで膠着しない', () => {

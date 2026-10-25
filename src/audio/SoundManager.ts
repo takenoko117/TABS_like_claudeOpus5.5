@@ -1020,6 +1020,222 @@ export class SoundManager {
         noise.stop(t + 0.52);
         break;
       }
+      case 'robot_punch_fire': {
+        if (!this.throttle('rbt_pnc_fr', 80)) return;
+        // ロケットパンチ射出音（機械駆動音＋ブースター噴射音）
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(320, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.22);
+        g.gain.setValueAtTime(0.35, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.26);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(700, t);
+        bp.frequency.exponentialRampToValueAtTime(1400, t + 0.2);
+        bp.Q.value = 1.8;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.5, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.32);
+        break;
+      }
+      case 'at_field': {
+        if (!this.throttle('at_fld', 100)) return;
+        // ATフィールド展開時の特徴的な共鳴音（神秘的な低周波変調音）
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, t);
+        osc.frequency.exponentialRampToValueAtTime(180, t + 0.18);
+        g.gain.setValueAtTime(0.35, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.24);
+        break;
+      }
+      case 'ramiel_charge': {
+        if (!this.throttle('ram_chg', 180)) return;
+        // 幾何神ラミエルの超高周波幾何学チャージ音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(950, t);
+        osc.frequency.exponentialRampToValueAtTime(2400, t + 0.35);
+        g.gain.setValueAtTime(0.25, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.4);
+        break;
+      }
+      case 'ramiel_beam': {
+        if (!this.throttle('ram_beam', 150)) return;
+        // 加粒子砲照射轟音（大咆哮のような極太プラズマ照射＆地鳴り）
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(750, t);
+        osc.frequency.exponentialRampToValueAtTime(35, t + 0.5);
+        g.gain.setValueAtTime(0.65, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.58);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(1800, t);
+        bp.Q.value = 2.5;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.6, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.48);
+        break;
+      }
+      case 'sachiel_pile': {
+        if (!this.throttle('sac_pile', 80)) return;
+        // 光杭パイルランス突刺音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(680, t);
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.15);
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.2);
+        break;
+      }
+      case 'sachiel_cross': {
+        if (!this.throttle('sac_cross', 120)) return;
+        // 十字架状クロス爆発音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.35);
+        g.gain.setValueAtTime(0.55, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.42);
+        break;
+      }
+      case 'zeruel_ribbon': {
+        if (!this.throttle('zer_rib', 80)) return;
+        // 帯状リボンカッター薙ぎ払い音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, t);
+        osc.frequency.exponentialRampToValueAtTime(140, t + 0.12);
+        g.gain.setValueAtTime(0.45, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.18);
+        break;
+      }
+      case 'sahaquiel_bomb': {
+        if (!this.throttle('sah_bmb', 100)) return;
+        // 天落爆発轟音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(190, t);
+        osc.frequency.exponentialRampToValueAtTime(30, t + 0.45);
+        g.gain.setValueAtTime(0.6, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.52);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1100, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.55, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.45);
+        break;
+      }
+      case 'robot_punch_impact': {
+        if (!this.throttle('rbt_pnc_imp', 80)) return;
+        // 超重量金属ナックルの直撃・轟音インパクト爆発
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'triangle';
+        boom.frequency.setValueAtTime(160, t);
+        boom.frequency.exponentialRampToValueAtTime(22, t + 0.45);
+        bg.gain.setValueAtTime(0.7, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.52);
+
+        // 金属衝撃打撃音
+        const clank = ctx.createOscillator();
+        const cg = ctx.createGain();
+        clank.type = 'square';
+        clank.frequency.setValueAtTime(540, t);
+        clank.frequency.exponentialRampToValueAtTime(110, t + 0.15);
+        cg.gain.setValueAtTime(0.4, t);
+        cg.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        clank.connect(cg);
+        cg.connect(this.masterGain);
+        clank.start(t);
+        clank.stop(t + 0.2);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1300, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.6, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.4);
+        break;
+      }
     }
   }
 }
