@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import type { Facility } from '../facilities/Facility';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
 import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
 import { FLAME_DRAG, Unit } from '../units/Unit';
@@ -47,7 +48,13 @@ export type CombatEffectEvent =
   | { kind: 'shield_block'; pos: Vector3 }
   | { kind: 'charge_leap'; pos: Vector3 }
   | { kind: 'bomb_throw'; pos: Vector3 }
-  | { kind: 'bomb_explosion'; pos: Vector3 };
+  | { kind: 'bomb_explosion'; pos: Vector3 }
+  | { kind: 'portal_spawn'; pos: Vector3; team: Team }
+  | { kind: 'totem_pulse'; pos: Vector3; radius: number; team: Team }
+  | { kind: 'gate_multiply'; pos: Vector3; team: Team }
+  | { kind: 'cannon_fire'; pos: Vector3; dir: Vector3 }
+  | { kind: 'facility_hit'; pos: Vector3; damage: number }
+  | { kind: 'facility_destroy'; pos: Vector3; team: Team; radius: number };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -220,11 +227,44 @@ export class CombatSystem {
     }
   }
 
+  /** 近接武器の粒子が敵施設のコライダー内に到達したときのダメージ判定 */
+  processFacilityMeleeHit(attacker: Unit, facilities: readonly Facility[]): void {
+    if (!attacker.alive || attacker.weaponParticles.length === 0) return;
+    const spec = attacker.type.weapon;
+    if (!spec) return;
+
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === attacker.team) continue;
+      // 武器の先端粒子
+      const tip = attacker.weaponParticles[attacker.weaponParticles.length - 1];
+      const dx = tip.pos.x - fac.pos.x;
+      const dz = tip.pos.z - fac.pos.z;
+      const hitDist = fac.radius + tip.radius + 0.25;
+      if (dx * dx + dz * dz <= hitDist * hitDist && tip.pos.y <= fac.height + 0.2) {
+        if (!attacker.canHitFacility(fac.id)) continue;
+        attacker.registerFacilityHit(fac.id, 0.35);
+
+        const dmg = spec.damage * attacker.damageMul * (attacker.attackPhase === 'strike' ? 1.2 : 0.8);
+        const killed = fac.takeDamage(dmg, attacker);
+        this.emitEffect({ kind: 'facility_hit', pos: tip.pos.clone(), damage: dmg });
+        if (killed) {
+          this.emitEffect({
+            kind: 'facility_destroy',
+            pos: fac.pos.clone(),
+            team: fac.team,
+            radius: fac.radius,
+          });
+        }
+      }
+    }
+  }
+
   /** 標準の矢を発射する */
   fireArrow(owner: Unit, from: Vector3, velocity: Vector3): void {
     const spec = owner.type.projectile;
     if (!spec) return;
-    const a = new Arrow(owner, owner.team, spec.damage, spec.speed);
+    const damage = spec.damage * owner.damageMul;
+    const a = new Arrow(owner, owner.team, damage, spec.speed);
     a.pos.copy(from);
     a.vel.copy(velocity);
     a.dir.copy(velocity).normalize();
@@ -232,7 +272,20 @@ export class CombatSystem {
     this.onShootArrow?.(owner);
   }
 
-  /** カスタム飛翔体（銃弾・貫通スナイパー弾・手裏剣・火炎ブレス）を発射する */
+  /** キャノン砲台など施設から砲弾を発射する */
+  fireCannonBall(team: Team, from: Vector3, velocity: Vector3, damage: number = 55): Arrow {
+    // 砲弾はダミーの owner（または null 許容）ではなく、適切な Team を持つ Arrow を生成
+    // 既存の Arrow は owner: Unit が必須になっているため、仮の Unit なしか owner 許容かを確認
+    const a = new Arrow(null as unknown as Unit, team, damage, velocity.length());
+    a.pos.copy(from);
+    a.vel.copy(velocity);
+    if (velocity.lengthSq() > 1e-8) a.dir.copy(velocity).normalize();
+    a.projectileKind = 'bomb';
+    a.gravityScale = 0.55;
+    a.life = 4.0;
+    this.arrows.push(a);
+    return a;
+  }
   fireProjectile(
     owner: Unit,
     from: Vector3,
@@ -241,7 +294,7 @@ export class CombatSystem {
     opts?: { damage?: number; gravityScale?: number; pierce?: number; life?: number; carveScale?: number },
   ): Arrow {
     const spec = owner.type.projectile;
-    const dmg = opts?.damage ?? spec?.damage ?? 15;
+    const dmg = opts?.damage ?? (spec?.damage ? spec.damage * owner.damageMul : 15 * owner.damageMul);
     const refSpd = spec?.speed ?? Math.max(10, velocity.length());
     const a = new Arrow(owner, owner.team, dmg, refSpd);
     a.pos.copy(from);
@@ -340,7 +393,7 @@ export class CombatSystem {
 
   /** 範囲ダメージとノックバックを一括適用する */
   applyRadialBlast(
-    attacker: Unit,
+    attacker: Unit | null,
     center: Vector3,
     radius: number,
     damage: number,
@@ -349,11 +402,16 @@ export class CombatSystem {
     units: readonly Unit[],
     dt: number,
     hitKind: HitKind = 'explosion',
+    facilities: readonly Facility[] = [],
+    teamOverride?: Team,
   ): number {
     let hitCount = 0;
     const r2 = radius * radius;
+    const attackerTeam = teamOverride ?? attacker?.team ?? 0;
+    const dmgMul = attacker?.damageMul ?? 1.0;
+
     for (const u of units) {
-      if (!u.alive || u.team === attacker.team) continue;
+      if (!u.alive || u.team === attackerTeam) continue;
       const d2 = u.pelvis.pos.distanceToSquared(center);
       if (d2 > r2) continue;
       const dist = Math.sqrt(d2);
@@ -366,24 +424,54 @@ export class CombatSystem {
       const kb = (knockback * falloff) / Math.pow(u.massScale, 0.55);
       _dir.multiplyScalar(kb);
 
-      const finalDmg = damage * falloff;
-      const killed = u.takeDamage(finalDmg, u.chest, _dir, dt, attacker);
-      this.onHit?.({
-        kind: hitKind,
-        point: u.chest.pos.clone(),
-        damage: finalDmg,
-        attacker,
-        victim: u,
-        hitParticle: u.chest,
-        impulse: _dir.clone(),
-        killed,
-      });
+      const finalDmg = damage * falloff * dmgMul;
+      const killed = u.takeDamage(finalDmg, u.chest, _dir, dt, attacker ?? undefined);
+      if (attacker) {
+        this.onHit?.({
+          kind: hitKind,
+          point: u.chest.pos.clone(),
+          damage: finalDmg,
+          attacker,
+          victim: u,
+          hitParticle: u.chest,
+          impulse: _dir.clone(),
+          killed,
+        });
+      }
       hitCount++;
     }
+
+    // 範囲内の敵施設にも爆発ダメージを適用
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === attackerTeam) continue;
+      const d2 = fac.pos.distanceToSquared(center);
+      if (d2 <= (radius + fac.radius) * (radius + fac.radius)) {
+        const dist = Math.sqrt(d2);
+        const falloff = clamp(1 - dist / (radius * 1.2), 0.4, 1);
+        const finalDmg = damage * falloff * dmgMul;
+        const killed = fac.takeDamage(finalDmg, attacker ?? undefined);
+        this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: finalDmg });
+        if (killed) {
+          this.emitEffect({
+            kind: 'facility_destroy',
+            pos: fac.pos.clone(),
+            team: fac.team,
+            radius: fac.radius,
+          });
+        }
+        hitCount++;
+      }
+    }
+
     return hitCount;
   }
 
-  updateArrows(dt: number, units: readonly Unit[], obstacles: readonly ObstacleCylinder[] = []): void {
+  updateArrows(
+    dt: number,
+    units: readonly Unit[],
+    obstacles: readonly ObstacleCylinder[] = [],
+    facilities: readonly Facility[] = [],
+  ): void {
     const arrows = this.arrows;
     for (let i = arrows.length - 1; i >= 0; i--) {
       const a = arrows[i];
@@ -397,6 +485,15 @@ export class CombatSystem {
         _to.copy(a.pos).addScaledVector(a.vel, dt);
         if (a.vel.lengthSq() > 1e-8) a.dir.copy(a.vel).normalize();
         a.spinAngle += dt * 28;
+
+        // 敵施設との衝突判定
+        if (facilities.length > 0 && this.checkFacilityHit(a, _from, _to, facilities, units, dt)) {
+          if (a.life <= 0) {
+            arrows[i] = arrows[arrows.length - 1];
+            arrows.pop();
+          }
+          continue;
+        }
 
         // 石柱などの障害物との衝突判定
         if (obstacles.length > 0 && this.checkObstacleHit(a, _from, _to, obstacles, units, dt)) {
@@ -414,7 +511,19 @@ export class CombatSystem {
             if (a.projectileKind === 'bomb') {
               // 地面に着弾して大爆発
               a.pos.y = 0.05;
-              this.applyRadialBlast(a.owner, a.pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion');
+              this.applyRadialBlast(
+                a.owner,
+                a.pos,
+                2.8,
+                a.damage,
+                8.8,
+                0.65,
+                units,
+                dt,
+                'explosion',
+                facilities,
+                a.team,
+              );
               this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
               a.life = 0;
             } else if (a.projectileKind === 'flame') {
@@ -447,6 +556,73 @@ export class CombatSystem {
     this.updateFireZones(dt, units);
   }
 
+  /** 飛翔体が敵施設に当たったか判定する */
+  private checkFacilityHit(
+    a: Arrow,
+    from: Vector3,
+    to: Vector3,
+    facilities: readonly Facility[],
+    units: readonly Unit[],
+    dt: number,
+  ): boolean {
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === a.team) continue;
+      if (from.y > fac.height && to.y > fac.height) continue;
+      const dx = to.x - from.x;
+      const dz = to.z - from.z;
+      const segLen2 = dx * dx + dz * dz;
+      const t = segLen2 > 1e-8 ? clamp(((fac.pos.x - from.x) * dx + (fac.pos.z - from.z) * dz) / segLen2, 0, 1) : 0;
+      const cx = from.x + dx * t - fac.pos.x;
+      const cz = from.z + dz * t - fac.pos.z;
+      const cy = from.y + (to.y - from.y) * t;
+      const hitRadius = fac.radius + 0.15;
+      if (cy <= fac.height && cx * cx + cz * cz <= hitRadius * hitRadius) {
+        a.pos.set(from.x + dx * t, cy, from.z + dz * t);
+        const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0);
+        const killed = fac.takeDamage(dmg, a.owner);
+        this.emitEffect({ kind: 'facility_hit', pos: a.pos.clone(), damage: dmg });
+
+        if (a.projectileKind === 'bomb') {
+          this.applyRadialBlast(
+            a.owner,
+            a.pos,
+            2.8,
+            a.damage,
+            8.8,
+            0.65,
+            units,
+            dt,
+            'explosion',
+            facilities,
+            a.team,
+          );
+          this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
+          a.life = 0;
+        } else if (a.projectileKind === 'sniper') {
+          // スナイパーは施設にも大ダメージを与えつつ少し貫通
+          a.pierceLeft--;
+          if (a.pierceLeft <= 0) a.life = 0;
+        } else if (a.projectileKind === 'arrow' || a.projectileKind === 'shuriken') {
+          a.state = 'ground';
+          a.life = 2.5;
+        } else {
+          a.life = 0;
+        }
+
+        if (killed) {
+          this.emitEffect({
+            kind: 'facility_destroy',
+            pos: fac.pos.clone(),
+            team: fac.team,
+            radius: fac.radius,
+          });
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** 飛翔体が石柱などの円柱障害物に当たったか判定する */
   private checkObstacleHit(
     a: Arrow,
@@ -468,7 +644,19 @@ export class CombatSystem {
       if (cy <= obs.height && cx * cx + cz * cz <= (obs.radius + 0.05) ** 2) {
         a.pos.set(from.x + dx * t, cy, from.z + dz * t);
         if (a.projectileKind === 'bomb') {
-          this.applyRadialBlast(a.owner, a.pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion');
+          this.applyRadialBlast(
+            a.owner,
+            a.pos,
+            2.8,
+            a.damage,
+            8.8,
+            0.65,
+            units,
+            dt,
+            'explosion',
+            [],
+            a.team,
+          );
           this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
           a.life = 0;
         } else if (a.projectileKind === 'arrow' || a.projectileKind === 'shuriken') {
@@ -670,9 +858,13 @@ export class CombatSystem {
     a.pos.copy(from).addScaledVector(_seg, bestT);
     a.hitUnitIds.add(bestU.id);
 
-    // 爆弾兵の爆弾が直撃した場合はその場で爆発して終了
+    // 爆弾の直撃時は直撃ダメージを与えて爆発終了
     if (a.projectileKind === 'bomb') {
-      this.applyRadialBlast(a.owner, a.pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion');
+      const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0);
+      if (bestU.alive && bestU.team !== a.team) {
+        bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined);
+      }
+      this.applyRadialBlast(a.owner, a.pos, 3.2, dmg, 8.8, 0.65, units, dt, 'explosion', [], a.team);
       this.emitEffect({ kind: 'bomb_explosion', pos: a.pos.clone() });
       a.life = 0;
       return true;

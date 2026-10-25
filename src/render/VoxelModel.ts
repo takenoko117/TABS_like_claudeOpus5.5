@@ -9,6 +9,7 @@ import {
   Vector3,
 } from 'three';
 import type { ProjectileKind } from '../combat/CombatSystem';
+import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Particle } from '../physics/Particle';
 import { J } from '../units/Skeleton';
 import type { Unit } from '../units/Unit';
@@ -1237,6 +1238,423 @@ export function createPreviewGhost(type: UnitType, team: Team): Group {
   g.add(torso, head);
   g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
   return g;
+}
+
+/** 施設のボクセルグリッドを生成する */
+export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { grid: VoxelGrid; voxelSize: number } {
+  const teamCol = TEAM_COLORS[team];
+  const primary = teamCol.shirt;
+  const accent = teamCol.accent;
+
+  switch (typeId) {
+    case 'barracks': {
+      // 召喚ポータル: 石の台座、四隅のオベリスク柱、中央の浮遊魔力クリスタル
+      const sx = 24;
+      const sy = 26;
+      const sz = 24;
+      const voxelSize = 0.088;
+      const g = new VoxelGrid(sx, sy, sz);
+
+      // 八角形台座
+      const r = 10;
+      const cx = 11.5;
+      const cz = 11.5;
+      for (let y = 0; y <= 3; y++) {
+        const stoneCol = y === 0 ? 0x2e3138 : y === 3 ? 0x484c56 : 0x3a3d46;
+        for (let z = 0; z < sz; z++) {
+          for (let x = 0; x < sx; x++) {
+            const dx = Math.abs(x - cx);
+            const dz = Math.abs(z - cz);
+            if (dx * dx + dz * dz <= r * r && dx + dz <= r * 1.35) {
+              g.set(x, y, z, stoneCol);
+            }
+          }
+        }
+      }
+      // 台座上面のルーン円環
+      for (let z = 0; z < sz; z++) {
+        for (let x = 0; x < sx; x++) {
+          const d2 = (x - cx) ** 2 + (z - cz) ** 2;
+          if (d2 >= 6.5 * 6.5 && d2 <= 8.5 * 8.5) {
+            g.set(x, 3, z, primary);
+          } else if (d2 <= 2.5 * 2.5) {
+            g.set(x, 3, z, accent);
+          }
+        }
+      }
+
+      // 四隅のオベリスク柱
+      const pillars = [
+        [3, 3],
+        [17, 3],
+        [3, 17],
+        [17, 17],
+      ];
+      for (const [px, pz] of pillars) {
+        for (let y = 3; y <= 24; y++) {
+          const pCol = y % 5 === 0 ? primary : 0x555a66;
+          for (let z = pz; z <= pz + 3; z++) {
+            for (let x = px; x <= px + 3; x++) {
+              g.set(x, y, z, pCol);
+            }
+          }
+        }
+        // 柱の頂上飾り
+        g.set(px + 1, 25, pz + 1, accent);
+        g.set(px + 2, 25, pz + 1, accent);
+        g.set(px + 1, 25, pz + 2, accent);
+        g.set(px + 2, 25, pz + 2, accent);
+      }
+
+      // 中央の浮遊魔力クリスタル
+      for (let y = 13; y <= 20; y++) {
+        const cr = y <= 16 ? (y - 12) * 0.75 : (21 - y) * 0.75;
+        for (let z = 8; z <= 15; z++) {
+          for (let x = 8; x <= 15; x++) {
+            const d2 = (x - cx) ** 2 + (z - cz) ** 2;
+            if (d2 <= cr * cr) {
+              g.set(x, y, z, y % 2 === 0 ? accent : primary);
+            }
+          }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+
+    case 'buff_totem': {
+      // 加護のトーテム: 木製トーテムポール、翼彫刻、黄金冠、輝く宝珠
+      const sx = 20;
+      const sy = 32;
+      const sz = 20;
+      const voxelSize = 0.08;
+      const g = new VoxelGrid(sx, sy, sz);
+      const cx = 9.5;
+      const cz = 9.5;
+
+      // 台座（石）
+      for (let y = 0; y <= 3; y++) {
+        for (let z = 3; z <= 16; z++) {
+          for (let x = 3; x <= 16; x++) {
+            const d2 = (x - cx) ** 2 + (z - cz) ** 2;
+            if (d2 <= 6.8 * 6.8) {
+              g.set(x, y, z, 0x3c3f47);
+            }
+          }
+        }
+      }
+
+      // 木のトーテム柱（y: 4..25）
+      for (let y = 4; y <= 25; y++) {
+        const woodCol = (y % 4 === 0) ? 0x4a3220 : 0x62422b;
+        for (let z = 7; z <= 12; z++) {
+          for (let x = 7; x <= 12; x++) {
+            g.set(x, y, z, woodCol);
+          }
+        }
+      }
+
+      // 彫刻帯（下段: チームカラー羽飾り y: 8..11）
+      for (let y = 8; y <= 11; y++) {
+        for (let x = 3; x <= 6; x++) {
+          g.set(x, y, 9, primary);
+          g.set(x, y, 10, primary);
+        }
+        for (let x = 13; x <= 16; x++) {
+          g.set(x, y, 9, primary);
+          g.set(x, y, 10, primary);
+        }
+      }
+
+      // 中段アクセント（y: 15..17）
+      for (let y = 15; y <= 17; y++) {
+        for (let z = 6; z <= 13; z++) {
+          for (let x = 6; x <= 13; x++) {
+            if (x === 6 || x === 13 || z === 6 || z === 13) {
+              g.set(x, y, z, accent);
+            }
+          }
+        }
+      }
+
+      // 上段の大翼（y: 20..25）
+      for (let y = 20; y <= 25; y++) {
+        const wingSpan = (y - 19) * 1.2;
+        for (let w = 1; w <= wingSpan; w++) {
+          g.set(Math.max(1, Math.round(6 - w)), y, 9, primary);
+          g.set(Math.max(1, Math.round(6 - w)), y, 10, primary);
+          g.set(Math.min(18, Math.round(13 + w)), y, 9, primary);
+          g.set(Math.min(18, Math.round(13 + w)), y, 10, primary);
+        }
+      }
+
+      // 頂上の黄金冠（y: 26..27）
+      for (let y = 26; y <= 27; y++) {
+        for (let z = 6; z <= 13; z++) {
+          for (let x = 6; x <= 13; x++) {
+            g.set(x, y, z, 0xffd23a);
+          }
+        }
+      }
+
+      // 最上部の輝く宝珠（y: 28..31）
+      for (let y = 28; y <= 31; y++) {
+        for (let z = 7; z <= 12; z++) {
+          for (let x = 7; x <= 12; x++) {
+            const d2 = (x - cx) ** 2 + (z - cz) ** 2 + (y - 29.5) ** 2;
+            if (d2 <= 2.6 * 2.6) {
+              g.set(x, y, z, primary);
+            }
+          }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+
+    case 'multiplier_gate': {
+      // 増殖ゲート: 左右の頑丈な門柱、上部アーチ梁、「x2」プレート、中央のエネルギー膜
+      const sx = 34;
+      const sy = 32;
+      const sz = 12;
+      const voxelSize = 0.088;
+      const g = new VoxelGrid(sx, sy, sz);
+
+      // 左柱 (x: 2..8, z: 2..9, y: 0..27)
+      for (let y = 0; y <= 27; y++) {
+        const pCol = y % 6 === 0 ? primary : 0x3d434e;
+        for (let z = 2; z <= 9; z++) {
+          for (let x = 2; x <= 8; x++) {
+            g.set(x, y, z, pCol);
+          }
+        }
+        // 柱の前面ライン
+        g.set(5, y, 10, primary);
+      }
+      // 左柱ベース拡大
+      for (let y = 0; y <= 2; y++) {
+        for (let z = 1; z <= 10; z++) {
+          for (let x = 1; x <= 9; x++) {
+            g.set(x, y, z, 0x2e323b);
+          }
+        }
+      }
+
+      // 右柱 (x: 25..31, z: 2..9, y: 0..27)
+      for (let y = 0; y <= 27; y++) {
+        const pCol = y % 6 === 0 ? primary : 0x3d434e;
+        for (let z = 2; z <= 9; z++) {
+          for (let x = 25; x <= 31; x++) {
+            g.set(x, y, z, pCol);
+          }
+        }
+        // 柱の前面ライン
+        g.set(28, y, 10, primary);
+      }
+      // 右柱ベース拡大
+      for (let y = 0; y <= 2; y++) {
+        for (let z = 1; z <= 10; z++) {
+          for (let x = 24; x <= 32; x++) {
+            g.set(x, y, z, 0x2e323b);
+          }
+        }
+      }
+
+      // 上部アーチ梁 (y: 25..31, x: 2..31, z: 3..8)
+      for (let y = 25; y <= 31; y++) {
+        for (let z = 3; z <= 8; z++) {
+          for (let x = 2; x <= 31; x++) {
+            g.set(x, y, z, 0x484f5c);
+          }
+        }
+      }
+
+      // 中央上部「x2」プレート (y: 27..30, x: 13..21, z: 9)
+      const gold = 0xffd700;
+      // 'x' (x: 13..15, y: 27..29)
+      g.set(13, 27, 9, gold);
+      g.set(15, 27, 9, gold);
+      g.set(14, 28, 9, gold);
+      g.set(13, 29, 9, gold);
+      g.set(15, 29, 9, gold);
+
+      // '2' (x: 17..20, y: 27..30)
+      g.set(17, 30, 9, gold);
+      g.set(18, 30, 9, gold);
+      g.set(19, 30, 9, gold);
+      g.set(20, 29, 9, gold);
+      g.set(19, 28, 9, gold);
+      g.set(18, 28, 9, gold);
+      g.set(17, 27, 9, gold);
+      g.set(18, 27, 9, gold);
+      g.set(19, 27, 9, gold);
+      g.set(20, 27, 9, gold);
+
+      // 中央のエネルギー膜（開口部 x: 9..24, y: 2..24, z: 5..6）
+      const energyCol = primary;
+      for (let y = 2; y <= 24; y++) {
+        for (let x = 9; x <= 24; x++) {
+          // 格子状またはストライプ状のエネルギーライン
+          if ((x + y) % 3 === 0 || y % 4 === 0) {
+            g.set(x, y, 5, energyCol);
+            g.set(x, y, 6, energyCol);
+          }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+
+    case 'cannon_tower': {
+      // 防衛キャノン砲台: 円柱石積み砦、胸壁付きデッキ、黒鉄の長砲身
+      const sx = 24;
+      const sy = 26;
+      const sz = 24;
+      const voxelSize = 0.09;
+      const g = new VoxelGrid(sx, sy, sz);
+      const cx = 11.5;
+      const cz = 11.5;
+      const r = 9.2;
+
+      // 下部円柱要塞 (y: 0..17)
+      for (let y = 0; y <= 17; y++) {
+        const isBelt = y === 11 || y === 12;
+        for (let z = 0; z < sz; z++) {
+          for (let x = 0; x < sx; x++) {
+            const d2 = (x - cx) ** 2 + (z - cz) ** 2;
+            if (d2 <= r * r) {
+              if (isBelt && d2 >= (r - 1.5) ** 2) {
+                g.set(x, y, z, primary);
+              } else {
+                const stone = ((x * 17 + y * 31 + z * 53) & 7) > 3 ? 0x444750 : 0x545863;
+                g.set(x, y, z, stone);
+              }
+            }
+          }
+        }
+      }
+
+      // デッキ床 (y: 18, 木製)
+      for (let z = 0; z < sz; z++) {
+        for (let x = 0; x < sx; x++) {
+          const d2 = (x - cx) ** 2 + (z - cz) ** 2;
+          if (d2 <= (r + 0.5) ** 2) {
+            g.set(x, 18, z, 0x563e2a);
+          }
+        }
+      }
+
+      // 胸壁（y: 19..21 の外周凹凸）
+      for (let y = 19; y <= 21; y++) {
+        for (let z = 0; z < sz; z++) {
+          for (let x = 0; x < sx; x++) {
+            const d2 = (x - cx) ** 2 + (z - cz) ** 2;
+            if (d2 > (r - 1.5) ** 2 && d2 <= (r + 0.8) ** 2) {
+              const ang = Math.atan2(z - cz, x - cx);
+              if (Math.sin(ang * 4) > -0.2) {
+                g.set(x, y, z, 0x484c56);
+              }
+            }
+          }
+        }
+      }
+
+      // 中央の旋回砲台マウント (y: 19..20, x: 9..14, z: 9..14)
+      for (let y = 19; y <= 20; y++) {
+        for (let z = 9; z <= 14; z++) {
+          for (let x = 9; x <= 14; x++) {
+            g.set(x, y, z, 0x2b2d32);
+          }
+        }
+      }
+
+      // 大砲の砲身 (y: 20..22, x: 10..13, z: 10..22: +Z方向へ突き出る)
+      for (let y = 20; y <= 22; y++) {
+        for (let x = 10; x <= 13; x++) {
+          for (let z = 10; z <= 22; z++) {
+            // 先端の砲口は空洞にする
+            if (z >= 20 && (x === 11 || x === 12) && y === 21) continue;
+            g.set(x, y, z, 0x202226);
+          }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+  }
+}
+
+/** 施設用のThree.jsメッシュを生成する */
+export function createFacilityMesh(typeId: FacilityTypeId, team: Team): Mesh {
+  const { grid, voxelSize } = buildFacilityVoxelGrid(typeId, team);
+  const geo = grid.toGeometry(voxelSize, [grid.sx / 2, 0, grid.sz / 2]);
+  const mat = new MeshLambertMaterial({ vertexColors: true });
+  const mesh = new Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/** 施設配置プレビュー用の半透明ゴーストモデルを生成する */
+export function createFacilityGhost(typeId: FacilityTypeId, team: Team): Group {
+  const { grid, voxelSize } = buildFacilityVoxelGrid(typeId, team);
+  const geo = grid.toGeometry(voxelSize, [grid.sx / 2, 0, grid.sz / 2]);
+  const mat = new MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.65,
+  });
+  const mesh = new Mesh(geo, mat);
+  const g = new Group();
+  g.add(mesh);
+  g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+  return g;
+}
+
+/** 施設破壊時に飛散するボクセル破片のシードリストを生成する */
+export function getFacilityVoxelSeeds(
+  typeId: FacilityTypeId,
+  team: Team,
+  worldPos: Vector3,
+  worldFacing: number,
+  maxSeeds: number = 80,
+): DroppedVoxelSeed[] {
+  const { grid, voxelSize } = buildFacilityVoxelGrid(typeId, team);
+  const seeds: DroppedVoxelSeed[] = [];
+  const px = grid.sx / 2;
+  const pz = grid.sz / 2;
+
+  const sin = Math.sin(worldFacing);
+  const cos = Math.cos(worldFacing);
+
+  const filled: Array<{ x: number; y: number; z: number; col: number }> = [];
+  for (let z = 0; z < grid.sz; z++) {
+    for (let y = 0; y < grid.sy; y++) {
+      for (let x = 0; x < grid.sx; x++) {
+        const c = grid.get(x, y, z);
+        if (c !== 0) filled.push({ x, y, z, col: c });
+      }
+    }
+  }
+
+  const step = Math.max(1, Math.floor(filled.length / maxSeeds));
+  for (let i = 0; i < filled.length; i += step) {
+    const item = filled[i];
+    const lx = (item.x - px) * voxelSize;
+    const ly = item.y * voxelSize;
+    const lz = (item.z - pz) * voxelSize;
+
+    const wx = worldPos.x + lx * cos + lz * sin;
+    const wy = worldPos.y + ly;
+    const wz = worldPos.z - lx * sin + lz * cos;
+
+    seeds.push({
+      pos: new Vector3(wx, wy, wz),
+      color: item.col,
+      size: voxelSize * 1.3,
+    });
+  }
+  return seeds;
 }
 
 export type { UnitTypeId };

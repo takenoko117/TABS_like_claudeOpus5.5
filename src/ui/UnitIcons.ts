@@ -1,7 +1,10 @@
+import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { UnitCategory, UnitTypeId } from '../units/UnitTypes';
 
+export type PaletteCategory = UnitCategory | 'facility';
+
 /** カテゴリごとのシンボルアイコン（タブ・バッジ表示用） */
-export const CATEGORY_ICONS: Readonly<Record<UnitCategory | 'all', string>> = {
+export const CATEGORY_ICONS: Readonly<Record<PaletteCategory | 'all', string>> = {
   all: '🗂️',
   standard: '⚔️',
   magic: '🔮',
@@ -9,16 +12,18 @@ export const CATEGORY_ICONS: Readonly<Record<UnitCategory | 'all', string>> = {
   japanese: '⛩️',
   animal: '🐾',
   mythical: '🐉',
+  facility: '🏛️',
 };
 
 /** カテゴリごとのテーマ背景グラデーション色 */
-export const CATEGORY_THEME_COLORS: Readonly<Record<UnitCategory, { bg: string; border: string }>> = {
+export const CATEGORY_THEME_COLORS: Readonly<Record<PaletteCategory, { bg: string; border: string }>> = {
   standard: { bg: 'linear-gradient(135deg, #2b3a4a, #1e293b)', border: '#60a5fa' },
   magic: { bg: 'linear-gradient(135deg, #3b1d5e, #24123b)', border: '#c084fc' },
   modern: { bg: 'linear-gradient(135deg, #2d3d32, #1c261f)', border: '#8ce99a' },
   japanese: { bg: 'linear-gradient(135deg, #4a1d2e, #2b121c)', border: '#ff85c0' },
   animal: { bg: 'linear-gradient(135deg, #4a3723, #2d2115)', border: '#fcc419' },
   mythical: { bg: 'linear-gradient(135deg, #4f1d1d, #2d1010)', border: '#ff6b6b' },
+  facility: { bg: 'linear-gradient(135deg, #2a3a40, #17242a)', border: '#38d9a9' },
 };
 
 /** コスト（コイン）アイコン SVG */
@@ -388,6 +393,87 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <rect x="11" y="19" width="3" height="4" rx="1" fill="#181820"/>
         <rect x="22" y="19" width="3" height="4" rx="1" fill="#181820"/>
         <rect x="15" y="24" width="6" height="2.5" rx="1" fill="#1b4332"/>
+      </svg>`;
+  }
+}
+
+/** 施設用アイコン SVG を返す */
+export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
+  switch (facilityId) {
+    case 'barracks':
+      // 召喚ポータル: 古代の石柱と渦巻く魔力コア
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 石の台座 -->
+        <rect x="4" y="26" width="28" height="6" rx="1.5" fill="#3a3d46" stroke="#25272c" stroke-width="1"/>
+        <!-- 左右のオベリスク柱 -->
+        <rect x="6" y="7" width="5" height="20" fill="#555a66"/>
+        <rect x="25" y="7" width="5" height="20" fill="#555a66"/>
+        <polygon points="6,7 8.5,3 11,7" fill="#ffd43b"/>
+        <polygon points="25,7 27.5,3 30,7" fill="#ffd43b"/>
+        <!-- 柱のルーンライン -->
+        <rect x="8" y="11" width="1" height="12" fill="#60c0ff"/>
+        <rect x="27" y="11" width="1" height="12" fill="#60c0ff"/>
+        <!-- 中央の浮遊魔力クリスタル -->
+        <polygon points="18,9 23,16 18,23 13,16" fill="#60c0ff" stroke="#38d9a9" stroke-width="1"/>
+        <polygon points="18,12 21,16 18,20 15,16" fill="#ffffff"/>
+      </svg>`;
+
+    case 'buff_totem':
+      // 加護のトーテム: 翼のあるトーテムポールと黄金冠・輝く宝珠
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 台座 -->
+        <rect x="8" y="27" width="20" height="5" rx="1" fill="#3c3f47"/>
+        <!-- 木のトーテム柱 -->
+        <rect x="13" y="11" width="10" height="17" fill="#5c3d26"/>
+        <!-- 左右の翼 -->
+        <polygon points="13,15 4,12 5,18 13,18" fill="#e0473a"/>
+        <polygon points="23,15 32,12 31,18 23,18" fill="#e0473a"/>
+        <!-- 黄金の帯 -->
+        <rect x="12" y="19" width="12" height="3" fill="#ffd23a"/>
+        <!-- 頂上の黄金冠 -->
+        <rect x="11" y="8" width="14" height="3" rx="0.5" fill="#ffd23a"/>
+        <!-- 輝く大宝珠 -->
+        <circle cx="18" cy="5.5" r="4" fill="#ff6b6b" stroke="#ffd23a" stroke-width="1.2"/>
+        <circle cx="16.5" cy="4" r="1.2" fill="#ffffff"/>
+      </svg>`;
+
+    case 'multiplier_gate':
+      // 増殖ゲート: テクノアーチと「x2」プレート・エネルギー膜
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 左右の門柱 -->
+        <rect x="4" y="6" width="6" height="26" rx="1" fill="#3d434e" stroke="#282c34" stroke-width="1"/>
+        <rect x="26" y="6" width="6" height="26" rx="1" fill="#3d434e" stroke="#282c34" stroke-width="1"/>
+        <rect x="6" y="8" width="2" height="22" fill="#38d9a9"/>
+        <rect x="28" y="8" width="2" height="22" fill="#38d9a9"/>
+        <!-- 上部アーチ梁 -->
+        <rect x="4" y="4" width="28" height="6" rx="1.5" fill="#4e5563"/>
+        <!-- 中央の「x2」プレート -->
+        <rect x="12" y="3" width="12" height="7" rx="1" fill="#1e222a" stroke="#ffd700" stroke-width="1"/>
+        <text x="18" y="8.5" font-size="5.5" font-weight="900" text-anchor="middle" fill="#ffd700" font-family="sans-serif">x2</text>
+        <!-- エネルギーカーテン -->
+        <line x1="13" y1="11" x2="13" y2="30" stroke="#38d9a9" stroke-width="1" stroke-dasharray="2 2"/>
+        <line x1="18" y1="11" x2="18" y2="30" stroke="#60c0ff" stroke-width="1.5" stroke-dasharray="3 1.5"/>
+        <line x1="23" y1="11" x2="23" y2="30" stroke="#38d9a9" stroke-width="1" stroke-dasharray="2 2"/>
+      </svg>`;
+
+    case 'cannon_tower':
+      // 防衛キャノン砲台: 円柱石積みタワーと突き出る大砲
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 石積みタワー -->
+        <rect x="6" y="14" width="24" height="18" rx="2" fill="#484b54" stroke="#2d3036" stroke-width="1"/>
+        <rect x="5" y="29" width="26" height="4" rx="1" fill="#383a42"/>
+        <!-- チームカラーの帯 -->
+        <rect x="6" y="21" width="24" height="3" fill="#e0473a"/>
+        <!-- 上部胸壁 -->
+        <rect x="5" y="11" width="26" height="4" fill="#585d68"/>
+        <rect x="5" y="9" width="5" height="3" fill="#585d68"/>
+        <rect x="15" y="9" width="6" height="3" fill="#585d68"/>
+        <rect x="26" y="9" width="5" height="3" fill="#585d68"/>
+        <!-- 大砲の砲身 -->
+        <g transform="rotate(-15 18 10)">
+          <rect x="14" y="5" width="16" height="6" rx="1.5" fill="#202226" stroke="#121315" stroke-width="1"/>
+          <circle cx="30" cy="8" r="2.2" fill="#343840"/>
+        </g>
       </svg>`;
   }
 }

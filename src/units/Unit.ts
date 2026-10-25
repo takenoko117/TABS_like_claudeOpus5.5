@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import type { CombatSystem } from '../combat/CombatSystem';
+import type { Facility } from '../facilities/Facility';
 import { DistanceConstraint } from '../physics/Constraint';
 import { PF_RECORD_CONTACT, Particle } from '../physics/Particle';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
@@ -18,6 +19,7 @@ export interface UnitSpawnOptions {
 export interface UnitContext {
   readonly world: PhysicsWorld;
   readonly units: readonly Unit[];
+  readonly facilities?: readonly Facility[];
   /** false の間は AI が停止し、その場で待機する（配置フェーズ） */
   readonly aiEnabled: boolean;
   readonly combat: CombatSystem;
@@ -89,6 +91,8 @@ export class Unit {
   facing: number;
   desiredFacing: number;
   target: Unit | null = null;
+  /** ターゲットが施設の場合（敵ユニットが全滅時や優先時） */
+  targetFacility: Facility | null = null;
   attackPhase: AttackPhase = 'none';
   phaseTime = 0;
   cooldown = 0;
@@ -99,6 +103,16 @@ export class Unit {
   /** 水平面での前方向・右方向 */
   readonly forward = new Vector3();
   readonly rightDir = new Vector3();
+
+  // 施設・バフ・特殊ギミック用プロパティ
+  /** 施設などから付与される攻撃力倍率（毎ステップ初期化） */
+  damageMul = 1.0;
+  /** 施設などから付与される移動速度倍率（毎ステップ初期化） */
+  speedMul = 1.0;
+  /** 加護バフを受けているか（描画エフェクト用） */
+  hasBuff = false;
+  /** 増殖ゲート通過後のクールダウン（秒） */
+  gateCooldown = 0;
 
   // 状態異常・特殊ギミック用プロパティ
   context: UnitContext | null = null;
@@ -136,6 +150,7 @@ export class Unit {
   private twist = 0;
   private stepDustTimer = 0;
   private readonly hitCooldowns = new Map<number, number>();
+  private readonly facilityHitCooldowns = new Map<number, number>();
   private readonly localPose: Vector3[] = [];
 
   constructor(
@@ -264,6 +279,13 @@ export class Unit {
       if (t - dt <= 0) this.hitCooldowns.delete(id);
       else this.hitCooldowns.set(id, t - dt);
     }
+    for (const [id, t] of this.facilityHitCooldowns) {
+      if (t - dt <= 0) this.facilityHitCooldowns.delete(id);
+      else this.facilityHitCooldowns.set(id, t - dt);
+    }
+    if (this.gateCooldown > 0) {
+      this.gateCooldown = Math.max(0, this.gateCooldown - dt);
+    }
     if (!this.alive) {
       this.laserActive = false;
       this.grabbedUnit = null;
@@ -349,21 +371,32 @@ export class Unit {
   /** AI: 目標の選択・移動・攻撃開始の判断 */
   private think(dt: number, ctx: UnitContext): void {
     this.retargetTimer -= dt;
-    if (!this.target || !this.target.alive || this.retargetTimer <= 0) {
+    const targetAlive = this.target && this.target.alive;
+    const facAlive = this.targetFacility && this.targetFacility.alive;
+    if ((!targetAlive && !facAlive) || this.retargetTimer <= 0) {
       this.target = this.findNearestEnemy(ctx.units);
+      if (!this.target && ctx.facilities) {
+        this.targetFacility = this.findNearestEnemyFacility(ctx.facilities);
+      } else {
+        this.targetFacility = null;
+      }
       this.retargetTimer = 0.4 + Math.random() * 0.4;
     }
+
     const t = this.target;
-    if (!t) {
+    const fac = this.targetFacility;
+    if (!t && !fac) {
       this.moveSpeed = 0;
       return;
     }
-    const dx = t.pelvis.pos.x - this.pelvis.pos.x;
-    const dz = t.pelvis.pos.z - this.pelvis.pos.z;
+
+    const targetPos = t ? t.pelvis.pos : fac!.pos;
+    const dx = targetPos.x - this.pelvis.pos.x;
+    const dz = targetPos.z - this.pelvis.pos.z;
     const dist = Math.hypot(dx, dz);
 
     // 忍者の接近変わり身トリガー
-    if (this.type.id === 'ninja' && this.kawariCooldown <= 0 && dist < 2.1 && t.attackPhase !== 'none') {
+    if (t && this.type.id === 'ninja' && this.kawariCooldown <= 0 && dist < 2.1 && t.attackPhase !== 'none') {
       this.triggerKawari(ctx);
       return;
     }
@@ -378,7 +411,7 @@ export class Unit {
     }
 
     this.desiredFacing = Math.atan2(dx, dz);
-    const engage = this.engageDistance(t);
+    const engage = t ? this.engageDistance(t) : this.engageFacilityDistance(fac!);
 
     // 突撃兵 (charger) の跳躍突撃トリガー
     if (
@@ -411,8 +444,8 @@ export class Unit {
           const px = this.pelvis.pos.x;
           const pz = this.pelvis.pos.z;
           const needCross =
-            (px <= chasm.minX + 1.2 && t.pelvis.pos.x > chasm.minX) ||
-            (px >= chasm.maxX - 1.2 && t.pelvis.pos.x < chasm.maxX) ||
+            (px <= chasm.minX + 1.2 && targetPos.x > chasm.minX) ||
+            (px >= chasm.maxX - 1.2 && targetPos.x < chasm.maxX) ||
             (px > chasm.minX && px < chasm.maxX);
           if (needCross && Math.abs(pz) > chasm.bridgeHalfWidth * 0.72) {
             const bridgeZ = clamp(pz, -chasm.bridgeHalfWidth * 0.55, chasm.bridgeHalfWidth * 0.55);
@@ -445,11 +478,11 @@ export class Unit {
       }
 
       this.moveDir.set(mx, 0, mz);
-      this.moveSpeed = this.type.speed * (this.attackPhase === 'none' ? 1 : 0.4);
+      this.moveSpeed = this.type.speed * this.speedMul * (this.attackPhase === 'none' ? 1 : 0.4);
     } else if (this.type.id === 'spearman' && dist < engage * 0.65 && dist > 1e-3) {
       // 槍兵は懐に潜り込まれたら少しずつ後退して槍の間合いを維持する
       this.moveDir.set(-dx / dist, 0, -dz / dist);
-      this.moveSpeed = this.type.speed * 0.55;
+      this.moveSpeed = this.type.speed * this.speedMul * 0.55;
     } else {
       this.moveSpeed = 0;
     }
@@ -467,6 +500,40 @@ export class Unit {
       this.phaseTime = 0;
       this.onWindupStart(ctx);
     }
+  }
+
+  private engageFacilityDistance(fac: Facility): number {
+    const st = this.type.style;
+    if (
+      st === 'bow' ||
+      st === 'bomb' ||
+      st === 'lightning' ||
+      st === 'gravity' ||
+      st === 'sniper' ||
+      st === 'minigun' ||
+      st === 'shuriken' ||
+      st === 'breath' ||
+      st === 'iaido' ||
+      st === 'swoop'
+    ) {
+      return this.type.range;
+    }
+    return this.type.range * this.scale + fac.radius;
+  }
+
+  private findNearestEnemyFacility(facilities: readonly Facility[]): Facility | null {
+    let best: Facility | null = null;
+    let bestD = Infinity;
+    const p = this.pelvis.pos;
+    for (const f of facilities) {
+      if (!f.alive || f.team === this.team) continue;
+      const d = (f.pos.x - p.x) ** 2 + (f.pos.z - p.z) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = f;
+      }
+    }
+    return best;
   }
 
   private engageDistance(t: Unit): number {
@@ -543,9 +610,16 @@ export class Unit {
     const ty = this.type;
 
     // 対物スナイパーの照準レーザー更新
-    if (ty.style === 'sniper' && this.attackPhase === 'windup' && this.target && this.target.alive) {
-      this.laserActive = true;
-      this.laserAimPos.copy(this.target.chest.pos);
+    if (ty.style === 'sniper' && this.attackPhase === 'windup') {
+      if (this.target && this.target.alive) {
+        this.laserActive = true;
+        this.laserAimPos.copy(this.target.chest.pos);
+      } else if (this.targetFacility && this.targetFacility.alive) {
+        this.laserActive = true;
+        this.laserAimPos.copy(this.targetFacility.pos).setY(this.targetFacility.height * 0.5);
+      } else {
+        this.laserActive = false;
+      }
     } else {
       this.laserActive = false;
     }
@@ -557,6 +631,10 @@ export class Unit {
       this.onStrikeStart(dt, ctx);
     } else if (this.attackPhase === 'strike') {
       this.updateStrikeContinuous(dt, ctx);
+      // 近接武器の施設ヒット判定
+      if (ctx.facilities && ctx.facilities.length > 0) {
+        ctx.combat.processFacilityMeleeHit(this, ctx.facilities);
+      }
       if (this.phaseTime >= ty.strike) {
         this.attackPhase = 'recover';
         this.phaseTime = 0;
@@ -573,14 +651,24 @@ export class Unit {
 
   private onStrikeStart(dt: number, ctx: UnitContext): void {
     const t = this.target;
+    const fac = this.targetFacility;
     const st = this.type.style;
 
     if (st === 'bow') {
-      if (t && t.alive) this.shootArrow(t, ctx);
+      if (t && t.alive) {
+        this.shootArrow(t.chest.pos, t.velocity, ctx);
+      } else if (fac && fac.alive) {
+        this.shootArrow(fac.pos.clone().setY(fac.height * 0.5), new Vector3(), ctx);
+      }
       return;
     }
     if (st === 'bomb') {
-      if (t && t.alive) this.throwBomb(t, ctx);
+      if (t && t.alive) {
+        const airborne = t.pelvis.pos.y - PELVIS_HEIGHT * t.scale > 0.5;
+        this.throwBomb(t.pelvis.pos, t.velocity, airborne, ctx);
+      } else if (fac && fac.alive) {
+        this.throwBomb(fac.pos, new Vector3(), false, ctx);
+      }
       return;
     }
     if (st === 'lightning') {
@@ -588,25 +676,38 @@ export class Unit {
         const from =
           this.weaponParticles.length === 2 ? this.weaponParticles[1].pos.clone() : this.joints[J.HandR].pos.clone();
         ctx.combat.castChainLightning(this, from, t, ctx.units, dt);
+      } else if (fac && fac.alive) {
+        const dmg = 28 * this.damageMul;
+        const killed = fac.takeDamage(dmg, this);
+        ctx.combat.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+        if (killed) {
+          ctx.combat.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+        }
       }
       return;
     }
     if (st === 'gravity') {
-      if (t && t.alive) {
+      const aim = t && t.alive ? t.chest.pos : fac && fac.alive ? fac.pos.clone().setY(fac.height * 0.5) : null;
+      if (aim) {
         const from = this.chest.pos.clone().addScaledVector(this.forward, 0.55 * this.scale);
         from.y += 0.25 * this.scale;
-        ctx.combat.spawnGravityOrb(this, from, t.chest.pos);
+        ctx.combat.spawnGravityOrb(this, from, aim);
       }
       return;
     }
     if (st === 'sniper') {
-      if (t && t.alive) {
+      const aim =
+        t && t.alive
+          ? t.chest.pos.clone().addScaledVector(t.velocity, 0.08)
+          : fac && fac.alive
+          ? fac.pos.clone().setY(fac.height * 0.5)
+          : null;
+      if (aim) {
         const from = this.chest.pos.clone().addScaledVector(this.forward, 0.85 * this.scale);
         from.y += 0.18 * this.scale;
-        const aim = t.chest.pos.clone().addScaledVector(t.velocity, 0.08);
         const vel = new Vector3().subVectors(aim, from).normalize().multiplyScalar(95);
         ctx.combat.fireProjectile(this, from, vel, 'sniper', {
-          damage: 85,
+          damage: 85 * this.damageMul,
           gravityScale: 0.04,
           pierce: 3,
           carveScale: 3.0,
@@ -623,16 +724,15 @@ export class Unit {
       return;
     }
     if (st === 'shuriken') {
-      if (t && t.alive) {
+      const aim = t && t.alive ? t.chest.pos : fac && fac.alive ? fac.pos.clone().setY(fac.height * 0.5) : null;
+      if (aim) {
         // 小ジャンプしながら扇状に手裏剣3連投
         this.pelvis.addVelocity(_tmp.set(0, 3.2, 0), dt);
         this.chest.addVelocity(_tmp.set(0, 3.2, 0), dt);
         const from = this.chest.pos.clone().addScaledVector(this.forward, 0.45 * this.scale);
         from.y += 0.15 * this.scale;
         const speed = this.type.projectile?.speed ?? 32;
-        const baseDir = new Vector3().subVectors(t.chest.pos, from);
-        // 弱い重力（gravityScale 0.25）による落下分だけ上に補正する
-        // （以前は距離×0.08 の過剰補正で、遠距離では人型の頭上を素通りしていた）
+        const baseDir = new Vector3().subVectors(aim, from);
         const flight = Math.hypot(baseDir.x, baseDir.z) / speed;
         baseDir.y += 0.5 * GRAVITY * SHURIKEN_GRAVITY_SCALE * flight * flight;
         baseDir.normalize();
@@ -644,7 +744,7 @@ export class Unit {
           const vz = (-baseDir.x * sn + baseDir.z * c) * speed;
           const vy = baseDir.y * speed;
           ctx.combat.fireProjectile(this, from, new Vector3(vx, vy, vz), 'shuriken', {
-            damage: 14,
+            damage: 14 * this.damageMul,
             gravityScale: SHURIKEN_GRAVITY_SCALE,
             life: 2.5,
           });
@@ -658,12 +758,16 @@ export class Unit {
       return;
     }
     if (st === 'jump_slam') {
-      // スライムの大ジャンプ（滞空時間から逆算して目標の真上に着地する水平速度を与える）
+      // スライムの大ジャンプ
       const jumpUp = 7.4;
       const airTime = (2 * jumpUp) / GRAVITY;
       const jumpVel = new Vector3();
       if (t && t.alive) {
         jumpVel.subVectors(t.pelvis.pos, this.pelvis.pos).setY(0);
+        const d = jumpVel.length();
+        if (d > 1e-4) jumpVel.divideScalar(d).multiplyScalar(clamp(d / airTime, 0.8, 8.5));
+      } else if (fac && fac.alive) {
+        jumpVel.subVectors(fac.pos, this.pelvis.pos).setY(0);
         const d = jumpVel.length();
         if (d > 1e-4) jumpVel.divideScalar(d).multiplyScalar(clamp(d / airTime, 0.8, 8.5));
       } else {
@@ -687,7 +791,7 @@ export class Unit {
       return;
     }
 
-    // 巨人の大棍棒なぎ払い衝撃波: 懐の小型敵も含めて前方の群れをまとめて吹き飛ばす
+    // 巨人の大棍棒なぎ払い衝撃波
     if (this.type.id === 'giant') {
       const center = new Vector3(
         this.pelvis.pos.x + this.forward.x * 0.75 * this.scale,
@@ -701,6 +805,10 @@ export class Unit {
     // 振り下ろし・突きの瞬間に手と武器へ速度を与える
     if (t) {
       _dir.subVectors(t.chest.pos, this.chest.pos).setY(0);
+      if (_dir.lengthSq() < 1e-6) _dir.copy(this.forward);
+      _dir.normalize();
+    } else if (fac) {
+      _dir.subVectors(fac.pos, this.chest.pos).setY(0);
       if (_dir.lengthSq() < 1e-6) _dir.copy(this.forward);
       _dir.normalize();
     } else {
@@ -1009,16 +1117,16 @@ export class Unit {
   }
 
   /** 弾道計算をして矢を放つ */
-  private shootArrow(t: Unit, ctx: UnitContext): void {
+  private shootArrow(targetPos: Vector3, targetVel: Vector3, ctx: UnitContext): void {
     const spec = this.type.projectile;
     if (!spec) return;
     const s = this.scale;
     const from = new Vector3().copy(this.chest.pos).addScaledVector(this.forward, 0.4 * s);
     from.y += 0.15 * s;
-    const aim = t.chest.pos.clone();
+    const aim = targetPos.clone();
     // 目標の移動を考慮した偏差射撃（横方向へ高速散開する突撃兵などは振り切れるよう予測係数を適度に抑える）
     const flight = from.distanceTo(aim) / spec.speed;
-    aim.addScaledVector(t.velocity, flight * 0.55);
+    aim.addScaledVector(targetVel, flight * 0.55);
     const dx = aim.x - from.x;
     const dz = aim.z - from.z;
     const dh = Math.max(0.01, Math.hypot(dx, dz));
@@ -1037,18 +1145,16 @@ export class Unit {
   }
 
   /** 爆弾兵の放物線投擲 */
-  private throwBomb(t: Unit, ctx: UnitContext): void {
+  private throwBomb(targetPos: Vector3, targetVel: Vector3, airborne: boolean, ctx: UnitContext): void {
     const spec = this.type.projectile;
     if (!spec) return;
     const s = this.scale;
     const from = new Vector3().copy(this.chest.pos).addScaledVector(this.forward, 0.48 * s);
     from.y += 0.32 * s;
-    const aim = t.pelvis.pos.clone();
-    // 地上の敵は足元を狙う（腰を狙うと上振れした弾が頭上を越えて遠くに着弾し、爆風が届かなかった）
-    const airborne = t.pelvis.pos.y - PELVIS_HEIGHT * t.scale > 0.5;
+    const aim = targetPos.clone();
     if (!airborne) aim.y = 0.1;
     const flight = from.distanceTo(aim) / spec.speed;
-    aim.addScaledVector(t.velocity, flight * 0.65);
+    aim.addScaledVector(targetVel, flight * 0.65);
     aim.y = Math.max(0.1, aim.y);
     const dx = aim.x - from.x;
     const dz = aim.z - from.z;
@@ -1064,7 +1170,7 @@ export class Unit {
     vel.y += (Math.random() * 2 - 1) * spread;
     vel.z += (Math.random() * 2 - 1) * spread;
     ctx.combat.fireProjectile(this, from, vel, 'bomb', {
-      damage: spec.damage,
+      damage: spec.damage * this.damageMul,
       gravityScale: 1.0,
       life: 4.5,
       carveScale: 2.2,
@@ -1417,6 +1523,21 @@ export class Unit {
 
   registerHit(victim: Unit, duration: number): void {
     this.hitCooldowns.set(victim.id, duration);
+  }
+
+  /** 同じ施設に連続で近接ヒットしないための判定 */
+  canHitFacility(facilityId: number): boolean {
+    return !this.facilityHitCooldowns.has(facilityId);
+  }
+
+  registerFacilityHit(facilityId: number, duration: number): void {
+    this.facilityHitCooldowns.set(facilityId, duration);
+  }
+
+  /** HPを回復する（トーテムのバフ等） */
+  heal(amount: number): void {
+    if (!this.alive || amount <= 0) return;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
   }
 
   /**

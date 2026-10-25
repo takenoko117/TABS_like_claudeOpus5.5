@@ -662,6 +662,121 @@ export class SoundManager {
         noise.stop(t + 0.36);
         break;
       }
+      case 'portal_spawn': {
+        if (!this.throttle('portal_sp', 120)) return;
+        // 召喚ポータルのミスティックな召喚音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.exponentialRampToValueAtTime(680, t + 0.18);
+        g.gain.setValueAtTime(0.28, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.24);
+        break;
+      }
+      case 'totem_pulse': {
+        if (!this.throttle('totem_pls', 150)) return;
+        // 加護のトーテムの鐘のような共鳴音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(520, t);
+        osc.frequency.exponentialRampToValueAtTime(390, t + 0.35);
+        g.gain.setValueAtTime(0.22, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.4);
+        break;
+      }
+      case 'gate_multiply': {
+        if (!this.throttle('gate_mult', 90)) return;
+        // 増殖ゲートの複製キラキラ音
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(440, t);
+        osc1.frequency.exponentialRampToValueAtTime(880, t + 0.15);
+        osc2.frequency.setValueAtTime(660, t);
+        osc2.frequency.exponentialRampToValueAtTime(1320, t + 0.15);
+        g.gain.setValueAtTime(0.25, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc1.connect(g);
+        osc2.connect(g);
+        g.connect(this.masterGain);
+        osc1.start(t);
+        osc2.start(t);
+        osc1.stop(t + 0.22);
+        osc2.stop(t + 0.22);
+        break;
+      }
+      case 'cannon_fire': {
+        if (!this.throttle('cannon_fr', 100)) return;
+        // キャノン砲の重砲撃音
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'sine';
+        boom.frequency.setValueAtTime(180, t);
+        boom.frequency.exponentialRampToValueAtTime(32, t + 0.25);
+        bg.gain.setValueAtTime(0.48, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.3);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1200, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.4, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.22);
+        break;
+      }
+      case 'facility_destroy': {
+        if (!this.throttle('fac_dst', 100)) return;
+        // 建造物の轟音破壊音
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'triangle';
+        boom.frequency.setValueAtTime(120, t);
+        boom.frequency.exponentialRampToValueAtTime(20, t + 0.45);
+        bg.gain.setValueAtTime(0.55, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.48);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.5);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(750, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.5, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.48);
+        break;
+      }
     }
   }
 }

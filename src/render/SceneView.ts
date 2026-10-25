@@ -27,12 +27,17 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
+import type { Facility } from '../facilities/Facility';
+import { isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import { DEFAULT_RED_ZONES, type StageTerrainConfig } from '../game/ArcadeStages';
 import type { Battle } from '../game/Battle';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import {
+  createFacilityGhost,
+  createFacilityMesh,
   createPreviewGhost,
+  getFacilityVoxelSeeds,
   getKawariLogGeometry,
   getProjectileGeometry,
   VoxelCharacterVisual,
@@ -78,6 +83,16 @@ const _outward = new Vector3();
 const _segDir = new Vector3();
 const _mid = new Vector3();
 
+/** 施設の描画・HPバー管理用データ */
+interface FacilityVisual {
+  facility: Facility;
+  group: Group;
+  mesh: Mesh;
+  hpBarFill: Mesh;
+  hpBarGroup: Group;
+  lastHp: number;
+}
+
 /**
  * Three.js による戦場描画・カメラ操作・ボクセル損壊＆固有スキルエフェクトの管理クラス。
  */
@@ -87,6 +102,7 @@ export class SceneView {
   readonly renderer: WebGLRenderer;
 
   private readonly unitVisuals = new Map<number, VoxelCharacterVisual>();
+  private readonly facilityVisuals = new Map<number, FacilityVisual>();
   private readonly arrowMeshes: Mesh[] = [];
   private readonly arrowMaterial = new MeshLambertMaterial({ vertexColors: true });
 
@@ -564,7 +580,12 @@ export class SceneView {
     }
   }
 
-  updatePlacementGhost(typeId: UnitTypeId | null, team: Team, pos: Vector3 | null, valid: boolean): void {
+  updatePlacementGhost(
+    typeId: UnitTypeId | FacilityTypeId | null,
+    team: Team,
+    pos: Vector3 | null,
+    valid: boolean,
+  ): void {
     if (!typeId || !pos) {
       if (this.ghostGroup) this.ghostGroup.visible = false;
       return;
@@ -572,7 +593,11 @@ export class SceneView {
     const key = `${typeId}:${team}`;
     if (this.ghostKey !== key) {
       if (this.ghostGroup) this.scene.remove(this.ghostGroup);
-      this.ghostGroup = createPreviewGhost(UNIT_TYPES[typeId], team);
+      if (isFacilityTypeId(typeId)) {
+        this.ghostGroup = createFacilityGhost(typeId, team);
+      } else {
+        this.ghostGroup = createPreviewGhost(UNIT_TYPES[typeId], team);
+      }
       this.scene.add(this.ghostGroup);
       this.ghostKey = key;
     }
@@ -599,6 +624,125 @@ export class SceneView {
     this.scene.remove(vis.group);
     vis.dispose();
     this.unitVisuals.delete(unit.id);
+  }
+
+  /** 施設ビジュアルを登録する */
+  addFacilityVisual(facility: Facility): void {
+    if (this.facilityVisuals.has(facility.id)) return;
+    const mesh = createFacilityMesh(facility.type.id, facility.team);
+    const group = new Group();
+    group.position.copy(facility.pos);
+    group.rotation.y = facility.facing;
+    group.add(mesh);
+
+    // 頭上HPバーの構築
+    const hpBarGroup = new Group();
+    hpBarGroup.position.set(0, facility.height + 0.38, 0);
+    const barWidth = 1.35;
+    const barHeight = 0.12;
+
+    const bgMat = new MeshBasicMaterial({ color: 0x1a1d24 });
+    const bgMesh = new Mesh(new BoxGeometry(barWidth + 0.04, barHeight + 0.04, 0.04), bgMat);
+    hpBarGroup.add(bgMesh);
+
+    const fillMat = new MeshBasicMaterial({ color: facility.team === 0 ? 0xe0473a : 0x3a72e0 });
+    const fillMesh = new Mesh(new BoxGeometry(barWidth, barHeight, 0.05), fillMat);
+    hpBarGroup.add(fillMesh);
+    group.add(hpBarGroup);
+
+    this.scene.add(group);
+    this.facilityVisuals.set(facility.id, {
+      facility,
+      group,
+      mesh,
+      hpBarFill: fillMesh,
+      hpBarGroup,
+      lastHp: facility.hp,
+    });
+  }
+
+  /** 施設ビジュアルを削除する */
+  removeFacilityVisual(facility: Facility): void {
+    const vis = this.facilityVisuals.get(facility.id);
+    if (!vis) return;
+    this.scene.remove(vis.group);
+    vis.mesh.geometry.dispose();
+    if (vis.mesh.material instanceof MeshLambertMaterial) {
+      vis.mesh.material.dispose();
+    }
+    this.facilityVisuals.delete(facility.id);
+  }
+
+  /** 施設の状態・被弾フラッシュ・HPバー・破壊演出を同期する */
+  syncFacilities(battle: Battle, dt: number): void {
+    // 既存ビジュアルの同期と破壊判定
+    for (const [id, vis] of this.facilityVisuals) {
+      const fac = vis.facility;
+      vis.group.position.copy(fac.pos);
+
+      // キャノン砲塔の場合、砲身の向きを反映
+      if (fac.type.id === 'cannon_tower' && fac.cannonAngle !== 0) {
+        vis.group.rotation.y = fac.cannonAngle;
+      } else {
+        vis.group.rotation.y = fac.facing;
+      }
+
+      // 被弾フラッシュ
+      const mat = vis.mesh.material as MeshLambertMaterial;
+      if (fac.hitFlash > 0) {
+        mat.emissive.setHex(0xffffff);
+        mat.emissiveIntensity = fac.hitFlash * 0.7;
+      } else {
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+
+      // HPバーの向き（常にカメラ正面を向くビルボード）とスケール更新
+      vis.hpBarGroup.quaternion.copy(this.camera.quaternion);
+      const hpRatio = clamp01(fac.hp / fac.maxHp);
+      vis.hpBarFill.scale.x = Math.max(0.001, hpRatio);
+      vis.hpBarFill.position.x = (-1.35 * (1 - hpRatio)) / 2;
+
+      // 施設が破壊された瞬間: 大量のボクセル破片を四方八方へ爆散！
+      if (!fac.alive) {
+        const seeds = getFacilityVoxelSeeds(fac.type.id, fac.team, fac.pos, fac.facing, 85);
+        for (const seed of seeds) {
+          const outward = new Vector3()
+            .subVectors(seed.pos, fac.pos)
+            .setY(0)
+            .normalize();
+          const scatterSpeed = 2.4 + Math.random() * 4.2;
+          const vel = new Vector3(
+            outward.x * scatterSpeed + (Math.random() - 0.5) * 2,
+            2.5 + Math.random() * 4.5,
+            outward.z * scatterSpeed + (Math.random() - 0.5) * 2,
+          );
+          this.pushDroppedVoxel(seed.pos, vel, seed.color, seed.size);
+        }
+
+        // 煙と炎のパーティクル
+        for (let i = 0; i < 28; i++) {
+          this.pushFxParticle(
+            fac.pos.clone().add(new Vector3((Math.random() - 0.5) * 1.8, 0.4 + Math.random() * 1.6, (Math.random() - 0.5) * 1.8)),
+            new Vector3((Math.random() - 0.5) * 3, 2.0 + Math.random() * 3, (Math.random() - 0.5) * 3),
+            i % 3 === 0 ? 0xff6622 : i % 2 === 0 ? 0xffcc33 : 0x555860,
+            0.18 + Math.random() * 0.14,
+            0.7 + Math.random() * 0.5,
+            -1.2,
+          );
+        }
+
+        this.scene.remove(vis.group);
+        this.facilityVisuals.delete(id);
+      }
+    }
+
+    // 未登録の施設があれば自動登録
+    for (const fac of battle.facilities) {
+      if (fac.alive && !this.facilityVisuals.has(fac.id)) {
+        this.addFacilityVisual(fac);
+      }
+    }
   }
 
   /** 戦場にドロップしたボクセル破片・エフェクト・丸太をすべて消去する */
@@ -1000,6 +1144,68 @@ export class SceneView {
         }
         break;
       }
+      case 'portal_spawn': {
+        // 召喚ポータル: 魔法陣の光柱と浮遊パーティクル
+        const teamCol = TEAM_COLORS[e.team].shirt;
+        for (let i = 0; i < 20; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 0.2 + Math.random() * 0.8;
+          const pos = e.pos.clone().add(new Vector3(Math.cos(angle) * dist, Math.random() * 0.4, Math.sin(angle) * dist));
+          const vel = new Vector3((Math.random() - 0.5) * 0.6, 1.8 + Math.random() * 2.5, (Math.random() - 0.5) * 0.6);
+          this.pushFxParticle(pos, vel, i % 2 === 0 ? teamCol : 0xffffff, 0.13, 0.5 + Math.random() * 0.3, -1.0);
+        }
+        break;
+      }
+      case 'totem_pulse': {
+        // 加護のトーテム: 地面を広がる光の波紋リング
+        const teamCol = TEAM_COLORS[e.team].accent;
+        const ringPoints = 24;
+        for (let i = 0; i < ringPoints; i++) {
+          const angle = (i / ringPoints) * Math.PI * 2;
+          const dir = new Vector3(Math.cos(angle), 0, Math.sin(angle));
+          const pos = e.pos.clone().addScaledVector(dir, 0.5);
+          pos.y = 0.08;
+          const vel = dir.clone().multiplyScalar(4.5);
+          this.pushFxParticle(pos, vel, teamCol, 0.16, 0.65, 0);
+        }
+        break;
+      }
+      case 'gate_multiply': {
+        // 増殖ゲート: キラキラ光る複製エフェクト
+        const teamCol = TEAM_COLORS[e.team].shirt;
+        for (let i = 0; i < 24; i++) {
+          const pos = e.pos.clone().add(new Vector3((Math.random() - 0.5) * 0.8, Math.random() * 1.2, (Math.random() - 0.5) * 0.8));
+          const vel = new Vector3((Math.random() - 0.5) * 2.2, 1.5 + Math.random() * 2.8, (Math.random() - 0.5) * 2.2);
+          this.pushFxParticle(pos, vel, i % 2 === 0 ? 0xffd700 : teamCol, 0.11, 0.45 + Math.random() * 0.3, 1.5);
+        }
+        break;
+      }
+      case 'cannon_fire': {
+        // キャノン砲台: マズルフラッシュと白煙
+        for (let i = 0; i < 16; i++) {
+          const spreadDir = e.dir.clone().add(new Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5)).normalize();
+          const vel = spreadDir.multiplyScalar(3.5 + Math.random() * 6.0);
+          this.pushFxParticle(e.pos.clone(), vel, i % 3 === 0 ? 0xffe066 : i % 2 === 0 ? 0xff922b : 0xe9ecef, 0.18, 0.35 + Math.random() * 0.25, 0.5);
+        }
+        break;
+      }
+      case 'facility_hit': {
+        // 施設被弾火花
+        for (let i = 0; i < 7; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 4, 1.5 + Math.random() * 3, (Math.random() - 0.5) * 4);
+          this.pushFxParticle(e.pos.clone(), vel, i % 2 === 0 ? 0xffd43b : 0xff922b, 0.08, 0.2, 3);
+        }
+        break;
+      }
+      case 'facility_destroy': {
+        // 施設崩壊爆発
+        for (let i = 0; i < 30; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).normalize();
+          const spd = 3.5 + Math.random() * 7;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(spd), i % 2 === 0 ? 0xff922b : 0x495057, 0.22, 0.65 + Math.random() * 0.3, 1.0);
+        }
+        break;
+      }
     }
   }
 
@@ -1239,6 +1445,28 @@ export class SceneView {
       this.writeBeamSegment(write++, muzzle, u.laserAimPos, 0.032, colLaser);
     }
 
+    // 6. バフ付与中の味方ユニットの足元オーラ
+    const colBuff = new Color(0xffdf6d);
+    for (const u of battle.units) {
+      if (!u.alive || !u.hasBuff || write >= this.maxFxInstances) continue;
+      const ringPts = 4;
+      for (let r = 0; r < ringPts && write < this.maxFxInstances; r++) {
+        const a = battle.time * 6 + (r / ringPts) * Math.PI * 2;
+        const rad = 0.38 * u.scale;
+        _mid.set(
+          u.pelvis.pos.x + Math.cos(a) * rad,
+          0.06,
+          u.pelvis.pos.z + Math.sin(a) * rad,
+        );
+        _scale.setScalar(0.08);
+        _quat.identity();
+        _mat4.compose(_mid, _quat, _scale);
+        this.fxMesh.setMatrixAt(write, _mat4);
+        this.fxMesh.setColorAt(write, colBuff);
+        write++;
+      }
+    }
+
     this.fxMesh.count = write;
     this.fxMesh.instanceMatrix.needsUpdate = true;
     if (this.fxMesh.instanceColor) {
@@ -1299,6 +1527,7 @@ export class SceneView {
     for (const vis of this.unitVisuals.values()) {
       vis.sync();
     }
+    this.syncFacilities(battle, realDt);
     this.syncArrows(battle.combat.arrows);
     this.updateDroppedVoxels(realDt);
     this.updateKawariLogs(realDt);

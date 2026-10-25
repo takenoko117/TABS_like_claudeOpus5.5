@@ -1,12 +1,21 @@
 import { Vector3 } from 'three';
 import { SoundManager } from '../audio/SoundManager';
+import type { Facility } from '../facilities/Facility';
+import {
+  FACILITY_TYPES,
+  FACILITY_TYPE_LIST,
+  isFacilityTypeId,
+  type FacilityTypeId,
+} from '../facilities/FacilityTypes';
 import { SceneView } from '../render/SceneView';
 import {
   CATEGORY_ICONS,
   CATEGORY_THEME_COLORS,
   COST_ICON_SVG,
   HP_ICON_SVG,
+  getFacilityIconSvg,
   getUnitIconSvg,
+  type PaletteCategory,
 } from '../ui/UnitIcons';
 import {
   CATEGORY_LABELS,
@@ -14,7 +23,6 @@ import {
   UNIT_TYPES,
   UNIT_TYPE_LIST,
   type Team,
-  type UnitCategory,
   type UnitTypeId,
 } from '../units/UnitTypes';
 import {
@@ -32,7 +40,8 @@ import {
 import { Battle, type BattleResult } from './Battle';
 
 interface PlacedRecord {
-  typeId: UnitTypeId;
+  typeId?: UnitTypeId;
+  facilityId?: FacilityTypeId;
   team: Team;
   x: number;
   z: number;
@@ -194,6 +203,48 @@ export const PRESETS: readonly PresetScenario[] = [
       { typeId: 'sniper', team: 1, x: 16.5, z: 0.0 },
     ],
   },
+  {
+    name: '要塞拠点戦（ポータル＆防衛砲台）',
+    description: '赤軍の召喚ポータルと加護トーテムによる無限増援に、青軍の防衛キャノン砲台と精鋭部隊が立ち向かう！',
+    units: [
+      { facilityId: 'barracks', team: 0, x: -11.0, z: 0.0 },
+      { facilityId: 'buff_totem', team: 0, x: -7.5, z: 0.0 },
+      { typeId: 'swordsman', team: 0, x: -5.0, z: -2.5 },
+      { typeId: 'swordsman', team: 0, x: -5.0, z: 2.5 },
+      { typeId: 'shielder', team: 0, x: -3.5, z: 0.0 },
+      { typeId: 'archer', team: 0, x: -9.0, z: -3.5 },
+      { typeId: 'archer', team: 0, x: -9.0, z: 3.5 },
+
+      { facilityId: 'cannon_tower', team: 1, x: 9.5, z: -3.5 },
+      { facilityId: 'cannon_tower', team: 1, x: 9.5, z: 3.5 },
+      { typeId: 'shielder', team: 1, x: 4.5, z: -2.0 },
+      { typeId: 'shielder', team: 1, x: 4.5, z: 2.0 },
+      { typeId: 'spearman', team: 1, x: 6.5, z: -3.5 },
+      { typeId: 'spearman', team: 1, x: 6.5, z: 3.5 },
+      { typeId: 'archer', team: 1, x: 12.0, z: 0.0 },
+    ],
+  },
+  {
+    name: '増殖ゲート大突撃戦',
+    description: '中央に設置された増殖ゲートをくぐり抜けた歩兵たちが2倍に増殖して激突するダイナミック合戦！',
+    units: [
+      { facilityId: 'multiplier_gate', team: 0, x: -3.5, z: 0.0 },
+      { typeId: 'clubber', team: 0, x: -9.0, z: -3.0 },
+      { typeId: 'clubber', team: 0, x: -9.0, z: -1.0 },
+      { typeId: 'clubber', team: 0, x: -9.0, z: 1.0 },
+      { typeId: 'clubber', team: 0, x: -9.0, z: 3.0 },
+      { typeId: 'swordsman', team: 0, x: -11.0, z: -1.8 },
+      { typeId: 'swordsman', team: 0, x: -11.0, z: 1.8 },
+
+      { facilityId: 'multiplier_gate', team: 1, x: 3.5, z: 0.0 },
+      { typeId: 'clubber', team: 1, x: 9.0, z: -3.0 },
+      { typeId: 'clubber', team: 1, x: 9.0, z: -1.0 },
+      { typeId: 'clubber', team: 1, x: 9.0, z: 1.0 },
+      { typeId: 'clubber', team: 1, x: 9.0, z: 3.0 },
+      { typeId: 'swordsman', team: 1, x: 11.0, z: -1.8 },
+      { typeId: 'swordsman', team: 1, x: 11.0, z: 1.8 },
+    ],
+  },
 ];
 
 export type GameMode = 'placement' | 'battle';
@@ -214,8 +265,14 @@ export class GameApp {
   arcadeSave: ArcadeSaveData = loadArcadeSave();
 
   mode: GameMode = 'placement';
-  selectedType: UnitTypeId = 'clubber';
-  selectedCategory: UnitCategory | 'all' = 'all';
+  selectedId: UnitTypeId | FacilityTypeId = 'clubber';
+  get selectedType(): UnitTypeId {
+    return isFacilityTypeId(this.selectedId) ? 'clubber' : this.selectedId;
+  }
+  set selectedType(val: UnitTypeId) {
+    this.selectedId = val;
+  }
+  selectedCategory: PaletteCategory | 'all' = 'all';
   timeScale = 1.0;
   paused = false;
 
@@ -256,6 +313,11 @@ export class GameApp {
 
     this.battle.onUnitAdded = (u) => this.view.addUnitVisual(u);
     this.battle.onUnitRemoved = (u) => this.view.removeUnitVisual(u);
+    this.battle.onFacilityAdded = (f) => this.view.addFacilityVisual(f);
+    this.battle.onFacilityRemoved = (f) => this.view.removeFacilityVisual(f);
+    this.battle.onPlayFacilitySound = (k) => {
+      this.sound.playEffect({ kind: k } as any);
+    };
     this.battle.combat.onShootArrow = () => this.sound.playBowShoot();
     this.battle.combat.onEffect = (e) => {
       this.view.spawnCombatEffect(e);
@@ -315,7 +377,16 @@ export class GameApp {
         cost += UNIT_TYPES[u.type.id].cost;
       }
     }
+    for (const f of this.battle.facilities) {
+      if (f.team === 0) {
+        cost += f.type.cost;
+      }
+    }
     return cost;
+  }
+
+  private getItemCost(id: UnitTypeId | FacilityTypeId): number {
+    return isFacilityTypeId(id) ? FACILITY_TYPES[id].cost : UNIT_TYPES[id].cost;
   }
 
   /** ゲームモード・ステージ設定パネル（左パネル）の表示/非表示を同期 */
@@ -430,14 +501,15 @@ export class GameApp {
     // カテゴリ切替タブを生成（アイコン付き）
     if (this.elCategoryTabs) {
       this.elCategoryTabs.innerHTML = '';
-      const cats: ReadonlyArray<{ id: UnitCategory | 'all'; label: string }> = [
-        { id: 'all', label: `${CATEGORY_ICONS.all} すべて (${UNIT_TYPE_LIST.length})` },
+      const cats: ReadonlyArray<{ id: PaletteCategory | 'all'; label: string }> = [
+        { id: 'all', label: `${CATEGORY_ICONS.all} すべて (${UNIT_TYPE_LIST.length + FACILITY_TYPE_LIST.length})` },
         { id: 'standard', label: `${CATEGORY_ICONS.standard} ${CATEGORY_LABELS.standard}` },
         { id: 'magic', label: `${CATEGORY_ICONS.magic} ${CATEGORY_LABELS.magic}` },
         { id: 'modern', label: `${CATEGORY_ICONS.modern} ${CATEGORY_LABELS.modern}` },
         { id: 'japanese', label: `${CATEGORY_ICONS.japanese} ${CATEGORY_LABELS.japanese}` },
         { id: 'animal', label: `${CATEGORY_ICONS.animal} ${CATEGORY_LABELS.animal}` },
         { id: 'mythical', label: `${CATEGORY_ICONS.mythical} ${CATEGORY_LABELS.mythical}` },
+        { id: 'facility', label: `${CATEGORY_ICONS.facility} 施設 (${FACILITY_TYPE_LIST.length})` },
       ];
       cats.forEach((c) => {
         const b = document.createElement('button');
@@ -498,13 +570,16 @@ export class GameApp {
       }
     });
 
-    // 全消去ボタン（アーケードモードでは自軍の赤ユニットのみリセット）
+    // 全消去ボタン（アーケードモードでは自軍の赤ユニット・施設のみリセット）
     document.getElementById('btn-clear')!.addEventListener('click', () => {
       if (this.mode !== 'placement') this.returnToPlacement();
       if (this.playStyle === 'arcade') {
         this.savedLineup = this.savedLineup.filter((u) => u.team === 1);
         for (const u of [...this.battle.units]) {
           if (u.team === 0) this.battle.removeUnit(u);
+        }
+        for (const f of [...this.battle.facilities]) {
+          if (f.team === 0) this.battle.removeFacility(f);
         }
       } else {
         this.savedLineup = [];
@@ -679,70 +754,118 @@ export class GameApp {
     this.elUnitBar.innerHTML = '';
     const isArc = this.playStyle === 'arcade';
     const featuredSet = new Set<UnitTypeId>(isArc ? this.currentStage.featuredUnits : []);
-    const filtered = UNIT_TYPE_LIST.filter(
-      (ut) => this.selectedCategory === 'all' || ut.category === this.selectedCategory,
-    );
-    filtered.forEach((ut, idx) => {
-      const unlocked = !isArc || isUnitUnlocked(this.arcadeSave, ut.id);
-      const isFeatured = featuredSet.has(ut.id);
-      const btn = document.createElement('button');
-      btn.className =
-        'unit-card' +
-        (ut.id === this.selectedType ? ' active' : '') +
-        (isFeatured ? ' featured' : '') +
-        (!unlocked ? ' locked' : '');
-      btn.dataset.type = ut.id;
-      const keyLabel = idx < 9 ? `${idx + 1}` : '';
-      const featBadge = isFeatured ? `<span class="unit-featured-tag">★特効</span>` : '';
-      const lockOverlay = !unlocked ? `<div class="unit-lock-badge">🔒</div>` : '';
-      const theme = CATEGORY_THEME_COLORS[ut.category];
 
-      btn.innerHTML = `
-        <div class="unit-card-top">
-          <div class="unit-avatar" style="background:${theme.bg}; border-color:${theme.border};">
-            ${getUnitIconSvg(ut.id)}
-            ${lockOverlay}
-          </div>
-          <div class="unit-head-info">
-            <div class="unit-badges-line">
-              <span class="unit-cat-badge">${CATEGORY_ICONS[ut.category]} ${CATEGORY_LABELS[ut.category]}</span>
-              ${featBadge}
-              <span class="unit-key">${keyLabel}</span>
+    // 兵種カードの表示（施設以外のカテゴリ、またはすべて）
+    if (this.selectedCategory !== 'facility') {
+      const filtered = UNIT_TYPE_LIST.filter(
+        (ut) => this.selectedCategory === 'all' || ut.category === this.selectedCategory,
+      );
+      filtered.forEach((ut, idx) => {
+        const unlocked = !isArc || isUnitUnlocked(this.arcadeSave, ut.id);
+        const isFeatured = featuredSet.has(ut.id);
+        const btn = document.createElement('button');
+        btn.className =
+          'unit-card' +
+          (ut.id === this.selectedId ? ' active' : '') +
+          (isFeatured ? ' featured' : '') +
+          (!unlocked ? ' locked' : '');
+        btn.dataset.type = ut.id;
+        const keyLabel = idx < 9 ? `${idx + 1}` : '';
+        const featBadge = isFeatured ? `<span class="unit-featured-tag">★特効</span>` : '';
+        const lockOverlay = !unlocked ? `<div class="unit-lock-badge">🔒</div>` : '';
+        const theme = CATEGORY_THEME_COLORS[ut.category];
+
+        btn.innerHTML = `
+          <div class="unit-card-top">
+            <div class="unit-avatar" style="background:${theme.bg}; border-color:${theme.border};">
+              ${getUnitIconSvg(ut.id)}
+              ${lockOverlay}
             </div>
-            <div class="unit-name">${ut.name}</div>
-            <div class="unit-stats-row">
-              <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${ut.cost}</span></span>
-              <span class="stat-pill hp" title="最大HP">${HP_ICON_SVG}<span>${ut.hp}</span></span>
+            <div class="unit-head-info">
+              <div class="unit-badges-line">
+                <span class="unit-cat-badge">${CATEGORY_ICONS[ut.category]} ${CATEGORY_LABELS[ut.category]}</span>
+                ${featBadge}
+                <span class="unit-key">${keyLabel}</span>
+              </div>
+              <div class="unit-name">${ut.name}</div>
+              <div class="unit-stats-row">
+                <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${ut.cost}</span></span>
+                <span class="stat-pill hp" title="最大HP">${HP_ICON_SVG}<span>${ut.hp}</span></span>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="unit-desc">${ut.description}</div>
-      `;
-      btn.addEventListener('click', () => {
-        if (!unlocked) {
-          this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ モードUI」内の「🔓全解放」）で使用可能になります`);
-          return;
-        }
-        if (this.touchEraseMode) {
-          this.touchEraseMode = false;
-          this.elTouchEraseBtn?.classList.remove('danger', 'active');
-          if (this.elTouchEraseBtn) this.elTouchEraseBtn.textContent = '🗑 削除';
-        }
-        this.selectUnitType(ut.id);
+          <div class="unit-desc">${ut.description}</div>
+        `;
+        btn.addEventListener('click', () => {
+          if (!unlocked) {
+            this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ モードUI」内の「🔓全解放」）で使用可能になります`);
+            return;
+          }
+          if (this.touchEraseMode) {
+            this.touchEraseMode = false;
+            this.elTouchEraseBtn?.classList.remove('danger', 'active');
+            if (this.elTouchEraseBtn) this.elTouchEraseBtn.textContent = '🗑 削除';
+          }
+          this.selectPlaceable(ut.id);
+        });
+        this.elUnitBar.appendChild(btn);
       });
-      this.elUnitBar.appendChild(btn);
-    });
+    }
+
+    // 施設カードの表示（施設カテゴリ、またはすべて）
+    if (this.selectedCategory === 'all' || this.selectedCategory === 'facility') {
+      FACILITY_TYPE_LIST.forEach((fac, fIdx) => {
+        const btn = document.createElement('button');
+        btn.className = 'unit-card' + (fac.id === this.selectedId ? ' active' : '');
+        btn.dataset.type = fac.id;
+        const theme = CATEGORY_THEME_COLORS.facility;
+        const keyLabel = this.selectedCategory === 'facility' && fIdx < 9 ? `${fIdx + 1}` : '';
+
+        btn.innerHTML = `
+          <div class="unit-card-top">
+            <div class="unit-avatar" style="background:${theme.bg}; border-color:${theme.border};">
+              ${getFacilityIconSvg(fac.id)}
+            </div>
+            <div class="unit-head-info">
+              <div class="unit-badges-line">
+                <span class="unit-cat-badge">${CATEGORY_ICONS.facility} 施設</span>
+                <span class="unit-key">${keyLabel}</span>
+              </div>
+              <div class="unit-name">${fac.name}</div>
+              <div class="unit-stats-row">
+                <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${fac.cost}</span></span>
+                <span class="stat-pill hp" title="最大耐久力">${HP_ICON_SVG}<span>${fac.hp}</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="unit-desc">${fac.description}</div>
+        `;
+        btn.addEventListener('click', () => {
+          if (this.touchEraseMode) {
+            this.touchEraseMode = false;
+            this.elTouchEraseBtn?.classList.remove('danger', 'active');
+            if (this.elTouchEraseBtn) this.elTouchEraseBtn.textContent = '🗑 削除';
+          }
+          this.selectPlaceable(fac.id);
+        });
+        this.elUnitBar.appendChild(btn);
+      });
+    }
   }
 
-  private selectUnitType(id: UnitTypeId): void {
-    if (this.playStyle === 'arcade' && !isUnitUnlocked(this.arcadeSave, id)) {
+  selectPlaceable(id: UnitTypeId | FacilityTypeId): void {
+    if (this.playStyle === 'arcade' && !isFacilityTypeId(id) && !isUnitUnlocked(this.arcadeSave, id)) {
       return;
     }
-    this.selectedType = id;
+    this.selectedId = id;
     const cards = this.elUnitBar.querySelectorAll<HTMLElement>('.unit-card');
     cards.forEach((c) => {
       c.classList.toggle('active', c.dataset.type === id);
     });
+  }
+
+  private selectUnitType(id: UnitTypeId): void {
+    this.selectPlaceable(id);
   }
 
   private flashPhaseWarning(msg: string): void {
@@ -765,17 +888,18 @@ export class GameApp {
       }
       const p = this.view.screenToGround(e.clientX, e.clientY, groundHit);
       if (!p || !this.isInsideArena(p.x, p.z)) {
-        this.view.updatePlacementGhost(this.selectedType, 0, null, false);
+        this.view.updatePlacementGhost(this.selectedId, 0, null, false);
         return;
       }
       if (this.playStyle === 'arcade') {
         const validZone = isInsideStageRedZone(this.currentStage, p.x, p.z);
-        const canAfford = this.getCurrentRedCost() + UNIT_TYPES[this.selectedType].cost <= this.currentStage.budget;
-        const unlocked = isUnitUnlocked(this.arcadeSave, this.selectedType);
-        this.view.updatePlacementGhost(this.selectedType, 0, p, validZone && canAfford && unlocked);
+        const itemCost = this.getItemCost(this.selectedId);
+        const canAfford = this.getCurrentRedCost() + itemCost <= this.currentStage.budget;
+        const unlocked = isFacilityTypeId(this.selectedId) || isUnitUnlocked(this.arcadeSave, this.selectedId);
+        this.view.updatePlacementGhost(this.selectedId, 0, p, validZone && canAfford && unlocked);
       } else {
         const team: Team = p.x < 0 ? 0 : 1;
-        this.view.updatePlacementGhost(this.selectedType, team, p, Math.abs(p.x) > 1.2);
+        this.view.updatePlacementGhost(this.selectedId, team, p, Math.abs(p.x) > 1.2);
       }
     });
 
@@ -795,7 +919,7 @@ export class GameApp {
       if (!p) return;
 
       if (e.button === 2 || (e.button === 0 && this.touchEraseMode)) {
-        // 右クリック、またはスマホ用削除モードON時のタップ: 最も近いユニットを削除
+        // 右クリック、またはスマホ用削除モードON時のタップ: 最も近いユニットまたは施設を削除
         this.removeNearestUnitAt(p.x, p.z);
         return;
       }
@@ -807,27 +931,38 @@ export class GameApp {
             this.flashPhaseWarning('⚠ 赤枠の配置可能エリア内をタップ／クリックしてください');
             return;
           }
-          if (!isUnitUnlocked(this.arcadeSave, this.selectedType)) {
+          if (!isFacilityTypeId(this.selectedId) && !isUnitUnlocked(this.arcadeSave, this.selectedId)) {
             this.flashPhaseWarning('🔒 この兵種はまだ解放されていません');
             return;
           }
-          const unitCost = UNIT_TYPES[this.selectedType].cost;
+          const itemCost = this.getItemCost(this.selectedId);
           const used = this.getCurrentRedCost();
-          if (used + unitCost > st.budget) {
-            this.flashPhaseWarning(`⚠ 予算オーバー！ (残り ${st.budget - used} pt / 必要 ${unitCost} pt)`);
+          if (used + itemCost > st.budget) {
+            this.flashPhaseWarning(`⚠ 予算オーバー！ (残り ${st.budget - used} pt / 必要 ${itemCost} pt)`);
             return;
           }
           const facing = getStageZoneFacing(st, p.x, p.z);
-          this.battle.spawnUnit(this.selectedType, 0, p.x, p.z, facing);
-          this.savedLineup.push({ typeId: this.selectedType, team: 0, x: p.x, z: p.z, facing });
+          if (isFacilityTypeId(this.selectedId)) {
+            this.battle.spawnFacility(this.selectedId, 0, p.x, p.z, facing);
+            this.savedLineup.push({ facilityId: this.selectedId, team: 0, x: p.x, z: p.z, facing });
+          } else {
+            this.battle.spawnUnit(this.selectedId, 0, p.x, p.z, facing);
+            this.savedLineup.push({ typeId: this.selectedId, team: 0, x: p.x, z: p.z, facing });
+          }
           this.sound.playPlace();
           this.updateHUD();
         } else {
           // サンドボックス: x < 0 なら赤軍、x > 0 なら青軍
           if (!this.isInsideArena(p.x, p.z) || Math.abs(p.x) <= 1.2) return;
           const team: Team = p.x < 0 ? 0 : 1;
-          this.battle.spawnUnit(this.selectedType, team, p.x, p.z);
-          this.savedLineup.push({ typeId: this.selectedType, team, x: p.x, z: p.z });
+          const facing = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+          if (isFacilityTypeId(this.selectedId)) {
+            this.battle.spawnFacility(this.selectedId, team, p.x, p.z, facing);
+            this.savedLineup.push({ facilityId: this.selectedId, team, x: p.x, z: p.z, facing });
+          } else {
+            this.battle.spawnUnit(this.selectedId, team, p.x, p.z, facing);
+            this.savedLineup.push({ typeId: this.selectedId, team, x: p.x, z: p.z, facing });
+          }
           this.sound.playPlace();
           this.updateHUD();
         }
@@ -840,6 +975,33 @@ export class GameApp {
   }
 
   private removeNearestUnitAt(x: number, z: number): void {
+    // 1. 施設を優先探索（クリック判定半径 2.0m）
+    let bestFac: Facility | null = null;
+    let bestFacDist = 2.0;
+    for (const f of this.battle.facilities) {
+      if (this.playStyle === 'arcade' && f.team !== 0) continue;
+      const d = Math.hypot(f.pos.x - x, f.pos.z - z);
+      if (d < bestFacDist) {
+        bestFacDist = d;
+        bestFac = f;
+      }
+    }
+    if (bestFac) {
+      const targetFac = bestFac;
+      const idx = this.savedLineup.findIndex(
+        (rec) =>
+          rec.facilityId === targetFac.type.id &&
+          rec.team === targetFac.team &&
+          Math.hypot(rec.x - targetFac.pos.x, rec.z - targetFac.pos.z) < 0.6,
+      );
+      if (idx >= 0) this.savedLineup.splice(idx, 1);
+      this.battle.removeFacility(targetFac);
+      this.sound.playRemove();
+      this.updateHUD();
+      return;
+    }
+
+    // 2. ユニットの探索
     let bestIdx = -1;
     let bestDist = 1.8;
     for (let i = 0; i < this.battle.units.length; i++) {
@@ -854,8 +1016,14 @@ export class GameApp {
     }
     if (bestIdx >= 0) {
       const target = this.battle.units[bestIdx];
+      const lineupIdx = this.savedLineup.findIndex(
+        (rec) =>
+          rec.typeId === target.type.id &&
+          rec.team === target.team &&
+          Math.hypot(rec.x - target.pelvis.pos.x, rec.z - target.pelvis.pos.z) < 0.6,
+      );
+      if (lineupIdx >= 0) this.savedLineup.splice(lineupIdx, 1);
       this.battle.removeUnit(target);
-      this.savedLineup.splice(bestIdx, 1);
       this.sound.playRemove();
       this.updateHUD();
     }
@@ -894,7 +1062,9 @@ export class GameApp {
       facing: e.facing,
     }));
     for (const u of this.savedLineup) {
-      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
+      if (u.typeId) {
+        this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
+      }
     }
 
     this.renderArcadeStageButtons();
@@ -916,8 +1086,12 @@ export class GameApp {
     this.battle.world.chasm = null;
     this.view.setStageTerrain(null, false);
     this.savedLineup = preset.units.map((u) => ({ ...u }));
-    for (const u of this.savedLineup) {
-      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z);
+    for (const item of this.savedLineup) {
+      if (item.facilityId) {
+        this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+      } else if (item.typeId) {
+        this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+      }
     }
     this.renderUnitCards();
     this.syncPhaseUI();
@@ -925,11 +1099,13 @@ export class GameApp {
   }
 
   startBattle(): void {
-    if (this.battle.aliveCount(0) === 0) {
-      this.flashPhaseWarning('⚠ 赤軍ユニットを1体以上配置してから戦闘開始してください');
+    const redForce = this.battle.aliveCount(0) + this.battle.aliveFacilityCount(0);
+    const blueForce = this.battle.aliveCount(1) + this.battle.aliveFacilityCount(1);
+    if (redForce === 0) {
+      this.flashPhaseWarning('⚠ 赤軍ユニットまたは施設を配置してから戦闘開始してください');
       return;
     }
-    if (this.battle.aliveCount(1) === 0) {
+    if (blueForce === 0) {
       return;
     }
     this.mode = 'battle';
@@ -954,8 +1130,12 @@ export class GameApp {
     this.view.setPlacementGuidesVisible(true);
     this.battle.clear();
     this.view.clearDebris();
-    for (const u of this.savedLineup) {
-      this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
+    for (const item of this.savedLineup) {
+      if (item.facilityId) {
+        this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+      } else if (item.typeId) {
+        this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+      }
     }
     this.syncPhaseUI();
     this.updateHUD();
@@ -1013,6 +1193,16 @@ export class GameApp {
           hp += Math.max(0, u.hp);
         }
       }
+      for (const f of this.battle.facilities) {
+        if (f.team !== team) continue;
+        total++;
+        cost += f.type.cost;
+        maxHp += f.maxHp;
+        if (f.alive) {
+          alive++;
+          hp += Math.max(0, f.hp);
+        }
+      }
       const ratio = maxHp > 0 ? Math.round((hp / maxHp) * 100) : 0;
       return { alive, total, cost, ratio };
     };
@@ -1022,11 +1212,11 @@ export class GameApp {
     if (this.playStyle === 'arcade') {
       const budget = this.currentStage.budget;
       this.elRedStats.innerHTML = `
-        <div class="team-title">🔴 自軍: ${r.alive}/${r.total}体 <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${budget}</span></div>
+        <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${budget}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
       `;
       this.elBlueStats.innerHTML = `
-        <div class="team-title">🔵 敵軍: ${b.alive}/${b.total}体 <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
+        <div class="team-title">🔵 敵軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
       `;
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
@@ -1034,11 +1224,11 @@ export class GameApp {
       }
     } else {
       this.elRedStats.innerHTML = `
-        <div class="team-title">🔴 赤軍: ${r.alive}/${r.total}体 <span class="cost-tag">${COST_ICON_SVG}${r.cost}</span></div>
+        <div class="team-title">🔴 赤軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
       `;
       this.elBlueStats.innerHTML = `
-        <div class="team-title">🔵 青軍: ${b.alive}/${b.total}体 <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
+        <div class="team-title">🔵 青軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
       `;
     }
