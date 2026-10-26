@@ -177,12 +177,31 @@ export class Unit {
     this.desiredFacing = facing;
     this.updateFrame();
 
-    const hoverMul = type.id === 'giant_eagle' ? 3.2 : type.id === 'dragon' ? 1.32 : 1.0;
+    const hoverMul =
+      type.id === 'giant_eagle'
+        ? 3.2
+        : type.id === 'dragon'
+        ? 1.32
+        : type.id === 'buggy'
+        ? 0.44
+        : type.id === 'giant_tank'
+        ? 0.38
+        : type.id === 'anaconda'
+        ? 0.38
+        : type.id === 'warelephant'
+        ? 0.72
+        : 1.0;
     const origin = new Vector3(groundPos.x, groundPos.y + PELVIS_HEIGHT * s * hoverMul, groundPos.z);
+    for (let i = 0; i < JOINT_COUNT; i++) {
+      this.localPose.push(new Vector3());
+    }
+    this.computePose(0, 0);
+
     let total = 0;
     for (let i = 0; i < JOINT_COUNT; i++) {
       const def = JOINTS[i];
-      const pos = this.localToWorld(origin, def.pos[0] * s, def.pos[1] * s, def.pos[2] * s, new Vector3());
+      const lp = this.localPose[i];
+      const pos = this.localToWorld(origin, lp.x, lp.y, lp.z, new Vector3());
       const p = new Particle(pos, {
         mass: def.mass * this.massScale,
         radius: def.radius * s,
@@ -192,7 +211,6 @@ export class Unit {
       p.owner = this;
       world.addParticle(p);
       this.joints.push(p);
-      this.localPose.push(new Vector3());
       total += p.mass;
     }
 
@@ -1920,8 +1938,21 @@ export class Unit {
 
     const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
     const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
-    // 足が地面付近にあれば「支えられている」とみなす（飛行ユニットは常時揚力あり、奈落上は支えなし）
-    const footGap = overChasm ? 999 : Math.min(footL.pos.y - footL.radius, footR.pos.y - footR.radius);
+    // 足（またはビークルの各接地粒子）が地面付近にあれば「支えられている」とみなす
+    const isVehicle = this.type.id === 'buggy' || this.type.id === 'giant_tank';
+    let footGap: number;
+    if (overChasm) {
+      footGap = 999;
+    } else if (isVehicle) {
+      let minG = Infinity;
+      for (let i = 0; i < JOINT_COUNT; i++) {
+        const d = this.joints[i].pos.y - this.joints[i].radius;
+        if (d < minG) minG = d;
+      }
+      footGap = minG;
+    } else {
+      footGap = Math.min(footL.pos.y - footL.radius, footR.pos.y - footR.radius);
+    }
     const supported = isFlyer || (!overChasm && pelvis.pos.y > -0.15 && footGap < 0.25 * s);
 
     if (m > 0.01) {
@@ -1940,20 +1971,24 @@ export class Unit {
       } else if (this.type.id === 'samurai' && this.attackPhase === 'windup') {
         targetH = PELVIS_HEIGHT * s * 0.82;
       } else if (this.type.id === 'buggy') {
-        targetH = PELVIS_HEIGHT * s * 0.58;
+        targetH = PELVIS_HEIGHT * s * 0.44;
+      } else if (this.type.id === 'giant_tank') {
+        targetH = PELVIS_HEIGHT * s * 0.38;
+      } else if (this.type.id === 'warelephant') {
+        targetH = PELVIS_HEIGHT * s * 0.72;
       } else if (this.type.id === 'sezain') {
-        targetH = PELVIS_HEIGHT * s * 0.65;
+        targetH = PELVIS_HEIGHT * s * 0.58;
       } else if (this.type.id === 'yamamuron') {
         targetH = PELVIS_HEIGHT * s * 0.85;
       } else if (this.type.id === 'hongon') {
         targetH = PELVIS_HEIGHT * s * 0.78;
       } else if (this.type.id === 'anaconda') {
-        targetH = PELVIS_HEIGHT * s * 0.38;
+        targetH = PELVIS_HEIGHT * s * 0.20;
       }
 
       if (supported && (isFlyer || pelvis.pos.y < targetH + 0.3 * s)) {
-        const springK = this.type.id === 'giant_eagle' ? 80 : isFlyer ? 65 : 120;
-        let a = GRAVITY + springK * (targetH - pelvis.pos.y) - 14 * pv.y;
+        const springK = this.type.id === 'giant_eagle' ? 80 : isFlyer ? 65 : isVehicle ? 35 : 120;
+        let a = GRAVITY + springK * (targetH - pelvis.pos.y) - (isVehicle ? 18 : 14) * pv.y;
         a = clamp(a, isFlyer ? -GRAVITY * 0.8 : 0, GRAVITY * 3.5) * m;
         const f = M * a;
         pelvis.force.y += f * 0.6;
@@ -1963,10 +1998,11 @@ export class Unit {
       // 2. 直立補助: 頭を上へ、足を下へ引っ張る（TABS 風のバランス）
       const isCrawlerOrVehicle =
         this.type.id === 'buggy' ||
+        this.type.id === 'giant_tank' ||
         this.type.id === 'anaconda' ||
         this.type.id === 'sezain' ||
         this.type.id === 'yamamuron';
-      const fu = M * (isCrawlerOrVehicle ? 0.7 : 2.5) * m;
+      const fu = M * (isVehicle ? 0.05 : isCrawlerOrVehicle ? 0.7 : 2.5) * m;
       head.force.y += fu * 0.5;
       chest.force.y += fu * 0.5;
       footL.force.y -= fu * 0.5;
@@ -2061,50 +2097,95 @@ export class Unit {
     this.walkPhase += phaseRate * dt;
 
     if (this.type.id === 'buggy') {
-      // 暴走バギーの4輪ビークルポーズ
-      lp[J.Chest].set(0, 0.12, 0.05);
-      lp[J.Head].set(0, 0.32, 0.12);
-      // 前輪左右（腕関節）
-      lp[J.ShoulderL].set(-0.32, 0.1, 0.3);
-      lp[J.ElbowL].set(-0.36, -0.05, 0.35);
-      lp[J.HandL].set(-0.38, -0.15, 0.35);
-      lp[J.ShoulderR].set(0.32, 0.1, 0.3);
-      lp[J.ElbowR].set(0.36, -0.05, 0.35);
-      lp[J.HandR].set(0.38, -0.15, 0.35);
-      // 後輪左右（脚関節）
-      lp[J.HipL].set(-0.32, -0.05, -0.28);
-      lp[J.KneeL].set(-0.36, -0.15, -0.32);
-      lp[J.FootL].set(-0.38, -0.25, -0.32);
-      lp[J.HipR].set(0.32, -0.05, -0.28);
-      lp[J.KneeR].set(0.36, -0.15, -0.32);
-      lp[J.FootR].set(0.38, -0.25, -0.32);
+      // 暴走バギーの4輪ビークルポーズ（4隅の接地タイヤ位置に各関節を配置・完全水平）
+      lp[J.Chest].set(0, 0.16, 0.0);
+      lp[J.Head].set(0, 0.28, 0.0);
+      // 前輪左右（左前輪: ShoulderL/ElbowL/HandL, 右前輪: ShoulderR/ElbowR/HandR）
+      lp[J.ShoulderL].set(-0.36, -0.15, 0.30);
+      lp[J.ElbowL].set(-0.36, -0.34, 0.30);
+      lp[J.HandL].set(-0.36, -0.34, 0.30);
+      lp[J.ShoulderR].set(0.36, -0.15, 0.30);
+      lp[J.ElbowR].set(0.36, -0.34, 0.30);
+      lp[J.HandR].set(0.36, -0.34, 0.30);
+      // 後輪左右（左後輪: HipL/KneeL/FootL, 右後輪: HipR/KneeR/FootR）
+      lp[J.HipL].set(-0.38, -0.15, -0.28);
+      lp[J.KneeL].set(-0.38, -0.34, -0.28);
+      lp[J.FootL].set(-0.38, -0.34, -0.28);
+      lp[J.HipR].set(0.38, -0.15, -0.28);
+      lp[J.KneeR].set(0.38, -0.34, -0.28);
+      lp[J.FootR].set(0.38, -0.34, -0.28);
+    } else if (this.type.id === 'giant_tank') {
+      // 超重戦車の低重心・無限軌道ポーズ（左右履帯と旋回砲塔・完全水平）
+      lp[J.Chest].set(0, 0.16, 0.0);
+      lp[J.Head].set(0, 0.30, 0.0);
+      // 左履帯（前・中・後）
+      lp[J.ShoulderL].set(-0.46, -0.10, 0.38);
+      lp[J.ElbowL].set(-0.46, -0.28, 0.38);
+      lp[J.HandL].set(-0.46, -0.28, 0.0);
+      lp[J.HipL].set(-0.46, -0.10, -0.38);
+      lp[J.KneeL].set(-0.46, -0.28, -0.38);
+      lp[J.FootL].set(-0.46, -0.28, -0.15);
+      // 右履帯（前・中・後）
+      lp[J.ShoulderR].set(0.46, -0.10, 0.38);
+      lp[J.ElbowR].set(0.46, -0.28, 0.38);
+      lp[J.HandR].set(0.46, -0.28, 0.0);
+      lp[J.HipR].set(0.46, -0.10, -0.38);
+      lp[J.KneeR].set(0.46, -0.28, -0.38);
+      lp[J.FootR].set(0.46, -0.28, -0.15);
+    } else if (this.type.id === 'warelephant') {
+      // 鎧戦象: 巨体の重厚な4足歩行ポーズ
+      lp[J.Chest].set(0, 0.08, 0.28);
+      lp[J.Head].set(0, 0.22, 0.58);
+      const walkSn = Math.sin(this.walkPhase * 1.5) * w;
+      // 前脚（左肩・肘・手、右肩・肘・手）
+      lp[J.ShoulderL].set(-0.28, 0.02, 0.35);
+      lp[J.ElbowL].set(-0.28, -0.24, 0.35 + walkSn * 0.1);
+      lp[J.HandL].set(-0.28, -0.52, 0.35 + walkSn * 0.18);
+      lp[J.ShoulderR].set(0.28, 0.02, 0.35);
+      lp[J.ElbowR].set(0.28, -0.24, 0.35 - walkSn * 0.1);
+      lp[J.HandR].set(0.28, -0.52, 0.35 - walkSn * 0.18);
+      // 後脚（左股・膝・足、右股・膝・足）
+      lp[J.HipL].set(-0.26, -0.05, -0.30);
+      lp[J.KneeL].set(-0.26, -0.28, -0.30 - walkSn * 0.1);
+      lp[J.FootL].set(-0.26, -0.52, -0.30 - walkSn * 0.18);
+      lp[J.HipR].set(0.26, -0.05, -0.30);
+      lp[J.KneeR].set(0.26, -0.28, -0.30 + walkSn * 0.1);
+      lp[J.FootR].set(0.26, -0.52, -0.30 + walkSn * 0.18);
     } else if (this.type.id === 'anaconda') {
-      // 巨大アナコンダの這い（うねり）ポーズ
-      const sn = Math.sin(this.walkPhase * 2.2);
-      const cs = Math.cos(this.walkPhase * 2.2);
-      lp[J.Chest].set(sn * 0.12, 0.08, 0.32);
-      const headZ = this.attackPhase === 'strike' ? 0.95 : this.attackPhase === 'windup' ? 0.45 : 0.65;
-      const headY = this.attackPhase === 'windup' ? 0.35 : 0.15;
-      lp[J.Head].set(-sn * 0.16, headY, headZ);
-      // 前半身節（腕関節）
-      lp[J.ShoulderL].set(-0.16 + cs * 0.1, 0.06, 0.18);
-      lp[J.ElbowL].set(-0.22 + cs * 0.12, 0.02, 0.12);
-      lp[J.HandL].set(-0.26 + cs * 0.14, -0.04, 0.06);
-      lp[J.ShoulderR].set(0.16 + cs * 0.1, 0.06, 0.18);
-      lp[J.ElbowR].set(0.22 + cs * 0.12, 0.02, 0.12);
-      lp[J.HandR].set(0.26 + cs * 0.14, -0.04, 0.06);
-      // 後半身・尾節（脚関節）
-      lp[J.HipL].set(-0.14 - sn * 0.12, -0.04, -0.25);
-      lp[J.KneeL].set(-0.16 - sn * 0.16, -0.08, -0.45);
-      lp[J.FootL].set(-0.12 - sn * 0.2, -0.12, -0.68);
-      lp[J.HipR].set(0.14 - sn * 0.12, -0.04, -0.25);
-      lp[J.KneeR].set(0.16 - sn * 0.16, -0.08, -0.45);
-      lp[J.FootR].set(0.12 - sn * 0.2, -0.12, -0.68);
+      // 巨大アナコンダのリアルな蛇行推進（波状うねり）ポーズ
+      const wave = this.walkPhase * 2.5;
+      const amp = 0.22;
+      // 蛇頭（鎌首もたげ・前方突き出し）
+      const headElev = this.attackPhase === 'strike' ? 0.35 : this.attackPhase === 'windup' ? 0.45 : 0.18;
+      const headFwd = this.attackPhase === 'strike' ? 0.95 : this.attackPhase === 'windup' ? 0.45 : 0.65;
+      lp[J.Head].set(Math.sin(wave) * (amp * 0.5), headElev, headFwd);
+      // 前胴・首 (Chest)
+      lp[J.Chest].set(Math.sin(wave - 0.7) * amp, 0.12, 0.32);
+      // 中胴起点 (Pelvis)
+      lp[J.Pelvis].set(Math.sin(wave - 1.4) * amp, 0.08, 0.0);
+      // 中胴節1 (HipL)
+      lp[J.HipL].set(Math.sin(wave - 2.1) * amp, 0.07, -0.26);
+      // 中胴節2 (KneeL)
+      lp[J.KneeL].set(Math.sin(wave - 2.8) * amp, 0.06, -0.52);
+      // 後胴節 (FootL)
+      lp[J.FootL].set(Math.sin(wave - 3.5) * amp, 0.05, -0.76);
+      // 尾前節 (HipR)
+      lp[J.HipR].set(Math.sin(wave - 4.2) * (amp * 0.9), 0.04, -0.98);
+      // 尾先節 (KneeR, FootR)
+      lp[J.KneeR].set(Math.sin(wave - 4.9) * (amp * 0.8), 0.03, -1.18);
+      lp[J.FootR].set(Math.sin(wave - 5.6) * (amp * 0.6), 0.02, -1.36);
+      // 腕関節は胸に集約（物理拘束の破綻防止）
+      lp[J.ShoulderL].set(-0.08, 0.10, 0.28);
+      lp[J.ElbowL].set(-0.08, 0.10, 0.28);
+      lp[J.HandL].set(-0.08, 0.10, 0.28);
+      lp[J.ShoulderR].set(0.08, 0.10, 0.28);
+      lp[J.ElbowR].set(0.08, 0.10, 0.28);
+      lp[J.HandR].set(0.08, 0.10, 0.28);
     } else if (this.type.id === 'sezain') {
       // セザイン: 2輪バイク乗車ライディングポーズ
-      lp[J.Chest].set(0, 0.32, 0.12);
-      lp[J.Head].set(0, 0.62, 0.18);
-      lp[J.ShoulderL].set(-0.24, 0.35, 0.1);
+      lp[J.Chest].set(0, 0.28, 0.12);
+      lp[J.Head].set(0, 0.44, 0.16);
+      lp[J.ShoulderL].set(-0.24, 0.30, 0.1);
       lp[J.ElbowL].set(-0.32, 0.22, 0.18);
       lp[J.HandL].set(-0.22, 0.22, 0.38);
       lp[J.ShoulderR].set(0.24, 0.35, 0.1);

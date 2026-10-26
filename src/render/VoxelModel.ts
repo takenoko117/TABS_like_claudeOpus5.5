@@ -3,6 +3,7 @@ import {
   BufferGeometry,
   Color,
   Group,
+  Matrix4,
   Mesh,
   MeshLambertMaterial,
   Quaternion,
@@ -341,16 +342,16 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   if (type.id === 'buggy') {
     const g = new VoxelGrid(10, 8, 8);
     // ロールケージ（パイプフレーム）
-    g.fillBox(1, 0, 1, 2, 5, 2, 0x495057);
-    g.fillBox(7, 0, 1, 8, 5, 2, 0x495057);
-    g.fillBox(1, 0, 5, 2, 5, 6, 0x495057);
-    g.fillBox(7, 0, 5, 8, 5, 6, 0x495057);
+    g.fillBox(1, 0, 1, 2, 5, 2, 0x374151);
+    g.fillBox(7, 0, 1, 8, 5, 2, 0x374151);
+    g.fillBox(1, 0, 5, 2, 5, 6, 0x374151);
+    g.fillBox(7, 0, 5, 8, 5, 6, 0x374151);
     // ルーフ天板
     g.fillBox(1, 5, 1, 8, 6, 6, tc.shirt);
     // 前面オフロード・フォグランプ（左右に光るイエローライト）
     g.fillBox(2, 6, 5, 3, 7, 6, 0xffe066);
     g.fillBox(6, 6, 5, 7, 7, 6, 0xffe066);
-    return makeTemplate(g, 0.042, [4.5, 1.0, 3.5]);
+    return makeTemplate(g, 0.042, [4.5, 0.0, 3.5]);
   }
 
   // 5. 巨大アナコンダの頭部（三角形の蛇頭・大口と毒牙・二又舌・鋭い蛇眼）
@@ -377,7 +378,7 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(8, 4, 7, 8, 5, 8, 0xffd43b);
     g.set(2, 4, 8, pupil);
     g.set(8, 4, 8, pupil);
-    return makeTemplate(g, 0.038, [5.5, 2.5, 5.5]);
+    return makeTemplate(g, 0.044, [5.5, 2.5, 1.0]);
   }
 
   // 6. おとりの頭部（つば広麦わら帽子・麻袋ヘッド・つぎはぎボタン目）
@@ -426,7 +427,7 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
 
   // 8. 戦車（超巨大）の旋回砲塔・長大主砲・コマンダーハッチ
   if (type.id === 'giant_tank') {
-    const g = new VoxelGrid(14, 10, 28);
+    const g = new VoxelGrid(14, 10, 30);
     const armorCol = 0x3d4a3e;
     const darkArmor = 0x283329;
     // 砲塔本体
@@ -436,14 +437,14 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(7, 6, 8, 10, 7, 12, darkArmor);
     g.fillBox(8, 7, 9, 9, 8, 11, tc.shirt);
     // 長大な主砲バレル（砲身・マズルブレーキ）
-    g.fillBox(5, 2, 16, 8, 4, 25, darkArmor);
-    g.fillBox(4, 1, 25, 9, 5, 27, 0x1f2420); // 先端マズルブレーキ
+    g.fillBox(5, 2, 16, 8, 4, 27, darkArmor);
+    g.fillBox(4, 1, 27, 9, 5, 29, 0x1f2420); // 先端大型マズルブレーキ
     // 同軸機銃マズル
     g.fillBox(3, 3, 16, 4, 3, 18, 0x111412);
     // 砲塔左右のスモークディスチャージャー（発煙弾発射筒）
     g.fillBox(1, 3, 9, 1, 5, 12, darkArmor);
     g.fillBox(12, 3, 9, 12, 5, 12, darkArmor);
-    return makeTemplate(g, 0.046, [6.5, 1.0, 10.0]);
+    return makeTemplate(g, 0.046, [6.5, 0.0, 10.0]);
   }
 
   // 9. ロケットランチャー兵士のコンバットヘルメット＆タクティカルゴーグル
@@ -846,12 +847,14 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
 
   // 鎧戦象の巨躯と鞍
   if (type.id === 'warelephant') {
-    const g = new VoxelGrid(12, 12, 10);
-    g.fillBox(1, 0, 1, 10, 10, 8, look.skin);
-    // 陣営カラーの鞍掛けと金縁
-    g.fillBox(0, 4, 2, 11, 11, 7, tc.shirt);
-    g.fillBox(0, 4, 2, 11, 4, 7, 0xd4af37);
-    return makeTemplate(g, 0.042, [6, 1, 5]);
+    const g = new VoxelGrid(14, 12, 18);
+    // 象の胴体（マッシブな体躯）
+    g.fillBox(1, 1, 1, 12, 10, 16, look.skin);
+    // 陣営カラーの豪華な鞍掛け・布陣
+    g.fillBox(0, 4, 3, 13, 11, 14, tc.shirt);
+    g.fillBox(0, 4, 3, 13, 4, 14, 0xd4af37);
+    g.fillBox(0, 11, 3, 13, 11, 14, 0xd4af37);
+    return makeTemplate(g, 0.042, [7, 2, 9]);
   }
 
   // 暴走バギーのシャーシ・カウル・ブルバー
@@ -1004,7 +1007,7 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
         }
       }
     }
-    return makeTemplate(g, 0.05, [cx, 3.5, cz]);
+    return makeTemplate(g, 0.05, [cx, cy, cz]);
   }
 
   // 使徒神サキエル: 漆黒の巨躯と深紅に光る使徒コア
@@ -1166,6 +1169,103 @@ function buildLimbTemplate(
   g.fillBox(0, 0, 0, sx - 1, split, sz - 1, bottomColor);
   g.fillBox(0, split + 1, 0, sx - 1, sy - 1, sz - 1, topColor);
   return makeTemplate(g, length / sy, [sx / 2, 0, sz / 2]);
+}
+
+/** バギー用の本格オフロード4輪タイヤテンプレート（トレッドパターン・ホイールリム・ハブ付き） */
+function buildBuggyWheelTemplate(teamColor: number, radius: number, width: number): VoxelPartTemplate {
+  const size = radius * 2 + 1;
+  const g = new VoxelGrid(width, size, size);
+  const r2 = radius * radius;
+  const hubR2 = (radius * 0.52) ** 2;
+  const capR2 = (radius * 0.26) ** 2;
+  const cx = radius;
+  const cz = radius;
+  for (let z = 0; z < size; z++) {
+    for (let y = 0; y < size; y++) {
+      const d2 = (y - cx) ** 2 + (z - cz) ** 2;
+      if (d2 <= r2) {
+        // オフロードタイヤのブロックパターン（角度に応じたトレッド突起）
+        const angle = Math.atan2(z - cz, y - cx);
+        const treadBlock = Math.sin(angle * 10) > 0.15;
+        const isOuterEdge = d2 > (radius - 1) ** 2;
+        if (isOuterEdge && !treadBlock) continue;
+
+        let col = 0x18181b; // ディープブラック（タイヤゴム）
+        if (d2 <= capR2) {
+          col = teamColor; // チームカラーのセンターハブ
+        } else if (d2 <= hubR2) {
+          col = 0xd1d5db; // シルバー・アルミホイールリム
+        } else if ((y === cx || z === cz) && d2 <= hubR2 * 1.5) {
+          col = 0x4b5563; // ホイールスポーク
+        }
+        for (let x = 0; x < width; x++) {
+          g.set(x, y, z, col);
+        }
+      }
+    }
+  }
+  return makeTemplate(g, 0.040, [width / 2, radius, radius]);
+}
+
+/** 戦車（超巨大）用の重装無限軌道（キャタピラ履帯・ロードホイールユニット）テンプレート */
+function buildTankTrackTemplate(teamColor: number, isLeft: boolean): VoxelPartTemplate {
+  const width = 6;
+  const height = 8;
+  const length = 32;
+  const g = new VoxelGrid(width, height, length);
+  const trackCol = 0x212529; // 履帯ダークスチール
+  const padCol = 0x111412; // 履帯ラバーブロック
+  const rimCol = 0x4b5563; // ロードホイールリム
+  const hubCol = 0x9ca3af; // ホイールハブ
+  const armorCol = 0x3d4a3e; // 車体同色装甲
+
+  // 1. キャタピラ履帯ベルト外周（底面・上面・前後スロープ）
+  for (let z = 2; z <= 29; z++) {
+    const col = z % 2 === 0 ? trackCol : padCol;
+    // 底面履帯ベルト（Y=0）
+    for (let x = 0; x < width; x++) g.set(x, 0, z, col);
+    // 上面履帯ベルト（Y=6）
+    for (let x = 0; x < width; x++) g.set(x, 6, z, col);
+  }
+  // 前後スロープ（前部アイドラー輪・後部スプロケット輪の傾斜）
+  for (let x = 0; x < width; x++) {
+    g.set(x, 1, 1, trackCol);
+    g.set(x, 2, 0, trackCol);
+    g.set(x, 3, 0, padCol);
+    g.set(x, 4, 0, trackCol);
+    g.set(x, 5, 1, padCol);
+    g.set(x, 1, 30, trackCol);
+    g.set(x, 2, 31, trackCol);
+    g.set(x, 3, 31, padCol);
+    g.set(x, 4, 31, trackCol);
+    g.set(x, 5, 30, padCol);
+  }
+
+  // 2. ロードホイール（転輪 6 連）
+  const wheelCenters = [5, 9, 14, 19, 23, 27];
+  for (const cz of wheelCenters) {
+    const cy = 3;
+    const outerR = 2.5;
+    for (let z = cz - 2; z <= cz + 2; z++) {
+      for (let y = 1; y <= 5; y++) {
+        const d2 = (y - cy) ** 2 + (z - cz) ** 2;
+        if (d2 <= outerR * outerR) {
+          const col = d2 <= 1.0 ? hubCol : rimCol;
+          for (let x = 1; x < width - 1; x++) {
+            g.set(x, y, z, col);
+          }
+        }
+      }
+    }
+  }
+
+  // 3. サイドスカート装甲（履帯上部を保護する外装板）
+  const sideX = isLeft ? 0 : width - 1;
+  g.fillBox(sideX, 4, 1, sideX, 7, 30, armorCol);
+  // チームカラーの識別ストライプ（装甲板中央）
+  g.fillBox(sideX, 6, 4, sideX, 6, 28, teamColor);
+
+  return makeTemplate(g, 0.046, [width / 2, 0, length / 2]);
 }
 
 /** バギー用の円形ボクセル車輪パーツテンプレート */
@@ -1432,11 +1532,11 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
   let shin: VoxelPartTemplate;
 
   if (type.id === 'giant_tank') {
-    // 戦車（超巨大）の重装無限軌道ロードホイール
-    upperArm = buildWheelTemplate(5, 4);
-    forearm = buildWheelTemplate(5, 4);
-    thigh = buildWheelTemplate(6, 5);
-    shin = buildWheelTemplate(6, 5);
+    // 戦車（超巨大）の重装無限軌道ユニット（左右履帯・ロードホイール）
+    upperArm = buildTankTrackTemplate(tc.shirt, true);
+    forearm = buildTankTrackTemplate(tc.shirt, false);
+    thigh = buildWheelTemplate(4, 3);
+    shin = buildWheelTemplate(4, 3);
   } else if (type.id === 'giant_robot') {
     // 巨大ロボットの重装甲メカ四肢（ショルダーアーマー・ロケットナックル・ヘビーフット）
     upperArm = buildLimbTemplate(4, 7, 4, 0x495057, tc.shirt, 0.32);
@@ -1444,17 +1544,17 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     thigh = buildLimbTemplate(4, 8, 4, 0x343a40, 0x495057, 0.42);
     shin = buildLimbTemplate(4, 8, 5, 0x212529, tc.shirt, 0.43);
   } else if (type.id === 'buggy') {
-    // 暴走バギーの4輪タイヤ
-    upperArm = buildWheelTemplate(4, 3);
-    forearm = buildWheelTemplate(4, 3);
-    thigh = buildWheelTemplate(5, 4);
-    shin = buildWheelTemplate(5, 4);
+    // 暴走バギーの本格オフロード4輪タイヤ（前輪4x4、後輪5x5ワイド）
+    upperArm = buildBuggyWheelTemplate(tc.shirt, 4, 4);
+    forearm = buildBuggyWheelTemplate(tc.shirt, 4, 4);
+    thigh = buildBuggyWheelTemplate(tc.shirt, 5, 5);
+    shin = buildBuggyWheelTemplate(tc.shirt, 5, 5);
   } else if (type.id === 'anaconda') {
     // 巨大アナコンダの蛇身・尾
-    upperArm = buildLimbTemplate(4, 6, 4, 0xb7e4c7, type.look.skin, 0.28);
-    forearm = buildLimbTemplate(4, 6, 4, 0xb7e4c7, type.look.skin, 0.26);
-    thigh = buildLimbTemplate(4, 7, 4, 0xb7e4c7, type.look.skin, 0.38);
-    shin = buildLimbTemplate(3, 8, 3, 0xb7e4c7, type.look.skin, 0.42);
+    upperArm = buildLimbTemplate(3, 3, 3, 0xb7e4c7, type.look.skin, 0.2);
+    forearm = buildLimbTemplate(3, 3, 3, 0xb7e4c7, type.look.skin, 0.2);
+    thigh = buildLimbTemplate(6, 7, 6, 0xb7e4c7, type.look.skin, 0.38);
+    shin = buildLimbTemplate(5, 7, 5, 0xb7e4c7, type.look.skin, 0.36);
   } else if (type.id === 'dragon') {
     // ドラゴンのチームカラー翼と脚
     upperArm = buildWingTemplate(tc.shirt, 0xe6a122, 0.35);
@@ -1706,6 +1806,8 @@ const _fwd = new Vector3();
 const _quat = new Quaternion();
 const _localHit = new Vector3();
 const _voxelWorld = new Vector3();
+const _headPos = new Vector3();
+const _headUp = new Vector3();
 
 function makeMesh(geom: BufferGeometry, mat: MeshLambertMaterial, scale: number): Mesh {
   const m = new Mesh(geom, mat);
@@ -1724,6 +1826,14 @@ function placeLimb(mesh: Mesh, a: Vector3, b: Vector3): void {
   _dir.divideScalar(len);
   _quat.setFromUnitVectors(UP, _dir);
   mesh.quaternion.copy(_quat);
+}
+
+const _basisMat = new Matrix4();
+/** 直交基底 [right, up, fwd] からメッシュを配置・回転する（車両・戦車等用） */
+function placeBasisPart(mesh: Mesh, origin: Vector3, right: Vector3, up: Vector3, fwd: Vector3): void {
+  mesh.position.copy(origin);
+  _basisMat.makeBasis(right, up, fwd);
+  mesh.quaternion.setFromRotationMatrix(_basisMat);
 }
 
 /** 骨盤→胸のベクトルと肩の並びから、ねじれを含む直交基底でメッシュを配置する */
@@ -1833,6 +1943,37 @@ export class VoxelCharacterVisual {
   /** 物理粒子の現在位置に合わせて各ボクセルメッシュの座標・回転・発光色を更新する */
   sync(): void {
     const u = this.unit;
+    if (u.type.id === 'buggy') {
+      this.syncBuggy();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'giant_tank') {
+      this.syncTank();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'sezain') {
+      this.syncSezain();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'warelephant') {
+      this.syncWarelephant();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'anaconda') {
+      this.syncAnaconda();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'angel_ramiel') {
+      this.syncRamiel();
+      this.updateMaterialStatus();
+      return;
+    }
+
     const P = u.joints;
     const pelvis = P[J.Pelvis].pos;
     const chest = P[J.Chest].pos;
@@ -1844,7 +1985,10 @@ export class VoxelCharacterVisual {
     _dir.subVectors(chest, pelvis);
     placeOrientedPart(this.parts.torso.mesh, pelvis, _dir, shL, shR);
     _dir.subVectors(head, chest);
-    placeOrientedPart(this.parts.head.mesh, head, _dir, shL, shR);
+    // 頭部を首元にフィット配置（首浮き・デュラハン状態を解消）
+    _headUp.copy(_dir).normalize();
+    _headPos.copy(chest).addScaledVector(_headUp, 0.18 * u.scale);
+    placeOrientedPart(this.parts.head.mesh, _headPos, _dir, shL, shR);
 
     // スライムのスクワッシュ＆ストレッチ変形
     if (u.type.id === 'slime') {
@@ -1870,10 +2014,6 @@ export class VoxelCharacterVisual {
       if (u.weaponParticles.length === 2) {
         this.weaponMesh.visible = !this.parts.forearmR.destroyed;
         placeLimb(this.weaponMesh, P[J.HandR].pos, u.weaponParticles[1].pos);
-      } else if (u.type.id === 'sezain') {
-        this.weaponMesh.visible = !this.parts.forearmR.destroyed;
-        _dir.subVectors(chest, pelvis);
-        placeOrientedPart(this.weaponMesh, P[J.HandR].pos, _dir, shL, shR);
       }
     }
 
@@ -1896,7 +2036,314 @@ export class VoxelCharacterVisual {
       }
     }
 
-    // 被弾フラッシュ・感電・炎上発光と死亡時の暗転
+    this.updateMaterialStatus();
+  }
+
+  /** 暴走バギー専用の4輪オフロードビークル配置処理 */
+  private syncBuggy(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+
+    // 車体基底 [right, up, fwd]
+    _fwd.copy(u.forward).normalize();
+    _up.subVectors(P[J.Chest].pos, pelvis);
+    if (_up.lengthSq() < 1e-4) _up.copy(UP);
+    else _up.normalize();
+    _right.crossVectors(_up, _fwd).normalize();
+    _fwd.crossVectors(_right, _up).normalize();
+
+    // 1. 車体（Torso: シャーシ・カウル・ブルバー）
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    // 2. ルーフ・ロールケージ（Head: 車体上面に密着マウント）
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      const roofPos = _voxelWorld.copy(pelvis).addScaledVector(_up, 0.17 * s).addScaledVector(_fwd, 0.02 * s);
+      placeBasisPart(this.parts.head.mesh, roofPos, _right, _up, _fwd);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    // 3. 4輪オフロードタイヤ（左前・右前・左後・右後）
+    const trackHalfFwd = 0.36 * s;
+    const trackHalfRear = 0.38 * s;
+    const baseFwd = 0.30 * s;
+    const baseRear = -0.28 * s;
+    const wheelCenterYFwd = -0.20 * s;
+    const wheelCenterYRear = -0.16 * s;
+    const spinAngle = -u.walkPhase * 2.5;
+
+    const placeBuggyWheel = (part: DestructiblePart, x: number, z: number, yOff: number) => {
+      if (part.destroyed) {
+        part.mesh.visible = false;
+        return;
+      }
+      part.mesh.visible = true;
+      const pos = _voxelWorld.copy(pelvis)
+        .addScaledVector(_right, x)
+        .addScaledVector(_fwd, z)
+        .addScaledVector(_up, yOff);
+      placeBasisPart(part.mesh, pos, _right, _up, _fwd);
+      part.mesh.rotateX(spinAngle);
+    };
+
+    // 左前輪 (upperArmL) & 右前輪 (upperArmR)
+    placeBuggyWheel(this.parts.upperArmL, -trackHalfFwd, baseFwd, wheelCenterYFwd);
+    placeBuggyWheel(this.parts.upperArmR, trackHalfFwd, baseFwd, wheelCenterYFwd);
+    // 左後輪 (thighL) & 右後輪 (thighR) - ワイド大径
+    placeBuggyWheel(this.parts.thighL, -trackHalfRear, baseRear, wheelCenterYRear);
+    placeBuggyWheel(this.parts.thighR, trackHalfRear, baseRear, wheelCenterYRear);
+
+    // 不要パーツは完全非表示
+    this.parts.forearmL.mesh.visible = false;
+    this.parts.forearmR.mesh.visible = false;
+    this.parts.shinL.mesh.visible = false;
+    this.parts.shinR.mesh.visible = false;
+    if (this.weaponMesh) this.weaponMesh.visible = false;
+    if (this.bowMesh) this.bowMesh.visible = false;
+  }
+
+  /** 戦車（超巨大）専用の重装無限軌道・旋回砲塔配置処理 */
+  private syncTank(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+
+    // 車体基底 [right, up, fwd]
+    _fwd.copy(u.forward).normalize();
+    _up.subVectors(P[J.Chest].pos, pelvis);
+    if (_up.lengthSq() < 1e-4) _up.copy(UP);
+    else _up.normalize();
+    _right.crossVectors(_up, _fwd).normalize();
+    _fwd.crossVectors(_right, _up).normalize();
+
+    // 1. 車体（Torso: 重装甲シャーシ）
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    // 2. 砲塔（Head: 旋回砲塔・長大主砲）
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      const turretPos = _voxelWorld.copy(pelvis).addScaledVector(_up, 0.24 * s);
+      if (u.target && u.target.alive) {
+        _dir.subVectors(u.target.pelvis.pos, turretPos);
+        _dir.y = 0; // 水平旋回
+        if (_dir.lengthSq() > 1e-3) {
+          _dir.normalize();
+          const tRight = _localHit.crossVectors(_up, _dir).normalize();
+          placeBasisPart(this.parts.head.mesh, turretPos, tRight, _up, _dir);
+        } else {
+          placeBasisPart(this.parts.head.mesh, turretPos, _right, _up, _fwd);
+        }
+      } else {
+        placeBasisPart(this.parts.head.mesh, turretPos, _right, _up, _fwd);
+      }
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    // 3. 左右無限軌道（キャタピラユニット・完全接地）
+    const trackOffset = 0.46 * s;
+    const trackY = -0.36 * s;
+
+    // 左履帯 (upperArmL)
+    if (!this.parts.upperArmL.destroyed) {
+      this.parts.upperArmL.mesh.visible = true;
+      const posL = _voxelWorld.copy(pelvis).addScaledVector(_right, -trackOffset).addScaledVector(_up, trackY);
+      placeBasisPart(this.parts.upperArmL.mesh, posL, _right, _up, _fwd);
+    } else {
+      this.parts.upperArmL.mesh.visible = false;
+    }
+
+    // 右履帯 (upperArmR)
+    if (!this.parts.upperArmR.destroyed) {
+      this.parts.upperArmR.mesh.visible = true;
+      const posR = _voxelWorld.copy(pelvis).addScaledVector(_right, trackOffset).addScaledVector(_up, trackY);
+      placeBasisPart(this.parts.upperArmR.mesh, posR, _right, _up, _fwd);
+    } else {
+      this.parts.upperArmR.mesh.visible = false;
+    }
+
+    // 不要パーツは完全非表示
+    this.parts.forearmL.mesh.visible = false;
+    this.parts.forearmR.mesh.visible = false;
+    this.parts.thighL.mesh.visible = false;
+    this.parts.shinL.mesh.visible = false;
+    this.parts.thighR.mesh.visible = false;
+    this.parts.shinR.mesh.visible = false;
+    if (this.weaponMesh) this.weaponMesh.visible = false;
+    if (this.bowMesh) this.bowMesh.visible = false;
+  }
+
+  /** セザイン専用のバイカー＆バイク配置処理（首浮き解消・接地） */
+  private syncSezain(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+    const shL = P[J.ShoulderL].pos;
+    const shR = P[J.ShoulderR].pos;
+
+    _dir.subVectors(chest, pelvis);
+    placeOrientedPart(this.parts.torso.mesh, pelvis, _dir, shL, shR);
+
+    // ヘルメット（Head）を首元にフィット配置（首浮き完全解消）
+    _dir.subVectors(P[J.Head].pos, chest);
+    const headPos = _voxelWorld.copy(chest).addScaledVector(UP, 0.12 * s).addScaledVector(u.forward, 0.05 * s);
+    placeOrientedPart(this.parts.head.mesh, headPos, _dir, shL, shR);
+
+    // ライダーの四肢
+    placeLimb(this.parts.upperArmL.mesh, shL, P[J.ElbowL].pos);
+    placeLimb(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos);
+    placeLimb(this.parts.upperArmR.mesh, shR, P[J.ElbowR].pos);
+    placeLimb(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos);
+    placeLimb(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos);
+    placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
+    placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
+    placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
+
+    if (this.weaponMesh) {
+      this.weaponMesh.visible = !this.parts.forearmR.destroyed;
+      _dir.subVectors(chest, pelvis);
+      placeOrientedPart(this.weaponMesh, P[J.HandR].pos, _dir, shL, shR);
+    }
+  }
+
+  /** 鎧戦象専用の4本脚・象頭部配置処理 */
+  private syncWarelephant(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+    const shL = P[J.ShoulderL].pos;
+    const shR = P[J.ShoulderR].pos;
+
+    // 象の背骨方向（水平前方向）と上方向
+    _fwd.subVectors(chest, pelvis).normalize();
+    if (_fwd.lengthSq() < 1e-4) _fwd.copy(u.forward);
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+    _up.crossVectors(_fwd, _right).normalize();
+
+    // 胴体
+    placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+
+    // 象の頭部・長い鼻・大きな牙を胴体前面に自然にマウント
+    const headPos = _voxelWorld.copy(chest).addScaledVector(_fwd, 0.28 * s).addScaledVector(_up, 0.08 * s);
+    placeBasisPart(this.parts.head.mesh, headPos, _right, _up, _fwd);
+
+    // 象の4本脚（前脚2本、後脚2本）
+    placeLimb(this.parts.upperArmL.mesh, shL, P[J.ElbowL].pos);
+    placeLimb(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos);
+    placeLimb(this.parts.upperArmR.mesh, shR, P[J.ElbowR].pos);
+    placeLimb(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos);
+    placeLimb(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos);
+    placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
+    placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
+    placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
+  }
+
+  /** 巨大アナコンダ: 蛇頭・大蛇の這い胴体・うねる尾節の完全同期 */
+  private syncAnaconda(): void {
+    const u = this.unit;
+    const P = u.joints;
+
+    const head = P[J.Head].pos;
+    const chest = P[J.Chest].pos;
+    const pelvis = P[J.Pelvis].pos;
+    const hipL = P[J.HipL].pos;
+    const kneeL = P[J.KneeL].pos;
+    const footL = P[J.FootL].pos;
+    const hipR = P[J.HipR].pos;
+
+    // 蛇頭（Head）: 首（Chest）から前方へ
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      _dir.subVectors(head, chest);
+      if (_dir.lengthSq() < 1e-6) _dir.copy(u.forward);
+      _dir.normalize();
+      _right.crossVectors(_dir, UP).normalize();
+      if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+      _up.crossVectors(_right, _dir).normalize();
+      const headPos = _voxelWorld.copy(chest).addScaledVector(_dir, 0.16 * u.scale);
+      placeBasisPart(this.parts.head.mesh, headPos, _right, _up, _dir);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    // 前胴（Torso）: 骨盤から胸へ
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      _dir.subVectors(chest, pelvis);
+      if (_dir.lengthSq() < 1e-6) _dir.copy(u.forward);
+      _dir.normalize();
+      _right.crossVectors(_dir, UP).normalize();
+      if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+      _up.crossVectors(_right, _dir).normalize();
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _dir);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    // 蛇腹セグメントの直列連結（大蛇のうねる身体）
+    placeLimb(this.parts.thighL.mesh, pelvis, hipL);
+    placeLimb(this.parts.shinL.mesh, hipL, kneeL);
+    placeLimb(this.parts.thighR.mesh, kneeL, footL);
+    placeLimb(this.parts.shinR.mesh, footL, hipR);
+
+    // 蛇に腕はないので非表示
+    this.parts.upperArmL.mesh.visible = false;
+    this.parts.forearmL.mesh.visible = false;
+    this.parts.upperArmR.mesh.visible = false;
+    this.parts.forearmR.mesh.visible = false;
+  }
+
+  /** 幾何神ラミエル: 浮遊する完全な正八面体結晶ボディ（四肢非表示） */
+  private syncRamiel(): void {
+    const u = this.unit;
+    const pelvis = u.pelvis.pos;
+
+    // 完全な正八面体（Torso）を Pelvis に水平配置
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      _fwd.copy(u.forward).normalize();
+      _right.crossVectors(UP, _fwd).normalize();
+      if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+      _up.crossVectors(_fwd, _right).normalize();
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    // 正八面体結晶に手足や頭部は不要なので非表示
+    this.parts.head.mesh.visible = false;
+    this.parts.upperArmL.mesh.visible = false;
+    this.parts.forearmL.mesh.visible = false;
+    this.parts.upperArmR.mesh.visible = false;
+    this.parts.forearmR.mesh.visible = false;
+    this.parts.thighL.mesh.visible = false;
+    this.parts.shinL.mesh.visible = false;
+    this.parts.thighR.mesh.visible = false;
+    this.parts.shinR.mesh.visible = false;
+  }
+
+  /** 被弾フラッシュ・感電・炎上発光と死亡時の暗転マテリアル更新 */
+  private updateMaterialStatus(): void {
+    const u = this.unit;
     if (u.hitFlash > 0) {
       this.material.emissive.setRGB(u.hitFlash * 0.7, u.hitFlash * 0.15, u.hitFlash * 0.1);
     } else if (u.shockTimer > 0) {

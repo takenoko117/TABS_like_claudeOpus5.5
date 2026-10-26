@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voxel Model Previewer</title>
+    <style>
+      body, html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #1a1a24;
+        font-family: sans-serif;
+      }
+      #viewport {
+        width: 100%;
+        height: 100%;
+      }
+      #ui {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        background: rgba(20, 24, 35, 0.85);
+        color: #fff;
+        padding: 12px 16px;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        z-index: 10;
+        font-size: 13px;
+      }
+      select, button {
+        padding: 6px 10px;
+        background: #2d3748;
+        color: #fff;
+        border: 1px solid #4a5568;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      select:focus, button:focus {
+        outline: none;
+        border-color: #63b3ed;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui">
+      <div>
+        <label>Unit: </label>
+        <select id="unit-select"></select>
+      </div>
+      <div>
+        <label>Angle: </label>
+        <select id="angle-select">
+          <option value="iso">斜め（ISO）</option>
+          <option value="side">側面（Side）</option>
+          <option value="front">正面（Front）</option>
+          <option value="top">上面（Top）</option>
+          <option value="rear">背面（Rear）</option>
+        </select>
+      </div>
+      <div>
+        <label>Mode: </label>
+        <select id="mode-select">
+          <option value="idle">待機（Idle）</option>
+          <option value="move">移動（Move）</option>
+        </select>
+      </div>
+    </div>
+    <div id="viewport"></div>
+    <script type="module" src="/src/preview.ts"></script>
+  </body>
+</html>
