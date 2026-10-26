@@ -564,7 +564,8 @@ export class Unit {
       st === 'sahaquiel_drop' ||
       st === 'dual_minigun' ||
       st === 'eruption' ||
-      st === 'piano_performance'
+      st === 'piano_performance' ||
+      st === 'dragon_twister'
     ) {
       return this.type.range;
     }
@@ -610,7 +611,8 @@ export class Unit {
       st === 'sahaquiel_drop' ||
       st === 'dual_minigun' ||
       st === 'eruption' ||
-      st === 'piano_performance'
+      st === 'piano_performance' ||
+      st === 'dragon_twister'
     ) {
       return this.type.range;
     }
@@ -649,6 +651,8 @@ export class Unit {
       ctx.combat.emitEffect({ kind: 'dragon_roar', pos: this.head.pos.clone() });
     } else if (id === 'anaconda') {
       ctx.combat.emitEffect({ kind: 'anaconda_hiss', pos: this.head.pos.clone() });
+    } else if (id === 'zaisan') {
+      ctx.combat.emitEffect({ kind: 'dragon_charge', pos: this.pelvis.pos.clone(), team: this.team });
     }
   }
 
@@ -668,7 +672,8 @@ export class Unit {
       this.type.id === 'giant_tank' ||
       this.type.id === 'giant_robot' ||
       this.type.id === 'yamamuron' ||
-      this.type.id === 'sezain'
+      this.type.id === 'sezain' ||
+      this.type.id === 'zaisan'
         ? 0.16
         : 0.3;
     if (this.muscle < minMuscle) {
@@ -738,6 +743,33 @@ export class Unit {
     const t = this.target;
     const fac = this.targetFacility;
     const st = this.type.style;
+
+    if (st === 'dragon_twister') {
+      let dir = new Vector3().copy(this.forward);
+      if (t && t.alive) {
+        dir.subVectors(t.pelvis.pos, this.pelvis.pos).setY(0);
+        if (dir.lengthSq() > 1e-4) dir.normalize();
+        else dir.copy(this.forward);
+      } else if (fac && fac.alive) {
+        dir.subVectors(fac.pos, this.pelvis.pos).setY(0);
+        if (dir.lengthSq() > 1e-4) dir.normalize();
+        else dir.copy(this.forward);
+      }
+      this.forward.copy(dir);
+      const dashSpeed = 16.0;
+      const boost = dir.clone().multiplyScalar(dashSpeed);
+      boost.y = 1.2;
+      for (const p of this.joints) p.addVelocity(boost, dt);
+      for (const wp of this.weaponParticles) wp.addVelocity(boost, dt);
+      ctx.combat.emitEffect({
+        kind: 'dragon_slash',
+        pos: this.pelvis.pos.clone(),
+        dir: dir.clone(),
+        roll: 0,
+        team: this.team,
+      });
+      return;
+    }
 
     if (st === 'bow') {
       if (t && t.alive) {
@@ -1308,6 +1340,88 @@ export class Unit {
         if (t.alive && t.scale <= 1.25) {
           this.grabbedUnit = t;
           this.grabTimer = 1.15;
+        }
+      }
+    } else if (st === 'dragon_twister') {
+      this.subAttackTimer -= dt;
+      // 突進方向の維持＆誘導（敵または前進方向）
+      let dir = new Vector3().copy(this.forward);
+      if (t && t.alive) {
+        dir.subVectors(t.pelvis.pos, this.pelvis.pos).setY(0);
+        if (dir.lengthSq() > 1e-4) dir.normalize();
+        else dir.copy(this.forward);
+      } else if (this.targetFacility && this.targetFacility.alive) {
+        dir.subVectors(this.targetFacility.pos, this.pelvis.pos).setY(0);
+        if (dir.lengthSq() > 1e-4) dir.normalize();
+        else dir.copy(this.forward);
+      }
+      this.forward.copy(dir);
+
+      // 高速推進力（低空を突進する）
+      const dashSpeed = 16.5;
+      const boost = dir.clone().multiplyScalar(dashSpeed * dt * 4.0);
+      boost.y += GRAVITY * dt * 0.45;
+      for (const p of this.joints) p.addVelocity(boost, dt);
+      for (const wp of this.weaponParticles) wp.addVelocity(boost, dt);
+
+      // 定期エフェクト（きりもみ回転ドラゴン）
+      if (this.subAttackTimer <= 0) {
+        this.subAttackTimer = 0.07;
+        const roll = (this.phaseTime / this.type.strike) * Math.PI * 12;
+        ctx.combat.emitEffect({
+          kind: 'dragon_slash',
+          pos: this.chest.pos.clone(),
+          dir: dir.clone(),
+          roll,
+          team: this.team,
+        });
+      }
+
+      // 周囲の敵への三刀流多段ヒット判定
+      const hitRadius = 2.3 * this.scale;
+      const myPos = this.chest.pos;
+      for (const u of ctx.units) {
+        if (!u.alive || u.team === this.team) continue;
+        const diff = _tmp.subVectors(u.chest.pos, myPos);
+        const distSq = diff.lengthSq();
+        if (distSq <= (hitRadius + u.bodyRadius) ** 2) {
+          if (this.canHit(u)) {
+            this.registerHit(u, 0.18);
+            const dmg = (36 + Math.random() * 8) * this.damageMul;
+            const impulse = dir.clone().multiplyScalar(7.5).add(new Vector3(0, 3.8, 0));
+            const killed = u.takeDamage(dmg, u.chest, impulse, dt, this);
+            ctx.combat.emitEffect({ kind: 'dragon_slash_hit', pos: u.chest.pos.clone() });
+            ctx.combat.onHit?.({
+              kind: 'slash',
+              point: u.chest.pos.clone(),
+              damage: dmg,
+              attacker: this,
+              victim: u,
+              hitParticle: u.chest,
+              impulse,
+              killed,
+            });
+          }
+        }
+      }
+
+      // 施設への三刀流ヒット判定
+      if (ctx.facilities) {
+        for (const f of ctx.facilities) {
+          if (!f.alive || f.team === this.team) continue;
+          const d = f.pos.distanceTo(myPos);
+          if (d <= hitRadius + f.radius) {
+            if (this.canHitFacility(f.id)) {
+              this.registerFacilityHit(f.id, 0.2);
+              const dmg = (45 + Math.random() * 10) * this.damageMul;
+              const killed = f.takeDamage(dmg, this);
+              ctx.combat.emitEffect({ kind: 'dragon_slash_hit', pos: f.pos.clone() });
+              ctx.combat.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: dmg });
+              if (killed) {
+                ctx.combat.emitEffect({ kind: 'facility_destroy', pos: f.pos.clone(), team: f.team, radius: f.radius });
+              }
+            }
+          }
         }
       }
     }
@@ -2201,6 +2315,40 @@ export class Unit {
         lp[J.HandR].set(0.2, 0.16 + keyR, 0.38);
         lp[J.Head].z += Math.sin(this.phaseTime * 16) * 0.08;
         twist = Math.sin(this.phaseTime * 8) * 0.15;
+      }
+    } else if (style === 'dragon_twister') {
+      if (phase === 'windup') {
+        // 低く身構える三刀流の溜め構え
+        lp[J.Chest].set(0, 0.22, 0.08);
+        lp[J.Head].set(0, 0.45, 0.22);
+        lp[J.HandL].set(-0.18, 0.22, 0.38);
+        lp[J.ElbowL].set(-0.28, 0.25, 0.18);
+        lp[J.HandR].set(0.18, 0.22, 0.38);
+        lp[J.ElbowR].set(0.28, 0.25, 0.18);
+        lp[J.HipL].set(-0.16, -0.05, -0.05);
+        lp[J.HipR].set(0.16, -0.05, -0.05);
+      } else if (phase === 'strike') {
+        // 前方へ突き進むきりもみ高速回転ポーズ（Z軸まわりの回転）
+        const roll = (this.phaseTime / this.type.strike) * Math.PI * 12;
+        const c = Math.cos(roll);
+        const s = Math.sin(roll);
+        lp[J.HandR].set(0.42 * c, 0.42 * s + 0.3, 0.58);
+        lp[J.ElbowR].set(0.26 * c, 0.26 * s + 0.3, 0.28);
+        lp[J.HandL].set(-0.42 * c, -0.42 * s + 0.3, 0.58);
+        lp[J.ElbowL].set(-0.26 * c, -0.26 * s + 0.3, 0.28);
+        lp[J.ShoulderR].set(0.2 * c, 0.2 * s + 0.32, 0.08);
+        lp[J.ShoulderL].set(-0.2 * c, -0.2 * s + 0.32, 0.08);
+        lp[J.Head].set(-0.06 * s, 0.06 * c + 0.55, 0.32);
+        lp[J.FootL].set(-0.15 * c, -0.15 * s - 0.46, -0.08);
+        lp[J.FootR].set(0.15 * c, 0.15 * s - 0.46, -0.08);
+      } else if (phase === 'recover') {
+        // 斬り抜けた後の残心ポーズ
+        lp[J.HandR].set(0.32, 0.35, 0.25);
+        lp[J.ElbowR].set(0.28, 0.32, 0.1);
+        lp[J.HandL].set(-0.32, 0.35, 0.25);
+        lp[J.ElbowL].set(-0.28, 0.32, 0.1);
+        lp[J.Chest].set(0, 0.28, 0.05);
+        lp[J.Head].set(0, 0.58, 0.1);
       }
     }
 

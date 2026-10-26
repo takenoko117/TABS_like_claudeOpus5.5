@@ -1359,6 +1359,83 @@ export class SoundManager {
         osc.stop(t + 0.2);
         break;
       }
+      case 'dragon_charge': {
+        if (!this.throttle('drg_chg', 120)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.exponentialRampToValueAtTime(1760, t + 0.15);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.25);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(300, t);
+        bp.frequency.exponentialRampToValueAtTime(900, t + 0.35);
+        bp.Q.setValueAtTime(3.0, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.25, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.4);
+        break;
+      }
+      case 'dragon_slash': {
+        if (!this.throttle('drg_slsh', 80)) return;
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(1200, t);
+        bp.frequency.exponentialRampToValueAtTime(500, t + 0.18);
+        bp.Q.setValueAtTime(2.0, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.35, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.22);
+
+        const roar = ctx.createOscillator();
+        const rg = ctx.createGain();
+        roar.type = 'sawtooth';
+        roar.frequency.setValueAtTime(140, t);
+        roar.frequency.exponentialRampToValueAtTime(60, t + 0.22);
+        rg.gain.setValueAtTime(0.28, t);
+        rg.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+        roar.connect(rg);
+        rg.connect(this.masterGain);
+        roar.start(t);
+        roar.stop(t + 0.26);
+        break;
+      }
+      case 'dragon_slash_hit': {
+        if (!this.throttle('drg_hit', 50)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(520, t);
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.12);
+        g.gain.setValueAtTime(0.32, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.15);
+        break;
+      }
     }
   }
 }

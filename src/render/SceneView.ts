@@ -1549,6 +1549,79 @@ export class SceneView {
         }
         break;
       }
+      case 'dragon_charge': {
+        // ザイサンの溜め: 足元から螺旋状に立ち昇る翠龍の気流・オーラ
+        const count = 18;
+        for (let i = 0; i < count; i++) {
+          const ang = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+          const r = 0.5 + Math.random() * 0.7;
+          const p = e.pos.clone().add(new Vector3(Math.cos(ang) * r, 0.05, Math.sin(ang) * r));
+          const vel = new Vector3(-Math.sin(ang) * 2.2 - Math.cos(ang) * 0.8, 2.5 + Math.random() * 2.5, Math.cos(ang) * 2.2 - Math.sin(ang) * 0.8);
+          const col = i % 3 === 0 ? 0x10b981 : i % 3 === 1 ? 0x34d399 : 0xfbbf24;
+          this.pushFxParticle(p, vel, col, 0.16, 0.45 + Math.random() * 0.2, -1.0);
+        }
+        break;
+      }
+      case 'dragon_slash': {
+        // ザイサンのきりもみ回転突進＆ドラゴンエフェクト
+        const fwd = e.dir.clone().normalize();
+        const up = new Vector3(0, 1, 0);
+        const right = new Vector3().crossVectors(fwd, up).normalize();
+        const normUp = new Vector3().crossVectors(right, fwd).normalize();
+
+        // 1. 先端の巨大な翠龍の頭部（龍の眼光・角・牙）
+        const headPos = e.pos.clone().addScaledVector(fwd, 0.85);
+        for (const side of [-1, 1]) {
+          const eyeOffset = right.clone().multiplyScalar(side * 0.35).addScaledVector(normUp, 0.25);
+          const eyeP = headPos.clone().add(eyeOffset);
+          this.pushFxParticle(eyeP, fwd.clone().multiplyScalar(6.0), 0xfde047, 0.24, 0.25, 0);
+        }
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          const r = 0.45;
+          const p = headPos.clone().addScaledVector(right, Math.cos(ang) * r).addScaledVector(normUp, Math.sin(ang) * r);
+          const vel = fwd.clone().multiplyScalar(5.5).add(new Vector3((Math.random() - 0.5) * 1.5, Math.random() * 1.5, (Math.random() - 0.5) * 1.5));
+          this.pushFxParticle(p, vel, i % 2 === 0 ? 0x059669 : 0x34d399, 0.22, 0.3, 1.0);
+        }
+
+        // 2. きりもみ回転する三刀流スパイラル光輪（3つの刃の軌跡）
+        const roll = e.roll;
+        for (let blade = 0; blade < 3; blade++) {
+          const bladeAng = roll + (blade * Math.PI * 2) / 3;
+          const cosB = Math.cos(bladeAng);
+          const sinB = Math.sin(bladeAng);
+          const rBlade = 1.35;
+          const bladePos = e.pos.clone().addScaledVector(right, cosB * rBlade).addScaledVector(normUp, sinB * rBlade);
+          const tanDir = right.clone().multiplyScalar(-sinB * 7.0).addScaledVector(normUp, cosB * 7.0).addScaledVector(fwd, -2.5);
+          this.pushFxParticle(bladePos, tanDir, blade === 0 ? 0xf8fafc : blade === 1 ? 0x34d399 : 0x10b981, 0.2, 0.22, 0.5);
+        }
+
+        // 3. 龍の身体・尾の螺旋トレイル（後方に残る翡翠色のウロコ光球）
+        for (let i = 0; i < 4; i++) {
+          const tailOffset = (i + 1) * 0.4;
+          const tailRoll = roll - tailOffset * 3.5;
+          const tailP = e.pos.clone().addScaledVector(fwd, -tailOffset)
+            .addScaledVector(right, Math.cos(tailRoll) * 0.6)
+            .addScaledVector(normUp, Math.sin(tailRoll) * 0.6);
+          const col = i % 2 === 0 ? 0x10b981 : 0x6ee7b7;
+          this.pushFxParticle(tailP, fwd.clone().multiplyScalar(-1.5), col, 0.18 - i * 0.02, 0.35, 0.5);
+        }
+        break;
+      }
+      case 'dragon_slash_hit': {
+        // 三刀流斬撃直撃時の翡翠＆白銀クロススラッシュ火花
+        for (let i = 0; i < 16; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 8.0, 1.5 + Math.random() * 6.0, (Math.random() - 0.5) * 8.0);
+          const col = i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0x34d399 : 0x10b981;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.15, 0.3 + Math.random() * 0.2, 3.0);
+        }
+        for (let i = 0; i < 3; i++) {
+          const ang = (i / 3) * Math.PI;
+          const dir = new Vector3(Math.cos(ang), Math.sin(ang), (Math.random() - 0.5) * 0.5).normalize();
+          this.pushDroppedVoxel(e.pos.clone(), dir.multiplyScalar(6.0), 0x34d399, 0.06);
+        }
+        break;
+      }
     }
   }
 

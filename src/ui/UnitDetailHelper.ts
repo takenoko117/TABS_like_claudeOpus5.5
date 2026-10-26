@@ -20,6 +20,7 @@ export function getAttackDamageDisplay(ut: UnitType): string {
   if (ut.id === 'sezain') return `${ut.projectile?.damage ?? 10} × 両手連射`;
   if (ut.id === 'yamamuron') return `${ut.projectile?.damage ?? 120} (噴火爆発)`;
   if (ut.id === 'hongon') return '24 × 音楽波動';
+  if (ut.id === 'zaisan') return '38 × 3連回転斬撃';
   if (ut.projectile) {
     if (ut.id === 'minigunner') return `${ut.projectile.damage} × 連射`;
     if (ut.id === 'ninja') return `${ut.projectile.damage} × 3`;

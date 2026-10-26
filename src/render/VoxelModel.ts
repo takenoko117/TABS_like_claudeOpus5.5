@@ -228,6 +228,54 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.045, [4.5, 4.0, 4.5]);
   }
 
+  if (type.id === 'zaisan') {
+    // ザイサン: 深緑の短髪＋額の黒バンダナ＋左目刀傷＋口にくわえた三本目の日本刀！
+    const g = new VoxelGrid(16, 10, 11);
+    const skin = type.look.skin;
+    const zoroGreen = 0x16a34a;
+    const darkGreen = 0x14532d;
+    const bandana = 0x18181b;
+
+    // 頭部肌
+    g.fillBox(5, 1, 2, 11, 7, 7, skin);
+
+    // 目元（鋭い眼光＋左目の刀傷縦ライン）
+    g.fillBox(6, 4, 8, 7, 5, 8, eyeWhite);
+    g.fillBox(9, 4, 8, 10, 5, 8, eyeWhite);
+    g.set(6, 4, 8, pupil);
+    g.set(10, 4, 8, pupil);
+    // 左目の刀傷
+    g.set(6, 3, 8, 0x831843);
+    g.set(6, 5, 8, 0x831843);
+    g.set(6, 6, 8, 0x831843);
+
+    // 深緑の短髪
+    g.fillBox(4, 3, 1, 4, 8, 7, zoroGreen);
+    g.fillBox(12, 3, 1, 12, 8, 7, zoroGreen);
+    g.fillBox(5, 2, 1, 11, 8, 1, zoroGreen);
+    g.fillBox(5, 8, 1, 11, 9, 8, zoroGreen);
+    g.fillBox(5, 7, 8, 11, 8, 8, darkGreen);
+
+    // 黒バンダナ（額当て）
+    g.fillBox(5, 6, 2, 11, 6, 8, bandana);
+    g.fillBox(4, 6, 2, 4, 6, 7, bandana);
+    g.fillBox(12, 6, 2, 12, 6, 7, bandana);
+
+    // 口元にくわえた3本目の刀（横一文字に構える）
+    g.fillBox(7, 2, 7, 9, 2, 7, skin); // 口元
+    // 柄（右側）
+    g.fillBox(3, 2, 8, 6, 2, 8, bandana);
+    g.set(2, 2, 8, 0xd4af37); // 柄頭
+    // 鍔
+    g.fillBox(7, 1, 8, 7, 3, 8, 0xd4af37);
+    // 刀身（左側に長く伸びる白銀の刃）
+    g.fillBox(8, 2, 8, 15, 2, 8, 0xf4f8ff);
+    g.fillBox(8, 1, 8, 14, 1, 8, 0xc8d2e0);
+    g.set(15, 2, 8, 0xf4f8ff); // 切先
+
+    return makeTemplate(g, 0.04, [8, 4.0, 4.5]);
+  }
+
   // 1. 鎧戦象の頭部（大きな耳・兜・長い鼻）
   if (type.id === 'warelephant') {
     const g = new VoxelGrid(13, 11, 12);
@@ -1057,6 +1105,22 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(0, 4, 1, 2, 11, 6, tc.shirt);
     g.fillBox(7, 4, 1, 9, 11, 6, tc.shirt);
     g.fillBox(0, 1, 0, 1, 3, 7, 0x181820);
+  } else if (type.id === 'zaisan') {
+    // ザイサン: 深緑の羽織＋胸元の筋肉＋腰の赤い腹巻き＋左腰の三連鞘
+    g.fillBox(0, 4, 1, 2, 11, 6, 0x14532d);
+    g.fillBox(7, 4, 1, 9, 11, 6, 0x14532d);
+    g.fillBox(1, 4, 0, 8, 11, 1, 0x14532d);
+    // 胸元の筋肉露出
+    g.fillBox(3, 7, 6, 6, 11, 6, look.skin);
+    // 赤い腹巻き
+    g.fillBox(0, 1, 1, 9, 3, 6, 0xb91c1c);
+    // 左腰に差した三連鞘（黒＋金金具）
+    g.fillBox(0, 1, 0, 1, 2, 7, 0x181820);
+    g.fillBox(0, 2, 1, 1, 3, 8, 0x27272a);
+    g.fillBox(0, 0, 1, 1, 1, 7, 0x181820);
+    g.set(0, 2, 7, 0xd4af37);
+    g.set(0, 3, 8, 0xd4af37);
+    g.set(0, 1, 7, 0xd4af37);
   } else if (type.id === 'ninja') {
     // 首元の赤いマフラーと背中の忍刀
     g.fillBox(1, 10, 1, 8, 11, 7, tc.shirt);
@@ -1321,6 +1385,9 @@ function buildOffhandGeometry(type: UnitType, team: Team): BufferGeometry | null
   if (type.id === 'sezain') {
     return buildSubmachineGunGeometry(team);
   }
+  if (type.id === 'zaisan') {
+    return buildWeaponGeometry('katana', 1.15, team);
+  }
   return null;
 }
 
@@ -1418,6 +1485,12 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm = buildLimbTemplate(3, 6, 3, 0xffffff, 0x18181b, 0.26);
     thigh = buildLimbTemplate(3, 7, 3, 0x18181b, 0x18181b, 0.38);
     shin = buildLimbTemplate(3, 7, 3, 0x09090b, 0x18181b, 0.38);
+  } else if (type.id === 'zaisan') {
+    // ザイサン: 羽織の袖・手甲と黒袴
+    upperArm = buildLimbTemplate(3, 7, 3, type.look.skin, 0x14532d, 0.29);
+    forearm = buildLimbTemplate(3, 6, 3, 0x18181b, type.look.skin, 0.26);
+    thigh = buildLimbTemplate(4, 8, 4, 0x14532d, 0x14532d, 0.41);
+    shin = buildLimbTemplate(4, 8, 4, 0x18181b, 0x14532d, 0.4);
   } else {
     upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
@@ -1804,14 +1877,22 @@ export class VoxelCharacterVisual {
       }
     }
 
-    // 弓・銃・ガトリング・重力球・大盾（左前腕が破壊されたら非表示）
+    // 弓・銃・ガトリング・重力球・大盾・左手武器（左前腕が破壊されたら非表示）
     if (this.bowMesh) {
       this.bowMesh.visible = !this.parts.forearmL.destroyed;
-      _dir.subVectors(chest, pelvis);
-      const anchorPos = u.shieldParticle ? u.shieldParticle.pos : P[J.HandL].pos;
-      placeOrientedPart(this.bowMesh, anchorPos, _dir, shL, shR);
-      if (u.type.id === 'minigunner') {
-        this.bowMesh.rotateZ(u.barrelSpin);
+      if (u.type.id === 'zaisan') {
+        _dir.subVectors(P[J.HandL].pos, P[J.ElbowL].pos);
+        if (_dir.lengthSq() > 1e-4) _dir.normalize();
+        else _dir.set(0, 0, 1);
+        const tipPos = P[J.HandL].pos.clone().addScaledVector(_dir, 1.15 * u.scale);
+        placeLimb(this.bowMesh, P[J.HandL].pos, tipPos);
+      } else {
+        _dir.subVectors(chest, pelvis);
+        const anchorPos = u.shieldParticle ? u.shieldParticle.pos : P[J.HandL].pos;
+        placeOrientedPart(this.bowMesh, anchorPos, _dir, shL, shR);
+        if (u.type.id === 'minigunner') {
+          this.bowMesh.rotateZ(u.barrelSpin);
+        }
       }
     }
 

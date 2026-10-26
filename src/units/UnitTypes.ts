@@ -36,7 +36,8 @@ export type AttackStyle =
   | 'sahaquiel_drop'
   | 'dual_minigun'
   | 'eruption'
-  | 'piano_performance';
+  | 'piano_performance'
+  | 'dragon_twister';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical' | 'divine';
@@ -113,7 +114,8 @@ export type UnitTypeId =
   | 'angel_sahaquiel'
   | 'sezain'
   | 'yamamuron'
-  | 'hongon';
+  | 'hongon'
+  | 'zaisan';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -945,6 +947,40 @@ giant_robot: {
     strikeImpulse: 0,
     look: { skin: 0xf0c39c, hair: 0xd0d5dd, helmet: null, hood: null, armor: 0x18181b, beard: null },
   },
+  zaisan: {
+    id: 'zaisan',
+    name: 'ザイサン',
+    category: 'japanese',
+    description: '両手と口に刀を構えた不屈の三刀流剣士。猛烈なきりもみ回転で翠龍の気を纏って突進し、敵陣を三連回転斬りで切り刻む。',
+    cost: 380,
+    scale: 1.12,
+    massMul: 1.35,
+    hp: 460,
+    speed: 2.85,
+    style: 'dragon_twister',
+    weapon: {
+      kind: 'katana',
+      length: 1.15,
+      tipMass: 0.8,
+      midMass: 0.4,
+      tipRadius: 0.12,
+      damage: 38,
+      minHitSpeed: 2.2,
+      refSpeed: 6.0,
+      knockback: 7,
+      idleDir: [0.3, 0.6, 0.7],
+      windupDir: [-0.4, 0.7, -0.5],
+      strikeDir: [0.8, -0.2, 0.8],
+    },
+    projectile: null,
+    range: 11.5,
+    windup: 0.42,
+    strike: 0.68,
+    recover: 0.35,
+    cooldown: 1.3,
+    strikeImpulse: 12.0,
+    look: { skin: 0xf0c39c, hair: 0x16a34a, helmet: null, hood: null, armor: 0x14532d, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -980,4 +1016,5 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.sezain,
   UNIT_TYPES.yamamuron,
   UNIT_TYPES.hongon,
+  UNIT_TYPES.zaisan,
 ];

@@ -694,6 +694,44 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <line x1="29.5" y1="4.5" x2="29.5" y2="0" stroke="#06b6d4" stroke-width="1.2"/>
         <line x1="24" y1="1.5" x2="30" y2="0" stroke="#06b6d4" stroke-width="1.5"/>
       </svg>`;
+    case 'zaisan':
+      // ザイサン: 三刀流剣士（口と両手の刀）＋深緑の短髪・黒バンダナ＋翡翠のドラゴンオーラ
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 背景の翡翠龍の螺旋オーラ -->
+        <path d="M 4,32 Q 2,18 12,8 Q 22,-2 32,10 Q 36,22 28,30" fill="none" stroke="#10b981" stroke-width="2.5" opacity="0.35"/>
+        <path d="M 8,30 Q 8,14 20,8 Q 30,8 30,22" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.6"/>
+        <!-- 龍の眼光（オーラ） -->
+        <circle cx="28" cy="8" r="1.5" fill="#fde047"/>
+        <!-- 交差する刀1（左手刀：左下から右上へ） -->
+        <line x1="3" y1="33" x2="29" y2="5" stroke="#18181b" stroke-width="2.5"/>
+        <line x1="10" y1="26" x2="31" y2="3" stroke="#f1f5f9" stroke-width="1.8"/>
+        <rect x="8" y="24" width="3" height="3" fill="#d4af37" transform="rotate(-45 9.5 25.5)"/>
+        <!-- 交差する刀2（右手刀：右下から左上へ） -->
+        <line x1="33" y1="33" x2="7" y2="5" stroke="#18181b" stroke-width="2.5"/>
+        <line x1="26" y1="26" x2="5" y2="3" stroke="#f1f5f9" stroke-width="1.8"/>
+        <rect x="25" y="24" width="3" height="3" fill="#d4af37" transform="rotate(45 26.5 25.5)"/>
+        <!-- 胴体＆赤い腹巻き -->
+        <path d="M 12,25 L 14,34 L 22,34 L 24,25 Z" fill="#14532d"/>
+        <rect x="13" y="27" width="10" height="3.5" fill="#b91c1c" rx="0.5"/>
+        <!-- 頭部（肌・髪・バンダナ） -->
+        <circle cx="18" cy="17" r="5" fill="#f0c39c"/>
+        <path d="M 13,15 Q 18,10 23,15 L 23,12 Q 18,9 13,12 Z" fill="#16a34a"/>
+        <!-- 黒バンダナ -->
+        <rect x="13" y="14" width="10" height="2.5" rx="0.5" fill="#18181b"/>
+        <!-- 鋭い目＆左目刀傷 -->
+        <line x1="15" y1="17.5" x2="16.5" y2="18" stroke="#18181b" stroke-width="1"/>
+        <line x1="19.5" y1="18" x2="21" y2="17.5" stroke="#18181b" stroke-width="1"/>
+        <line x1="15.8" y1="16.5" x2="15.8" y2="19.5" stroke="#991b1b" stroke-width="0.7"/>
+        <!-- 3本目の刀（口にくわえた横一文字の刀） -->
+        <line x1="4" y1="20.5" x2="32" y2="20.5" stroke="#f8fafc" stroke-width="2"/>
+        <line x1="4" y1="21.5" x2="30" y2="21.5" stroke="#94a3b8" stroke-width="0.8"/>
+        <!-- 口元の柄・鍔 -->
+        <rect x="11" y="19.5" width="4" height="2" fill="#18181b"/>
+        <rect x="15" y="19" width="1.5" height="3" fill="#d4af37"/>
+        <!-- 斬撃スパーク（翡翠の光火） -->
+        <polygon points="31,19 35,20.5 31,22 32,20.5" fill="#34d399"/>
+        <polygon points="30,4 34,2 32,6" fill="#fde047"/>
+      </svg>`;
   }
 }
 

@@ -461,6 +461,32 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(notes).toBeGreaterThan(0);
     expect(hitCount).toBeGreaterThan(2);
   });
+
+  it('ザイサンが翠龍の気を纏ってきりもみ回転突進し三刀流で多段ヒットダメージを与える', () => {
+    const battle = new DiagBattle();
+    const zaisan = battle.spawnUnit('zaisan', 0, -8, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 4, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let charges = 0;
+    let dragonSlashes = 0;
+    let slashHits = 0;
+    let totalDmg = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'dragon_charge') charges++;
+      if (e.kind === 'dragon_slash') dragonSlashes++;
+      if (e.kind === 'dragon_slash_hit') slashHits++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === zaisan && e.victim === dummy) totalDmg += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 6; i++) battle.step(battle.fixedDt);
+    expect(charges).toBeGreaterThan(0);
+    expect(dragonSlashes).toBeGreaterThan(3);
+    expect(slashHits).toBeGreaterThan(0);
+    expect(totalDmg).toBeGreaterThan(60);
+  });
 });
 
 describe('1対1 総当たりで膠着しない', () => {
