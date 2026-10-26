@@ -7,7 +7,7 @@ import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
-export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell' | 'rocket_punch' | 'angel_bomb';
+export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell' | 'rocket_punch' | 'angel_bomb' | 'volcano_rock';
 
 export interface HitEvent {
   kind: HitKind;
@@ -76,7 +76,12 @@ export type CombatEffectEvent =
   | { kind: 'sachiel_cross'; pos: Vector3 }
   | { kind: 'zeruel_ribbon'; from: Vector3; dir: Vector3; reach: number }
   | { kind: 'sahaquiel_bomb'; pos: Vector3 }
-;
+  | { kind: 'sezain_ram'; pos: Vector3 }
+  | { kind: 'sezain_shot'; from: Vector3; dir: Vector3 }
+  | { kind: 'eruption_burst'; pos: Vector3; scale: number }
+  | { kind: 'eruption_explosion'; pos: Vector3 }
+  | { kind: 'piano_wave'; pos: Vector3; forward: Vector3; radius: number; team: Team }
+  | { kind: 'piano_note'; pos: Vector3; color?: number };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -518,6 +523,9 @@ export class CombatSystem {
     } else if (a.projectileKind === 'rocket_punch') {
       this.applyRadialBlast(a.owner, pos, 3.8, a.damage, 14.0, 0.85, units, dt, 'explosion', facilities, a.team);
       this.emitEffect({ kind: 'robot_punch_impact', pos: pos.clone() });
+    } else if (a.projectileKind === 'volcano_rock') {
+      this.applyRadialBlast(a.owner, pos, 4.8, a.damage, 14.0, 0.9, units, dt, 'explosion', facilities, a.team);
+      this.emitEffect({ kind: 'eruption_explosion', pos: pos.clone() });
     }
     a.life = 0;
   }
@@ -534,6 +542,67 @@ export class CombatSystem {
     const damage = 135 * owner.damageMul;
     this.applyRadialBlast(owner, targetPos, beamRadius, damage, 15.0, 1.25, units, dt, 'explosion', facilities);
     this.emitEffect({ kind: 'satellite_beam', pos: targetPos.clone(), radius: beamRadius });
+  }
+
+  /** ホンゴンのピアノ演奏による音楽範囲攻撃 */
+  castPianoPerformance(
+    owner: Unit,
+    pos: Vector3,
+    forward: Vector3,
+    damage: number,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+  ): void {
+    const range = 13.5;
+    const forwardNorm = forward.clone().setY(0).normalize();
+    this.emitEffect({
+      kind: 'piano_wave',
+      pos: pos.clone(),
+      forward: forwardNorm,
+      radius: range,
+      team: owner.team,
+    });
+    // 範囲内の敵ユニットへダメージと音圧ノックバック
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const diff = u.pelvis.pos.clone().sub(pos);
+      const d = diff.length();
+      if (d > range) continue;
+      diff.setY(0).normalize();
+      // 前方約140度の扇状範囲（近距離は全方位）
+      const dot = diff.dot(forwardNorm);
+      if (dot < -0.2 && d > 2.5) continue;
+
+      const falloff = 1 - (d / range) * 0.35;
+      const dmg = damage * falloff * owner.damageMul;
+      const impulse = diff.clone().multiplyScalar(5.2).setY(1.6);
+      const killed = u.takeDamage(dmg, u.pelvis, impulse, dt, owner);
+      this.emitEffect({ kind: 'piano_note', pos: u.chest.pos.clone() });
+      this.onHit?.({
+        kind: 'magic',
+        point: u.chest.pos.clone(),
+        damage: dmg,
+        attacker: owner,
+        victim: u,
+        hitParticle: u.pelvis,
+        impulse,
+        killed,
+      });
+    }
+    // 施設へのダメージ
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === owner.team) continue;
+      const d = fac.pos.distanceTo(pos);
+      if (d <= range) {
+        const dmg = damage * 0.8 * owner.damageMul;
+        const killed = fac.takeDamage(dmg, owner);
+        this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+        if (killed) {
+          this.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+        }
+      }
+    }
   }
 
   updateArrows(
@@ -578,7 +647,7 @@ export class CombatSystem {
         if (!stopped) {
           a.pos.copy(_to);
           if (a.pos.y <= 0) {
-            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
+            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
               // 地面に着弾して爆発
               a.pos.y = 0.05;
               this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
@@ -638,7 +707,7 @@ export class CombatSystem {
         const killed = fac.takeDamage(dmg, a.owner);
         this.emitEffect({ kind: 'facility_hit', pos: a.pos.clone(), damage: dmg });
 
-        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
+        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
           this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
         } else if (a.projectileKind === 'sniper') {
           // スナイパーは施設にも大ダメージを与えつつ少し貫通
@@ -685,7 +754,7 @@ export class CombatSystem {
       const cy = from.y + (to.y - from.y) * t;
       if (cy <= obs.height && cx * cx + cz * cz <= (obs.radius + 0.05) ** 2) {
         a.pos.set(from.x + dx * t, cy, from.z + dz * t);
-        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
+        if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
           this.triggerExplosiveProjectileHit(a, a.pos, units, [], dt);
         } else if (a.projectileKind === 'arrow' || a.projectileKind === 'shuriken') {
           a.state = 'ground';
@@ -887,7 +956,7 @@ export class CombatSystem {
     a.hitUnitIds.add(bestU.id);
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
-    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb') {
+    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
       const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0);
       if (bestU.alive && bestU.team !== a.team) {
         bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined);

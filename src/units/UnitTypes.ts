@@ -33,7 +33,10 @@ export type AttackStyle =
   | 'ramiel_beam'
   | 'sachiel_strike'
   | 'zeruel_cutter'
-  | 'sahaquiel_drop';
+  | 'sahaquiel_drop'
+  | 'dual_minigun'
+  | 'eruption'
+  | 'piano_performance';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical' | 'divine';
@@ -107,7 +110,10 @@ export type UnitTypeId =
   | 'angel_ramiel'
   | 'angel_sachiel'
   | 'angel_zeruel'
-  | 'angel_sahaquiel';
+  | 'angel_sahaquiel'
+  | 'sezain'
+  | 'yamamuron'
+  | 'hongon';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -876,6 +882,69 @@ giant_robot: {
     strikeImpulse: 0,
     look: { skin: 0x4a5568, hair: null, helmet: 0x2d3748, hood: null, armor: 0x718096, beard: null },
   },
+  sezain: {
+    id: 'sezain',
+    name: 'セザイン',
+    category: 'modern',
+    description: '大型2輪バイクを疾走させ、両手のマシンガンから猛烈な連射弾幕を浴びせつつ敵陣を突破する機動戦士。',
+    cost: 420,
+    scale: 1.35,
+    massMul: 2.2,
+    hp: 480,
+    speed: 5.2,
+    style: 'dual_minigun',
+    weapon: null,
+    projectile: { speed: 48, damage: 10, spread: 0.055 },
+    range: 16,
+    windup: 0.25,
+    strike: 1.8,
+    recover: 0.35,
+    cooldown: 0.8,
+    strikeImpulse: 0,
+    look: { skin: 0xf0c39c, hair: null, helmet: 0x212529, hood: null, armor: 0x343a40, beard: null },
+  },
+  yamamuron: {
+    id: 'yamamuron',
+    name: 'ヤマムロン',
+    category: 'japanese',
+    description: '霊峰富士が超巨大な神山となって顕現。山頂の火口から激しい噴火を引き起こし、灼熱の巨大火山弾を雨あられと降らせて敵軍全体を焼き尽くす。',
+    cost: 1200,
+    scale: 3.6,
+    massMul: 5.5,
+    hp: 2600,
+    speed: 0.8,
+    style: 'eruption',
+    weapon: null,
+    projectile: { speed: 28, damage: 120, spread: 0.07 },
+    range: 35,
+    windup: 1.2,
+    strike: 1.6,
+    recover: 0.8,
+    cooldown: 2.4,
+    strikeImpulse: 0,
+    look: { skin: 0x2b4c2f, hair: null, helmet: 0xffffff, hood: null, armor: 0x1d365e, beard: null },
+  },
+  hongon: {
+    id: 'hongon',
+    name: 'ホンゴン',
+    category: 'magic',
+    description: '名器グランドピアノを情熱的に演奏する奇跡のピアニスト。響き渡る旋律と音符の衝撃波が、広範囲の敵軍を圧倒して吹き飛ばす。',
+    cost: 340,
+    scale: 1.15,
+    massMul: 1.8,
+    hp: 360,
+    speed: 1.8,
+    style: 'piano_performance',
+    weapon: null,
+    projectile: null,
+    range: 13.5,
+    windup: 0.5,
+    strike: 1.8,
+    recover: 0.5,
+    cooldown: 1.4,
+    strikeImpulse: 0,
+    look: { skin: 0xf0c39c, hair: 0xd0d5dd, helmet: null, hood: null, armor: 0x18181b, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -908,4 +977,7 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.angel_sachiel,
   UNIT_TYPES.angel_zeruel,
   UNIT_TYPES.angel_sahaquiel,
+  UNIT_TYPES.sezain,
+  UNIT_TYPES.yamamuron,
+  UNIT_TYPES.hongon,
 ];

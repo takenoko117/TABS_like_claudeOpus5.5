@@ -392,6 +392,75 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(impacts).toBeGreaterThan(0);
     expect(damage).toBeGreaterThan(60);
   });
+
+  it('セザインが両手マシンガンで連射弾幕を放ち敵にダメージを与える', () => {
+    const battle = new DiagBattle();
+    const sezain = battle.spawnUnit('sezain', 0, -8, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 6, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let shots = 0;
+    let damage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'sezain_shot') shots++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === sezain && e.victim === dummy) damage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 6; i++) battle.step(battle.fixedDt);
+    expect(shots).toBeGreaterThan(5);
+    expect(damage).toBeGreaterThan(40);
+  });
+
+  it('ヤマムロンが火口から火山弾を放物線噴火し広範囲爆発ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const fuji = battle.spawnUnit('yamamuron', 0, -15, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 10, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let burst = 0;
+    let explosion = 0;
+    let damage = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'eruption_burst') burst++;
+      if (e.kind === 'eruption_explosion') explosion++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === fuji && e.victim === dummy) damage += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(burst).toBeGreaterThan(0);
+    expect(explosion).toBeGreaterThan(0);
+    expect(damage).toBeGreaterThan(80);
+  });
+
+  it('ホンゴンがピアノ演奏で音楽波動と音符を放ち範囲ダメージを与える', () => {
+    const battle = new DiagBattle();
+    const pianist = battle.spawnUnit('hongon', 0, -6, 0);
+    const dummy1 = battle.spawnUnit('swordsman', 1, 2, -2);
+    const dummy2 = battle.spawnUnit('swordsman', 1, 2, 2);
+    battle.frozen.add(dummy1);
+    battle.frozen.add(dummy2);
+    dummy1.hp = 1e7;
+    dummy2.hp = 1e7;
+    let waves = 0;
+    let notes = 0;
+    let hitCount = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'piano_wave') waves++;
+      if (e.kind === 'piano_note') notes++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === pianist) hitCount++;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 6; i++) battle.step(battle.fixedDt);
+    expect(waves).toBeGreaterThan(0);
+    expect(notes).toBeGreaterThan(0);
+    expect(hitCount).toBeGreaterThan(2);
+  });
 });
 
 describe('1対1 総当たりで膠着しない', () => {

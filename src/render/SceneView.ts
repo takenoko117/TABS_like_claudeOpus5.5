@@ -1464,6 +1464,91 @@ export class SceneView {
         }
         break;
       }
+      case 'sezain_shot': {
+        // セザインのマシンガンマズルフラッシュと薬莢
+        for (let i = 0; i < 3; i++) {
+          const spreadDir = e.dir.clone().add(new Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2)).normalize();
+          const vel = spreadDir.multiplyScalar(4.0 + Math.random() * 3.0);
+          this.pushFxParticle(e.from.clone(), vel, i % 2 === 0 ? 0xffe066 : 0xff922b, 0.08, 0.15, 2.0);
+        }
+        break;
+      }
+      case 'sezain_ram': {
+        // セザインのバイク体当たりインパクト
+        for (let i = 0; i < 16; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 7.0, 2.0 + Math.random() * 4.0, (Math.random() - 0.5) * 7.0);
+          const col = i % 3 === 0 ? 0xffd43b : i % 3 === 1 ? 0xff922b : 0x212529;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.11, 0.3 + Math.random() * 0.15, 4.0);
+        }
+        break;
+      }
+      case 'eruption_burst': {
+        // 富士山の火口大噴火（上空へ噴き上がる火柱・黒煙・火の粉）
+        const s = e.scale ?? 1.0;
+        for (let i = 0; i < 36; i++) {
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 4.0 * s,
+            8.0 * s + Math.random() * 12.0 * s,
+            (Math.random() - 0.5) * 4.0 * s,
+          );
+          const col = i % 4 === 0 ? 0xff3b00 : i % 4 === 1 ? 0xff922b : i % 4 === 2 ? 0xffd43b : 0x343a40;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.24 * s, 0.65 + Math.random() * 0.45, 12.0);
+        }
+        break;
+      }
+      case 'eruption_explosion': {
+        // 火山弾の大爆発と飛び散る灼熱溶岩
+        for (let i = 0; i < 48; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize();
+          const spd = 6.0 + Math.random() * 12.0;
+          const col = i % 4 === 0 ? 0xff3b00 : i % 4 === 1 ? 0xff7700 : i % 4 === 2 ? 0xffd43b : 0x212529;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(spd), col, 0.28, 0.6 + Math.random() * 0.35, 6.0);
+        }
+        // 溶岩破片ボクセル
+        for (let i = 0; i < 18; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 9.0, 3.5 + Math.random() * 7.5, (Math.random() - 0.5) * 9.0);
+          this.pushDroppedVoxel(e.pos.clone(), vel, i % 2 === 0 ? 0x212529 : 0xff3b00, 0.08);
+        }
+        // 衝撃波リング
+        const ringN = 28;
+        for (let i = 0; i < ringN; i++) {
+          const ang = (i / ringN) * Math.PI * 2;
+          const dir = new Vector3(Math.cos(ang), 0.05, Math.sin(ang));
+          const p = e.pos.clone().addScaledVector(dir, 0.3);
+          const vel = dir.clone().multiplyScalar(9.0);
+          this.pushFxParticle(p, vel, 0xff7700, 0.22, 0.5, 1.0);
+        }
+        break;
+      }
+      case 'piano_wave': {
+        // ピアノ演奏の音楽波紋（美しい同心円状の音波リング）
+        const teamCol = TEAM_COLORS[e.team].accent;
+        const ringN = 32;
+        const baseDir = e.forward.clone().setY(0).normalize();
+        for (let i = 0; i < ringN; i++) {
+          const ang = (i / ringN) * Math.PI * 2;
+          const dir = new Vector3(Math.cos(ang), 0.04, Math.sin(ang));
+          const p = e.pos.clone().addScaledVector(dir, 0.4);
+          p.y = 0.25;
+          const vel = dir.clone().multiplyScalar(7.5);
+          // 前方への音波はより明るく速い
+          const dot = dir.dot(baseDir);
+          const col = dot > 0.2 ? 0xfef08a : i % 2 === 0 ? teamCol : 0x38bdf8;
+          this.pushFxParticle(p, vel, col, 0.18, 0.55, 0.5);
+        }
+        break;
+      }
+      case 'piano_note': {
+        // 空中に浮かぶカラフルな音符・輝きパーティクル
+        for (let i = 0; i < 5; i++) {
+          const p = e.pos.clone().add(new Vector3((Math.random() - 0.5) * 0.6, Math.random() * 0.8, (Math.random() - 0.5) * 0.6));
+          const vel = new Vector3((Math.random() - 0.5) * 1.5, 1.8 + Math.random() * 2.2, (Math.random() - 0.5) * 1.5);
+          const colors = [0xf43f5e, 0x8b5cf6, 0x06b6d4, 0x10b981, 0xfbbf24];
+          const col = e.color ?? colors[Math.floor(Math.random() * colors.length)];
+          this.pushFxParticle(p, vel, col, 0.14, 0.45 + Math.random() * 0.2, -1.2);
+        }
+        break;
+      }
     }
   }
 

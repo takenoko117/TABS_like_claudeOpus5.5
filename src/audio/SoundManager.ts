@@ -1229,6 +1229,136 @@ export class SoundManager {
         noise.stop(t + 0.4);
         break;
       }
+      case 'sezain_shot': {
+        if (!this.throttle('szn_sht', 50)) return;
+        // セザインのデュアルマシンガン射撃音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(380, t);
+        osc.frequency.exponentialRampToValueAtTime(70, t + 0.05);
+        g.gain.setValueAtTime(0.22, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.06);
+        break;
+      }
+      case 'sezain_ram': {
+        if (!this.throttle('szn_ram', 90)) return;
+        // バイク激突音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.2);
+        g.gain.setValueAtTime(0.38, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.24);
+        break;
+      }
+      case 'eruption_burst': {
+        if (!this.throttle('erupt_bst', 120)) return;
+        // 富士山の大噴火噴出音
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'sine';
+        boom.frequency.setValueAtTime(120, t);
+        boom.frequency.exponentialRampToValueAtTime(32, t + 0.5);
+        bg.gain.setValueAtTime(0.55, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.58);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(450, t);
+        bp.frequency.exponentialRampToValueAtTime(800, t + 0.4);
+        bp.Q.setValueAtTime(1.5, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.48, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.52);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.55);
+        break;
+      }
+      case 'eruption_explosion': {
+        if (!this.throttle('erupt_exp', 80)) return;
+        // 火山弾の巨大着弾大爆発音
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'triangle';
+        boom.frequency.setValueAtTime(140, t);
+        boom.frequency.exponentialRampToValueAtTime(18, t + 0.6);
+        bg.gain.setValueAtTime(0.75, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+        boom.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + 0.68);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1400, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.65, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + 0.58);
+        break;
+      }
+      case 'piano_wave': {
+        if (!this.throttle('pno_wv', 110)) return;
+        const master = this.masterGain;
+        if (!master) return;
+        // ピアノの優雅かつ力強いコード演奏音
+        const freqs = [261.63, 329.63, 392.0, 523.25];
+        freqs.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, t + idx * 0.02);
+          g.gain.setValueAtTime(0.18, t + idx * 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.02 + 0.35);
+          osc.connect(g);
+          g.connect(master);
+          osc.start(t + idx * 0.02);
+          osc.stop(t + idx * 0.02 + 0.38);
+        });
+        break;
+      }
+      case 'piano_note': {
+        if (!this.throttle('pno_nt', 60)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        const notes = [523.25, 659.25, 783.99, 1046.5];
+        const chosen = notes[Math.floor(Math.random() * notes.length)];
+        osc.frequency.setValueAtTime(chosen, t);
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.2);
+        break;
+      }
     }
   }
 }

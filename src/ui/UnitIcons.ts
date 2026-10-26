@@ -612,6 +612,88 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
           <rect x="31" y="28" width="2.5" height="2" fill="#adb5bd"/>
         </g>
       </svg>`;
+    case 'sezain':
+      // セザイン: 2輪大型バイク＋バイカーヘルメット＋両手デュアルマシンガン
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 後輪タイヤ -->
+        <circle cx="6" cy="27" r="5.5" fill="#18181b" stroke="#374151" stroke-width="1.5"/>
+        <circle cx="6" cy="27" r="2.5" fill="#9ca3af"/>
+        <!-- 前輪タイヤ -->
+        <circle cx="28" cy="27" r="5.5" fill="#18181b" stroke="#374151" stroke-width="1.5"/>
+        <circle cx="28" cy="27" r="2.5" fill="#9ca3af"/>
+        <!-- バイクフレーム＆クロームマフラー -->
+        <polygon points="6,26 14,26 18,21 10,21" fill="#27272a"/>
+        <line x1="8" y1="28" x2="22" y2="28" stroke="#d1d5db" stroke-width="2"/>
+        <line x1="18" y1="21" x2="27" y2="26" stroke="#d1d5db" stroke-width="2"/>
+        <!-- 燃料タンク（チームカラー） -->
+        <ellipse cx="18" cy="18" rx="5" ry="3" fill="#e0473a"/>
+        <!-- バイカーヘルメット＆ゴーグル -->
+        <circle cx="14" cy="11" r="5" fill="#212529"/>
+        <rect x="13" y="10" width="5.5" height="2.5" rx="1" fill="#38bdf8"/>
+        <!-- ハンドルバー -->
+        <line x1="18" y1="15" x2="23" y2="15" stroke="#d1d5db" stroke-width="1.5"/>
+        <!-- 両手マシンガン＆マズルフラッシュ -->
+        <rect x="20" y="12" width="9" height="3" fill="#374151" stroke="#111827" stroke-width="0.8"/>
+        <rect x="23" y="15" width="2.5" height="3" fill="#1f2937"/>
+        <polygon points="29,13.5 35,11 32,13.5 35,16" fill="#fef08a"/>
+        <rect x="18" y="17" width="9" height="3" fill="#374151" stroke="#111827" stroke-width="0.8"/>
+        <polygon points="27,18.5 33,16 30,18.5 33,21" fill="#f59e0b"/>
+      </svg>`;
+    case 'yamamuron':
+      // ヤマムロン: 霊峰富士山＋山頂雪冠＋カルデラ噴火
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 富士山山体（美しい末広がりコニカル） -->
+        <polygon points="2,33 13,15 23,15 34,33" fill="#1e3a8a"/>
+        <!-- 裾野の樹海（深緑） -->
+        <polygon points="2,33 7,30 29,30 34,33" fill="#1b4332"/>
+        <!-- 山肌ハイライト・赤富士/青富士アクセント -->
+        <polygon points="11,19 14,30 22,30 25,19" fill="#2563eb" opacity="0.8"/>
+        <!-- 山頂の万年雪冠（美しい雪渓パターン） -->
+        <polygon points="13,15 15,19 17,17 19,21 21,18 23,15" fill="#ffffff"/>
+        <!-- 山頂カルデラ火口 -->
+        <ellipse cx="18" cy="15" rx="5" ry="1.5" fill="#991b1b"/>
+        <ellipse cx="18" cy="15" rx="3.5" ry="1" fill="#ff5900"/>
+        <!-- 噴煙＆吹き上がる巨大火山弾 -->
+        <circle cx="16" cy="10" r="3.5" fill="#64748b" opacity="0.75"/>
+        <circle cx="20" cy="8" r="4.5" fill="#475569" opacity="0.85"/>
+        <circle cx="17" cy="5" r="3" fill="#94a3b8" opacity="0.6"/>
+        <!-- 灼熱火山弾 -->
+        <circle cx="23" cy="4" r="2.5" fill="#ff3b00" stroke="#ffd43b" stroke-width="0.8"/>
+        <circle cx="12" cy="7" r="1.8" fill="#f97316" stroke="#fef08a" stroke-width="0.8"/>
+      </svg>`;
+    case 'hongon':
+      // ホンゴン: グランドピアノ＋鍵盤＋音符
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- グランドピアノ屋根＆ボディ -->
+        <path d="M 4,24 L 4,14 Q 8,8 18,10 Q 28,12 30,20 L 30,24 Z" fill="#18181b" stroke="#3f3f46" stroke-width="1"/>
+        <!-- ピアノ脚 -->
+        <line x1="7" y1="24" x2="7" y2="31" stroke="#18181b" stroke-width="2"/>
+        <line x1="27" y1="24" x2="27" y2="31" stroke="#18181b" stroke-width="2"/>
+        <line x1="17" y1="24" x2="17" y2="29" stroke="#18181b" stroke-width="1.5"/>
+        <!-- 白鍵盤 -->
+        <rect x="5" y="21" width="22" height="4" rx="0.5" fill="#f8f9fa"/>
+        <!-- 黒鍵 -->
+        <rect x="8" y="21" width="1.8" height="2.5" fill="#09090b"/>
+        <rect x="11" y="21" width="1.8" height="2.5" fill="#09090b"/>
+        <rect x="15" y="21" width="1.8" height="2.5" fill="#09090b"/>
+        <rect x="18" y="21" width="1.8" height="2.5" fill="#09090b"/>
+        <rect x="21" y="21" width="1.8" height="2.5" fill="#09090b"/>
+        <!-- 譜面台＆楽譜 -->
+        <rect x="13" y="14" width="7" height="6" fill="#ffffff" stroke="#18181b" stroke-width="0.5"/>
+        <line x1="14" y1="16" x2="19" y2="16" stroke="#71717a" stroke-width="0.6"/>
+        <line x1="14" y1="18" x2="19" y2="18" stroke="#71717a" stroke-width="0.6"/>
+        <!-- 舞い上がるカラフルな音符 ♪ ♫ -->
+        <!-- 音符1 (♪ ゴールド) -->
+        <ellipse cx="8" cy="8" rx="2" ry="1.5" fill="#eab308" transform="rotate(-20 8 8)"/>
+        <line x1="9.5" y1="7.5" x2="9.5" y2="2" stroke="#eab308" stroke-width="1.2"/>
+        <path d="M 9.5,2 Q 13,3 12,6" stroke="#eab308" stroke-width="1.2" fill="none"/>
+        <!-- 音符2 (♫ シアン) -->
+        <ellipse cx="23" cy="7" rx="1.8" ry="1.3" fill="#06b6d4" transform="rotate(-20 23 7)"/>
+        <ellipse cx="28" cy="5" rx="1.8" ry="1.3" fill="#06b6d4" transform="rotate(-20 28 5)"/>
+        <line x1="24.5" y1="6.5" x2="24.5" y2="1.5" stroke="#06b6d4" stroke-width="1.2"/>
+        <line x1="29.5" y1="4.5" x2="29.5" y2="0" stroke="#06b6d4" stroke-width="1.2"/>
+        <line x1="24" y1="1.5" x2="30" y2="0" stroke="#06b6d4" stroke-width="1.5"/>
+      </svg>`;
   }
 }
 

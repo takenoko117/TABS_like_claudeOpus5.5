@@ -137,6 +137,7 @@ export class Unit {
   private slamRestTime = 0;
   /** ガトリングの銃身回転角＆連射タイマー */
   barrelSpin = 0;
+  shotCount = 0;
   private subAttackTimer = 0;
   /** 対物スナイパーのレーザー照準座標（null なら非表示） */
   readonly laserAimPos = new Vector3();
@@ -522,7 +523,9 @@ export class Unit {
       this.type.id === 'anaconda' ||
       this.type.id === 'buggy' ||
       this.type.id === 'giant_tank' ||
-      this.type.id === 'giant_robot'
+      this.type.id === 'giant_robot' ||
+      this.type.id === 'yamamuron' ||
+      this.type.id === 'sezain'
         ? 0.25
         : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
@@ -556,7 +559,12 @@ export class Unit {
       st === 'tank_cannon' ||
       st === 'rocket' ||
       st === 'satellite_strike' ||
-      st === 'rocket_punch' || st === 'ramiel_beam' || st === 'sahaquiel_drop'
+      st === 'rocket_punch' ||
+      st === 'ramiel_beam' ||
+      st === 'sahaquiel_drop' ||
+      st === 'dual_minigun' ||
+      st === 'eruption' ||
+      st === 'piano_performance'
     ) {
       return this.type.range;
     }
@@ -597,7 +605,12 @@ export class Unit {
       st === 'tank_cannon' ||
       st === 'rocket' ||
       st === 'satellite_strike' ||
-      st === 'rocket_punch' || st === 'ramiel_beam' || st === 'sahaquiel_drop'
+      st === 'rocket_punch' ||
+      st === 'ramiel_beam' ||
+      st === 'sahaquiel_drop' ||
+      st === 'dual_minigun' ||
+      st === 'eruption' ||
+      st === 'piano_performance'
     ) {
       return this.type.range;
     }
@@ -653,7 +666,9 @@ export class Unit {
       this.type.id === 'anaconda' ||
       this.type.id === 'buggy' ||
       this.type.id === 'giant_tank' ||
-      this.type.id === 'giant_robot'
+      this.type.id === 'giant_robot' ||
+      this.type.id === 'yamamuron' ||
+      this.type.id === 'sezain'
         ? 0.16
         : 0.3;
     if (this.muscle < minMuscle) {
@@ -1062,7 +1077,14 @@ export class Unit {
         }
       }
     }
-    if (st === 'minigun' || st === 'breath' || st === 'swoop') {
+    if (
+      st === 'minigun' ||
+      st === 'breath' ||
+      st === 'swoop' ||
+      st === 'dual_minigun' ||
+      st === 'eruption' ||
+      st === 'piano_performance'
+    ) {
       return;
     }
 
@@ -1131,6 +1153,89 @@ export class Unit {
         const recoil = this.forward.clone().multiplyScalar(-0.28);
         this.pelvis.addVelocity(recoil, dt);
         this.chest.addVelocity(recoil, dt);
+      }
+    } else if (st === 'dual_minigun') {
+      this.subAttackTimer -= dt;
+      if (this.subAttackTimer <= 0) {
+        this.subAttackTimer = 1 / 16; // 毎秒 16 発の高速連射
+        this.shotCount = (this.shotCount ?? 0) + 1;
+        const isLeft = this.shotCount % 2 === 0;
+        const hand = this.joints[isLeft ? J.HandL : J.HandR];
+        const from = hand.pos.clone().addScaledVector(this.forward, 0.45 * this.scale);
+        const aimDir = new Vector3().copy(this.forward);
+        if (t && t.alive) {
+          aimDir.subVectors(t.chest.pos, from).normalize();
+        } else if (this.targetFacility && this.targetFacility.alive) {
+          aimDir.subVectors(this.targetFacility.pos, from).normalize();
+        }
+        const spread = this.type.projectile?.spread ?? 0.055;
+        aimDir.x += (Math.random() * 2 - 1) * spread;
+        aimDir.y += (Math.random() * 2 - 1) * spread * 0.6;
+        aimDir.z += (Math.random() * 2 - 1) * spread;
+        aimDir.normalize();
+        const speed = this.type.projectile?.speed ?? 48;
+        const bulletDmg = (this.type.projectile?.damage ?? 10) * this.damageMul;
+        ctx.combat.fireProjectile(this, from, aimDir.clone().multiplyScalar(speed), 'bullet', {
+          damage: bulletDmg,
+          gravityScale: 0.1,
+          life: 1.2,
+        });
+        ctx.combat.emitEffect({ kind: 'sezain_shot', from, dir: aimDir });
+        const recoil = this.forward.clone().multiplyScalar(-0.18);
+        this.pelvis.addVelocity(recoil, dt);
+      }
+    } else if (st === 'eruption') {
+      this.subAttackTimer -= dt;
+      if (this.subAttackTimer <= 0) {
+        this.subAttackTimer = 0.38;
+        const from = this.chest.pos.clone();
+        from.y += 1.4 * this.scale;
+        ctx.combat.emitEffect({ kind: 'eruption_burst', pos: from.clone(), scale: this.scale });
+
+        const aim =
+          t && t.alive
+            ? t.pelvis.pos.clone().addScaledVector(t.velocity, 0.25)
+            : this.targetFacility && this.targetFacility.alive
+            ? this.targetFacility.pos.clone()
+            : this.pelvis.pos.clone().addScaledVector(this.forward, 15.0);
+
+        const spread = this.type.projectile?.spread ?? 0.07;
+        const targetPoint = aim.clone().add(
+          new Vector3((Math.random() - 0.5) * 32 * spread, 0, (Math.random() - 0.5) * 32 * spread),
+        );
+        targetPoint.y = 0.1;
+
+        const speed = this.type.projectile?.speed ?? 28;
+        const dx = targetPoint.x - from.x;
+        const dz = targetPoint.z - from.z;
+        const dh = Math.max(0.5, Math.hypot(dx, dz));
+        const flight = Math.max(0.6, dh / speed);
+        const vx = dx / flight;
+        const vz = dz / flight;
+        const g = GRAVITY * 0.45;
+        const vy = (targetPoint.y - from.y) / flight + 0.5 * g * flight;
+        const vel = new Vector3(vx, vy, vz);
+
+        ctx.combat.fireProjectile(this, from, vel, 'volcano_rock', {
+          damage: (this.type.projectile?.damage ?? 120) * this.damageMul,
+          gravityScale: 0.45,
+          life: 5.0,
+        });
+      }
+    } else if (st === 'piano_performance') {
+      this.subAttackTimer -= dt;
+      if (this.subAttackTimer <= 0) {
+        this.subAttackTimer = 0.32;
+        const dmg = 24 * this.damageMul;
+        ctx.combat.castPianoPerformance(
+          this,
+          this.chest.pos,
+          this.forward,
+          dmg,
+          ctx.units,
+          ctx.facilities ?? [],
+          dt,
+        );
       }
     } else if (st === 'breath') {
       this.subAttackTimer -= dt;
@@ -1345,6 +1450,84 @@ export class Unit {
             push.addScaledVector(this.forward, 0.8).normalize().multiplyScalar(7.0);
             push.y = 2.8;
             const dmg = 22 * this.damageMul;
+            const killed = u.takeDamage(dmg, u.pelvis, push, dt, this);
+            ctx.combat.onHit?.({
+              kind: 'melee',
+              point: u.pelvis.pos.clone(),
+              damage: dmg,
+              attacker: this,
+              victim: u,
+              hitParticle: u.pelvis,
+              impulse: push,
+              killed,
+            });
+          }
+        }
+      }
+    }
+
+    // 1-5. セザインのバイク高速走行スモークと体当たり激突
+    if (id === 'sezain' && ctx.aiEnabled) {
+      const speedH = Math.hypot(this.velocity.x, this.velocity.z);
+      if (speedH > 1.2) {
+        this.stepDustTimer -= dt;
+        if (this.stepDustTimer <= 0) {
+          this.stepDustTimer = 0.15;
+          ctx.combat.emitEffect({ kind: 'buggy_smoke', pos: this.pelvis.pos.clone() });
+        }
+        const frontPos = this.pelvis.pos.clone().addScaledVector(this.forward, 0.9 * this.scale);
+        const ramR2 = (1.2 * this.scale) ** 2;
+        for (const u of ctx.units) {
+          if (!u.alive || u.team === this.team) continue;
+          if (!this.canHit(u)) continue;
+          if (u.pelvis.pos.distanceToSquared(frontPos) <= ramR2) {
+            this.registerHit(u, 0.6);
+            const isHeavy = u.scale >= 1.6;
+            const push = new Vector3().subVectors(u.pelvis.pos, this.pelvis.pos).setY(0).normalize();
+            push.addScaledVector(this.forward, 1.1).normalize().multiplyScalar(isHeavy ? 3.0 : 7.5);
+            push.y = isHeavy ? 1.0 : 3.5;
+            const ramDmg = (20 + speedH * 2.2) * this.damageMul;
+            const killed = u.takeDamage(ramDmg, u.pelvis, push, dt, this);
+            ctx.combat.emitEffect({ kind: 'sezain_ram', pos: frontPos });
+            ctx.combat.onHit?.({
+              kind: 'melee',
+              point: u.pelvis.pos.clone(),
+              damage: ramDmg,
+              attacker: this,
+              victim: u,
+              hitParticle: u.pelvis,
+              impulse: push,
+              killed,
+            });
+            if (isHeavy) {
+              const recoil = this.forward.clone().multiplyScalar(-2.5);
+              for (const p of this.joints) p.addVelocity(recoil, dt);
+            }
+          }
+        }
+      }
+    }
+
+    // 1-6. ヤマムロンの山岳重歩行・地鳴りと踏み潰し
+    if (id === 'yamamuron' && ctx.aiEnabled) {
+      const speedH = Math.hypot(this.velocity.x, this.velocity.z);
+      if (speedH > 0.25) {
+        this.stepDustTimer -= dt;
+        if (this.stepDustTimer <= 0) {
+          this.stepDustTimer = 0.45;
+          ctx.combat.emitEffect({ kind: 'elephant_step', pos: new Vector3(this.pelvis.pos.x, 0.05, this.pelvis.pos.z) });
+        }
+        const frontPos = this.pelvis.pos.clone().addScaledVector(this.forward, 0.8 * this.scale);
+        const trampleR2 = (1.2 * this.scale) ** 2;
+        for (const u of ctx.units) {
+          if (!u.alive || u.team === this.team || u.scale >= 2.5) continue;
+          if (!this.canHit(u)) continue;
+          if (u.pelvis.pos.distanceToSquared(frontPos) <= trampleR2) {
+            this.registerHit(u, 0.5);
+            const push = new Vector3().subVectors(u.pelvis.pos, this.pelvis.pos).setY(0).normalize();
+            push.addScaledVector(this.forward, 0.8).normalize().multiplyScalar(6.5);
+            push.y = 2.5;
+            const dmg = 25 * this.damageMul;
             const killed = u.takeDamage(dmg, u.pelvis, push, dt, this);
             ctx.combat.onHit?.({
               kind: 'melee',
@@ -1644,6 +1827,12 @@ export class Unit {
         targetH = PELVIS_HEIGHT * s * 0.82;
       } else if (this.type.id === 'buggy') {
         targetH = PELVIS_HEIGHT * s * 0.58;
+      } else if (this.type.id === 'sezain') {
+        targetH = PELVIS_HEIGHT * s * 0.65;
+      } else if (this.type.id === 'yamamuron') {
+        targetH = PELVIS_HEIGHT * s * 0.85;
+      } else if (this.type.id === 'hongon') {
+        targetH = PELVIS_HEIGHT * s * 0.78;
       } else if (this.type.id === 'anaconda') {
         targetH = PELVIS_HEIGHT * s * 0.38;
       }
@@ -1658,7 +1847,11 @@ export class Unit {
       }
 
       // 2. 直立補助: 頭を上へ、足を下へ引っ張る（TABS 風のバランス）
-      const isCrawlerOrVehicle = this.type.id === 'buggy' || this.type.id === 'anaconda';
+      const isCrawlerOrVehicle =
+        this.type.id === 'buggy' ||
+        this.type.id === 'anaconda' ||
+        this.type.id === 'sezain' ||
+        this.type.id === 'yamamuron';
       const fu = M * (isCrawlerOrVehicle ? 0.7 : 2.5) * m;
       head.force.y += fu * 0.5;
       chest.force.y += fu * 0.5;
@@ -1793,6 +1986,48 @@ export class Unit {
       lp[J.HipR].set(0.14 - sn * 0.12, -0.04, -0.25);
       lp[J.KneeR].set(0.16 - sn * 0.16, -0.08, -0.45);
       lp[J.FootR].set(0.12 - sn * 0.2, -0.12, -0.68);
+    } else if (this.type.id === 'sezain') {
+      // セザイン: 2輪バイク乗車ライディングポーズ
+      lp[J.Chest].set(0, 0.32, 0.12);
+      lp[J.Head].set(0, 0.62, 0.18);
+      lp[J.ShoulderL].set(-0.24, 0.35, 0.1);
+      lp[J.ElbowL].set(-0.32, 0.22, 0.18);
+      lp[J.HandL].set(-0.22, 0.22, 0.38);
+      lp[J.ShoulderR].set(0.24, 0.35, 0.1);
+      lp[J.ElbowR].set(0.32, 0.22, 0.18);
+      lp[J.HandR].set(0.22, 0.22, 0.38);
+      lp[J.HipL].set(-0.18, -0.05, -0.02);
+      lp[J.KneeL].set(-0.25, -0.22, 0.12);
+      lp[J.FootL].set(-0.25, -0.42, 0.05);
+      lp[J.HipR].set(0.18, -0.05, -0.02);
+      lp[J.KneeR].set(0.25, -0.22, 0.12);
+      lp[J.FootR].set(0.25, -0.42, 0.05);
+    } else if (this.type.id === 'yamamuron') {
+      // ヤマムロン: 富士山の重厚な不動山岳ポーズ
+      lp[J.Chest].set(0, 0.38, 0);
+      lp[J.Head].set(0, 0.85, 0);
+      lp[J.ShoulderL].set(-0.15, 0.2, 0);
+      lp[J.ElbowL].set(-0.18, 0.05, 0);
+      lp[J.HandL].set(-0.18, -0.08, 0);
+      lp[J.ShoulderR].set(0.15, 0.2, 0);
+      lp[J.ElbowR].set(0.18, 0.05, 0);
+      lp[J.HandR].set(0.18, -0.08, 0);
+    } else if (this.type.id === 'hongon') {
+      // ホンゴン: ピアノ着席・演奏待機ポーズ
+      lp[J.Chest].set(0, 0.35, 0.05);
+      lp[J.Head].set(0, 0.68, 0.1);
+      lp[J.ShoulderL].set(-0.2, 0.38, 0.08);
+      lp[J.ElbowL].set(-0.28, 0.22, 0.15);
+      lp[J.HandL].set(-0.18, 0.15, 0.36);
+      lp[J.ShoulderR].set(0.2, 0.38, 0.08);
+      lp[J.ElbowR].set(0.28, 0.22, 0.15);
+      lp[J.HandR].set(0.18, 0.15, 0.36);
+      lp[J.HipL].set(-0.14, -0.05, 0.05);
+      lp[J.KneeL].set(-0.16, -0.25, 0.2);
+      lp[J.FootL].set(-0.16, -0.48, 0.25);
+      lp[J.HipR].set(0.14, -0.05, 0.05);
+      lp[J.KneeR].set(0.16, -0.25, 0.2);
+      lp[J.FootR].set(0.16, -0.48, 0.25);
     } else if (isFlyer) {
       // 翼（両腕）の大きな羽ばたきモーション
       const flap = Math.sin(this.walkPhase);
@@ -1935,6 +2170,38 @@ export class Unit {
         lp[J.HandL].set(-0.28, 0.15, -0.1);
         twist = -0.4;
       }
+    } else if (style === 'dual_minigun') {
+      if (phase === 'strike') {
+        const recL = Math.sin(this.phaseTime * 55) * 0.06;
+        const recR = Math.cos(this.phaseTime * 55) * 0.06;
+        lp[J.HandL].set(-0.2, 0.28, 0.48 + recL);
+        lp[J.ElbowL].set(-0.3, 0.28, 0.25);
+        lp[J.HandR].set(0.2, 0.28, 0.48 + recR);
+        lp[J.ElbowR].set(0.3, 0.28, 0.25);
+      }
+    } else if (style === 'eruption') {
+      if (phase === 'windup') {
+        lp[J.Chest].y -= 0.1;
+        lp[J.Head].y -= 0.12;
+      } else if (phase === 'strike') {
+        lp[J.Chest].y += 0.18;
+        lp[J.Head].y += 0.25;
+      }
+    } else if (style === 'piano_performance') {
+      if (phase === 'windup') {
+        lp[J.HandL].set(-0.25, 0.65, 0.15);
+        lp[J.ElbowL].set(-0.32, 0.5, 0.05);
+        lp[J.HandR].set(0.25, 0.65, 0.15);
+        lp[J.ElbowR].set(0.32, 0.5, 0.05);
+        twist = 0.2;
+      } else if (phase === 'strike') {
+        const keyL = Math.sin(this.phaseTime * 32) * 0.08;
+        const keyR = Math.cos(this.phaseTime * 32) * 0.08;
+        lp[J.HandL].set(-0.2, 0.16 + keyL, 0.38);
+        lp[J.HandR].set(0.2, 0.16 + keyR, 0.38);
+        lp[J.Head].z += Math.sin(this.phaseTime * 16) * 0.08;
+        twist = Math.sin(this.phaseTime * 8) * 0.15;
+      }
     }
 
     if (phase === 'strike' && this.type.weapon !== null) {
@@ -2033,7 +2300,10 @@ export class Unit {
       this.type.id === 'dragon' ||
       this.type.id === 'giant' ||
       this.type.id === 'anaconda' ||
-      this.type.id === 'buggy' || this.type.category === 'divine';
+      this.type.id === 'buggy' ||
+      this.type.id === 'yamamuron' ||
+      this.type.id === 'sezain' ||
+      this.type.category === 'divine';
     const staggerMul = isSuperHeavy ? 0.7 : 2.2;
     const flatLoss = isSuperHeavy ? 0.012 : 0.05;
     this.muscle = Math.max(0, this.muscle - (amount / this.maxHp) * staggerMul - flatLoss);

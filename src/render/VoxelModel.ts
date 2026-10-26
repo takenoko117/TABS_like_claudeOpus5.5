@@ -186,6 +186,48 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   const eyeWhite = 0xffffff;
   const pupil = 0x181820;
 
+  if (type.id === 'sezain') {
+    // セザイン: 黒バイカーヘルメット＋偏光スモークシールド＋チームカラーレーシングライン
+    const g = new VoxelGrid(10, 10, 10);
+    g.fillBox(1, 1, 1, 8, 9, 8, 0x212529);
+    g.fillBox(4, 3, 0, 5, 9, 1, tc.shirt);
+    g.fillBox(4, 9, 1, 5, 9, 8, tc.shirt);
+    g.fillBox(2, 3, 8, 7, 6, 9, 0x0f172a);
+    g.fillBox(3, 4, 9, 6, 5, 9, 0x38bdf8);
+    g.fillBox(2, 1, 7, 7, 2, 9, 0x18181b);
+    g.fillBox(4, 1, 9, 5, 2, 9, 0x475569);
+    return makeTemplate(g, 0.042, [4.5, 4.0, 4.5]);
+  }
+
+  if (type.id === 'yamamuron') {
+    // ヤマムロン: 山頂に漂う噴煙と霊峰の白雲
+    const g = new VoxelGrid(12, 8, 12);
+    g.fillBox(2, 0, 2, 9, 4, 9, 0xd1d5db);
+    g.fillBox(3, 2, 3, 8, 6, 8, 0xffffff);
+    g.fillBox(4, 4, 4, 7, 7, 7, 0xf3f4f6);
+    return makeTemplate(g, 0.065, [6, 2, 6]);
+  }
+
+  if (type.id === 'hongon') {
+    // ホンゴン: クラシック音楽の巨匠（豊かな銀白ウェーブヘア＋真剣なまなざし）
+    const g = new VoxelGrid(10, 10, 10);
+    const skin = type.look.skin;
+    const maestroHair = 0xd0d5dd;
+    const maestroHairHighlight = 0xf1f5f9;
+    g.fillBox(2, 1, 2, 7, 7, 7, skin);
+    g.fillBox(2, 4, 8, 7, 4, 8, 0x334155);
+    g.set(3, 4, 8, 0x1e293b);
+    g.set(6, 4, 8, 0x1e293b);
+    g.set(3, 3, 8, 0x0f172a);
+    g.set(6, 3, 8, 0x0f172a);
+    g.fillBox(1, 2, 1, 1, 8, 7, maestroHair);
+    g.fillBox(8, 2, 1, 8, 8, 7, maestroHair);
+    g.fillBox(2, 1, 1, 7, 8, 1, maestroHair);
+    g.fillBox(1, 7, 1, 8, 9, 8, maestroHairHighlight);
+    g.fillBox(2, 6, 8, 7, 8, 8, maestroHair);
+    return makeTemplate(g, 0.045, [4.5, 4.0, 4.5]);
+  }
+
   // 1. 鎧戦象の頭部（大きな耳・兜・長い鼻）
   if (type.id === 'warelephant') {
     const g = new VoxelGrid(13, 11, 12);
@@ -587,6 +629,172 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
 function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   const look = type.look;
   const tc = TEAM_COLORS[team];
+
+  if (type.id === 'sezain') {
+    // セザイン: 大型2輪バイク（チョッパー/バトルバイク）＋ライダースジャケットのバイカー
+    const g = new VoxelGrid(14, 20, 28);
+    const bikeBlack = 0x18181b;
+    const metalChrome = 0xd1d5db;
+    const darkMetal = 0x374151;
+    const tireRubber = 0x111827;
+
+    // 前輪大型タイヤ
+    g.fillBox(5, 0, 20, 8, 8, 26, tireRubber);
+    g.fillBox(5, 2, 22, 8, 6, 24, metalChrome);
+    g.fillBox(4, 4, 18, 4, 13, 22, metalChrome);
+    g.fillBox(9, 4, 18, 9, 13, 22, metalChrome);
+    g.fillBox(2, 13, 17, 11, 14, 18, metalChrome);
+    g.fillBox(5, 11, 22, 8, 13, 23, 0xfef08a); // ヘッドライト
+
+    // 後輪大型タイヤ
+    g.fillBox(4, 0, 1, 9, 8, 7, tireRubber);
+    g.fillBox(4, 2, 3, 9, 6, 5, metalChrome);
+
+    // フレーム＆Vツインエンジン
+    g.fillBox(4, 2, 7, 9, 8, 19, bikeBlack);
+    g.fillBox(3, 3, 9, 10, 7, 16, darkMetal);
+    g.fillBox(2, 2, 2, 3, 4, 16, metalChrome);
+    g.fillBox(10, 2, 2, 11, 4, 16, metalChrome);
+
+    // 燃料タンク＆シート
+    g.fillBox(4, 8, 12, 9, 11, 18, tc.shirt);
+    g.fillBox(5, 8, 6, 8, 10, 12, 0x27272a);
+
+    // バイカー胴体
+    g.fillBox(4, 10, 10, 9, 17, 15, 0x212529);
+    g.fillBox(5, 12, 9, 8, 15, 9, tc.shirt);
+    g.fillBox(6, 11, 16, 7, 16, 16, metalChrome);
+
+    return makeTemplate(g, 0.045, [6.5, 8.5, 14]);
+  }
+
+  if (type.id === 'yamamuron') {
+    // ヤマムロン: でっっっっかい富士山！
+    const g = new VoxelGrid(28, 22, 28);
+    const seaOfTrees = 0x1b4332;
+    const baseGreen = 0x2d6a4f;
+
+    const mountainCol1 = team === 0 ? 0x9e2a2b : 0x1e3a8a;
+    const mountainCol2 = team === 0 ? 0xba181b : 0x1d4ed8;
+    const mountainCol3 = team === 0 ? 0xe5383b : 0x2563eb;
+
+    const snowWhite = 0xffffff;
+    const snowSoft = 0xf1f5f9;
+    const calderaLava = 0xff3b00;
+    const calderaLavaHot = 0xffd43b;
+
+    // 最下層裾野 (radius ~ 13)
+    for (let y = 0; y <= 3; y++) {
+      const r = 13 - y * 0.5;
+      for (let x = 0; x < 28; x++) {
+        for (let z = 0; z < 28; z++) {
+          const dx = x - 13.5;
+          const dz = z - 13.5;
+          if (dx * dx + dz * dz <= r * r) {
+            g.set(x, y, z, y < 2 ? seaOfTrees : baseGreen);
+          }
+        }
+      }
+    }
+    // 中層山肌 (radius 11.5 -> 7.5)
+    for (let y = 4; y <= 12; y++) {
+      const t = (y - 4) / 8;
+      const r = 11.5 - t * 4.0;
+      const col = t < 0.35 ? mountainCol1 : t < 0.7 ? mountainCol2 : mountainCol3;
+      for (let x = 0; x < 28; x++) {
+        for (let z = 0; z < 28; z++) {
+          const dx = x - 13.5;
+          const dz = z - 13.5;
+          if (dx * dx + dz * dz <= r * r) {
+            g.set(x, y, z, col);
+          }
+        }
+      }
+    }
+    // 上層雪冠 (radius 7.0 -> 4.5)
+    for (let y = 13; y <= 19; y++) {
+      const t = (y - 13) / 6;
+      const r = 7.0 - t * 2.5;
+      for (let x = 0; x < 28; x++) {
+        for (let z = 0; z < 28; z++) {
+          const dx = x - 13.5;
+          const dz = z - 13.5;
+          if (dx * dx + dz * dz <= r * r) {
+            const angle = Math.atan2(dz, dx);
+            const wavy = Math.sin(angle * 5) * 0.8;
+            const isSnow = y >= 15 || (y >= 13 && r + wavy < 6.8);
+            g.set(x, y, z, isSnow ? (y >= 16 ? snowWhite : snowSoft) : mountainCol3);
+          }
+        }
+      }
+    }
+    // 山頂カルデラ火口
+    for (let y = 18; y <= 21; y++) {
+      for (let x = 11; x <= 16; x++) {
+        for (let z = 11; z <= 16; z++) {
+          const dx = x - 13.5;
+          const dz = z - 13.5;
+          if (dx * dx + dz * dz <= 2.8 * 2.8) {
+            if (y === 18) {
+              g.set(x, y, z, dx * dx + dz * dz <= 1.5 ? calderaLavaHot : calderaLava);
+            } else {
+              g.set(x, y, z, 0);
+            }
+          }
+        }
+      }
+    }
+
+    return makeTemplate(g, 0.065, [13.5, 6.0, 13.5]);
+  }
+
+  if (type.id === 'hongon') {
+    // ホンゴン: 名器黒塗りグランドピアノ＋鍵盤＋譜面台＋タキシードのピアニスト
+    const g = new VoxelGrid(18, 18, 24);
+    const pianoBlack = 0x111113;
+    const pianoLid = 0x18181b;
+    const whiteKey = 0xf8f9fa;
+    const blackKey = 0x09090b;
+    const sheetPaper = 0xffffff;
+    const goldPedal = 0xd4af37;
+
+    // ピアノ本体
+    g.fillBox(1, 4, 10, 16, 10, 22, pianoBlack);
+    g.fillBox(1, 10, 10, 16, 11, 22, pianoLid);
+    g.fillBox(13, 4, 18, 16, 10, 22, 0); // グランドピアノカーブ
+    // 脚
+    g.fillBox(2, 0, 11, 3, 3, 12, pianoBlack);
+    g.fillBox(14, 0, 11, 15, 3, 12, pianoBlack);
+    g.fillBox(3, 0, 20, 4, 3, 21, pianoBlack);
+    g.fillBox(8, 0, 11, 9, 1, 12, goldPedal);
+
+    // 鍵盤
+    g.fillBox(2, 7, 8, 15, 7, 10, whiteKey);
+    for (let k = 3; k <= 14; k++) {
+      if (k % 7 !== 2 && k % 7 !== 6) {
+        g.set(k, 8, 9, blackKey);
+        g.set(k, 8, 10, blackKey);
+      }
+    }
+
+    // 譜面台＆楽譜
+    g.fillBox(5, 11, 11, 12, 11, 12, pianoBlack);
+    g.fillBox(6, 12, 11, 11, 15, 11, sheetPaper);
+    g.set(7, 13, 11, 0x18181b);
+    g.set(9, 14, 11, 0x18181b);
+    g.set(10, 13, 11, 0x18181b);
+
+    // ピアニスト
+    g.fillBox(5, 3, 3, 12, 5, 7, 0x27272a); // スツール
+    g.fillBox(6, 0, 4, 7, 2, 5, 0x18181b);
+    g.fillBox(10, 0, 4, 11, 2, 5, 0x18181b);
+    g.fillBox(6, 6, 4, 11, 15, 7, 0x18181b); // 胴体タキシード
+    g.fillBox(7, 8, 7, 10, 14, 7, 0xffffff); // 白シャツ
+    g.fillBox(8, 13, 8, 9, 14, 8, tc.shirt); // 蝶ネクタイ
+    g.fillBox(6, 3, 3, 11, 7, 3, 0x18181b); // テールコート
+
+    return makeTemplate(g, 0.045, [8.5, 5.0, 7.5]);
+  }
 
   // 鎧戦象の巨躯と鞍
   if (type.id === 'warelephant') {
@@ -1110,7 +1318,26 @@ function buildOffhandGeometry(type: UnitType, team: Team): BufferGeometry | null
     g.set(5, 12, 1, 0xff6b6b);
     return g.toGeometry(0.038, [3.5, 4.5, 1.5]);
   }
+  if (type.id === 'sezain') {
+    return buildSubmachineGunGeometry(team);
+  }
   return null;
+}
+
+function buildSubmachineGunGeometry(team: Team): BufferGeometry {
+  const tc = TEAM_COLORS[team];
+  const g = new VoxelGrid(4, 7, 14);
+  const darkGunmetal = 0x212529;
+  const lightMetal = 0x495057;
+  g.fillBox(1, 2, 2, 2, 5, 8, darkGunmetal);
+  g.fillBox(0, 3, 4, 0, 4, 7, tc.shirt);
+  g.fillBox(3, 3, 4, 3, 4, 7, tc.shirt);
+  g.fillBox(1, 0, 5, 2, 2, 7, 0x121416);
+  g.fillBox(1, 3, 8, 2, 4, 12, lightMetal);
+  g.fillBox(1, 3, 12, 2, 4, 13, darkGunmetal);
+  g.fillBox(1, 0, 2, 2, 2, 3, 0x1a1d20);
+  g.fillBox(1, 3, 0, 2, 4, 2, 0x343a40);
+  return g.toGeometry(0.038, [1.5, 3.0, 4.0]);
 }
 
 function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
@@ -1173,6 +1400,24 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm = buildLimbTemplate(3, 6, 3, type.look.skin, type.look.skin, 0.26);
     thigh = buildLimbTemplate(3, 8, 3, 0x7f5539, 0x7f5539, 0.4);
     shin = buildLimbTemplate(3, 8, 3, 0x7f5539, 0x7f5539, 0.4);
+  } else if (type.id === 'sezain') {
+    // セザイン: ライダースジャケットの腕とジーンズ脚
+    upperArm = buildLimbTemplate(3, 7, 3, 0x212529, 0x212529, 0.29);
+    forearm = buildLimbTemplate(3, 6, 3, 0x212529, 0x212529, 0.26);
+    thigh = buildLimbTemplate(4, 8, 4, 0x1e293b, 0x1e293b, 0.41);
+    shin = buildLimbTemplate(4, 8, 4, 0x111827, 0x1e293b, 0.4);
+  } else if (type.id === 'yamamuron') {
+    // ヤマムロン: 巨山の一体感を保つ裾野岩盤
+    upperArm = buildLimbTemplate(2, 2, 2, 0x1e3621, 0x1e3621, 0.2);
+    forearm = buildLimbTemplate(2, 2, 2, 0x1e3621, 0x1e3621, 0.2);
+    thigh = buildLimbTemplate(3, 3, 3, 0x1e3621, 0x1e3621, 0.3);
+    shin = buildLimbTemplate(3, 3, 3, 0x1e3621, 0x1e3621, 0.3);
+  } else if (type.id === 'hongon') {
+    // ホンゴン: ピアニストのタキシード腕とスラックス脚
+    upperArm = buildLimbTemplate(3, 7, 3, 0x18181b, 0x18181b, 0.29);
+    forearm = buildLimbTemplate(3, 6, 3, 0xffffff, 0x18181b, 0.26);
+    thigh = buildLimbTemplate(3, 7, 3, 0x18181b, 0x18181b, 0.38);
+    shin = buildLimbTemplate(3, 7, 3, 0x09090b, 0x18181b, 0.38);
   } else {
     upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
@@ -1198,7 +1443,12 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm,
     thigh,
     shin,
-    weapon: type.weapon ? buildWeaponGeometry(type.weapon.kind, type.weapon.length, team) : null,
+    weapon:
+      type.id === 'sezain'
+        ? buildSubmachineGunGeometry(team)
+        : type.weapon
+        ? buildWeaponGeometry(type.weapon.kind, type.weapon.length, team)
+        : null,
     bow: buildOffhandGeometry(type, team),
   };
   templateCache.set(key, set);
@@ -1299,6 +1549,21 @@ export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeo
     g.fillBox(2, 2, 0, 4, 4, 6, 0xffd43b);
     g.fillBox(2, 2, 2, 4, 4, 4, 0xff0000);
     geom = g.toGeometry(0.065, [3.5, 3.5, 3.5]);
+  } else if (kind === 'volcano_rock') {
+    // 巨大火山弾（マグマが走るゴツゴツとした溶岩岩石）
+    const g = new VoxelGrid(8, 8, 8);
+    g.fillBox(1, 1, 1, 6, 6, 6, 0x2b2d42);
+    g.fillBox(0, 2, 2, 7, 5, 5, 0x1a1a24);
+    g.fillBox(2, 0, 2, 5, 7, 5, 0x1a1a24);
+    g.fillBox(2, 2, 0, 5, 5, 7, 0x1a1a24);
+    g.set(3, 7, 3, 0xff5900);
+    g.set(4, 7, 4, 0xffd43b);
+    g.set(0, 3, 3, 0xff3b00);
+    g.set(7, 4, 4, 0xff5900);
+    g.set(3, 3, 0, 0xff922b);
+    g.set(4, 4, 7, 0xff3b00);
+    g.set(2, 5, 6, 0xffd43b);
+    geom = g.toGeometry(0.075, [4, 4, 4]);
   } else {
     const sy = 16;
     const g = new VoxelGrid(3, sy, 3);
@@ -1527,10 +1792,16 @@ export class VoxelCharacterVisual {
     placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
     placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
 
-    // 近接武器（右前腕が破壊されたら非表示）
-    if (this.weaponMesh && u.weaponParticles.length === 2) {
-      this.weaponMesh.visible = !this.parts.forearmR.destroyed;
-      placeLimb(this.weaponMesh, P[J.HandR].pos, u.weaponParticles[1].pos);
+    // 近接武器・右手武器（右前腕が破壊されたら非表示）
+    if (this.weaponMesh) {
+      if (u.weaponParticles.length === 2) {
+        this.weaponMesh.visible = !this.parts.forearmR.destroyed;
+        placeLimb(this.weaponMesh, P[J.HandR].pos, u.weaponParticles[1].pos);
+      } else if (u.type.id === 'sezain') {
+        this.weaponMesh.visible = !this.parts.forearmR.destroyed;
+        _dir.subVectors(chest, pelvis);
+        placeOrientedPart(this.weaponMesh, P[J.HandR].pos, _dir, shL, shR);
+      }
     }
 
     // 弓・銃・ガトリング・重力球・大盾（左前腕が破壊されたら非表示）
