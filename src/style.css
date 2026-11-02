@@ -355,6 +355,28 @@ body {
   margin-bottom: 6px;
 }
 
+.brief-special-rule {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(240, 62, 62, 0.16);
+  border: 1px solid rgba(255, 107, 107, 0.45);
+  border-left: 3px solid #ff6b6b;
+  margin-bottom: 6px;
+}
+
+.special-rule-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffa8a8;
+  margin-bottom: 2px;
+}
+
+.special-rule-desc {
+  font-size: 10.5px;
+  color: #ffe3e3;
+  line-height: 1.35;
+}
+
 .brief-hint {
   padding: 6px 8px;
   border-radius: 6px;

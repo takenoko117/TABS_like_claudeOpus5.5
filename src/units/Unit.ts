@@ -492,14 +492,47 @@ export class Unit {
             (px <= chasm.minX + 1.2 && targetPos.x > chasm.minX) ||
             (px >= chasm.maxX - 1.2 && targetPos.x < chasm.maxX) ||
             (px > chasm.minX && px < chasm.maxX);
-          if (needCross && Math.abs(pz) > chasm.bridgeHalfWidth * 0.72) {
-            const bridgeZ = clamp(pz, -chasm.bridgeHalfWidth * 0.55, chasm.bridgeHalfWidth * 0.55);
-            const bdx = 0 - px;
-            const bdz = bridgeZ - pz;
-            const bd = Math.hypot(bdx, bdz) || 1;
-            mx = bdx / bd;
-            mz = bdz / bd;
-            this.desiredFacing = Math.atan2(mx, mz);
+          if (needCross) {
+            const centers = chasm.bridgeCentersZ && chasm.bridgeCentersZ.length > 0 ? chasm.bridgeCentersZ : [0];
+            // 最も近い橋の中心Zを選択
+            let bestCz = centers[0];
+            let bestDistZ = Math.abs(pz - bestCz);
+            for (let i = 1; i < centers.length; i++) {
+              const d = Math.abs(pz - centers[i]);
+              if (d < bestDistZ) {
+                bestDistZ = d;
+                bestCz = centers[i];
+              }
+            }
+            if (Math.abs(pz - bestCz) > chasm.bridgeHalfWidth * 0.72) {
+              const bridgeZ = clamp(pz, bestCz - chasm.bridgeHalfWidth * 0.55, bestCz + chasm.bridgeHalfWidth * 0.55);
+              const bridgeCenterX = (chasm.minX + chasm.maxX) * 0.5;
+              const bdx = bridgeCenterX - px;
+              const bdz = bridgeZ - pz;
+              const bd = Math.hypot(bdx, bdz) || 1;
+              mx = bdx / bd;
+              mz = bdz / bd;
+              this.desiredFacing = Math.atan2(mx, mz);
+            }
+          }
+        }
+        // 円形奈落ホール（pits）の簡易回避
+        for (const pit of ctx.world.pits) {
+          const pdx = pit.x - this.pelvis.pos.x;
+          const pdz = pit.z - this.pelvis.pos.z;
+          const pd = Math.hypot(pdx, pdz);
+          const avoidPitR = pit.radius + this.bodyRadius + 1.2;
+          if (pd < avoidPitR && pd > 1e-4) {
+            const dot = (pdx * mx + pdz * mz) / pd;
+            if (dot > 0.1) {
+              const side = -pdz * mx + pdx * mz >= 0 ? 1 : -1;
+              mx += (-pdz / pd) * side * 0.95;
+              mz += (pdx / pd) * side * 0.95;
+              const nl = Math.hypot(mx, mz) || 1;
+              mx /= nl;
+              mz /= nl;
+              this.desiredFacing = Math.atan2(mx, mz);
+            }
           }
         }
         // 石柱の簡易回避

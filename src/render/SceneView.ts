@@ -321,7 +321,7 @@ export class SceneView {
 
     const cube = new BoxGeometry(1, 1, 1);
 
-    // 2. 一本橋・奈落ステージの描画
+    // 2. 一本橋・複数橋・奈落ステージの描画
     if (terrain?.chasm) {
       const c = terrain.chasm;
       const chasmW = c.maxX - c.minX;
@@ -330,41 +330,104 @@ export class SceneView {
       const bridgeMat = new MeshLambertMaterial({ color: 0x868e96 });
       const railMat = new MeshLambertMaterial({ color: 0xadb5bd });
 
-      // 上下（北・南）の奈落の黒い谷底マスク
-      for (const sign of [-1, 1]) {
-        const zStart = c.bridgeHalfWidth;
-        const zEnd = 24;
-        const zLen = zEnd - zStart;
-        const zCenter = sign * (zStart + zLen * 0.5);
+      const centers = c.bridgeCentersZ && c.bridgeCentersZ.length > 0 ? [...c.bridgeCentersZ].sort((a, b) => a - b) : [0];
 
-        const pit = new Mesh(cube, abyssMat);
-        pit.scale.set(chasmW, 0.04, zLen);
-        pit.position.set((c.minX + c.maxX) * 0.5, 0.01, zCenter);
-        this.terrainGroup.add(pit);
+      // 全体の奈落ベース（黒い谷底マスク）
+      const totalZLen = 48;
+      const pit = new Mesh(cube, abyssMat);
+      pit.scale.set(chasmW, 0.04, totalZLen);
+      pit.position.set((c.minX + c.maxX) * 0.5, 0.01, 0);
+      this.terrainGroup.add(pit);
 
-        // 崖の縁の岩壁
-        const edgeL = new Mesh(cube, cliffMat);
-        edgeL.scale.set(0.35, 0.22, zLen);
-        edgeL.position.set(c.minX, 0.08, zCenter);
-        const edgeR = edgeL.clone();
-        edgeR.position.set(c.maxX, 0.08, zCenter);
-        this.terrainGroup.add(edgeL, edgeR);
+      // 崖の縁の岩壁
+      const edgeL = new Mesh(cube, cliffMat);
+      edgeL.scale.set(0.35, 0.22, totalZLen);
+      edgeL.position.set(c.minX, 0.08, 0);
+      const edgeR = edgeL.clone();
+      edgeR.position.set(c.maxX, 0.08, 0);
+      this.terrainGroup.add(edgeL, edgeR);
+
+      // 各橋のプレートと欄干縁石
+      for (const cz of centers) {
+        const bridgeFloor = new Mesh(cube, bridgeMat);
+        bridgeFloor.scale.set(chasmW + 0.8, 0.08, c.bridgeHalfWidth * 2);
+        bridgeFloor.position.set((c.minX + c.maxX) * 0.5, 0.03, cz);
+        bridgeFloor.receiveShadow = true;
+        this.terrainGroup.add(bridgeFloor);
+
+        for (const sign of [-1, 1]) {
+          const curb = new Mesh(cube, railMat);
+          curb.scale.set(chasmW + 0.6, 0.18, 0.22);
+          curb.position.set((c.minX + c.maxX) * 0.5, 0.1, cz + sign * (c.bridgeHalfWidth - 0.1));
+          curb.castShadow = true;
+          this.terrainGroup.add(curb);
+        }
       }
+    }
 
-      // 中央の石橋プレートと低い欄干縁石
-      const bridgeFloor = new Mesh(cube, bridgeMat);
-      bridgeFloor.scale.set(chasmW + 0.8, 0.08, c.bridgeHalfWidth * 2);
-      bridgeFloor.position.set((c.minX + c.maxX) * 0.5, 0.03, 0);
-      bridgeFloor.receiveShadow = true;
-      this.terrainGroup.add(bridgeFloor);
-
-      for (const sign of [-1, 1]) {
-        const curb = new Mesh(cube, railMat);
-        curb.scale.set(chasmW + 0.6, 0.18, 0.22);
-        curb.position.set((c.minX + c.maxX) * 0.5, 0.1, sign * (c.bridgeHalfWidth - 0.1));
-        curb.castShadow = true;
-        this.terrainGroup.add(curb);
+    // 2.5 円形奈落ホール（すり鉢クレーター等）の描画
+    if (terrain?.pits && terrain.pits.length > 0) {
+      const abyssMat = new MeshBasicMaterial({ color: 0x090d14 });
+      const rimMat = new MeshLambertMaterial({ color: 0x495057 });
+      for (const pit of terrain.pits) {
+        // 16角形風にボックスを組み合わせて円形奈落マスクと縁石を描画
+        const segs = 16;
+        for (let i = 0; i < segs; i++) {
+          const ang = (i / segs) * Math.PI;
+          const slab = new Mesh(cube, abyssMat);
+          slab.scale.set(pit.radius * 1.95, 0.05, pit.radius * 0.45);
+          slab.position.set(pit.x, 0.015, pit.z);
+          slab.rotation.y = ang;
+          this.terrainGroup.add(slab);
+        }
+        const rimSegs = 24;
+        for (let i = 0; i < rimSegs; i++) {
+          const ang = (i / rimSegs) * Math.PI * 2;
+          const rim = new Mesh(cube, rimMat);
+          rim.scale.set(0.4, 0.2, (pit.radius * 2 * Math.PI) / rimSegs + 0.1);
+          rim.position.set(
+            pit.x + Math.cos(ang) * pit.radius,
+            0.09,
+            pit.z + Math.sin(ang) * pit.radius,
+          );
+          rim.rotation.y = -ang;
+          this.terrainGroup.add(rim);
+        }
       }
+    }
+
+    // 2.6 浮島アリーナ（外周奈落）の描画
+    if (terrain?.arenaBounds) {
+      const b = terrain.arenaBounds;
+      const abyssMat = new MeshBasicMaterial({ color: 0x080c14 });
+      const cliffMat = new MeshLambertMaterial({ color: 0xadb5bd });
+      // 上下左右の外周を奈落マスクで覆う
+      const outer = 60;
+      const topPit = new Mesh(cube, abyssMat);
+      topPit.scale.set(outer * 2, 0.05, outer - b.maxZ);
+      topPit.position.set(0, 0.015, -(b.maxZ + (outer - b.maxZ) * 0.5));
+      const botPit = topPit.clone();
+      botPit.position.set(0, 0.015, b.maxZ + (outer - b.maxZ) * 0.5);
+
+      const leftPit = new Mesh(cube, abyssMat);
+      leftPit.scale.set(outer - b.maxX, 0.05, b.maxZ * 2);
+      leftPit.position.set(-(b.maxX + (outer - b.maxX) * 0.5), 0.015, 0);
+      const rightPit = leftPit.clone();
+      rightPit.position.set(b.maxX + (outer - b.maxX) * 0.5, 0.015, 0);
+      this.terrainGroup.add(topPit, botPit, leftPit, rightPit);
+
+      // 浮島の縁の白い神殿石枠
+      const borderH = new Mesh(cube, cliffMat);
+      borderH.scale.set(b.maxX * 2 + 0.4, 0.22, 0.35);
+      borderH.position.set(0, 0.1, -b.maxZ);
+      const borderH2 = borderH.clone();
+      borderH2.position.set(0, 0.1, b.maxZ);
+      const borderV = new Mesh(cube, cliffMat);
+      borderV.scale.set(0.35, 0.22, b.maxZ * 2 + 0.4);
+      borderV.position.set(-b.maxX, 0.1, 0);
+      const borderV2 = borderV.clone();
+      borderV2.position.set(b.maxX, 0.1, 0);
+      this.terrainGroup.add(borderH, borderH2, borderV, borderV2);
     }
 
     // 3. 円柱障害物（ボクセル風の角柱・石柱）の描画

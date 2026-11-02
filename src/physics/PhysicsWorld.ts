@@ -31,6 +31,15 @@ export interface ChasmSpec {
   minX: number;
   maxX: number;
   bridgeHalfWidth: number;
+  /** 橋のZ中心座標リスト（省略時は [0] = 中央1本橋） */
+  bridgeCentersZ?: readonly number[];
+}
+
+/** 戦場の奈落ホール（すり鉢・中央クレーター等の円形落下穴）定義 */
+export interface PitSpec {
+  x: number;
+  z: number;
+  radius: number;
 }
 
 const _va = new Vector3();
@@ -61,6 +70,10 @@ export class PhysicsWorld {
   obstacles: ObstacleCylinder[] = [];
   /** 断崖・橋ステージの奈落設定（null なら全面が地面） */
   chasm: ChasmSpec | null = null;
+  /** 円形奈落ホール（すり鉢クレーター等）のリスト */
+  pits: PitSpec[] = [];
+  /** 戦場外周（|x|>arenaMaxX または |z|>arenaMaxZ）を奈落とする浮島アリーナ設定 */
+  arenaBounds: { maxX: number; maxZ: number } | null = null;
 
   private readonly contactPool: Contact[] = [];
   private readonly hash = new SpatialHash(0.5, 1024);
@@ -162,9 +175,30 @@ export class PhysicsWorld {
 
   /** 粒子が指定の (x, z) において奈落（穴）の上にあるか判定する */
   isOverChasm(x: number, z: number): boolean {
+    if (this.arenaBounds) {
+      if (Math.abs(x) > this.arenaBounds.maxX || Math.abs(z) > this.arenaBounds.maxZ) {
+        return true;
+      }
+    }
+    for (const pit of this.pits) {
+      const dx = x - pit.x;
+      const dz = z - pit.z;
+      if (dx * dx + dz * dz < pit.radius * pit.radius) {
+        return true;
+      }
+    }
     const c = this.chasm;
     if (!c) return false;
-    return x > c.minX && x < c.maxX && Math.abs(z) > c.bridgeHalfWidth;
+    if (x > c.minX && x < c.maxX) {
+      const centers = c.bridgeCentersZ && c.bridgeCentersZ.length > 0 ? c.bridgeCentersZ : [0];
+      for (const cz of centers) {
+        if (Math.abs(z - cz) <= c.bridgeHalfWidth) {
+          return false; // いずれかの橋の上にある
+        }
+      }
+      return true;
+    }
+    return false;
   }
 
   private solveGround(applyFriction: boolean): void {
@@ -172,18 +206,20 @@ export class PhysicsWorld {
     const chasm = this.chasm;
     for (const p of this.particles) {
       // 奈落エリア上（またはすでに崖下へ落下中）の粒子は地面を y = -20 とする
-      const inPit =
-        chasm !== null &&
-        (p.pos.y < gy - 0.18 || (p.pos.x > chasm.minX && p.pos.x < chasm.maxX && Math.abs(p.pos.z) > chasm.bridgeHalfWidth));
+      const inPit = p.pos.y < gy - 0.18 || this.isOverChasm(p.pos.x, p.pos.z);
       const localGroundY = inPit ? -20 : gy;
       const minY = localGroundY + p.radius;
 
       // 崖下に落下した粒子が崖の側面へめり込まないように水平位置を制限
-      if (chasm !== null && p.pos.y < gy - 0.05) {
+      if (chasm !== null && p.pos.y < gy - 0.05 && p.pos.x > chasm.minX - 0.5 && p.pos.x < chasm.maxX + 0.5) {
         if (p.pos.x < chasm.minX + p.radius) p.pos.x = chasm.minX + p.radius;
         if (p.pos.x > chasm.maxX - p.radius) p.pos.x = chasm.maxX - p.radius;
-        if (Math.abs(p.pos.z) < chasm.bridgeHalfWidth + p.radius) {
-          p.pos.z = (p.pos.z >= 0 ? 1 : -1) * (chasm.bridgeHalfWidth + p.radius);
+        const centers = chasm.bridgeCentersZ && chasm.bridgeCentersZ.length > 0 ? chasm.bridgeCentersZ : [0];
+        for (const cz of centers) {
+          const dz = p.pos.z - cz;
+          if (Math.abs(dz) < chasm.bridgeHalfWidth + p.radius) {
+            p.pos.z = cz + (dz >= 0 ? 1 : -1) * (chasm.bridgeHalfWidth + p.radius);
+          }
         }
       }
 

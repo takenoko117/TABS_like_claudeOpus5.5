@@ -1,8 +1,32 @@
 import { FACILITY_TYPES, type FacilityTypeId } from '../facilities/FacilityTypes';
-import type { ChasmSpec, ObstacleCylinder } from '../physics/PhysicsWorld';
-import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
+import type { ChasmSpec, ObstacleCylinder, PitSpec } from '../physics/PhysicsWorld';
+import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId, type UnitCategory } from '../units/UnitTypes';
 
 export type TerrainType = 'standard' | 'bridge' | 'ruins' | 'fortress';
+
+/** ステージ限定ルール（特殊縛り・環境補正・タイムリミット等） */
+export interface StageSpecialRules {
+  /** ルール名称（ブリーフィング等で強調表示） */
+  title: string;
+  /** ルール詳細説明 */
+  description: string;
+  /** 最大配置可能数（ユニット＋施設の合計数上限） */
+  maxUnits?: number;
+  /** 使用可能なカテゴリ制限 */
+  allowedCategories?: readonly (UnitCategory | 'facility')[];
+  /** 使用禁止ユニットID */
+  bannedUnitIds?: readonly UnitTypeId[];
+  /** 施設の配置を禁止するか */
+  banFacilities?: boolean;
+  /** 重力倍率（デフォルト 1.0。0.35 なら低重力月面、1.8 なら超重力など） */
+  gravityScale?: number;
+  /** 制限時間（秒）。この時間内に敵を殲滅できなければ作戦失敗（敗北） */
+  timeLimitSeconds?: number;
+  /** 攻撃力倍率補正（全ユニットまたは自軍） */
+  damageMultiplier?: number;
+  /** 移動速度倍率補正 */
+  speedMultiplier?: number;
+}
 
 /** 赤軍の配置可能矩形ゾーン */
 export interface PlacementZone {
@@ -20,8 +44,12 @@ export interface StageTerrainConfig {
   type: TerrainType;
   /** 石柱・バリケードなどの円柱障害物 */
   obstacles?: readonly ObstacleCylinder[];
-  /** 一本橋ステージ用: 奈落の X 範囲と橋の Z 半幅 */
+  /** 一本橋・複数橋ステージ用: 奈落の X 範囲と橋の Z 半幅 */
   chasm?: ChasmSpec;
+  /** 円形奈落ホール（すり鉢クレーター等）のリスト */
+  pits?: readonly PitSpec[];
+  /** 浮島アリーナ用の外周奈落境界 */
+  arenaBounds?: { maxX: number; maxZ: number };
   /** 赤軍の配置可能ゾーン（省略時は標準の左半分 x: -22..-1.2, z: -16..16） */
   redZones?: readonly PlacementZone[];
 }
@@ -53,6 +81,8 @@ export interface ArcadeStage {
   /** ★3 獲得目安コスト（または star2Budget 以下 かつ 味方生存コスト比率 55% 以上） */
   star3Budget: number;
   terrain: StageTerrainConfig;
+  /** ステージ限定ルール（特殊縛り・低重力・タイムリミット等） */
+  specialRules?: StageSpecialRules;
   enemies: readonly EnemySpawnRecord[];
 }
 
@@ -71,8 +101,8 @@ export const DEFAULT_RED_ZONES: readonly PlacementZone[] = [
 ];
 
 /**
- * アーケードモード全20ステージの定義。
- * 各面ごとに活躍するユニット・物理ギミック・戦術パズルを盛り込んでいる。
+ * アーケードモード全30ステージの定義。
+ * 各面ごとに活躍するユニット・物理ギミック・戦術パズル・ステージ限定ルールを盛り込んでいる。
  */
 export const ARCADE_STAGES: readonly ArcadeStage[] = [
   {
@@ -637,7 +667,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       '蒼く輝く正八面体「幾何神ラミエル」が滞空。36mもの長射程からATフィールドで守られた加粒子砲ビームを撃ち放ち、接近するユニットを瞬時に蒸発させる！',
     hint: '【戦略】ラミエルの正面に立つのは自殺行為！中央の巨大岩柱の陰に隠れつつ、「居合の剣豪」のすり抜け無敵ダッシュや「からくり忍者」の変わり身で接近するか、南側死角奇襲エリアから一気に肉薄して懐へ潜り込もう！',
     featuredUnits: ['samurai', 'ninja', 'giant_tank', 'gravimancer'],
-    unlockUnits: [],
+    unlockUnits: ['sezain'],
     budget: 3000,
     star2Budget: 2700,
     star3Budget: 2400,
@@ -680,7 +710,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       '超上空から目玉紋様の使徒「天落神サハクィエル」が肉体爆弾を連続投下！さらに前線に設置された「増殖ゲート」を敵の暴走バギーが通過し、2倍に増殖して雪崩れ込んでくる！',
     hint: '【戦略】空からは爆弾、地上からは倍増バギーの地獄絵図！地上は「盾兵」と「鎧戦象」でゲート前を塞いでバギーを圧殺し、上空のサハクィエルには「幾何神ラミエル」の加粒子砲や「衛星攻撃兵士」のビームで撃ち落とそう！',
     featuredUnits: ['angel_ramiel', 'warelephant', 'satellite_soldier', 'shielder'],
-    unlockUnits: [],
+    unlockUnits: ['hongon'],
     budget: 3600,
     star2Budget: 3200,
     star3Budget: 2850,
@@ -722,7 +752,7 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       '最強の拒絶神「ゼルエル」を中核に、巨大ロボ・超重戦車・ドラゴン・衛星攻撃兵が勢揃いした究極の最終決戦（敵軍総コスト 5,300 pt超）！帯状リボンカッターがあらゆる軍勢を両断する！',
     hint: '【戦略】正面からゼルエルのリボンカッターに突っ込めば一瞬で全滅する！「北翼包囲」「中央決戦」「南翼包囲」の三方面から全兵種を結集して包囲せよ！ゼルエルの背後を突き、神々の使徒と近代兵器の総力戦でアーケード完全制覇を果たせ！',
     featuredUnits: ['angel_zeruel', 'angel_ramiel', 'giant_robot', 'giant_tank'],
-    unlockUnits: [],
+    unlockUnits: ['zaisan'],
     budget: 5000,
     star2Budget: 4500,
     star3Budget: 4000,
@@ -752,6 +782,515 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
       { typeId: 'shielder', x: 4.5, z: -1.0 },
       { typeId: 'shielder', x: 4.5, z: 1.0 },
       { typeId: 'shielder', x: 4.5, z: 3.0 },
+    ],
+  },
+  // ===============================================================
+  // 第3部：超人・神域の試練と特殊ルール戦線（ステージ 21〜30）
+  // ===============================================================
+  {
+    stageNumber: 21,
+    id: 'stage_21',
+    name: '第21面：爆音ハイウェイ：二輪の死神',
+    subtitle: '【限定ルール：施設禁止＆超高速機甲戦】三連平行陸橋スラローム',
+    description:
+      '奈落の谷に架かる「3本の平行陸橋（北・中央・南）」を舞台に、二丁マシンガンを乱射する新ユニット「セザイン」4騎と暴走バギー4台が猛スピードで突入してくる！',
+    hint: '【戦略】この面は「施設配置禁止」かつ全員の移動速度が1.25倍になる高速バトル！3本の橋の出口を「盾兵」「槍兵」「鎧戦象」で塞ぐか、こちらも「セザイン」や「重力術師」を出して橋の上で一網打尽にしよう！',
+    featuredUnits: ['sezain', 'spearman', 'gravimancer', 'warelephant'],
+    unlockUnits: ['yamamuron'],
+    budget: 2800,
+    star2Budget: 2500,
+    star3Budget: 2200,
+    specialRules: {
+      title: '施設配置禁止 ＆ ハイスピード戦線 (速度1.25倍)',
+      description: 'トーチカやゲート等の施設は使用不可。全ユニットの移動速度が1.25倍に加速する超高速スラローム戦！',
+      banFacilities: true,
+      speedMultiplier: 1.25,
+    },
+    terrain: {
+      type: 'bridge',
+      chasm: {
+        minX: -3.6,
+        maxX: 3.6,
+        bridgeHalfWidth: 2.2,
+        bridgeCentersZ: [-9.5, 0, 9.5],
+      },
+      obstacles: [
+        { x: -6.5, z: -4.8, radius: 0.95, height: 3.2, color: 0x495057 },
+        { x: -6.5, z: 4.8, radius: 0.95, height: 3.2, color: 0x495057 },
+        { x: 6.5, z: -4.8, radius: 0.95, height: 3.2, color: 0x495057 },
+        { x: 6.5, z: 4.8, radius: 0.95, height: 3.2, color: 0x495057 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.5, minZ: -14.5, maxZ: -5.5, label: '北ハイウェイ迎撃口' },
+        { minX: -22, maxX: -4.5, minZ: -4.2, maxZ: 4.2, label: '中央ハイウェイ迎撃口' },
+        { minX: -22, maxX: -4.5, minZ: 5.5, maxZ: 14.5, label: '南ハイウェイ迎撃口' },
+      ],
+    },
+    enemies: [
+      { typeId: 'sezain', x: 7.5, z: -9.5 },
+      { typeId: 'sezain', x: 7.5, z: -1.5 },
+      { typeId: 'sezain', x: 7.5, z: 1.5 },
+      { typeId: 'sezain', x: 7.5, z: 9.5 },
+      { typeId: 'buggy', x: 10.5, z: -10.5 },
+      { typeId: 'buggy', x: 10.5, z: -8.5 },
+      { typeId: 'buggy', x: 10.5, z: 8.5 },
+      { typeId: 'buggy', x: 10.5, z: 10.5 },
+      { typeId: 'rocket_soldier', x: 13.5, z: -9.5 },
+      { typeId: 'rocket_soldier', x: 13.5, z: 0.0 },
+      { typeId: 'rocket_soldier', x: 13.5, z: 9.5 },
+    ],
+  },
+  {
+    stageNumber: 22,
+    id: 'stage_22',
+    name: '第22面：戦場のピアニスト：死の交響曲',
+    subtitle: '【限定ルール：現代兵器禁止】円形オペラ闘技場と音楽衝撃波',
+    description:
+      '8本の白亜の大理石柱に囲まれた円形闘技場。中央でグランドピアノを奏でる「ホンゴン」3体が、加護のトーテムの増幅を受けて全方位へ音楽の衝撃波を放つ！',
+    hint: '【戦略】この面は「現代兵器カテゴリ禁止（銃・戦車・ロボ等NG）」！さらに闘技場の周囲から敌が向かってくる。外周を取り囲む「東西南北の包囲配置ゾーン」から「ザイサン」「居合の剣豪」「ドラゴン」「雷導師」を一斉突入させ、演奏を止めよう！',
+    featuredUnits: ['zaisan', 'samurai', 'dragon', 'archmage'],
+    unlockUnits: [],
+    budget: 2300,
+    star2Budget: 2050,
+    star3Budget: 1800,
+    specialRules: {
+      title: '静寂のドレスコード（現代兵器カテゴリ禁止）',
+      description: '神聖な音楽堂につき、銃火器・爆弾・車両・ロボット等の「現代兵器」カテゴリは持ち込み禁止！',
+      allowedCategories: ['standard', 'magic', 'japanese', 'animal', 'mythical', 'divine', 'facility'],
+    },
+    terrain: {
+      type: 'ruins',
+      obstacles: [
+        { x: 2.0, z: -6.5, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 2.0, z: 6.5, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 7.0, z: -9.0, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 7.0, z: 9.0, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 13.0, z: -9.0, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 13.0, z: 9.0, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 17.5, z: -5.5, radius: 1.0, height: 4.5, color: 0xe9ecef },
+        { x: 17.5, z: 5.5, radius: 1.0, height: 4.5, color: 0xe9ecef },
+      ],
+      redZones: [
+        { minX: -20, maxX: -2.0, minZ: -12, maxZ: 12, label: '正面観客席エリア' },
+        { minX: 2.0, maxX: 16.0, minZ: -16, maxZ: -11.5, label: '★北バルコニー強襲席', facing: Math.PI },
+        { minX: 2.0, maxX: 16.0, minZ: 11.5, maxZ: 16, label: '★南バルコニー強襲席', facing: 0 },
+      ],
+    },
+    enemies: [
+      { facilityId: 'buff_totem', x: 9.5, z: 0.0 },
+      { typeId: 'hongon', x: 9.5, z: -3.2 },
+      { typeId: 'hongon', x: 11.8, z: 0.0 },
+      { typeId: 'hongon', x: 9.5, z: 3.2 },
+      { typeId: 'shielder', x: 5.5, z: -4.0 },
+      { typeId: 'shielder', x: 5.0, z: -1.5 },
+      { typeId: 'shielder', x: 5.0, z: 1.5 },
+      { typeId: 'shielder', x: 5.5, z: 4.0 },
+      { typeId: 'archmage', x: 14.0, z: -3.5 },
+      { typeId: 'archmage', x: 14.0, z: 3.5 },
+      { typeId: 'gravimancer', x: 15.0, z: 0.0 },
+      { typeId: 'swordsman', x: 7.5, z: -6.0 },
+      { typeId: 'swordsman', x: 7.5, z: 6.0 },
+    ],
+  },
+  {
+    stageNumber: 23,
+    id: 'stage_23',
+    name: '第23面：翠龍の剣閃：三刀流の修羅場',
+    subtitle: '【限定ルール：最大8体までの少数精鋭戦】 중앙すり鉢クレーター',
+    description:
+      '戦場ど真ん中に直径8mの巨大な「奈落クレーター（円形落下穴）」が口を開ける！向こう岸からは三刀流の剣豪「ザイサン」3体と居合の剣豪・からくり忍者の斬撃軍団がクレーターを回り込んで斬り込んでくる！',
+    hint: '【戦略】この面は「最大8体までしか配置できない」少数精鋭ルール！安価な歩兵を並べることはできない。クレーターの縁に敵を吸い寄せる「重力術師」や、高コストの「ザイサン」「鎧戦象」「ドラゴン」「使徒神サキエル」など精鋭8体を選び抜いて突き落とせ！',
+    featuredUnits: ['zaisan', 'gravimancer', 'dragon', 'warelephant'],
+    unlockUnits: [],
+    budget: 2500,
+    star2Budget: 2250,
+    star3Budget: 2000,
+    specialRules: {
+      title: '八傑の誓い（最大配置数 8体制限）',
+      description: '戦場に配置できる自軍ユニット・施設は合計 8体 まで！数ではなく圧倒的な「個」の質で勝負せよ！',
+      maxUnits: 8,
+    },
+    terrain: {
+      type: 'ruins',
+      pits: [
+        { x: 0.0, z: 0.0, radius: 4.2 },
+      ],
+      obstacles: [
+        { x: 0.0, z: -8.5, radius: 1.1, height: 3.8, color: 0x14532d },
+        { x: 0.0, z: 8.5, radius: 1.1, height: 3.8, color: 0x14532d },
+        { x: 5.8, z: -4.2, radius: 0.95, height: 3.4, color: 0x166534 },
+        { x: 5.8, z: 4.2, radius: 0.95, height: 3.4, color: 0x166534 },
+      ],
+      redZones: [
+        { minX: -20, maxX: -5.2, minZ: -15, maxZ: 15, label: '西岸・八傑陣地' },
+      ],
+    },
+    enemies: [
+      { typeId: 'zaisan', x: 7.5, z: -6.0 },
+      { typeId: 'zaisan', x: 8.5, z: 0.0 },
+      { typeId: 'zaisan', x: 7.5, z: 6.0 },
+      { typeId: 'samurai', x: 6.2, z: -8.5 },
+      { typeId: 'samurai', x: 6.2, z: -2.2 },
+      { typeId: 'samurai', x: 6.2, z: 2.2 },
+      { typeId: 'samurai', x: 6.2, z: 8.5 },
+      { typeId: 'ninja', x: 11.0, z: -7.0 },
+      { typeId: 'ninja', x: 11.0, z: -3.5 },
+      { typeId: 'ninja', x: 11.0, z: 3.5 },
+      { typeId: 'ninja', x: 11.0, z: 7.0 },
+      { facilityId: 'buff_totem', x: 12.5, z: 0.0 },
+    ],
+  },
+  {
+    stageNumber: 24,
+    id: 'stage_24',
+    name: '第24面：霊峰大噴火：神山ヤマムロン顕現',
+    subtitle: '【限定ルール：45秒タイムアタック】火口弾幕と遮蔽迷宮',
+    description:
+      '敵陣最奥に超巨大な霊峰「ヤマムロン（HP 2600）」が鎮座し、戦場全域へ灼熱の火山弾を雨あられと降らせる！さらに手前には2基の召喚ポータルと大蛇アナコンダが立ち塞がる！',
+    hint: '【戦略】この面は「45秒以内に敵を全滅させないと火山噴火で敗北」するタイムアタック！悠長に後ろから歩いていては間に合わない。「突撃回廊エリア」に「セザイン」「暴走バギー」「ザイサン」「超巨大戦車」を送り込み、ヤマムロンとポータルを速攻で粉砕せよ！',
+    featuredUnits: ['yamamuron', 'sezain', 'zaisan', 'giant_tank'],
+    unlockUnits: [],
+    budget: 3300,
+    star2Budget: 2950,
+    star3Budget: 2600,
+    specialRules: {
+      title: '大噴火カウントダウン（制限時間 45秒）',
+      description: '戦闘開始から 45秒 以内に敵軍および召喚ポータルをすべて撃破せよ！時間切れは即敗北となる！',
+      timeLimitSeconds: 45,
+    },
+    terrain: {
+      type: 'fortress',
+      obstacles: [
+        { x: -1.5, z: -4.5, radius: 1.3, height: 4.5, color: 0x3b2820 },
+        { x: -1.5, z: 4.5, radius: 1.3, height: 4.5, color: 0x3b2820 },
+        { x: 3.5, z: 0.0, radius: 1.4, height: 4.8, color: 0x2b1d16 },
+        { x: 8.0, z: -7.5, radius: 1.2, height: 4.2, color: 0x3b2820 },
+        { x: 8.0, z: 7.5, radius: 1.2, height: 4.2, color: 0x3b2820 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.0, minZ: -16, maxZ: 16, label: '山麓本陣エリア' },
+        { minX: -2.0, maxX: 3.5, minZ: -15.5, maxZ: -9.5, label: '★北登山道ショートカット', facing: Math.PI / 2 },
+        { minX: -2.0, maxX: 3.5, minZ: 9.5, maxZ: 15.5, label: '★南登山道ショートカット', facing: Math.PI / 2 },
+      ],
+    },
+    enemies: [
+      { typeId: 'yamamuron', x: 15.5, z: 0.0 },
+      { facilityId: 'barracks', x: 11.5, z: -5.5 },
+      { facilityId: 'barracks', x: 11.5, z: 5.5 },
+      { typeId: 'anaconda', x: 6.5, z: -4.5 },
+      { typeId: 'anaconda', x: 6.5, z: 4.5 },
+      { typeId: 'dragon', x: 10.5, z: 0.0 },
+      { typeId: 'shielder', x: 5.0, z: -2.0 },
+      { typeId: 'shielder', x: 5.0, z: 2.0 },
+    ],
+  },
+  {
+    stageNumber: 25,
+    id: 'stage_25',
+    name: '第25面：クローン地獄：無限倍増回廊',
+    subtitle: '【限定ルール：基本兵種・動物・施設のみ使用可】4連増殖ゲート',
+    description:
+      '敵陣に4基の「増殖ゲート (x2)」が2段構えで設置され、後ろから突撃兵・剣士・分裂キングスライムが次々とゲートをくぐって2倍、4倍へと爆発的に増殖しながら雪崩れ込んでくる！',
+    hint: '【戦略】この面は「基本兵種・動物・施設のみ使用可能（魔法・現代兵器・使徒等は使用不可）」！敵のゲート戦術にはこちらも「増殖ゲート」で対抗だ！自軍のゲート前に「鎧戦象」「巨人」「槍兵」を置いて2倍に増やし、物量には物量で押し返そう！',
+    featuredUnits: ['warelephant', 'giant', 'spearman', 'shielder'],
+    unlockUnits: [],
+    budget: 2000,
+    star2Budget: 1800,
+    star3Budget: 1600,
+    specialRules: {
+      title: '原始と野生の掟（基本兵種・動物・施設のみ）',
+      description: '魔法・現代兵器・和風・架空生物・使徒は使用不可！「基本兵種」「動物」「施設」だけで4倍増軍団を打ち破れ！',
+      allowedCategories: ['standard', 'animal', 'facility'],
+    },
+    terrain: {
+      type: 'fortress',
+      obstacles: [
+        { x: 0.0, z: 0.0, radius: 1.3, height: 3.8, color: 0x495057 },
+        { x: 6.5, z: -9.5, radius: 1.1, height: 3.5, color: 0x495057 },
+        { x: 6.5, z: 9.5, radius: 1.1, height: 3.5, color: 0x495057 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -2.5, minZ: -16, maxZ: 16, label: '迎撃本陣（増殖ゲート活用推奨）' },
+      ],
+    },
+    enemies: [
+      { facilityId: 'multiplier_gate', x: 4.5, z: -4.2 },
+      { facilityId: 'multiplier_gate', x: 4.5, z: 4.2 },
+      { facilityId: 'multiplier_gate', x: 9.0, z: -4.2 },
+      { facilityId: 'multiplier_gate', x: 9.0, z: 4.2 },
+      { typeId: 'slime', x: 12.5, z: -4.2 },
+      { typeId: 'slime', x: 12.5, z: 4.2 },
+      { typeId: 'charger', x: 14.5, z: -5.2 },
+      { typeId: 'charger', x: 14.5, z: -3.2 },
+      { typeId: 'charger', x: 14.5, z: 3.2 },
+      { typeId: 'charger', x: 14.5, z: 5.2 },
+      { typeId: 'swordsman', x: 16.5, z: -4.2 },
+      { typeId: 'swordsman', x: 16.5, z: 0.0 },
+      { typeId: 'swordsman', x: 16.5, z: 4.2 },
+    ],
+  },
+  {
+    stageNumber: 26,
+    id: 'stage_26',
+    name: '第26面：月面低重力戦線：宙を舞う巨獣',
+    subtitle: '【限定ルール：低重力 0.32G】双子クレーターと大吹っ飛び乱戦',
+    description:
+      '重力が地球の約3分の1（0.32G）しかない異常空間！一度吹き飛ばされるとスローモーションで遥か彼方まで宙を舞い、南北2つの「奈落クレーター」や中央の谷へ吸い込まれていく！',
+    hint: '【戦略】低重力下ではノックバックが通常の3倍以上の飛距離を生む！打撃や爆発で敵を浮かせればそのまま場外へホームランできる。「ホンゴン」の音波衝撃、「巨人」の棍棒、「爆弾兵」「重力術師」、あるいは飛行ユニット「大鷲」「天落神サハクィエル」が超有利だ！',
+    featuredUnits: ['hongon', 'gravimancer', 'giant', 'angel_sahaquiel'],
+    unlockUnits: [],
+    budget: 3500,
+    star2Budget: 3100,
+    star3Budget: 2750,
+    specialRules: {
+      title: 'ルナティック・グラビティ（重力 0.32倍）',
+      description: '戦場の重力が 0.32G に低下！あらゆるノックバックや跳躍が超滞空となり、クレーターへの場外落下が多発する！',
+      gravityScale: 0.32,
+    },
+    terrain: {
+      type: 'bridge',
+      chasm: {
+        minX: -2.2,
+        maxX: 2.2,
+        bridgeHalfWidth: 5.5,
+        bridgeCentersZ: [0],
+      },
+      pits: [
+        { x: -8.5, z: 0.0, radius: 3.2 },
+        { x: 8.5, z: 0.0, radius: 3.2 },
+      ],
+      obstacles: [
+        { x: 3.5, z: -8.0, radius: 1.0, height: 3.5, color: 0x748ffc },
+        { x: 3.5, z: 8.0, radius: 1.0, height: 3.5, color: 0x748ffc },
+      ],
+      redZones: [
+        { minX: -22, maxX: -12.5, minZ: -15, maxZ: 15, label: '低重力・後方発射台' },
+        { minX: -11.5, maxX: -3.5, minZ: -15, maxZ: -4.5, label: '北クレーター脇ゾーン' },
+        { minX: -11.5, maxX: -3.5, minZ: 4.5, maxZ: 15, label: '南クレーター脇ゾーン' },
+      ],
+    },
+    enemies: [
+      { typeId: 'giant', x: 5.5, z: -4.5 },
+      { typeId: 'giant', x: 5.5, z: 4.5 },
+      { typeId: 'warelephant', x: 13.5, z: -4.0 },
+      { typeId: 'warelephant', x: 13.5, z: 4.0 },
+      { typeId: 'slime', x: 4.5, z: -1.8 },
+      { typeId: 'slime', x: 4.5, z: 1.8 },
+      { typeId: 'gravimancer', x: 14.5, z: 0.0 },
+      { typeId: 'bomber', x: 12.5, z: -7.5 },
+      { typeId: 'bomber', x: 12.5, z: 7.5 },
+      { typeId: 'giant_eagle', x: 9.0, z: -8.5 },
+      { typeId: 'giant_eagle', x: 9.0, z: 8.5 },
+    ],
+  },
+  {
+    stageNumber: 27,
+    id: 'stage_27',
+    name: '第27面：孤立無援の背水陣：360度全周包囲網',
+    subtitle: '【限定ルール：中央小箱の籠城配置のみ】東西挟撃のデス・アリーナ',
+    description:
+      '自軍が配置できるのは「戦場中央の小さな四角い砦（x: -4.5〜4.5, z: -5.5〜5.5）」の内部のみ！開始と同時に東側（右）からも西側（左）からも敵の大軍が押し寄せ、完全包囲される！',
+    hint: '【戦略】敵は左右両方（西側と東側）から襲ってくる！中央砦の西端と東端の両方に「盾兵」や「防衛キャノン砲台」を置き、中心に「加護のトーテム」と全方位に音波を放つ「ホンゴン」や回転斬りの「ザイサン」を配置して360度を迎え撃て！',
+    featuredUnits: ['hongon', 'zaisan', 'shielder', 'archmage'],
+    unlockUnits: [],
+    budget: 3400,
+    star2Budget: 3050,
+    star3Budget: 2700,
+    specialRules: {
+      title: '背水の孤城（中央籠城ゾーン限定・左右同時襲撃）',
+      description: '自軍は戦場中央の砦エリアにしか配置できず、敵が西（左）と東（右）の両方向から挟み撃ちにしてくる！',
+    },
+    terrain: {
+      type: 'fortress',
+      obstacles: [
+        { x: -5.2, z: -6.2, radius: 1.0, height: 3.6, color: 0x868e96 },
+        { x: -5.2, z: 6.2, radius: 1.0, height: 3.6, color: 0x868e96 },
+        { x: 5.2, z: -6.2, radius: 1.0, height: 3.6, color: 0x868e96 },
+        { x: 5.2, z: 6.2, radius: 1.0, height: 3.6, color: 0x868e96 },
+      ],
+      redZones: [
+        { minX: -4.2, maxX: 0.0, minZ: -5.2, maxZ: 5.2, label: '★中央砦（西向き迎撃班）', facing: -Math.PI / 2 },
+        { minX: 0.0, maxX: 4.2, minZ: -5.2, maxZ: 5.2, label: '★中央砦（東向き迎撃班）', facing: Math.PI / 2 },
+      ],
+    },
+    enemies: [
+      // 東側（右）からの攻撃軍
+      { typeId: 'giant_robot', x: 13.5, z: 0.0, facing: -Math.PI / 2 },
+      { typeId: 'sezain', x: 11.5, z: -6.5, facing: -Math.PI / 2 },
+      { typeId: 'sezain', x: 11.5, z: 6.5, facing: -Math.PI / 2 },
+      { typeId: 'swordsman', x: 9.0, z: -3.5, facing: -Math.PI / 2 },
+      { typeId: 'swordsman', x: 9.0, z: 0.0, facing: -Math.PI / 2 },
+      { typeId: 'swordsman', x: 9.0, z: 3.5, facing: -Math.PI / 2 },
+      { typeId: 'rocket_soldier', x: 16.0, z: -4.0, facing: -Math.PI / 2 },
+      { typeId: 'rocket_soldier', x: 16.0, z: 4.0, facing: -Math.PI / 2 },
+      // 西側（左）からの背後奇襲軍
+      { typeId: 'warelephant', x: -13.0, z: 0.0, facing: Math.PI / 2 },
+      { typeId: 'charger', x: -10.0, z: -5.0, facing: Math.PI / 2 },
+      { typeId: 'charger', x: -10.0, z: -2.0, facing: Math.PI / 2 },
+      { typeId: 'charger', x: -10.0, z: 2.0, facing: Math.PI / 2 },
+      { typeId: 'charger', x: -10.0, z: 5.0, facing: Math.PI / 2 },
+      { typeId: 'minigunner', x: -14.5, z: -4.0, facing: Math.PI / 2 },
+      { typeId: 'minigunner', x: -14.5, z: 4.0, facing: Math.PI / 2 },
+    ],
+  },
+  {
+    stageNumber: 28,
+    id: 'stage_28',
+    name: '第28面：超重機甲・要塞島：一撃必殺の火線',
+    subtitle: '【限定ルール：全軍攻撃力 2.0倍】ダブル断崖橋とキャノン要塞',
+    description:
+      '全ユニットの攻撃力が2倍になる「超火力デスマッチ」！南北2本の細い石橋の向こうには、超巨大戦車2両・巨大ロボット2機・防衛キャノン砲台4基・対物スナイパーが鉄の弾幕を張っている！',
+    hint: '【戦略】攻撃力2倍ルールにより、かすり傷でも即座に装甲が砕け散る！正面から鈍足な大型ユニットを歩かせると橋の上で蜂の巣にされる。「おとり」で初弾を吸わせ、「幾何神ラミエル」「衛星攻撃兵士」「ヤマムロン」の超長距離攻撃で橋の向こうから要塞を吹き飛ばせ！',
+    featuredUnits: ['angel_ramiel', 'yamamuron', 'satellite_soldier', 'decoy'],
+    unlockUnits: [],
+    budget: 4500,
+    star2Budget: 4000,
+    star3Budget: 3550,
+    specialRules: {
+      title: 'オーバーチャージ（全軍ダメージ 2.0倍 ＆ 施設禁止）',
+      description: 'すべての攻撃・爆風の威力が 2.0倍 に跳ね上がる一撃必殺ルール！自軍は施設の配置が禁止される。',
+      damageMultiplier: 2.0,
+      banFacilities: true,
+    },
+    terrain: {
+      type: 'bridge',
+      chasm: {
+        minX: -3.2,
+        maxX: 3.2,
+        bridgeHalfWidth: 2.8,
+        bridgeCentersZ: [-6.5, 6.5],
+      },
+      obstacles: [
+        { x: -5.5, z: 0.0, radius: 1.4, height: 4.5, color: 0x343a40 },
+        { x: 5.5, z: 0.0, radius: 1.4, height: 4.5, color: 0x343a40 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -4.2, minZ: -15, maxZ: 15, label: '西岸・超火力砲撃陣地' },
+      ],
+    },
+    enemies: [
+      { facilityId: 'cannon_tower', x: 6.5, z: -9.5 },
+      { facilityId: 'cannon_tower', x: 6.5, z: -3.5 },
+      { facilityId: 'cannon_tower', x: 6.5, z: 3.5 },
+      { facilityId: 'cannon_tower', x: 6.5, z: 9.5 },
+      { typeId: 'giant_tank', x: 11.5, z: -6.5 },
+      { typeId: 'giant_tank', x: 11.5, z: 6.5 },
+      { typeId: 'giant_robot', x: 9.5, z: -2.2 },
+      { typeId: 'giant_robot', x: 9.5, z: 2.2 },
+      { typeId: 'sniper', x: 16.5, z: -6.5 },
+      { typeId: 'sniper', x: 16.5, z: 0.0 },
+      { typeId: 'sniper', x: 16.5, z: 6.5 },
+      { typeId: 'satellite_soldier', x: 18.0, z: -3.5 },
+      { typeId: 'satellite_soldier', x: 18.0, z: 3.5 },
+    ],
+  },
+  {
+    stageNumber: 29,
+    id: 'stage_29',
+    name: '第29面：天空の浮島神殿：四使徒の審判',
+    subtitle: '【限定ルール：最大6体・使徒＆架空生物等の頂上決戦】外周奈落の浮島',
+    description:
+      '四方を底なしの虚空に囲まれた「天空の浮島アリーナ（外周すべてが奈落）」に、ラミエル・サキエル・サハクィエル・ゼルエルの「四大使徒」が同時降臨！加護のトーテムに守られた神の軍勢が審判を下す！',
+    hint: '【戦略】この面は「最大6体まで」かつ「基本兵種・動物・施設は使用不可」！浮島の外へ押し出されると使徒といえども落下死する。四隅の「降臨奇襲ゾーン」から「拒絶神ゼルエル」「ヤマムロン」「巨大ロボット」「ザイサン」など最強の6体をぶつけ、使徒を奈落へ叩き落とせ！',
+    featuredUnits: ['angel_zeruel', 'yamamuron', 'angel_ramiel', 'giant_robot'],
+    unlockUnits: [],
+    budget: 5600,
+    star2Budget: 5000,
+    star3Budget: 4400,
+    specialRules: {
+      title: '神域の選別（最大6体 ＆ 基本兵種・動物・施設禁止）',
+      description: '天空神殿に立ち入れるのは「魔法・現代兵器・和風・架空生物・使徒」の中から選ばれた最大 6体 のみ！浮島の外周はすべて即死の奈落となっている！',
+      maxUnits: 6,
+      allowedCategories: ['magic', 'modern', 'japanese', 'mythical', 'divine'],
+      banFacilities: true,
+    },
+    terrain: {
+      type: 'ruins',
+      arenaBounds: { maxX: 16.5, maxZ: 12.5 },
+      pits: [
+        { x: 0.0, z: 0.0, radius: 2.6 },
+      ],
+      obstacles: [
+        { x: 3.5, z: -5.5, radius: 1.1, height: 4.5, color: 0xd0ebff },
+        { x: 3.5, z: 5.5, radius: 1.1, height: 4.5, color: 0xd0ebff },
+      ],
+      redZones: [
+        { minX: -15.5, maxX: -4.5, minZ: -11.5, maxZ: 11.5, label: '天空神殿・西参道' },
+        { minX: 4.0, maxX: 15.0, minZ: -11.5, maxZ: -8.0, label: '★北天・強襲回廊', facing: Math.PI },
+        { minX: 4.0, maxX: 15.0, minZ: 8.0, maxZ: 11.5, label: '★南天・強襲回廊', facing: 0 },
+      ],
+    },
+    enemies: [
+      { facilityId: 'buff_totem', x: 9.5, z: 0.0 },
+      { typeId: 'angel_zeruel', x: 7.5, z: -2.2 },
+      { typeId: 'angel_sachiel', x: 7.5, z: 2.2 },
+      { typeId: 'angel_ramiel', x: 13.5, z: -3.5 },
+      { typeId: 'angel_sahaquiel', x: 12.5, z: 3.5 },
+      { typeId: 'dragon', x: 10.5, z: -5.5 },
+      { typeId: 'dragon', x: 10.5, z: 5.5 },
+    ],
+  },
+  {
+    stageNumber: 30,
+    id: 'stage_30',
+    name: '第30面【真・最終決戦】：神話と超人のラグナロク',
+    subtitle: '全33兵種＆全4施設の頂点・四方包囲の最終聖戦',
+    description:
+      '霊峰ヤマムロン・拒絶神ゼルエル・幾何神ラミエル・超重戦車・巨大ロボ・ザイサン・ホンゴン・セザイン、さらに4種の防衛施設すべてが結集した真の最終決戦（敵総コスト 10,000 pt超）！',
+    hint: '【戦略】すべての知識と解放ユニットを総動員せよ！中央は橋と双子クレーターで分断されている。「正面本隊」「北翼強襲」「南翼強襲」「敵背後・空挺降下ゾーン」の4つの配置エリアをフル活用し、敵のキャノンとポータルを背後から潰しつつ、神々の軍勢を包囲殲滅して完全制覇を達成せよ！',
+    featuredUnits: ['yamamuron', 'angel_zeruel', 'zaisan', 'hongon', 'sezain'],
+    unlockUnits: [],
+    budget: 8500,
+    star2Budget: 7600,
+    star3Budget: 6800,
+    specialRules: {
+      title: 'ラグナロク・オーバーロード（全軍攻撃力 1.25倍 ＆ 四方包囲展開）',
+      description: '真の最終決戦！全ユニットの攻撃力が 1.25倍 に高まり、敵陣の背後を含む4つの特殊ゾーンへ自由展開が可能！',
+      damageMultiplier: 1.25,
+    },
+    terrain: {
+      type: 'fortress',
+      chasm: {
+        minX: -2.5,
+        maxX: 2.5,
+        bridgeHalfWidth: 3.2,
+        bridgeCentersZ: [-7.5, 0, 7.5],
+      },
+      pits: [
+        { x: 6.5, z: -3.8, radius: 2.1 },
+        { x: 6.5, z: 3.8, radius: 2.1 },
+      ],
+      obstacles: [
+        { x: -4.5, z: -4.0, radius: 1.2, height: 4.8, color: 0x212529 },
+        { x: -4.5, z: 4.0, radius: 1.2, height: 4.8, color: 0x212529 },
+        { x: 11.0, z: -5.5, radius: 1.2, height: 4.8, color: 0x212529 },
+        { x: 11.0, z: 5.5, radius: 1.2, height: 4.8, color: 0x212529 },
+      ],
+      redZones: [
+        { minX: -22, maxX: -5.5, minZ: -15, maxZ: 15, label: '★正面決戦本陣', facing: Math.PI / 2 },
+        { minX: 3.0, maxX: 15.0, minZ: -16, maxZ: -11.5, label: '★北翼包囲エリア', facing: Math.PI },
+        { minX: 3.0, maxX: 15.0, minZ: 11.5, maxZ: 16, label: '★南翼包囲エリア', facing: 0 },
+        { minX: 18.5, maxX: 21.8, minZ: -8.0, maxZ: 8.0, label: '★敵背後・空挺強襲ゾーン', facing: -Math.PI / 2 },
+      ],
+    },
+    enemies: [
+      { typeId: 'yamamuron', x: 15.0, z: 0.0 },
+      { typeId: 'angel_zeruel', x: 9.0, z: 0.0 },
+      { typeId: 'angel_ramiel', x: 16.0, z: -7.5 },
+      { typeId: 'angel_sahaquiel', x: 16.0, z: 7.5 },
+      { typeId: 'giant_robot', x: 9.5, z: -8.0 },
+      { typeId: 'giant_tank', x: 9.5, z: 8.0 },
+      { typeId: 'zaisan', x: 5.0, z: -7.5 },
+      { typeId: 'zaisan', x: 5.0, z: 7.5 },
+      { typeId: 'hongon', x: 12.5, z: -2.5 },
+      { typeId: 'hongon', x: 12.5, z: 2.5 },
+      { typeId: 'sezain', x: 5.0, z: -1.2 },
+      { typeId: 'sezain', x: 5.0, z: 1.2 },
+      { facilityId: 'buff_totem', x: 12.5, z: 0.0 },
+      { facilityId: 'barracks', x: 16.5, z: -3.5 },
+      { facilityId: 'barracks', x: 16.5, z: 3.5 },
+      { facilityId: 'cannon_tower', x: 8.0, z: -10.5 },
+      { facilityId: 'cannon_tower', x: 8.0, z: 10.5 },
     ],
   },
 ];
@@ -785,7 +1324,32 @@ export function isInsideStageRedZone(stage: ArcadeStage | null, x: number, z: nu
       // 奈落の上には配置できないようにする
       if (stage?.terrain.chasm) {
         const c = stage.terrain.chasm;
-        if (x > c.minX - 0.3 && x < c.maxX + 0.3 && Math.abs(z) > c.bridgeHalfWidth - 0.3) {
+        if (x > c.minX - 0.3 && x < c.maxX + 0.3) {
+          const centers = c.bridgeCentersZ && c.bridgeCentersZ.length > 0 ? c.bridgeCentersZ : [0];
+          let onBridge = false;
+          for (const cz of centers) {
+            if (Math.abs(z - cz) <= c.bridgeHalfWidth - 0.3) {
+              onBridge = true;
+              break;
+            }
+          }
+          if (!onBridge) return false;
+        }
+      }
+      // 円形奈落ホール（pits）の内部には配置できないようにする
+      if (stage?.terrain.pits) {
+        for (const pit of stage.terrain.pits) {
+          if (Math.hypot(x - pit.x, z - pit.z) < pit.radius + 0.4) {
+            return false;
+          }
+        }
+      }
+      // 浮島アリーナの外周奈落には配置できないようにする
+      if (stage?.terrain.arenaBounds) {
+        if (
+          Math.abs(x) > stage.terrain.arenaBounds.maxX - 0.4 ||
+          Math.abs(z) > stage.terrain.arenaBounds.maxZ - 0.4
+        ) {
           return false;
         }
       }
@@ -793,6 +1357,46 @@ export function isInsideStageRedZone(stage: ArcadeStage | null, x: number, z: nu
     }
   }
   return false;
+}
+
+/**
+ * 指定ステージの限定ルールに照らして、ユニットまたは施設が配置可能かどうかを判定する。
+ * 制限に引っかかる場合はエラー理由文字列を返し、問題なければ null を返す。
+ */
+export function checkStageRuleViolation(
+  stage: ArcadeStage | null,
+  itemId: UnitTypeId | FacilityTypeId,
+  currentPlacedCount: number,
+): string | null {
+  const rules = stage?.specialRules;
+  if (!rules) return null;
+
+  if (rules.maxUnits !== undefined && currentPlacedCount >= rules.maxUnits) {
+    return `⚠ 【ステージ限定ルール】この面は最大 ${rules.maxUnits} 体までしか配置できません！`;
+  }
+
+  const isFac = itemId in FACILITY_TYPES;
+  if (isFac) {
+    if (rules.banFacilities) {
+      return `⚠ 【ステージ限定ルール】この面では施設の配置が禁止されています！`;
+    }
+    if (rules.allowedCategories && !rules.allowedCategories.includes('facility')) {
+      return `⚠ 【ステージ限定ルール】この面では施設は使用できません（${rules.title}）`;
+    }
+  } else {
+    const uid = itemId as UnitTypeId;
+    if (rules.bannedUnitIds && rules.bannedUnitIds.includes(uid)) {
+      return `⚠ 【ステージ限定ルール】「${UNIT_TYPES[uid].name}」はこの面では使用禁止です！`;
+    }
+    if (rules.allowedCategories) {
+      const cat = UNIT_TYPES[uid].category;
+      if (!rules.allowedCategories.includes(cat)) {
+        return `⚠ 【ステージ限定ルール】「${UNIT_TYPES[uid].name}」はカテゴリ制限により使用できません（${rules.title}）`;
+      }
+    }
+  }
+
+  return null;
 }
 
 /** 指定座標 (x, z) が属する赤軍配置ゾーンの初期向き (facing) を返す */

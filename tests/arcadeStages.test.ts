@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ARCADE_STAGES,
   INITIAL_UNLOCKED_UNITS,
+  checkStageRuleViolation,
   computeStageStars,
   createInitialArcadeSave,
   getStageEnemyCost,
@@ -13,9 +14,9 @@ import {
 import { FACILITY_TYPES, type FacilityTypeId } from '../src/facilities/FacilityTypes';
 import { UNIT_TYPES, type UnitTypeId } from '../src/units/UnitTypes';
 
-describe('アーケードモード全20面 整合性テスト', () => {
-  it('ステージ数が20面あり、ステージ番号が1から20まで連番で並んでいる', () => {
-    expect(ARCADE_STAGES.length).toBe(20);
+describe('アーケードモード全30面 整合性テスト', () => {
+  it('ステージ数が30面あり、ステージ番号が1から30まで連番で並んでいる', () => {
+    expect(ARCADE_STAGES.length).toBe(30);
     ARCADE_STAGES.forEach((st, idx) => {
       expect(st.stageNumber).toBe(idx + 1);
       expect(st.id).toBe(`stage_${idx + 1}`);
@@ -47,13 +48,16 @@ describe('アーケードモード全20面 整合性テスト', () => {
     }
   });
 
-  it('すべての敵レコードが有効なユニットまたは施設であり、敵陣側(x > 0)に配置されている', () => {
+  it('すべての敵レコードが有効なユニットまたは施設であり、アリーナ内に配置されている', () => {
     for (const st of ARCADE_STAGES) {
       expect(st.enemies.length).toBeGreaterThan(0);
       for (const e of st.enemies) {
         expect(Number.isFinite(e.x)).toBe(true);
         expect(Number.isFinite(e.z)).toBe(true);
-        expect(e.x).toBeGreaterThan(0);
+        // 27面（360度全周包囲ステージ）以外は敵陣側(x > 0)に配置されている
+        if (st.stageNumber !== 27) {
+          expect(e.x).toBeGreaterThan(0);
+        }
 
         if (e.facilityId) {
           expect(e.facilityId in FACILITY_TYPES).toBe(true);
@@ -68,6 +72,71 @@ describe('アーケードモード全20面 整合性テスト', () => {
       expect(Number.isFinite(totalCost)).toBe(true);
       expect(totalCost).toBeGreaterThan(0);
     }
+  });
+
+  it('21〜30面において新ユニット4種（セザイン・ヤマムロン・ホンゴン・ザイサン）が登場し、各面にユニークな形状・ステージ限定ルールが設定されている', () => {
+    const stage21To30EnemyTypes = new Set<UnitTypeId>();
+    let stagesWithSpecialRules = 0;
+    let stagesWithPits = 0;
+    let stagesWithMultiBridges = 0;
+    let stagesWithArenaBounds = 0;
+
+    for (let i = 20; i < 30; i++) {
+      const st = ARCADE_STAGES[i];
+      for (const e of st.enemies) {
+        if (e.typeId) stage21To30EnemyTypes.add(e.typeId);
+      }
+      if (st.specialRules) {
+        expect(st.specialRules.title.length).toBeGreaterThan(0);
+        expect(st.specialRules.description.length).toBeGreaterThan(0);
+        stagesWithSpecialRules++;
+      }
+      if (st.terrain.pits && st.terrain.pits.length > 0) {
+        stagesWithPits++;
+      }
+      if (st.terrain.chasm?.bridgeCentersZ && st.terrain.chasm.bridgeCentersZ.length > 1) {
+        stagesWithMultiBridges++;
+      }
+      if (st.terrain.arenaBounds) {
+        stagesWithArenaBounds++;
+      }
+    }
+
+    // 新ユニット4種すべてが21〜30面の敵として登場している
+    expect(stage21To30EnemyTypes.has('sezain')).toBe(true);
+    expect(stage21To30EnemyTypes.has('yamamuron')).toBe(true);
+    expect(stage21To30EnemyTypes.has('hongon')).toBe(true);
+    expect(stage21To30EnemyTypes.has('zaisan')).toBe(true);
+
+    // 21〜30面の全10ステージにユニークな限定ルールが設定されている
+    expect(stagesWithSpecialRules).toBe(10);
+    // すり鉢クレーター(pits)・複数平行橋・浮島アリーナが活用されている
+    expect(stagesWithPits).toBeGreaterThanOrEqual(4);
+    expect(stagesWithMultiBridges).toBeGreaterThanOrEqual(3);
+    expect(stagesWithArenaBounds).toBeGreaterThanOrEqual(1);
+  });
+
+  it('ステージ限定ルール判定 (checkStageRuleViolation) が正しく機能する', () => {
+    // 21面: 施設配置禁止
+    const st21 = ARCADE_STAGES[20];
+    expect(checkStageRuleViolation(st21, 'cannon_tower', 0)).not.toBeNull();
+    expect(checkStageRuleViolation(st21, 'sezain', 0)).toBeNull();
+
+    // 22面: 現代兵器カテゴリ禁止
+    const st22 = ARCADE_STAGES[21];
+    expect(checkStageRuleViolation(st22, 'giant_tank', 0)).not.toBeNull();
+    expect(checkStageRuleViolation(st22, 'samurai', 0)).toBeNull();
+
+    // 23面: 最大8体制限
+    const st23 = ARCADE_STAGES[22];
+    expect(checkStageRuleViolation(st23, 'zaisan', 7)).toBeNull();
+    expect(checkStageRuleViolation(st23, 'zaisan', 8)).not.toBeNull();
+
+    // 25面: 基本兵種・動物・施設のみ
+    const st25 = ARCADE_STAGES[24];
+    expect(checkStageRuleViolation(st25, 'warelephant', 0)).toBeNull();
+    expect(checkStageRuleViolation(st25, 'multiplier_gate', 0)).toBeNull();
+    expect(checkStageRuleViolation(st25, 'archmage', 0)).not.toBeNull();
   });
 
   it('これまでアーケード1〜10面で敵として未登場だった全12兵種が11〜20面に登場している', () => {

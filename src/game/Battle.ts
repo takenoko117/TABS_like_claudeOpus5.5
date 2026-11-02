@@ -24,6 +24,12 @@ export class Battle implements UnitContext, FacilityBattleContext {
   aiEnabled = false;
   /** 経過シミュレーション時間（秒） */
   time = 0;
+  /** ステージ限定ルール: 制限時間（秒。null なら無制限） */
+  timeLimitSeconds: number | null = null;
+  /** ステージ限定ルール: 基本攻撃力倍率補正 */
+  baseDamageMul = 1.0;
+  /** ステージ限定ルール: 基本移動速度倍率補正 */
+  baseSpeedMul = 1.0;
 
   onUnitAdded: ((u: Unit) => void) | null = null;
   onUnitRemoved: ((u: Unit) => void) | null = null;
@@ -197,10 +203,10 @@ export class Battle implements UnitContext, FacilityBattleContext {
   }
 
   step(dt: number): void {
-    // ステップ開始時に各ユニットのバフ状態をリセット
+    // ステップ開始時に各ユニットのバフ状態をリセット（ステージ限定のベース倍率を反映）
     for (const u of this.units) {
-      u.damageMul = 1.0;
-      u.speedMul = 1.0;
+      u.damageMul = this.baseDamageMul;
+      u.speedMul = this.baseSpeedMul;
       u.hasBuff = false;
     }
 
@@ -264,6 +270,12 @@ export class Battle implements UnitContext, FacilityBattleContext {
     if (!redAlive && !blueAlive) return 'draw';
     if (!redAlive) return 1;
     if (!blueAlive) return 0;
+
+    // タイムリミット超過時は敵軍が残っていれば防衛側（青軍 = 1）の勝利
+    if (this.aiEnabled && this.timeLimitSeconds !== null && this.time >= this.timeLimitSeconds) {
+      return 1;
+    }
+
     return null;
   }
 }

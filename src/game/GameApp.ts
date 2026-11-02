@@ -28,6 +28,7 @@ import {
 } from '../units/UnitTypes';
 import {
   ARCADE_STAGES,
+  checkStageRuleViolation,
   computeStageStars,
   getStageZoneFacing,
   isInsideStageRedZone,
@@ -429,6 +430,17 @@ export class GameApp {
     return cost;
   }
 
+  private getCurrentRedPlacedCount(): number {
+    let count = 0;
+    for (const u of this.battle.units) {
+      if (u.team === 0 && u.splitGen === 0) count++;
+    }
+    for (const f of this.battle.facilities) {
+      if (f.team === 0) count++;
+    }
+    return count;
+  }
+
   private getItemCost(id: UnitTypeId | FacilityTypeId): number {
     return isFacilityTypeId(id) ? FACILITY_TYPES[id].cost : UNIT_TYPES[id].cost;
   }
@@ -794,9 +806,17 @@ export class GameApp {
             .join('')
         : `<span class="reward-chip">🏆 最終決戦ステージ</span>`;
 
+    const specialRuleHtml = st.specialRules
+      ? `<div class="brief-special-rule">
+          <div class="special-rule-title">⚡ 限定ルール: ${st.specialRules.title}</div>
+          <div class="special-rule-desc">${st.specialRules.description}</div>
+        </div>`
+      : '';
+
     el.innerHTML = `
       <div class="brief-title">${st.name}</div>
       <div class="brief-sub">${st.subtitle}</div>
+      ${specialRuleHtml}
       <div class="brief-desc">${st.description}</div>
       <div class="brief-hint">${st.hint}</div>
       <div class="brief-badges">
@@ -837,18 +857,23 @@ export class GameApp {
       );
       filtered.forEach((ut, idx) => {
         const unlocked = !isArc || isUnitUnlocked(this.arcadeSave, ut.id);
+        const ruleViolation = isArc ? checkStageRuleViolation(this.currentStage, ut.id, 0) : null;
         const isFeatured = featuredSet.has(ut.id);
         const btn = document.createElement('button');
         btn.className =
           'unit-card' +
           (ut.id === this.selectedId ? ' active' : '') +
           (isFeatured ? ' featured' : '') +
-          (!unlocked ? ' locked' : '');
+          (!unlocked || ruleViolation ? ' locked' : '');
         btn.dataset.type = ut.id;
         btn.title = `${ut.name} - ${ut.description}（クリックで詳細表示）`;
         const keyLabel = idx < 9 ? `${idx + 1}` : '';
         const featBadge = isFeatured ? `<span class="unit-featured-tag">★特効</span>` : '';
-        const lockOverlay = !unlocked ? `<div class="unit-lock-badge">🔒</div>` : '';
+        const lockOverlay = !unlocked
+          ? `<div class="unit-lock-badge">🔒</div>`
+          : ruleViolation
+            ? `<div class="unit-lock-badge" title="${ruleViolation}">🚫</div>`
+            : '';
         const theme = CATEGORY_THEME_COLORS[ut.category];
 
         btn.innerHTML = `
@@ -877,6 +902,10 @@ export class GameApp {
             this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ モードUI」内の「🔓全解放」）で使用可能になります`);
             return;
           }
+          if (ruleViolation) {
+            this.flashPhaseWarning(ruleViolation);
+            return;
+          }
           if (this.touchEraseMode) {
             this.touchEraseMode = false;
             this.elTouchEraseBtn?.classList.remove('danger', 'active');
@@ -891,17 +920,20 @@ export class GameApp {
     // 施設カードの表示（施設カテゴリ、またはすべて）
     if (this.selectedCategory === 'all' || this.selectedCategory === 'facility') {
       FACILITY_TYPE_LIST.forEach((fac, fIdx) => {
+        const ruleViolation = isArc ? checkStageRuleViolation(this.currentStage, fac.id, 0) : null;
         const btn = document.createElement('button');
-        btn.className = 'unit-card' + (fac.id === this.selectedId ? ' active' : '');
+        btn.className = 'unit-card' + (fac.id === this.selectedId ? ' active' : '') + (ruleViolation ? ' locked' : '');
         btn.dataset.type = fac.id;
         btn.title = `${fac.name} - ${fac.description}（クリックで詳細表示）`;
         const theme = CATEGORY_THEME_COLORS.facility;
         const keyLabel = this.selectedCategory === 'facility' && fIdx < 9 ? `${fIdx + 1}` : '';
+        const lockOverlay = ruleViolation ? `<div class="unit-lock-badge" title="${ruleViolation}">🚫</div>` : '';
 
         btn.innerHTML = `
           <div class="unit-card-top">
             <div class="unit-avatar" style="background:${theme.bg}; border-color:${theme.border};">
               ${getFacilityIconSvg(fac.id)}
+              ${lockOverlay}
             </div>
             <div class="unit-head-info">
               <div class="unit-badges-line">
@@ -918,6 +950,10 @@ export class GameApp {
           <div class="unit-desc" title="${fac.description}">${fac.description}</div>
         `;
         btn.addEventListener('click', () => {
+          if (ruleViolation) {
+            this.flashPhaseWarning(ruleViolation);
+            return;
+          }
           if (this.touchEraseMode) {
             this.touchEraseMode = false;
             this.elTouchEraseBtn?.classList.remove('danger', 'active');
@@ -1049,7 +1085,17 @@ export class GameApp {
         const itemCost = this.getItemCost(this.selectedId);
         const canAfford = this.getCurrentRedCost() + itemCost <= this.currentStage.budget;
         const unlocked = isFacilityTypeId(this.selectedId) || isUnitUnlocked(this.arcadeSave, this.selectedId);
-        this.view.updatePlacementGhost(this.selectedId, 0, p, validZone && canAfford && unlocked);
+        const ruleViolation = checkStageRuleViolation(
+          this.currentStage,
+          this.selectedId,
+          this.getCurrentRedPlacedCount(),
+        );
+        this.view.updatePlacementGhost(
+          this.selectedId,
+          0,
+          p,
+          validZone && canAfford && unlocked && !ruleViolation,
+        );
       } else {
         const team: Team = p.x < 0 ? 0 : 1;
         this.view.updatePlacementGhost(this.selectedId, team, p, Math.abs(p.x) > 1.2);
@@ -1086,6 +1132,15 @@ export class GameApp {
           }
           if (!isFacilityTypeId(this.selectedId) && !isUnitUnlocked(this.arcadeSave, this.selectedId)) {
             this.flashPhaseWarning('🔒 この兵種はまだ解放されていません');
+            return;
+          }
+          const ruleViolation = checkStageRuleViolation(
+            st,
+            this.selectedId,
+            this.getCurrentRedPlacedCount(),
+          );
+          if (ruleViolation) {
+            this.flashPhaseWarning(ruleViolation);
             return;
           }
           const itemCost = this.getItemCost(this.selectedId);
@@ -1201,9 +1256,19 @@ export class GameApp {
     this.battle.clear();
     this.view.clearDebris();
 
-    // ステージ固有地形を物理ワールドと描画ビューへ反映
+    // ステージ固有地形・限定ルールを物理ワールドと描画ビューへ反映
     this.battle.world.obstacles = st.terrain.obstacles ? [...st.terrain.obstacles] : [];
     this.battle.world.chasm = st.terrain.chasm ? { ...st.terrain.chasm } : null;
+    this.battle.world.pits = st.terrain.pits ? [...st.terrain.pits] : [];
+    this.battle.world.arenaBounds = st.terrain.arenaBounds ? { ...st.terrain.arenaBounds } : null;
+
+    const rules = st.specialRules;
+    const gScale = rules?.gravityScale ?? 1.0;
+    this.battle.world.gravity.set(0, -9.81 * gScale, 0);
+    this.battle.timeLimitSeconds = rules?.timeLimitSeconds ?? null;
+    this.battle.baseDamageMul = rules?.damageMultiplier ?? 1.0;
+    this.battle.baseSpeedMul = rules?.speedMultiplier ?? 1.0;
+
     this.view.setStageTerrain(st.terrain, true);
 
     // 敵（青軍）の固定配置を生成
@@ -1242,6 +1307,12 @@ export class GameApp {
     this.view.clearDebris();
     this.battle.world.obstacles = [];
     this.battle.world.chasm = null;
+    this.battle.world.pits = [];
+    this.battle.world.arenaBounds = null;
+    this.battle.world.gravity.set(0, -9.81, 0);
+    this.battle.timeLimitSeconds = null;
+    this.battle.baseDamageMul = 1.0;
+    this.battle.baseSpeedMul = 1.0;
     this.view.setStageTerrain(null, false);
     this.savedLineup = preset.units.map((u) => ({ ...u }));
     for (const item of this.savedLineup) {
@@ -1312,7 +1383,11 @@ export class GameApp {
           : used <= st.star2Budget
             ? '★★☆圏内'
             : '★☆☆圏内';
-    return `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used} ｜ ${starPreview})`;
+    const maxUnitsStr =
+      st.specialRules?.maxUnits !== undefined
+        ? ` ｜ 配置数: <b>${this.getCurrentRedPlacedCount()}</b>/${st.specialRules.maxUnits}体`
+        : '';
+    return `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used} ｜ ${starPreview})${maxUnitsStr}`;
   }
 
   private syncPhaseUI(): void {
@@ -1383,6 +1458,9 @@ export class GameApp {
       `;
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
         this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(this.currentStage, r.cost);
+      } else if (this.mode === 'battle' && this.battle.timeLimitSeconds !== null) {
+        const remain = Math.max(0, this.battle.timeLimitSeconds - this.battle.time);
+        this.elPhaseBadge.innerHTML = `戦闘中 - ${this.currentStage.name} ｜ ⏱ 残り時間: <b>${remain.toFixed(1)}s</b>`;
       }
     } else {
       this.elRedStats.innerHTML = `
@@ -1458,7 +1536,14 @@ export class GameApp {
         this.renderArcadeStageButtons();
         this.renderUnitCards();
       } else {
-        this.elBannerText.textContent = res === 'draw' ? '引き分け！' : '敗北… 作戦失敗';
+        const isTimeout =
+          this.battle.timeLimitSeconds !== null && this.battle.time >= this.battle.timeLimitSeconds;
+        this.elBannerText.textContent =
+          res === 'draw'
+            ? '引き分け！'
+            : isTimeout
+              ? '⏱ タイムアップ！ 作戦失敗'
+              : '敗北… 作戦失敗';
         this.elBannerSub.textContent = st.hint;
       }
     } else {
