@@ -190,6 +190,8 @@ export class Unit {
         ? 0.38
         : type.id === 'warelephant'
         ? 0.72
+        : type.id === 'sezain'
+        ? 0.56
         : 1.0;
     const origin = new Vector3(groundPos.x, groundPos.y + PELVIS_HEIGHT * s * hoverMul, groundPos.z);
     for (let i = 0; i < JOINT_COUNT; i++) {
@@ -2010,7 +2012,7 @@ export class Unit {
       } else if (this.type.id === 'warelephant') {
         targetH = PELVIS_HEIGHT * s * 0.72;
       } else if (this.type.id === 'sezain') {
-        targetH = PELVIS_HEIGHT * s * 0.58;
+        targetH = PELVIS_HEIGHT * s * 0.56;
       } else if (this.type.id === 'yamamuron') {
         targetH = PELVIS_HEIGHT * s * 0.85;
       } else if (this.type.id === 'hongon') {
@@ -2215,21 +2217,21 @@ export class Unit {
       lp[J.ElbowR].set(0.08, 0.10, 0.28);
       lp[J.HandR].set(0.08, 0.10, 0.28);
     } else if (this.type.id === 'sezain') {
-      // セザイン: 2輪バイク乗車ライディングポーズ
-      lp[J.Chest].set(0, 0.28, 0.12);
-      lp[J.Head].set(0, 0.44, 0.16);
-      lp[J.ShoulderL].set(-0.24, 0.30, 0.1);
-      lp[J.ElbowL].set(-0.32, 0.22, 0.18);
-      lp[J.HandL].set(-0.22, 0.22, 0.38);
-      lp[J.ShoulderR].set(0.24, 0.35, 0.1);
-      lp[J.ElbowR].set(0.32, 0.22, 0.18);
-      lp[J.HandR].set(0.22, 0.22, 0.38);
-      lp[J.HipL].set(-0.18, -0.05, -0.02);
-      lp[J.KneeL].set(-0.25, -0.22, 0.12);
-      lp[J.FootL].set(-0.25, -0.42, 0.05);
-      lp[J.HipR].set(0.18, -0.05, -0.02);
-      lp[J.KneeR].set(0.25, -0.22, 0.12);
-      lp[J.FootR].set(0.25, -0.42, 0.05);
+      // セザイン: 1000cc超え巨大バトルバイクにしっかりとまたがり、両手で重機関銃を構えるライディングポーズ
+      lp[J.Chest].set(0, 0.34, 0.08);
+      lp[J.Head].set(0, 0.58, 0.14);
+      lp[J.ShoulderL].set(-0.27, 0.36, 0.08);
+      lp[J.ElbowL].set(-0.36, 0.24, 0.22);
+      lp[J.HandL].set(-0.28, 0.25, 0.45);
+      lp[J.ShoulderR].set(0.27, 0.36, 0.08);
+      lp[J.ElbowR].set(0.36, 0.24, 0.22);
+      lp[J.HandR].set(0.28, 0.25, 0.45);
+      lp[J.HipL].set(-0.23, 0.02, -0.02);
+      lp[J.KneeL].set(-0.32, -0.14, 0.22);
+      lp[J.FootL].set(-0.29, -0.34, 0.06);
+      lp[J.HipR].set(0.23, 0.02, -0.02);
+      lp[J.KneeR].set(0.32, -0.14, 0.22);
+      lp[J.FootR].set(0.29, -0.34, 0.06);
     } else if (this.type.id === 'yamamuron') {
       // ヤマムロン: 富士山の重厚な不動山岳ポーズ
       lp[J.Chest].set(0, 0.38, 0);
@@ -2402,10 +2404,10 @@ export class Unit {
       if (phase === 'strike') {
         const recL = Math.sin(this.phaseTime * 55) * 0.06;
         const recR = Math.cos(this.phaseTime * 55) * 0.06;
-        lp[J.HandL].set(-0.2, 0.28, 0.48 + recL);
-        lp[J.ElbowL].set(-0.3, 0.28, 0.25);
-        lp[J.HandR].set(0.2, 0.28, 0.48 + recR);
-        lp[J.ElbowR].set(0.3, 0.28, 0.25);
+        lp[J.HandL].set(-0.25, 0.26, 0.50 + recL);
+        lp[J.ElbowL].set(-0.35, 0.26, 0.24);
+        lp[J.HandR].set(0.25, 0.26, 0.50 + recR);
+        lp[J.ElbowR].set(0.35, 0.26, 0.24);
       }
     } else if (style === 'eruption') {
       if (phase === 'windup') {

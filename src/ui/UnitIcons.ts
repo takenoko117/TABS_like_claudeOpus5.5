@@ -613,31 +613,45 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         </g>
       </svg>`;
     case 'sezain':
-      // セザイン: 2輪大型バイク＋バイカーヘルメット＋両手デュアルマシンガン
+      // セザイン: 1000cc超え巨大リッターバイク＋双角バトルヘルメット＋両手デュアル重機関銃
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
-        <!-- 後輪タイヤ -->
-        <circle cx="6" cy="27" r="5.5" fill="#18181b" stroke="#374151" stroke-width="1.5"/>
-        <circle cx="6" cy="27" r="2.5" fill="#9ca3af"/>
-        <!-- 前輪タイヤ -->
-        <circle cx="28" cy="27" r="5.5" fill="#18181b" stroke="#374151" stroke-width="1.5"/>
-        <circle cx="28" cy="27" r="2.5" fill="#9ca3af"/>
-        <!-- バイクフレーム＆クロームマフラー -->
-        <polygon points="6,26 14,26 18,21 10,21" fill="#27272a"/>
-        <line x1="8" y1="28" x2="22" y2="28" stroke="#d1d5db" stroke-width="2"/>
-        <line x1="18" y1="21" x2="27" y2="26" stroke="#d1d5db" stroke-width="2"/>
-        <!-- 燃料タンク（チームカラー） -->
-        <ellipse cx="18" cy="18" rx="5" ry="3" fill="#e0473a"/>
-        <!-- バイカーヘルメット＆ゴーグル -->
-        <circle cx="14" cy="11" r="5" fill="#212529"/>
-        <rect x="13" y="10" width="5.5" height="2.5" rx="1" fill="#38bdf8"/>
-        <!-- ハンドルバー -->
-        <line x1="18" y1="15" x2="23" y2="15" stroke="#d1d5db" stroke-width="1.5"/>
-        <!-- 両手マシンガン＆マズルフラッシュ -->
-        <rect x="20" y="12" width="9" height="3" fill="#374151" stroke="#111827" stroke-width="0.8"/>
-        <rect x="23" y="15" width="2.5" height="3" fill="#1f2937"/>
-        <polygon points="29,13.5 35,11 32,13.5 35,16" fill="#fef08a"/>
-        <rect x="18" y="17" width="9" height="3" fill="#374151" stroke="#111827" stroke-width="0.8"/>
-        <polygon points="27,18.5 33,16 30,18.5 33,21" fill="#f59e0b"/>
+        <!-- 後輪ワイドタイヤ＆4本出しマフラー -->
+        <circle cx="6.5" cy="27.5" r="6" fill="#0f172a" stroke="#334155" stroke-width="1.5"/>
+        <circle cx="6.5" cy="27.5" r="2.8" fill="#e2e8f0"/>
+        <circle cx="6.5" cy="27.5" r="1.2" fill="#d4af37"/>
+        <polygon points="1,20 9,23 9,26 1,23" fill="#e2e8f0" stroke="#475569" stroke-width="0.6"/>
+        <!-- 前輪ワイドタイヤ＆ゴールド倒立フォーク -->
+        <circle cx="28.5" cy="27.5" r="6" fill="#0f172a" stroke="#334155" stroke-width="1.5"/>
+        <circle cx="28.5" cy="27.5" r="2.8" fill="#e2e8f0"/>
+        <circle cx="28.5" cy="27.5" r="1.2" fill="#d4af37"/>
+        <line x1="23" y1="16" x2="28.5" y2="27.5" stroke="#d4af37" stroke-width="2.5"/>
+        <!-- 1000cc大排気量エンジン＆クローム冷却フィン -->
+        <rect x="11" y="21" width="11" height="7" rx="1" fill="#334155" stroke="#0f172a" stroke-width="0.8"/>
+        <line x1="12" y1="23" x2="21" y2="23" stroke="#e2e8f0" stroke-width="1.2"/>
+        <line x1="12" y1="25.5" x2="21" y2="25.5" stroke="#e2e8f0" stroke-width="1.2"/>
+        <circle cx="15" cy="26" r="1.8" fill="#d4af37"/>
+        <!-- ビッグタンク＆大型フロントカウル -->
+        <path d="M 8,21 L 14,16 L 26,15 L 29,20 L 22,22 Z" fill="#e0473a" stroke="#991b1b" stroke-width="0.7"/>
+        <polygon points="26,16 30,17 29,19 25,18" fill="#fef08a"/>
+        <!-- バイクにまたがるライダーの脚（ニーグリップ＆ブーツ） -->
+        <path d="M 12,19 L 17,23 L 15,29" fill="none" stroke="#1e293b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="15.5" y="21.5" width="2" height="2" fill="#d4af37"/>
+        <!-- ライダー胴体＆スパイク肩アーマー -->
+        <rect x="10" y="12" width="7" height="8" rx="1" fill="#0f172a"/>
+        <polygon points="9,12 16,12 15,16 8,15" fill="#e0473a" stroke="#d4af37" stroke-width="0.7"/>
+        <!-- 双角＆クレスト付き重装ヘルメット -->
+        <rect x="9.5" y="5.5" width="8" height="7" rx="1.5" fill="#18181b" stroke="#334155" stroke-width="0.7"/>
+        <polygon points="12,5.5 13.5,2 16,5.5" fill="#e0473a"/>
+        <polygon points="9.5,8 6.5,3.5 9,9.5" fill="#facc15"/>
+        <polygon points="17.5,8 20.5,3.5 18,9.5" fill="#facc15"/>
+        <rect x="12" y="7.5" width="5" height="2.2" rx="0.5" fill="#38bdf8"/>
+        <!-- 両手のツインバレル重機関銃＆マズルフラッシュ -->
+        <rect x="18" y="9.5" width="11" height="3.5" rx="0.5" fill="#1e293b" stroke="#d4af37" stroke-width="0.7"/>
+        <line x1="23" y1="10.5" x2="29" y2="10.5" stroke="#e2e8f0" stroke-width="1.2"/>
+        <polygon points="29,9.5 35,8 32,11 35,13.5 29,12.5" fill="#fef08a"/>
+        <rect x="16" y="14" width="11" height="3.5" rx="0.5" fill="#1e293b" stroke="#d4af37" stroke-width="0.7"/>
+        <line x1="21" y1="15" x2="27" y2="15" stroke="#e2e8f0" stroke-width="1.2"/>
+        <polygon points="27,14 33,12.5 30,15.5 33,18 27,17" fill="#f59e0b"/>
       </svg>`;
     case 'yamamuron':
       // ヤマムロン: 霊峰富士山＋山頂雪冠＋カルデラ噴火

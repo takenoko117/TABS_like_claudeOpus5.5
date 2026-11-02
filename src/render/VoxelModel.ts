@@ -188,16 +188,51 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   const pupil = 0x181820;
 
   if (type.id === 'sezain') {
-    // セザイン: 黒バイカーヘルメット＋偏光スモークシールド＋チームカラーレーシングライン
-    const g = new VoxelGrid(10, 10, 10);
-    g.fillBox(1, 1, 1, 8, 9, 8, 0x212529);
-    g.fillBox(4, 3, 0, 5, 9, 1, tc.shirt);
-    g.fillBox(4, 9, 1, 5, 9, 8, tc.shirt);
-    g.fillBox(2, 3, 8, 7, 6, 9, 0x0f172a);
-    g.fillBox(3, 4, 9, 6, 5, 9, 0x38bdf8);
-    g.fillBox(2, 1, 7, 7, 2, 9, 0x18181b);
-    g.fillBox(4, 1, 9, 5, 2, 9, 0x475569);
-    return makeTemplate(g, 0.042, [4.5, 4.0, 4.5]);
+    // セザイン: 重装甲バトルヘルメット＋黄金の双角＆クレスト（鶏冠）＋スカル顎ガード＋発光タクティカルバイザー
+    const g = new VoxelGrid(14, 13, 12);
+    const helmDark = 0x18181b;
+    const helmMetal = 0x334155;
+    const gold = 0xd4af37;
+    const brightGold = 0xfacc15;
+    const bone = 0xe2e8f0;
+
+    // ヘルメット本体
+    g.fillBox(3, 1, 2, 10, 8, 9, helmDark);
+    g.fillBox(2, 2, 3, 11, 7, 8, helmMetal);
+
+    // 頭頂部のチームカラー＆黄金クレスト（モヒカン風バトルブレード）
+    g.fillBox(6, 8, 1, 7, 10, 9, tc.shirt);
+    g.fillBox(6, 10, 2, 7, 11, 8, brightGold);
+    g.fillBox(6, 11, 3, 7, 12, 6, tc.shirt);
+    g.fillBox(6, 4, 1, 7, 9, 2, tc.shirt);
+
+    // 左右から突き出す黄金のバトルホーン（双角装飾）
+    g.fillBox(1, 5, 4, 2, 7, 6, gold);
+    g.fillBox(0, 7, 5, 1, 9, 7, brightGold);
+    g.fillBox(0, 9, 6, 0, 11, 8, 0xfef08a);
+    g.fillBox(11, 5, 4, 12, 7, 6, gold);
+    g.fillBox(12, 7, 5, 13, 9, 7, brightGold);
+    g.fillBox(13, 9, 6, 13, 11, 8, 0xfef08a);
+
+    // 発光偏光バイザー（鋭いV字シェイプ）
+    g.fillBox(3, 4, 9, 10, 6, 10, 0x0f172a);
+    g.fillBox(4, 5, 10, 9, 6, 10, 0x38bdf8);
+    g.set(5, 5, 10, 0xe0f2fe);
+    g.set(8, 5, 10, 0xe0f2fe);
+    // 額の黄金エンブレム
+    g.fillBox(6, 7, 9, 7, 8, 10, brightGold);
+
+    // 重厚なスカル風マウスガード＆吸気ダクト
+    g.fillBox(3, 1, 8, 10, 3, 10, 0x09090b);
+    g.fillBox(2, 1, 6, 3, 3, 9, gold);
+    g.fillBox(10, 1, 6, 11, 3, 9, gold);
+    // 牙・スリット装飾
+    g.set(5, 2, 10, bone);
+    g.set(6, 1, 10, bone);
+    g.set(7, 1, 10, bone);
+    g.set(8, 2, 10, bone);
+
+    return makeTemplate(g, 0.04, [6.5, 2.0, 5.5]);
   }
 
   if (type.id === 'yamamuron') {
@@ -680,41 +715,141 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   const tc = TEAM_COLORS[team];
 
   if (type.id === 'sezain') {
-    // セザイン: 大型2輪バイク（チョッパー/バトルバイク）＋ライダースジャケットのバイカー
-    const g = new VoxelGrid(14, 20, 28);
+    // セザイン: 1000cc超え超弩級リッターバイク（極太タイヤ・4気筒水冷大排気量エンジン・4本出しマフラー・大型カウル）＋重装バイカー胴体
+    const g = new VoxelGrid(18, 22, 40);
     const bikeBlack = 0x18181b;
-    const metalChrome = 0xd1d5db;
-    const darkMetal = 0x374151;
-    const tireRubber = 0x111827;
+    const metalChrome = 0xe2e8f0;
+    const midChrome = 0x94a3b8;
+    const darkMetal = 0x334155;
+    const tireRubber = 0x0f172a;
+    const tireTread = 0x1e293b;
+    const gold = 0xd4af37;
+    const copper = 0xd97706;
 
-    // 前輪大型タイヤ
-    g.fillBox(5, 0, 20, 8, 8, 26, tireRubber);
-    g.fillBox(5, 2, 22, 8, 6, 24, metalChrome);
-    g.fillBox(4, 4, 18, 4, 13, 22, metalChrome);
-    g.fillBox(9, 4, 18, 9, 13, 22, metalChrome);
-    g.fillBox(2, 13, 17, 11, 14, 18, metalChrome);
-    g.fillBox(5, 11, 22, 8, 13, 23, 0xfef08a); // ヘッドライト
+    // 1. 後輪・極太240mmワイドタイヤ (z=2..11, y=0..9)
+    for (let z = 2; z <= 11; z++) {
+      for (let y = 0; y <= 9; y++) {
+        const dy = y - 4.5;
+        const dz = z - 6.5;
+        const d2 = dy * dy + dz * dz;
+        if (d2 <= 5.0 * 5.0) {
+          const isRim = d2 <= 2.3 * 2.3;
+          const isHub = d2 <= 1.0 * 1.0;
+          for (let x = 5; x <= 12; x++) {
+            const col = isHub ? gold : isRim ? metalChrome : (z + y) % 2 === 0 ? tireRubber : tireTread;
+            g.set(x, y, z, col);
+          }
+        }
+      }
+    }
 
-    // 後輪大型タイヤ
-    g.fillBox(4, 0, 1, 9, 8, 7, tireRubber);
-    g.fillBox(4, 2, 3, 9, 6, 5, metalChrome);
+    // 2. 前輪・大径ファットタイヤ (z=28..37, y=0..9)
+    for (let z = 28; z <= 37; z++) {
+      for (let y = 0; y <= 9; y++) {
+        const dy = y - 4.5;
+        const dz = z - 32.5;
+        const d2 = dy * dy + dz * dz;
+        if (d2 <= 5.0 * 5.0) {
+          const isRim = d2 <= 2.3 * 2.3;
+          const isHub = d2 <= 1.0 * 1.0;
+          for (let x = 6; x <= 11; x++) {
+            const col = isHub ? gold : isRim ? metalChrome : (z + y) % 2 === 0 ? tireRubber : tireTread;
+            g.set(x, y, z, col);
+          }
+        }
+      }
+    }
+    // フロントダブルディスクブレーキ＆ゴールドキャリパー
+    g.fillBox(5, 3, 30, 5, 6, 34, midChrome);
+    g.fillBox(12, 3, 30, 12, 6, 34, midChrome);
+    g.set(5, 6, 30, gold);
+    g.set(12, 6, 30, gold);
 
-    // フレーム＆Vツインエンジン
-    g.fillBox(4, 2, 7, 9, 8, 19, bikeBlack);
-    g.fillBox(3, 3, 9, 10, 7, 16, darkMetal);
-    g.fillBox(2, 2, 2, 3, 4, 16, metalChrome);
-    g.fillBox(10, 2, 2, 11, 4, 16, metalChrome);
+    // 3. スイングアーム＆メインフレーム＆アンダーカウル
+    g.fillBox(4, 4, 6, 5, 6, 15, midChrome);
+    g.fillBox(12, 4, 6, 13, 6, 15, midChrome);
+    g.fillBox(5, 2, 11, 12, 9, 27, bikeBlack);
+    // アンダーカウル（チームカラーエッジ）
+    g.fillBox(4, 2, 14, 13, 4, 26, bikeBlack);
+    g.fillBox(4, 2, 15, 4, 3, 25, tc.shirt);
+    g.fillBox(13, 2, 15, 13, 3, 25, tc.shirt);
 
-    // 燃料タンク＆シート
-    g.fillBox(4, 8, 12, 9, 11, 18, tc.shirt);
-    g.fillBox(5, 8, 6, 8, 10, 12, 0x27272a);
+    // 4. 1000cc超えモンスターエンジンブロック（張り出した冷却フィン・ゴールドクラッチカバー・4連エキゾーストマニホールド）
+    g.fillBox(3, 3, 13, 14, 8, 23, darkMetal);
+    for (let y = 4; y <= 8; y += 2) {
+      g.fillBox(2, y, 15, 15, y, 22, metalChrome); // 冷却フィン
+    }
+    // 左右のゴールドクランクケースカバー
+    g.fillBox(2, 3, 14, 2, 6, 18, gold);
+    g.fillBox(15, 3, 14, 15, 6, 18, gold);
+    // 4本出しチタン・エキゾーストパイプ＆大型ツインメガホンマフラー（左右2本ずつ斜め跳ね上げ）
+    g.fillBox(4, 2, 23, 13, 5, 25, copper);
+    // 左側2連マフラー
+    g.fillBox(2, 2, 8, 3, 4, 16, metalChrome);
+    g.fillBox(1, 4, 2, 3, 6, 10, metalChrome);
+    g.fillBox(1, 5, 0, 3, 7, 3, darkMetal);
+    g.set(2, 6, 0, 0xff5900); // アフターファイアの輝き
+    // 右側2連マフラー
+    g.fillBox(14, 2, 8, 15, 4, 16, metalChrome);
+    g.fillBox(14, 4, 2, 16, 6, 10, metalChrome);
+    g.fillBox(14, 5, 0, 16, 7, 3, darkMetal);
+    g.set(15, 6, 0, 0xff5900);
 
-    // バイカー胴体
-    g.fillBox(4, 10, 10, 9, 17, 15, 0x212529);
-    g.fillBox(5, 12, 9, 8, 15, 9, tc.shirt);
-    g.fillBox(6, 11, 16, 7, 16, 16, metalChrome);
+    // 5. 大容量ビッグフューエルタンク＆エアロサイドカウル
+    g.fillBox(4, 9, 17, 13, 12, 26, tc.shirt);
+    g.fillBox(5, 12, 18, 12, 13, 25, tc.shirt);
+    // タンク側面のゴールドエンブレム＆ニーグリップパッド
+    g.fillBox(4, 10, 20, 4, 11, 24, gold);
+    g.fillBox(13, 10, 20, 13, 11, 24, gold);
+    g.fillBox(4, 9, 17, 4, 10, 19, bikeBlack);
+    g.fillBox(13, 9, 17, 13, 10, 19, bikeBlack);
+    // タンクキャップ
+    g.fillBox(8, 13, 21, 9, 13, 23, metalChrome);
 
-    return makeTemplate(g, 0.045, [6.5, 8.5, 14]);
+    // 6. フロント倒立ゴールドフォーク＆アッパーカウル・二眼LEDヘッドライト
+    g.fillBox(4, 5, 27, 5, 14, 32, gold);
+    g.fillBox(12, 5, 27, 13, 14, 32, gold);
+    // フロントフェンダー
+    g.fillBox(5, 8, 29, 12, 10, 35, tc.shirt);
+    // アッパーカウル（フロントマスク）
+    g.fillBox(4, 10, 26, 13, 15, 31, tc.shirt);
+    g.fillBox(5, 14, 25, 12, 16, 29, 0x0f172a); // スモークウインドスクリーン
+    // 凶悪な二眼デュアルプロジェクターヘッドライト＋ラムエアダクト
+    g.fillBox(4, 11, 31, 7, 13, 32, 0xfef08a);
+    g.fillBox(10, 11, 31, 13, 13, 32, 0xfef08a);
+    g.fillBox(8, 11, 31, 9, 13, 32, 0x09090b);
+    // ワイドハンドルバー＆ナックルガード
+    g.fillBox(2, 14, 24, 15, 15, 25, metalChrome);
+    g.fillBox(1, 14, 25, 3, 15, 26, bikeBlack);
+    g.fillBox(14, 14, 25, 16, 15, 26, bikeBlack);
+
+    // 7. 段付きシート＆跳ね上げリアテールカウル＋LEDテールランプ
+    g.fillBox(5, 8, 10, 12, 10, 17, 0x27272a); // ライダーシート
+    g.fillBox(4, 9, 4, 13, 12, 11, tc.shirt); // テールカウル
+    g.fillBox(5, 12, 4, 12, 13, 9, bikeBlack); // タンデムシート・バックレスト
+    g.fillBox(6, 10, 3, 11, 11, 4, 0xef4444); // テールランプ
+
+    // 8. バイカーの上半身（重装甲バトルアーマージャケット・ゴールド胸章・背面の弾薬バックパック）
+    // ライダーの骨盤〜胸は z=11..17 (シート直上), y=10..18
+    g.fillBox(5, 10, 11, 12, 18, 17, 0x1e293b); // アーマージャケット本体
+    // 胸部プロテクター＆チームカラーライン＆ゴールドエンブレム
+    g.fillBox(4, 12, 12, 13, 17, 17, 0x0f172a);
+    g.fillBox(6, 13, 17, 11, 17, 18, tc.shirt);
+    g.fillBox(7, 15, 18, 10, 16, 18, gold);
+    // 肩・鎖骨まわりの重厚なスタッズカラー（襟）
+    g.fillBox(4, 17, 11, 13, 19, 16, 0x09090b);
+    g.set(4, 19, 15, gold);
+    g.set(13, 19, 15, gold);
+    // 背面デュアルマガジン・弾薬バックパック
+    g.fillBox(5, 11, 9, 12, 17, 11, 0x27272a);
+    g.fillBox(6, 12, 8, 7, 16, 9, gold); // 左弾帯ドラム
+    g.fillBox(10, 12, 8, 11, 16, 9, gold); // 右弾帯ドラム
+
+    // 左右のフットペグ（ステップバー）
+    g.fillBox(1, 2, 14, 3, 3, 16, metalChrome);
+    g.fillBox(14, 2, 14, 16, 3, 16, metalChrome);
+
+    return makeTemplate(g, 0.045, [9.0, 9.5, 14.0]);
   }
 
   if (type.id === 'yamamuron') {
@@ -1493,18 +1628,45 @@ function buildOffhandGeometry(type: UnitType, team: Team): BufferGeometry | null
 
 function buildSubmachineGunGeometry(team: Team): BufferGeometry {
   const tc = TEAM_COLORS[team];
-  const g = new VoxelGrid(4, 7, 14);
-  const darkGunmetal = 0x212529;
-  const lightMetal = 0x495057;
-  g.fillBox(1, 2, 2, 2, 5, 8, darkGunmetal);
-  g.fillBox(0, 3, 4, 0, 4, 7, tc.shirt);
-  g.fillBox(3, 3, 4, 3, 4, 7, tc.shirt);
-  g.fillBox(1, 0, 5, 2, 2, 7, 0x121416);
-  g.fillBox(1, 3, 8, 2, 4, 12, lightMetal);
-  g.fillBox(1, 3, 12, 2, 4, 13, darkGunmetal);
-  g.fillBox(1, 0, 2, 2, 2, 3, 0x1a1d20);
-  g.fillBox(1, 3, 0, 2, 4, 2, 0x343a40);
-  return g.toGeometry(0.038, [1.5, 3.0, 4.0]);
+  // 両手に構える大口径ヘビーマシンガン（ツインバレル・ドラムマガジン・ゴールド装飾・大型マズルブレーキ）
+  const g = new VoxelGrid(7, 9, 20);
+  const darkGunmetal = 0x1e293b;
+  const barrelSteel = 0x94a3b8;
+  const brightSteel = 0xe2e8f0;
+  const gold = 0xd4af37;
+
+  // レシーバー本体
+  g.fillBox(2, 3, 2, 4, 7, 11, darkGunmetal);
+  // チームカラー＆ゴールドのサイド装甲プレート
+  g.fillBox(1, 4, 4, 1, 6, 9, tc.shirt);
+  g.fillBox(5, 4, 4, 5, 6, 9, tc.shirt);
+  g.fillBox(1, 5, 5, 1, 5, 8, gold);
+  g.fillBox(5, 5, 5, 5, 5, 8, gold);
+  // 上部ピカティニーレール＆ドットサイト照準器
+  g.fillBox(2, 7, 3, 4, 7, 10, gold);
+  g.fillBox(2, 8, 5, 4, 8, 7, darkGunmetal);
+  g.set(3, 8, 7, 0x38bdf8); // サイトレンズ
+
+  // 下部の大型ドラムマガジン（弾倉）
+  g.fillBox(1, 0, 6, 5, 3, 10, 0x0f172a);
+  g.fillBox(2, 1, 10, 4, 2, 10, gold); // 露出する真鍮弾帯
+
+  // グリップ＆リアストック
+  g.fillBox(2, 0, 2, 4, 3, 4, 0x09090b);
+  g.fillBox(2, 4, 0, 4, 6, 2, 0x334155);
+
+  // 上下2連ツインヘビーバレル（銃身）＆放熱ジャケット
+  g.fillBox(2, 4, 11, 4, 6, 15, 0x334155);
+  g.fillBox(2, 6, 11, 4, 6, 18, brightSteel); // 上銃身
+  g.fillBox(2, 4, 11, 4, 4, 18, barrelSteel); // 下銃身
+
+  // 先端の大型マズルブレーキ＆ゴールドリング
+  g.fillBox(1, 3, 17, 5, 7, 18, gold);
+  g.fillBox(1, 3, 18, 5, 7, 19, darkGunmetal);
+  g.set(3, 6, 19, 0xff922b); // 銃口ハイライト
+  g.set(3, 4, 19, 0xff922b);
+
+  return g.toGeometry(0.04, [3.5, 2.5, 3.5]);
 }
 
 function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
@@ -1568,11 +1730,30 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     thigh = buildLimbTemplate(3, 8, 3, 0x7f5539, 0x7f5539, 0.4);
     shin = buildLimbTemplate(3, 8, 3, 0x7f5539, 0x7f5539, 0.4);
   } else if (type.id === 'sezain') {
-    // セザイン: ライダースジャケットの腕とジーンズ脚
-    upperArm = buildLimbTemplate(3, 7, 3, 0x212529, 0x212529, 0.29);
-    forearm = buildLimbTemplate(3, 6, 3, 0x212529, 0x212529, 0.26);
-    thigh = buildLimbTemplate(4, 8, 4, 0x1e293b, 0x1e293b, 0.41);
-    shin = buildLimbTemplate(4, 8, 4, 0x111827, 0x1e293b, 0.4);
+    // セザイン: スパイク肩パッド付きライダース腕とニープロテクター付きライディングブーツ脚
+    const uArm = new VoxelGrid(5, 7, 5);
+    uArm.fillBox(1, 0, 1, 3, 6, 3, 0x1e293b);
+    uArm.fillBox(0, 3, 0, 4, 6, 4, tc.shirt); // 大型ショルダーアーマー
+    uArm.fillBox(0, 5, 1, 4, 6, 3, 0xd4af37); // ゴールド縁取り＆スパイク
+    upperArm = makeTemplate(uArm, 0.29 / 7, [2.5, 0, 2.5]);
+
+    const fArm = new VoxelGrid(4, 6, 4);
+    fArm.fillBox(0, 0, 0, 3, 5, 3, 0x0f172a);
+    fArm.fillBox(0, 3, 0, 3, 5, 3, 0x1e293b);
+    fArm.fillBox(0, 1, 0, 3, 2, 3, 0xd4af37); // ガントレット金帯
+    forearm = makeTemplate(fArm, 0.26 / 6, [2, 0, 2]);
+
+    const th = new VoxelGrid(4, 7, 4);
+    th.fillBox(0, 0, 0, 3, 6, 3, 0x1e293b);
+    th.fillBox(0, 4, 0, 3, 6, 3, 0x0f172a); // ニーカップ上部
+    th.fillBox(1, 5, 3, 2, 6, 3, 0xd4af37); // ゴールド膝パッド
+    thigh = makeTemplate(th, 0.32 / 7, [2, 0, 2]);
+
+    const sh = new VoxelGrid(4, 7, 5);
+    sh.fillBox(0, 0, 0, 3, 6, 3, 0x09090b); // ヘビーライディングブーツ
+    sh.fillBox(0, 0, 0, 3, 2, 4, 0x18181b); // つま先トゥスライダー
+    sh.fillBox(0, 3, 3, 3, 4, 3, 0xd4af37); // ブーツバックル
+    shin = makeTemplate(sh, 0.30 / 7, [2, 0, 2]);
   } else if (type.id === 'yamamuron') {
     // ヤマムロン: 巨山の一体感を保つ裾野岩盤
     upperArm = buildLimbTemplate(2, 2, 2, 0x1e3621, 0x1e3621, 0.2);
@@ -2187,7 +2368,7 @@ export class VoxelCharacterVisual {
     if (this.bowMesh) this.bowMesh.visible = false;
   }
 
-  /** セザイン専用のバイカー＆バイク配置処理（首浮き解消・接地） */
+  /** セザイン専用のバイカー＆巨大1000ccバイク配置処理（車体水平固定・またがり乗車・両手銃構え） */
   private syncSezain(): void {
     const u = this.unit;
     const s = u.scale;
@@ -2197,29 +2378,60 @@ export class VoxelCharacterVisual {
     const shL = P[J.ShoulderL].pos;
     const shR = P[J.ShoulderR].pos;
 
-    _dir.subVectors(chest, pelvis);
-    placeOrientedPart(this.parts.torso.mesh, pelvis, _dir, shL, shR);
+    // バイク車体基底 [right, up, fwd]（地面に対して水平を維持し、タイヤのめり込み・傾きを防ぐ）
+    _fwd.copy(u.forward).normalize();
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+    _fwd.crossVectors(_right, _up).normalize();
 
-    // ヘルメット（Head）を首元にフィット配置（首浮き完全解消）
-    _dir.subVectors(P[J.Head].pos, chest);
-    const headPos = _voxelWorld.copy(chest).addScaledVector(UP, 0.12 * s).addScaledVector(u.forward, 0.05 * s);
-    placeOrientedPart(this.parts.head.mesh, headPos, _dir, shL, shR);
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
 
-    // ライダーの四肢
+    // ヘルメット（Head）をライダー胴体の首元に密着配置
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      const headPos = _voxelWorld.copy(pelvis).addScaledVector(_up, 0.39 * s).addScaledVector(_fwd, 0.02 * s);
+      placeBasisPart(this.parts.head.mesh, headPos, _right, _up, _fwd);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    // ライダーの四肢（バイクのタンク・エンジンを両脚で確実に挟み込み、ステップに足を乗せる）
     placeLimb(this.parts.upperArmL.mesh, shL, P[J.ElbowL].pos);
     placeLimb(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos);
     placeLimb(this.parts.upperArmR.mesh, shR, P[J.ElbowR].pos);
     placeLimb(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos);
-    placeLimb(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos);
-    placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
-    placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
-    placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
 
+    // 脚はバイク車体座標系に固定して、確実にシートからエンジン側面・ステップバーにまたがらせる
+    const hipL = _localHit.copy(pelvis).addScaledVector(_right, -0.22 * s).addScaledVector(_up, 0.02 * s).addScaledVector(_fwd, -0.02 * s);
+    const kneeL = _voxelWorld.copy(pelvis).addScaledVector(_right, -0.32 * s).addScaledVector(_up, -0.10 * s).addScaledVector(_fwd, 0.22 * s);
+    placeLimb(this.parts.thighL.mesh, hipL, kneeL);
+    const footL = _localHit.copy(pelvis).addScaledVector(_right, -0.30 * s).addScaledVector(_up, -0.32 * s).addScaledVector(_fwd, 0.06 * s);
+    placeLimb(this.parts.shinL.mesh, kneeL, footL);
+
+    const hipR = _localHit.copy(pelvis).addScaledVector(_right, 0.22 * s).addScaledVector(_up, 0.02 * s).addScaledVector(_fwd, -0.02 * s);
+    const kneeR = _voxelWorld.copy(pelvis).addScaledVector(_right, 0.32 * s).addScaledVector(_up, -0.10 * s).addScaledVector(_fwd, 0.22 * s);
+    placeLimb(this.parts.thighR.mesh, hipR, kneeR);
+    const footR = _localHit.copy(pelvis).addScaledVector(_right, 0.30 * s).addScaledVector(_up, -0.32 * s).addScaledVector(_fwd, 0.06 * s);
+    placeLimb(this.parts.shinR.mesh, kneeR, footR);
+
+    // 右手ヘビーマシンガン（前方へ向けて構える）
     if (this.weaponMesh) {
       this.weaponMesh.visible = !this.parts.forearmR.destroyed;
-      _dir.subVectors(chest, pelvis);
-      placeOrientedPart(this.weaponMesh, P[J.HandR].pos, _dir, shL, shR);
+      placeBasisPart(this.weaponMesh, P[J.HandR].pos, _right, _up, _fwd);
     }
+
+    // 左手ヘビーマシンガン（前方へ向けて構える・二丁拳銃/両手銃）
+    if (this.bowMesh) {
+      this.bowMesh.visible = !this.parts.forearmL.destroyed;
+      placeBasisPart(this.bowMesh, P[J.HandL].pos, _right, _up, _fwd);
+    }
+
+    void chest;
   }
 
   /** 鎧戦象専用の4本脚・象頭部配置処理 */

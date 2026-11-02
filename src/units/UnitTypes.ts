@@ -888,7 +888,7 @@ giant_robot: {
     id: 'sezain',
     name: 'セザイン',
     category: 'modern',
-    description: '大型2輪バイクを疾走させ、両手のマシンガンから猛烈な連射弾幕を浴びせつつ敵陣を突破する機動戦士。',
+    description: '1000cc超えの巨大重装バトルバイクにまたがり疾走。双角の覇王ヘルメットを被り、両手の重機関銃から猛烈な弾幕を浴びせて敵陣を突破する。',
     cost: 420,
     scale: 1.35,
     massMul: 2.2,
