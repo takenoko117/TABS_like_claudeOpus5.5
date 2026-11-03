@@ -728,18 +728,20 @@ export class Unit {
     }
     // 怯んだら攻撃は中断（大型巨獣は強靭で中断されにくい）
     const minMuscle =
-      this.type.id === 'giant' ||
-      this.type.id === 'warelephant' ||
-      this.type.id === 'dragon' ||
-      this.type.id === 'anaconda' ||
-      this.type.id === 'buggy' ||
-      this.type.id === 'giant_tank' ||
-      this.type.id === 'giant_robot' ||
-      this.type.id === 'yamamuron' ||
-      this.type.id === 'sezain' ||
-      this.type.id === 'zaisan' ||
-      this.type.id === 'lightspeed_ant' ||
-      this.type.category === 'divine'
+      this.type.id === 'angel_ramiel'
+        ? 0
+        : this.type.id === 'giant' ||
+          this.type.id === 'warelephant' ||
+          this.type.id === 'dragon' ||
+          this.type.id === 'anaconda' ||
+          this.type.id === 'buggy' ||
+          this.type.id === 'giant_tank' ||
+          this.type.id === 'giant_robot' ||
+          this.type.id === 'yamamuron' ||
+          this.type.id === 'sezain' ||
+          this.type.id === 'zaisan' ||
+          this.type.id === 'lightspeed_ant' ||
+          this.type.category === 'divine'
         ? 0.16
         : 0.3;
     if (this.muscle < minMuscle) {
@@ -785,6 +787,27 @@ export class Unit {
         kind: 'zeruel_charge',
         pos: this.chest.pos.clone().addScaledVector(this.forward, 0.3 * this.scale),
         progress: this.phaseTime / ty.windup,
+      });
+    }
+
+    if (ty.style === 'ramiel_beam' && this.attackPhase === 'windup') {
+      if (this.target && this.target.alive) {
+        this.laserAimPos.copy(this.target.chest.pos);
+      } else if (this.targetFacility && this.targetFacility.alive) {
+        this.laserAimPos.copy(this.targetFacility.pos).setY(this.targetFacility.height * 0.5);
+      } else if (this.laserAimPos.lengthSq() < 0.01) {
+        this.laserAimPos.copy(this.pelvis.pos).addScaledVector(this.forward, 24.0);
+      }
+      const dx = this.laserAimPos.x - this.pelvis.pos.x;
+      const dz = this.laserAimPos.z - this.pelvis.pos.z;
+      if (dx * dx + dz * dz > 1e-3) {
+        this.desiredFacing = Math.atan2(dx, dz);
+      }
+      ctx.combat.emitEffect({
+        kind: 'ramiel_charge',
+        pos: this.pelvis.pos.clone(),
+        aim: this.laserAimPos.clone(),
+        progress: clamp(this.phaseTime / ty.windup, 0, 1),
       });
     }
 
@@ -920,11 +943,16 @@ export class Unit {
           ? t.chest.pos.clone()
           : fac && fac.alive
           ? fac.pos.clone().setY(fac.height * 0.5)
-          : null;
-      if (aim) {
-        const from = this.pelvis.pos.clone();
-        ctx.combat.fireRamielBeam(this, from, aim, ctx.units, ctx.facilities ?? [], dt);
-      }
+          : this.laserAimPos.lengthSq() > 0.01
+          ? this.laserAimPos.clone()
+          : this.pelvis.pos.clone().addScaledVector(this.forward, 24.0);
+      this.laserAimPos.copy(aim);
+      this.subAttackTimer = 0.16;
+      const from = this.pelvis.pos.clone();
+      ctx.combat.fireRamielBeam(this, from, aim, ctx.units, ctx.facilities ?? [], dt, true);
+      const recoil = this.forward.clone().multiplyScalar(-2.4);
+      this.pelvis.addVelocity(recoil, dt);
+      this.chest.addVelocity(recoil, dt);
       return;
     }
     if (st === 'sachiel_strike') {
@@ -1423,6 +1451,24 @@ export class Unit {
           ctx.facilities ?? [],
           dt,
         );
+      }
+    } else if (st === 'ramiel_beam') {
+      if (t && t.alive) {
+        this.laserAimPos.lerp(t.chest.pos, Math.min(1.0, dt * 4.5));
+      } else if (this.targetFacility && this.targetFacility.alive) {
+        const facPos = this.targetFacility.pos.clone().setY(this.targetFacility.height * 0.5);
+        this.laserAimPos.lerp(facPos, Math.min(1.0, dt * 4.5));
+      }
+      const dx = this.laserAimPos.x - this.pelvis.pos.x;
+      const dz = this.laserAimPos.z - this.pelvis.pos.z;
+      if (dx * dx + dz * dz > 1e-3) {
+        this.desiredFacing = Math.atan2(dx, dz);
+      }
+      this.subAttackTimer -= dt;
+      if (this.subAttackTimer <= 0) {
+        this.subAttackTimer = 0.16;
+        const from = this.pelvis.pos.clone();
+        ctx.combat.fireRamielBeam(this, from, this.laserAimPos.clone(), ctx.units, ctx.facilities ?? [], dt, false);
       }
     } else if (st === 'breath') {
       this.subAttackTimer -= dt;
@@ -2127,7 +2173,13 @@ export class Unit {
       } else if (this.type.id === 'dragon') {
         targetH = PELVIS_HEIGHT * s * 1.32 + Math.sin(this.walkPhase * 1.6) * 0.15;
       } else if (this.type.id === 'angel_ramiel') {
-        targetH = 2.6 + Math.sin(this.walkPhase * 1.2) * 0.12;
+        const chargeLift =
+          this.attackPhase === 'windup'
+            ? clamp(this.phaseTime / Math.max(0.1, this.type.windup), 0, 1) * 0.85
+            : this.attackPhase === 'strike'
+            ? 0.85 + Math.sin(this.phaseTime * 42.0) * 0.06
+            : 0;
+        targetH = 2.7 + chargeLift + Math.sin(this.walkPhase * 1.2) * 0.12;
       } else if (this.type.id === 'angel_zeruel') {
         targetH = PELVIS_HEIGHT * s * 1.05 + Math.sin(this.walkPhase * 0.9) * 0.22;
       } else if (this.type.id === 'angel_sahaquiel') {
@@ -2721,7 +2773,7 @@ export class Unit {
       else if (this.type.id === 'angel_sahaquiel') cutRatio = 0.3;
       amount *= (1 - cutRatio);
 
-      if (this.type.id === 'angel_zeruel') {
+      if (this.type.id === 'angel_zeruel' || this.type.id === 'angel_ramiel') {
         this.defenseTimer = 0.68;
       }
 

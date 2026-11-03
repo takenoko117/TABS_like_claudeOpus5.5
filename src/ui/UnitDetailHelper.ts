@@ -30,7 +30,7 @@ export function getAttackDamageDisplay(ut: UnitType): string {
   if (ut.weapon) {
     return `${ut.weapon.damage}`;
   }
-  if (ut.id === 'angel_ramiel') return '160 (貫通ビーム)';
+  if (ut.id === 'angel_ramiel') return '580 (超極太貫通ビーム)';
   if (ut.id === 'angel_zeruel') return '420-500 (神速両断)';
   if (ut.id === 'angel_sachiel') return '100 (光杭・閃光)';
   if (ut.id === 'satellite_soldier') return '160 (衛星砲)';

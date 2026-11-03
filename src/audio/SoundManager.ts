@@ -1068,48 +1068,89 @@ export class SoundManager {
         break;
       }
       case 'ramiel_charge': {
-        if (!this.throttle('ram_chg', 180)) return;
+        if (!this.throttle('ram_chg', 140)) return;
+        const prog = Math.max(0, Math.min(1, e.progress ?? 0.5));
+        const baseFreq = 520 + prog * 1450;
+
+        // 1. 天使的クリスタル共鳴コーラス（完全五度でハモる透明感のある高音サイン波）
+        const choir1 = ctx.createOscillator();
+        const choir2 = ctx.createOscillator();
+        const cg = ctx.createGain();
+        choir1.type = 'sine';
+        choir2.type = 'triangle';
+        choir1.frequency.setValueAtTime(baseFreq, t);
+        choir1.frequency.exponentialRampToValueAtTime(baseFreq * 1.35, t + 0.28);
+        choir2.frequency.setValueAtTime(baseFreq * 1.5, t);
+        choir2.frequency.exponentialRampToValueAtTime(baseFreq * 2.0, t + 0.28);
+        cg.gain.setValueAtTime(0.14 + prog * 0.18, t);
+        cg.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+        choir1.connect(cg);
+        choir2.connect(cg);
+        cg.connect(this.masterGain);
+        choir1.start(t);
+        choir2.start(t);
+        choir1.stop(t + 0.34);
+        choir2.stop(t + 0.34);
+
+        // 2. 荷電粒子タービン収束音（臨界に向けてうなりを上げるノコギリ波）
         const osc = ctx.createOscillator();
         const g = ctx.createGain();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(950, t);
-        osc.frequency.exponentialRampToValueAtTime(2400, t + 0.35);
-        g.gain.setValueAtTime(0.25, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        osc.frequency.setValueAtTime(180 + prog * 620, t);
+        osc.frequency.exponentialRampToValueAtTime(420 + prog * 1600, t + 0.26);
+        g.gain.setValueAtTime(0.12 + prog * 0.16, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
         osc.connect(g);
         g.connect(this.masterGain);
         osc.start(t);
-        osc.stop(t + 0.4);
+        osc.stop(t + 0.3);
         break;
       }
       case 'ramiel_beam': {
-        if (!this.throttle('ram_beam', 150)) return;
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(750, t);
-        osc.frequency.exponentialRampToValueAtTime(35, t + 0.5);
-        g.gain.setValueAtTime(0.65, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-        osc.connect(g);
-        g.connect(this.masterGain);
-        osc.start(t);
-        osc.stop(t + 0.58);
+        const isInit = e.isInitial !== false;
+        if (!this.throttle('ram_beam', isInit ? 80 : 130)) return;
 
+        // 1. 超極太加粒子砲の重低音サブベース咆哮
+        const sub = ctx.createOscillator();
+        const sg = ctx.createGain();
+        sub.type = 'sawtooth';
+        sub.frequency.setValueAtTime(isInit ? 160 : 110, t);
+        sub.frequency.exponentialRampToValueAtTime(26, t + (isInit ? 0.75 : 0.28));
+        sg.gain.setValueAtTime(isInit ? 0.78 : 0.38, t);
+        sg.gain.exponentialRampToValueAtTime(0.001, t + (isInit ? 0.8 : 0.3));
+        sub.connect(sg);
+        sg.connect(this.masterGain);
+        sub.start(t);
+        sub.stop(t + (isInit ? 0.82 : 0.32));
+
+        // 2. 使徒特有の金属的・結晶質高周波スクリーム共鳴
+        const shriek = ctx.createOscillator();
+        const shg = ctx.createGain();
+        shriek.type = 'square';
+        shriek.frequency.setValueAtTime(isInit ? 2400 : 1800, t);
+        shriek.frequency.exponentialRampToValueAtTime(620, t + (isInit ? 0.65 : 0.25));
+        shg.gain.setValueAtTime(isInit ? 0.32 : 0.16, t);
+        shg.gain.exponentialRampToValueAtTime(0.001, t + (isInit ? 0.68 : 0.26));
+        shriek.connect(shg);
+        shg.connect(this.masterGain);
+        shriek.start(t);
+        shriek.stop(t + (isInit ? 0.7 : 0.28));
+
+        // 3. 大気を焼き切るプラズマ爆轟ノイズ
         const noise = ctx.createBufferSource();
         noise.buffer = this.noiseBuffer;
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.frequency.setValueAtTime(1800, t);
-        bp.Q.value = 2.5;
+        bp.frequency.setValueAtTime(isInit ? 1400 : 2100, t);
+        bp.Q.value = 1.8;
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.6, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        ng.gain.setValueAtTime(isInit ? 0.72 : 0.35, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + (isInit ? 0.68 : 0.25));
         noise.connect(bp);
         bp.connect(ng);
         ng.connect(this.masterGain);
         noise.start(t);
-        noise.stop(t + 0.48);
+        noise.stop(t + (isInit ? 0.7 : 0.28));
         break;
       }
       case 'sachiel_pile': {

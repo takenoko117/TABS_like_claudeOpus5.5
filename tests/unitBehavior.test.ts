@@ -286,15 +286,23 @@ describe('兵種固有の不具合の回帰テスト', () => {
   });
 
 
-  it('幾何神ラミエルが加粒子砲（荷電粒子ビーム）を照射し遠距離の敵に直撃大ダメージを与える', () => {
+  it('幾何神ラミエルが長いタメ時間から超極太・広範囲・高威力の加粒子砲レーザーを照射し複数敵を貫通撃破する', () => {
     const battle = new DiagBattle();
     const ramiel = battle.spawnUnit('angel_ramiel', 0, -15, 0);
     const dummy = battle.spawnUnit('swordsman', 1, 12, 0);
+    const dummyWide = battle.spawnUnit('swordsman', 1, 12, 2.4);
+    const dummyBehind = battle.spawnUnit('swordsman', 1, 18, 0);
     battle.frozen.add(dummy);
+    battle.frozen.add(dummyWide);
+    battle.frozen.add(dummyBehind);
     dummy.hp = 1e7;
+    dummyWide.hp = 1e7;
+    dummyBehind.hp = 1e7;
+    let chargeEvents = 0;
     let beamFired = 0;
     let totalDmg = 0;
     battle.combat.onEffect = (e) => {
+      if (e.kind === 'ramiel_charge') chargeEvents++;
       if (e.kind === 'ramiel_beam') beamFired++;
     };
     battle.combat.onHit = (e) => {
@@ -302,8 +310,12 @@ describe('兵種固有の不具合の回帰テスト', () => {
     };
     battle.aiEnabled = true;
     for (let i = 0; i < 120 * 8; i++) battle.step(battle.fixedDt);
+    expect(chargeEvents).toBeGreaterThan(30);
     expect(beamFired).toBeGreaterThan(0);
+    expect(totalDmg).toBeGreaterThan(400);
     expect(dummy.hp).toBeLessThan(1e7);
+    expect(dummyWide.hp).toBeLessThan(1e7);
+    expect(dummyBehind.hp).toBeLessThan(1e7);
   });
 
   it('使徒神サキエルが光杭パイルランスと閃光クロス爆発を放つ', () => {

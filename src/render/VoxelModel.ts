@@ -3,18 +3,27 @@ import {
   BufferGeometry,
   CircleGeometry,
   Color,
+  CylinderGeometry,
+  DataTexture,
   DoubleSide,
   EdgesGeometry,
+  EquirectangularReflectionMapping,
   Group,
+  LinearFilter,
   LineBasicMaterial,
   LineSegments,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
+  OctahedronGeometry,
   Quaternion,
+  RepeatWrapping,
+  RGBAFormat,
   SphereGeometry,
+  SRGBColorSpace,
   TorusGeometry,
   Vector3,
 } from 'three';
@@ -2348,6 +2357,306 @@ function createZeruelRibbonGeometry(segCount: number, s: number): BufferGeometry
   return geom;
 }
 
+let _ramielMirrorEnvMap: DataTexture | null = null;
+/** 幾何神ラミエル専用: 鏡面反射（空・地平線・太陽フレア・オーロラ光帯）を演出するプロシージャル環境マップ */
+function getRamielMirrorEnvMap(): DataTexture {
+  if (_ramielMirrorEnvMap) return _ramielMirrorEnvMap;
+  const width = 256;
+  const height = 128;
+  const data = new Uint8Array(width * height * 4);
+
+  for (let y = 0; y < height; y++) {
+    const v = y / (height - 1);
+    const elev = v * 2.0 - 1.0; // -1 (底) ～ +1 (天頂)
+    for (let x = 0; x < width; x++) {
+      const u = x / width;
+      const theta = u * Math.PI * 2.0;
+
+      // 鋭い地平線スペキュラバンド＆多重太陽反射ハイライト
+      const horizonGlow = Math.exp(-Math.pow(elev * 7.5, 2));
+      const sun1 = Math.pow(Math.max(0, Math.cos(theta - 0.8) * Math.cos((elev - 0.28) * 2.2)), 18);
+      const sun2 = Math.pow(Math.max(0, Math.cos(theta + 2.1) * Math.cos((elev - 0.15) * 2.5)), 24);
+      const prismBand = Math.pow(0.5 + 0.5 * Math.sin(theta * 6.0 + elev * 9.0), 8);
+      const auroraBand = Math.pow(0.5 + 0.5 * Math.cos(theta * 4.0 - elev * 7.0), 6) * (1.0 - Math.abs(elev) * 0.5);
+
+      let r = 0;
+      let g = 0;
+      let b = 0;
+
+      if (elev >= 0) {
+        // 上半球: 深いコバルトサファイアから天頂・太陽の純白シアン反射へ
+        const skyT = Math.pow(elev, 0.7);
+        r = 12 * skyT + 75 * (1 - skyT);
+        g = 38 * skyT + 175 * (1 - skyT);
+        b = 115 * skyT + 250 * (1 - skyT);
+      } else {
+        // 下半球: 水晶大地の反射と鋭い蒼白スペキュラ
+        const gndT = Math.pow(-elev, 0.65);
+        r = 18 * gndT + 90 * (1 - gndT);
+        g = 52 * gndT + 190 * (1 - gndT);
+        b = 135 * gndT + 255 * (1 - gndT);
+      }
+
+      // 地平線・プリズム・太陽ハイライトの加算合成（キラキラ鏡面感）
+      r += horizonGlow * 210 + (sun1 + sun2) * 255 + prismBand * 165 + auroraBand * 95;
+      g += horizonGlow * 240 + (sun1 + sun2) * 255 + prismBand * 225 + auroraBand * 185;
+      b += horizonGlow * 255 + (sun1 + sun2) * 255 + prismBand * 255 + auroraBand * 255;
+
+      const idx = (y * width + x) * 4;
+      data[idx] = Math.min(255, Math.round(r));
+      data[idx + 1] = Math.min(255, Math.round(g));
+      data[idx + 2] = Math.min(255, Math.round(b));
+      data[idx + 3] = 255;
+    }
+  }
+
+  const tex = new DataTexture(data, width, height, RGBAFormat);
+  tex.mapping = EquirectangularReflectionMapping;
+  tex.magFilter = LinearFilter;
+  tex.minFilter = LinearFilter;
+  tex.colorSpace = SRGBColorSpace;
+  tex.needsUpdate = true;
+  _ramielMirrorEnvMap = tex;
+  return tex;
+}
+
+let _ramielMirrorFacetTex: DataTexture | null = null;
+/** 幾何神ラミエル専用: 多面体ダイヤモンドカット＆虹彩プリズム反射を演出する高精細鏡面テクスチャ */
+function getRamielMirrorFacetTexture(): DataTexture {
+  if (_ramielMirrorFacetTex) return _ramielMirrorFacetTex;
+  const size = 256;
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    const v = y / size;
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+
+      // 多重三角形・菱形ファセット格子模様
+      const f1 = Math.abs(((u * 4.0) % 1.0) - 0.5) * 2.0;
+      const f2 = Math.abs(((v * 4.0) % 1.0) - 0.5) * 2.0;
+      const diagA = Math.abs((((u + v) * 4.0) % 1.0) - 0.5) * 2.0;
+      const diagB = Math.abs((((u - v + 4.0) * 4.0) % 1.0) - 0.5) * 2.0;
+
+      // ファセット稜線の鋭い鏡面ハイライトライン
+      const edgeLine =
+        Math.pow(Math.max(f1, f2, diagA, diagB), 14) * 0.9 +
+        Math.pow(1.0 - Math.min(diagA, diagB), 18) * 0.85;
+
+      // 各ファセット面ごとの微妙な角度差による明暗・プリズム干渉色
+      const cellShade = 0.55 + 0.25 * Math.sin((u * 4.0 + v * 4.0) * Math.PI) + 0.2 * Math.cos((u - v) * 8.0 * Math.PI);
+      const sparkle = Math.pow(Math.max(0, Math.cos(u * Math.PI * 8) * Math.cos(v * Math.PI * 8)), 28);
+      const iridescence = 0.5 + 0.5 * Math.sin((u * 6.0 - v * 5.0) * Math.PI * 2.0);
+
+      const r = (55 * cellShade + 48 * iridescence + edgeLine * 185 + sparkle * 255);
+      const g = (145 * cellShade + 65 * (1 - iridescence * 0.4) + edgeLine * 225 + sparkle * 255);
+      const b = (235 * cellShade + 30 + edgeLine * 255 + sparkle * 255);
+
+      const idx = (y * size + x) * 4;
+      data[idx] = Math.min(255, Math.round(r));
+      data[idx + 1] = Math.min(255, Math.round(g));
+      data[idx + 2] = Math.min(255, Math.round(b));
+      data[idx + 3] = 255;
+    }
+  }
+
+  const tex = new DataTexture(data, size, size, RGBAFormat);
+  tex.wrapS = RepeatWrapping;
+  tex.wrapT = RepeatWrapping;
+  tex.magFilter = LinearFilter;
+  tex.minFilter = LinearFilter;
+  tex.colorSpace = SRGBColorSpace;
+  tex.needsUpdate = true;
+  _ramielMirrorFacetTex = tex;
+  return tex;
+}
+
+/**
+ * 幾何神ラミエル専用: 多ポリゴン・ベベル＆ステップカット構造の鏡面ピラミッドジオメトリを生成する。
+ * あえてボクセルを一切使わず、多数の鋭利な鏡面ポリゴン面で異質な神聖結晶を表現する。
+ */
+function createRamielMirrorPyramidGeometry(s: number, isUpper: boolean): BufferGeometry {
+  const sign = isUpper ? 1 : -1;
+  const maxR = 0.62 * s;
+  const maxH = 0.72 * s * sign;
+  const ringSegs = 16; // 16角形ベベル断面（主4頂点＋斜めベベル4頂点＋中間8頂点）
+
+  // 高さ方向の5段階クリスタルカット層
+  const tiers: ReadonlyArray<{ hFrac: number; rFrac: number; twist: number; ridgeBoost: number }> = [
+    { hFrac: 0.0, rFrac: 1.0, twist: 0.0, ridgeBoost: 1.0 },
+    { hFrac: 0.16, rFrac: 0.88, twist: 0.02, ridgeBoost: 1.06 },
+    { hFrac: 0.46, rFrac: 0.58, twist: -0.02, ridgeBoost: 1.10 },
+    { hFrac: 0.78, rFrac: 0.25, twist: 0.015, ridgeBoost: 1.05 },
+    { hFrac: 1.0, rFrac: 0.0, twist: 0.0, ridgeBoost: 1.0 },
+  ];
+
+  const getRingVertex = (tierIdx: number, segIdx: number): [number, number, number] => {
+    const tier = tiers[tierIdx];
+    if (tier.rFrac === 0) return [0, maxH * tier.hFrac, 0];
+    const i = ((segIdx % ringSegs) + ringSegs) % ringSegs;
+    const baseAngle = (i / ringSegs) * Math.PI * 2.0 + tier.twist;
+    // 正八面体の4つの主稜線(i % 4 === 0)を鋭く張り出させ、中間に多面体ダイヤモンドベベル面を形成
+    const mod4 = i % 4;
+    let shapeFactor = 1.0;
+    if (mod4 === 0) shapeFactor = 1.06 * tier.ridgeBoost;
+    else if (mod4 === 2) shapeFactor = 0.79;
+    else shapeFactor = 0.89;
+
+    const r = maxR * tier.rFrac * shapeFactor;
+    return [Math.cos(baseAngle) * r, maxH * tier.hFrac, Math.sin(baseAngle) * r];
+  };
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+
+  const pushTri = (
+    p0: [number, number, number],
+    p1: [number, number, number],
+    p2: [number, number, number],
+    uv0: [number, number],
+    uv1: [number, number],
+    uv2: [number, number],
+    c0: [number, number, number],
+    c1: [number, number, number],
+    c2: [number, number, number],
+  ) => {
+    if (isUpper) {
+      positions.push(...p0, ...p1, ...p2);
+      uvs.push(...uv0, ...uv1, ...uv2);
+      colors.push(...c0, ...c1, ...c2);
+    } else {
+      // 下部ピラミッドは法線が外側を向くよう頂点順序を反転
+      positions.push(...p0, ...p2, ...p1);
+      uvs.push(...uv0, ...uv2, ...uv1);
+      colors.push(...c0, ...c2, ...c1);
+    }
+  };
+
+  const getFacetColor = (tierIdx: number, segIdx: number): [number, number, number] => {
+    const h = tiers[tierIdx].hFrac;
+    const parity = (tierIdx + segIdx) % 3;
+    if (h >= 0.95) {
+      // 頂点は眩い純白シルバーシアン
+      return [0.96, 0.99, 1.0];
+    }
+    if (parity === 0) {
+      // 鏡面アイスホワイト・シアン
+      return [0.76 + h * 0.2, 0.92 + h * 0.07, 1.0];
+    }
+    if (parity === 1) {
+      // 鮮やかなクリスタルサファイア
+      return [0.24 + h * 0.35, 0.62 + h * 0.28, 0.98];
+    }
+    // プリズム・ロイヤルアズール
+    return [0.42 + h * 0.35, 0.74 + h * 0.2, 1.0];
+  };
+
+  for (let t = 0; t < tiers.length - 1; t++) {
+    for (let sIdx = 0; sIdx < ringSegs; sIdx++) {
+      const p00 = getRingVertex(t, sIdx);
+      const p10 = getRingVertex(t, sIdx + 1);
+      const p01 = getRingVertex(t + 1, sIdx);
+      const p11 = getRingVertex(t + 1, sIdx + 1);
+
+      const u0 = sIdx / ringSegs;
+      const u1 = (sIdx + 1) / ringSegs;
+      const v0 = tiers[t].hFrac;
+      const v1 = tiers[t + 1].hFrac;
+
+      const c00 = getFacetColor(t, sIdx);
+      const c10 = getFacetColor(t, sIdx + 1);
+      const c01 = getFacetColor(t + 1, sIdx);
+      const c11 = getFacetColor(t + 1, sIdx + 1);
+
+      if (t === tiers.length - 2) {
+        // 最上段（頂点へ収束する三角形ファセット）
+        pushTri(p00, p10, p01, [u0 * 2, v0 * 2], [u1 * 2, v0 * 2], [(u0 + u1), v1 * 2], c00, c10, c01);
+      } else {
+        pushTri(p00, p10, p11, [u0 * 2, v0 * 2], [u1 * 2, v0 * 2], [u1 * 2, v1 * 2], c00, c10, c11);
+        pushTri(p00, p11, p01, [u0 * 2, v0 * 2], [u1 * 2, v1 * 2], [u0 * 2, v1 * 2], c00, c11, c01);
+      }
+    }
+  }
+
+  // 上下ピラミッドが展開・分離した際に見える内側の逆ピラミッド鏡面底面
+  const innerCenter: [number, number, number] = [0, -0.08 * maxH, 0];
+  const innerCol: [number, number, number] = [0.88, 0.96, 1.0];
+  for (let sIdx = 0; sIdx < ringSegs; sIdx++) {
+    const p0 = getRingVertex(0, sIdx);
+    const p1 = getRingVertex(0, sIdx + 1);
+    const u0 = sIdx / ringSegs;
+    const u1 = (sIdx + 1) / ringSegs;
+    pushTri(p1, p0, innerCenter, [u1, 0], [u0, 0], [0.5, 0.5], innerCol, innerCol, [1.0, 0.85, 0.95]);
+  }
+
+  const geom = new BufferGeometry();
+  geom.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  geom.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  geom.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
+  geom.computeVertexNormals();
+  return geom;
+}
+
+/**
+ * 幾何神ラミエル専用: 溜め・攻撃時に展開・回転する8枚の多面体ダイヤモンド・プリズムウィング（反射鏡プレート）
+ */
+function createRamielPrismWingGeometry(s: number): BufferGeometry {
+  const w = 0.20 * s;
+  const h = 0.42 * s;
+  const d = 0.065 * s;
+
+  // 10頂点の多面体ダイヤモンドブレード
+  const V: Record<string, [number, number, number]> = {
+    top: [0, h, 0],
+    bottom: [0, -h * 0.65, 0],
+    left: [-w, h * 0.08, 0],
+    right: [w, h * 0.08, 0],
+    upperL: [-w * 0.58, h * 0.56, d * 0.45],
+    upperR: [w * 0.58, h * 0.56, d * 0.45],
+    frontMid: [0, h * 0.14, d],
+    frontUpper: [0, h * 0.52, d * 0.72],
+    backMid: [0, h * 0.14, -d * 0.8],
+  };
+
+  const faces: ReadonlyArray<[[number, number, number], [number, number, number], [number, number, number], number]> = [
+    [V.top, V.upperL, V.frontUpper, 0],
+    [V.top, V.frontUpper, V.upperR, 1],
+    [V.upperL, V.left, V.frontMid, 1],
+    [V.upperL, V.frontMid, V.frontUpper, 0],
+    [V.upperR, V.frontUpper, V.frontMid, 1],
+    [V.upperR, V.frontMid, V.right, 0],
+    [V.left, V.bottom, V.frontMid, 0],
+    [V.right, V.frontMid, V.bottom, 1],
+    // 背面ファセット
+    [V.top, V.backMid, V.upperL, 1],
+    [V.top, V.upperR, V.backMid, 0],
+    [V.upperL, V.backMid, V.left, 0],
+    [V.upperR, V.right, V.backMid, 1],
+    [V.left, V.backMid, V.bottom, 1],
+    [V.right, V.bottom, V.backMid, 0],
+  ];
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+
+  for (const [p0, p1, p2, shade] of faces) {
+    positions.push(...p0, ...p1, ...p2);
+    uvs.push(0.1, 0.1, 0.9, 0.2, 0.5, 0.9);
+    const cMain: [number, number, number] = shade === 0 ? [0.82, 0.95, 1.0] : [0.32, 0.72, 1.0];
+    const cTip: [number, number, number] = [0.98, 0.99, 1.0];
+    colors.push(...cTip, ...cMain, ...cMain);
+  }
+
+  const geom = new BufferGeometry();
+  geom.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  geom.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  geom.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
+  geom.computeVertexNormals();
+  return geom;
+}
+
 /**
  * 物理ラグドールの各関節位置に合わせてボクセルパーツを毎フレーム追従させ、
  * 被弾時にはボクセルの欠損・部位破壊を適用するクラス。
@@ -2377,6 +2686,32 @@ export class VoxelCharacterVisual {
   private zeruelAtFieldOuter: Mesh | null = null;
   private zeruelAtFieldMid: Mesh | null = null;
   private zeruelAtFieldInner: Mesh | null = null;
+
+  // 幾何神ラミエル専用の多ポリゴン鏡面反射キラキラボディ＆超豪華タメ・超極太レーザー演出メッシュ群
+  private ramielMirrorMat: MeshPhysicalMaterial | null = null;
+  private ramielUpperPyramid: Mesh | null = null;
+  private ramielLowerPyramid: Mesh | null = null;
+  private ramielInnerOcta: Mesh | null = null;
+  private ramielPrismWings: Mesh[] = [];
+  private ramielCoreMesh: Mesh | null = null;
+  private ramielCoreGlow: Mesh | null = null;
+  private ramielCoreRingA: Mesh | null = null;
+  private ramielCoreRingB: Mesh | null = null;
+  private ramielSparkles: Mesh[] = [];
+  private ramielAccelRings: Mesh[] = [];
+  private ramielMuzzleOrb: Mesh | null = null;
+  private ramielMuzzleCrossA: Mesh | null = null;
+  private ramielMuzzleCrossB: Mesh | null = null;
+  private ramielSightBeam: Mesh | null = null;
+  private ramielLaserCore: Mesh | null = null;
+  private ramielLaserInner: Mesh | null = null;
+  private ramielLaserOuter: Mesh | null = null;
+  private ramielLaserShockRings: Mesh[] = [];
+  private ramielImpactDome: Mesh | null = null;
+  private ramielImpactRing: Mesh | null = null;
+  private ramielAtFieldOuter: Mesh | null = null;
+  private ramielAtFieldMid: Mesh | null = null;
+  private ramielAtFieldInner: Mesh | null = null;
 
   constructor(readonly unit: Unit) {
     const set = getUnitTemplateSet(unit.type, unit.team);
@@ -2534,6 +2869,258 @@ export class VoxelCharacterVisual {
       this.zeruelAtFieldOuter = makeOctagonLayer(1.45 * s, 0xff922b, 0xffd43b);
       this.zeruelAtFieldMid = makeOctagonLayer(1.02 * s, 0xff6b6b, 0xffa94d);
       this.zeruelAtFieldInner = makeOctagonLayer(0.58 * s, 0xff0033, 0xffffff);
+    }
+
+    // 幾何神ラミエル専用の多ポリゴン鏡面反射キラキラボディ＆超豪華タメ・超極太レーザー演出の初期化
+    if (unit.type.id === 'angel_ramiel') {
+      const envMap = getRamielMirrorEnvMap();
+      const facetTex = getRamielMirrorFacetTexture();
+
+      // 1. 鏡面反射＆プリズム虹彩を持つ多面体ミラーマテリアル（ボクセルとは一線を画す超光沢鏡面質感）
+      this.ramielMirrorMat = new MeshPhysicalMaterial({
+        color: 0xd0f0ff,
+        map: facetTex,
+        envMap,
+        envMapIntensity: 2.6,
+        vertexColors: true,
+        metalness: 0.92,
+        roughness: 0.04,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.02,
+        reflectivity: 1.0,
+        iridescence: 0.78,
+        iridescenceIOR: 1.5,
+        emissive: 0x0b3c7d,
+        emissiveIntensity: 0.42,
+         flatShading: true,
+      });
+
+      // 上部・下部多ポリゴン鏡面ピラミッド + ダイヤモンド稜線ハイライト
+      const upperGeom = createRamielMirrorPyramidGeometry(s, true);
+      this.ramielUpperPyramid = new Mesh(upperGeom, this.ramielMirrorMat);
+      this.ramielUpperPyramid.castShadow = true;
+      this.ramielUpperPyramid.receiveShadow = true;
+      const upperEdges = new LineSegments(
+        new EdgesGeometry(upperGeom, 10),
+        new LineBasicMaterial({ color: 0xe8fbff, transparent: true, opacity: 0.85 }),
+      );
+      this.ramielUpperPyramid.add(upperEdges);
+      this.group.add(this.ramielUpperPyramid);
+
+      const lowerGeom = createRamielMirrorPyramidGeometry(s, false);
+      this.ramielLowerPyramid = new Mesh(lowerGeom, this.ramielMirrorMat);
+      this.ramielLowerPyramid.castShadow = true;
+      this.ramielLowerPyramid.receiveShadow = true;
+      const lowerEdges = new LineSegments(
+        new EdgesGeometry(lowerGeom, 10),
+        new LineBasicMaterial({ color: 0xe8fbff, transparent: true, opacity: 0.85 }),
+      );
+      this.ramielLowerPyramid.add(lowerEdges);
+      this.group.add(this.ramielLowerPyramid);
+
+      // 2. 内部の多分割ジオデシック結晶殻 (OctahedronGeometry detail=2: 128ポリゴンの鏡面内殻)
+      const innerOctaGeom = new OctahedronGeometry(0.36 * s, 2);
+      const innerOctaMat = new MeshPhysicalMaterial({
+        color: 0x74c0fc,
+        envMap,
+        envMapIntensity: 2.8,
+        metalness: 0.95,
+        roughness: 0.03,
+        clearcoat: 1.0,
+        emissive: 0x1971c2,
+        emissiveIntensity: 0.65,
+        flatShading: true,
+      });
+      this.ramielInnerOcta = new Mesh(innerOctaGeom, innerOctaMat);
+      this.group.add(this.ramielInnerOcta);
+
+      // 3. 8枚の可変展開式ダイヤモンド・プリズムウィング（通常時は八面体表面に密着し、タメ時に花弁状のパラボラ反射鏡へ変形）
+      const wingGeom = createRamielPrismWingGeometry(s);
+      for (let i = 0; i < 8; i++) {
+        const wing = new Mesh(wingGeom, this.ramielMirrorMat);
+        wing.castShadow = true;
+        const wingEdges = new LineSegments(
+          new EdgesGeometry(wingGeom, 8),
+          new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }),
+        );
+        wing.add(wingEdges);
+        this.group.add(wing);
+        this.ramielPrismWings.push(wing);
+      }
+
+      // 4. 中心に宿る高ポリゴン真紅の使徒コア球体 & 二重エネルギーリング
+      const coreMat = new MeshStandardMaterial({
+        color: 0xff0044,
+        envMap,
+        envMapIntensity: 2.0,
+        roughness: 0.06,
+        metalness: 0.45,
+        emissive: 0xff1744,
+        emissiveIntensity: 1.8,
+      });
+      this.ramielCoreMesh = new Mesh(new SphereGeometry(0.21 * s, 36, 36), coreMat);
+      this.group.add(this.ramielCoreMesh);
+
+      const coreGlowMat = new MeshBasicMaterial({
+        color: 0xff4d79,
+        transparent: true,
+        opacity: 0.45,
+      });
+      this.ramielCoreGlow = new Mesh(new SphereGeometry(0.27 * s, 28, 28), coreGlowMat);
+      this.group.add(this.ramielCoreGlow);
+
+      this.ramielCoreRingA = new Mesh(
+        new TorusGeometry(0.42 * s, 0.013 * s, 16, 64),
+        new MeshBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.88 }),
+      );
+      this.group.add(this.ramielCoreRingA);
+
+      this.ramielCoreRingB = new Mesh(
+        new TorusGeometry(0.49 * s, 0.010 * s, 16, 64),
+        new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.78 }),
+      );
+      this.group.add(this.ramielCoreRingB);
+
+      // 5. 鏡面ボディの周囲で常にキラキラと明滅・反射する14個の多面体スパークル結晶（星型閃光）
+      const sparkleGeom = new OctahedronGeometry(0.062 * s, 0);
+      const sparkleColors = [0xffffff, 0xa5f3fc, 0xe0f2fe, 0xfef08a, 0xe879f9];
+      for (let i = 0; i < 14; i++) {
+        const spMat = new MeshBasicMaterial({
+          color: sparkleColors[i % sparkleColors.length],
+          transparent: true,
+          opacity: 0.92,
+        });
+        const spMesh = new Mesh(sparkleGeom, spMat);
+        this.group.add(spMesh);
+        this.ramielSparkles.push(spMesh);
+      }
+
+      // 6. 長いタメ時間（windup）に前方へ多段展開する3連装の荷電粒子加速リング
+      const ringRadii = [0.58 * s, 0.42 * s, 0.28 * s];
+      const ringCols = [0x38bdf8, 0x00f5d4, 0xffffff];
+      for (let i = 0; i < 3; i++) {
+        const accGeom = new TorusGeometry(ringRadii[i], 0.018 * s, 16, 48);
+        const accMat = new MeshBasicMaterial({
+          color: ringCols[i],
+          transparent: true,
+          opacity: 0.9,
+        });
+        const accMesh = new Mesh(accGeom, accMat);
+        const octEdges = new LineSegments(
+          new EdgesGeometry(new CircleGeometry(ringRadii[i] * 1.12, 8)),
+          new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+        );
+        accMesh.add(octEdges);
+        accMesh.visible = false;
+        this.group.add(accMesh);
+        this.ramielAccelRings.push(accMesh);
+      }
+
+      // 7. 銃口焦点に収束する高密度プラズマ球＆十字フレア＆ロックオン照準プリズムレーザー
+      this.ramielMuzzleOrb = new Mesh(
+        new SphereGeometry(0.24 * s, 32, 32),
+        new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }),
+      );
+      this.ramielMuzzleOrb.visible = false;
+      this.group.add(this.ramielMuzzleOrb);
+
+      const crossGeo = new OctahedronGeometry(0.18 * s, 0);
+      this.ramielMuzzleCrossA = new Mesh(
+        crossGeo,
+        new MeshBasicMaterial({ color: 0x00f5d4, transparent: true, opacity: 0.88 }),
+      );
+      this.ramielMuzzleCrossA.visible = false;
+      this.group.add(this.ramielMuzzleCrossA);
+
+      this.ramielMuzzleCrossB = new Mesh(
+        crossGeo,
+        new MeshBasicMaterial({ color: 0xe599f7, transparent: true, opacity: 0.82 }),
+      );
+      this.ramielMuzzleCrossB.visible = false;
+      this.group.add(this.ramielMuzzleCrossB);
+
+      // 照準ロックオンレーザー（長さ1のシリンダー、Y軸基準）
+      const sightCyl = new CylinderGeometry(0.016 * s, 0.016 * s, 1.0, 12, 1, true);
+      this.ramielSightBeam = new Mesh(
+        sightCyl,
+        new MeshBasicMaterial({ color: 0x00f5d4, transparent: true, opacity: 0.7, side: DoubleSide }),
+      );
+      this.ramielSightBeam.visible = false;
+      this.group.add(this.ramielSightBeam);
+
+      // 8. 超極太・広範囲・高威力3層3Dレーザービームメッシュ＆高速螺旋ショックリング＆着弾プラズマドーム
+      const unitCylCore = new CylinderGeometry(1.0, 1.0, 1.0, 24, 1, false);
+      const unitCylSheath = new CylinderGeometry(1.0, 1.0, 1.0, 28, 1, true);
+
+      this.ramielLaserCore = new Mesh(
+        unitCylCore,
+        new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.98 }),
+      );
+      this.ramielLaserCore.visible = false;
+      this.group.add(this.ramielLaserCore);
+
+      this.ramielLaserInner = new Mesh(
+        unitCylSheath,
+        new MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.82, side: DoubleSide }),
+      );
+      this.ramielLaserInner.visible = false;
+      this.group.add(this.ramielLaserInner);
+
+      this.ramielLaserOuter = new Mesh(
+        unitCylSheath,
+        new MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.45, side: DoubleSide }),
+      );
+      this.ramielLaserOuter.visible = false;
+      this.group.add(this.ramielLaserOuter);
+
+      const shockTorusGeo = new TorusGeometry(1.0, 0.06, 14, 40);
+      for (let i = 0; i < 6; i++) {
+        const ringMesh = new Mesh(
+          shockTorusGeo,
+          new MeshBasicMaterial({
+            color: i % 2 === 0 ? 0xffffff : 0x00f5d4,
+            transparent: true,
+            opacity: 0.9,
+          }),
+        );
+        ringMesh.visible = false;
+        this.group.add(ringMesh);
+        this.ramielLaserShockRings.push(ringMesh);
+      }
+
+      this.ramielImpactDome = new Mesh(
+        new SphereGeometry(1.0, 32, 24),
+        new MeshBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.72, side: DoubleSide }),
+      );
+      this.ramielImpactDome.visible = false;
+      this.group.add(this.ramielImpactDome);
+
+      this.ramielImpactRing = new Mesh(
+        new TorusGeometry(1.0, 0.055, 16, 48),
+        new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 }),
+      );
+      this.ramielImpactRing.visible = false;
+      this.group.add(this.ramielImpactRing);
+
+      // 9. 多重八角形ATフィールドシールド
+      const makeRamielAtLayer = (radius: number, fillCol: number, edgeCol: number): Mesh => {
+        const mat = new MeshBasicMaterial({
+          color: fillCol,
+          transparent: true,
+          opacity: 0,
+          side: DoubleSide,
+        });
+        const geom = new CircleGeometry(radius, 8);
+        const mesh = new Mesh(geom, mat);
+        const edges = new LineSegments(new EdgesGeometry(geom), new LineBasicMaterial({ color: edgeCol }));
+        mesh.add(edges);
+        mesh.visible = false;
+        this.group.add(mesh);
+        return mesh;
+      };
+      this.ramielAtFieldOuter = makeRamielAtLayer(1.38 * s, 0xff922b, 0xffd43b);
+      this.ramielAtFieldMid = makeRamielAtLayer(0.96 * s, 0xffa94d, 0xffe066);
+      this.ramielAtFieldInner = makeRamielAtLayer(0.55 * s, 0x38bdf8, 0xffffff);
     }
 
     this.sync();
@@ -3301,24 +3888,26 @@ export class VoxelCharacterVisual {
     geom.computeVertexNormals();
   }
 
-  /** 幾何神ラミエル: 浮遊する完全な正八面体結晶ボディ（四肢非表示） */
+  /**
+   * 幾何神ラミエル: 多ポリゴン鏡面反射キラキラボディ＆超豪華タメ変形・3D超極太レーザー演出。
+   * ボクセルメッシュは完全に非表示とし、鏡面テクスチャと環境反射を持つ多面体結晶をアニメーションさせる。
+   */
   private syncRamiel(): void {
     const u = this.unit;
+    const s = u.scale;
     const pelvis = u.pelvis.pos;
+    const time = performance.now() * 0.001;
 
-    // 完全な正八面体（Torso）を Pelvis に水平配置
-    if (!this.parts.torso.destroyed) {
-      this.parts.torso.mesh.visible = true;
-      _fwd.copy(u.forward).normalize();
-      _right.crossVectors(UP, _fwd).normalize();
-      if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
-      _up.crossVectors(_fwd, _right).normalize();
-      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
-    } else {
-      this.parts.torso.mesh.visible = false;
-    }
+    // 進行方向・照準方向基底ベクトル
+    _fwd.copy(u.forward).normalize();
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(1, 0, 0);
+    _right.crossVectors(UP, _fwd).normalize();
+    if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+    _up.crossVectors(_fwd, _right).normalize();
 
-    // 正八面体結晶に手足や頭部は不要なので非表示
+    // 被弾破片計算のために見えないボクセルTorsoの行列だけ同期し、全ボクセルメッシュを完全非表示にする
+    placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    this.parts.torso.mesh.visible = false;
     this.parts.head.mesh.visible = false;
     this.parts.upperArmL.mesh.visible = false;
     this.parts.forearmL.mesh.visible = false;
@@ -3328,6 +3917,386 @@ export class VoxelCharacterVisual {
     this.parts.shinL.mesh.visible = false;
     this.parts.thighR.mesh.visible = false;
     this.parts.shinR.mesh.visible = false;
+
+    if (!u.alive || this.parts.torso.destroyed) {
+      if (this.ramielUpperPyramid) this.ramielUpperPyramid.visible = false;
+      if (this.ramielLowerPyramid) this.ramielLowerPyramid.visible = false;
+      if (this.ramielInnerOcta) this.ramielInnerOcta.visible = false;
+      for (const w of this.ramielPrismWings) w.visible = false;
+      if (this.ramielCoreMesh) this.ramielCoreMesh.visible = false;
+      if (this.ramielCoreGlow) this.ramielCoreGlow.visible = false;
+      if (this.ramielCoreRingA) this.ramielCoreRingA.visible = false;
+      if (this.ramielCoreRingB) this.ramielCoreRingB.visible = false;
+      for (const sp of this.ramielSparkles) sp.visible = false;
+      for (const r of this.ramielAccelRings) r.visible = false;
+      if (this.ramielMuzzleOrb) this.ramielMuzzleOrb.visible = false;
+      if (this.ramielMuzzleCrossA) this.ramielMuzzleCrossA.visible = false;
+      if (this.ramielMuzzleCrossB) this.ramielMuzzleCrossB.visible = false;
+      if (this.ramielSightBeam) this.ramielSightBeam.visible = false;
+      if (this.ramielLaserCore) this.ramielLaserCore.visible = false;
+      if (this.ramielLaserInner) this.ramielLaserInner.visible = false;
+      if (this.ramielLaserOuter) this.ramielLaserOuter.visible = false;
+      for (const sr of this.ramielLaserShockRings) sr.visible = false;
+      if (this.ramielImpactDome) this.ramielImpactDome.visible = false;
+      if (this.ramielImpactRing) this.ramielImpactRing.visible = false;
+      if (this.ramielAtFieldOuter) this.ramielAtFieldOuter.visible = false;
+      if (this.ramielAtFieldMid) this.ramielAtFieldMid.visible = false;
+      if (this.ramielAtFieldInner) this.ramielAtFieldInner.visible = false;
+      return;
+    }
+
+    const phase = u.attackPhase;
+    const isWindup = phase === 'windup';
+    const isStrike = phase === 'strike';
+    const isRecover = phase === 'recover';
+
+    const windupProg = isWindup ? Math.min(1.0, u.phaseTime / Math.max(0.01, u.type.windup)) : 0;
+    const recoverProg = isRecover ? Math.min(1.0, u.phaseTime / Math.max(0.01, u.type.recover)) : 0;
+
+    // 幾何学形態変形率 morph (0 = 完全正八面体結晶, 1 = 最大展開された星型多面体・荷電粒子砲形態)
+    let morph = 0;
+    if (isWindup) {
+      morph = Math.sin(Math.min(1.0, windupProg * 1.15) * Math.PI * 0.5);
+    } else if (isStrike) {
+      morph = 1.0;
+    } else if (isRecover) {
+      morph = Math.max(0, 1.0 - recoverProg * 1.25);
+    }
+
+    // 鏡面マテリアルの発光・プリズム反射強度更新
+    if (this.ramielMirrorMat) {
+      if (u.hitFlash > 0.05) {
+        this.ramielMirrorMat.emissive.setHex(0xffffff);
+        this.ramielMirrorMat.emissiveIntensity = 0.8 + u.hitFlash * 1.4;
+      } else if (isStrike) {
+        this.ramielMirrorMat.emissive.setHex(0x00e5ff);
+        this.ramielMirrorMat.emissiveIntensity = 1.45 + Math.sin(time * 48.0) * 0.35;
+      } else if (isWindup) {
+        this.ramielMirrorMat.emissive.setHex(windupProg > 0.75 ? 0x38bdf8 : 0x1971c2);
+        this.ramielMirrorMat.emissiveIntensity = 0.45 + windupProg * 1.1 + Math.sin(time * (8.0 + windupProg * 28.0)) * 0.25;
+      } else {
+        this.ramielMirrorMat.emissive.setHex(0x0b3c7d);
+        this.ramielMirrorMat.emissiveIntensity = 0.38 + Math.sin(time * 3.2) * 0.12;
+      }
+    }
+
+    // 1. 上部・下部多ポリゴン鏡面ピラミッド（タメに応じて上下に分離し、逆回転しながら鏡面光を放つ）
+    const splitGap = (0.012 + morph * 0.26 + Math.sin(time * 2.8) * 0.015) * s;
+    const baseSpin = time * 0.45 + (isWindup ? Math.pow(windupProg, 2) * 8.5 : isStrike ? time * 4.5 : 0);
+
+    if (this.ramielUpperPyramid) {
+      this.ramielUpperPyramid.visible = true;
+      const upPos = _voxelWorld.copy(pelvis).addScaledVector(_up, splitGap);
+      placeBasisPart(this.ramielUpperPyramid, upPos, _right, _up, _fwd);
+      this.ramielUpperPyramid.rotateY(baseSpin);
+      if (morph > 0.01) {
+        const breathe = 1.0 + morph * 0.08 + (isStrike ? Math.sin(time * 40.0) * 0.04 : 0);
+        this.ramielUpperPyramid.scale.set(breathe, 1.0 - morph * 0.12, breathe);
+      } else {
+        this.ramielUpperPyramid.scale.set(1, 1, 1);
+      }
+    }
+
+    if (this.ramielLowerPyramid) {
+      this.ramielLowerPyramid.visible = true;
+      const lowPos = _voxelWorld.copy(pelvis).addScaledVector(_up, -splitGap);
+      placeBasisPart(this.ramielLowerPyramid, lowPos, _right, _up, _fwd);
+      this.ramielLowerPyramid.rotateY(-baseSpin * 1.15);
+      if (morph > 0.01) {
+        const breathe = 1.0 + morph * 0.08 + (isStrike ? Math.cos(time * 40.0) * 0.04 : 0);
+        this.ramielLowerPyramid.scale.set(breathe, 1.0 - morph * 0.12, breathe);
+      } else {
+        this.ramielLowerPyramid.scale.set(1, 1, 1);
+      }
+    }
+
+    // 2. 内部ジオデシック多面体ミラーコア殻
+    if (this.ramielInnerOcta) {
+      this.ramielInnerOcta.visible = true;
+      this.ramielInnerOcta.position.copy(pelvis);
+      this.ramielInnerOcta.rotation.set(time * 1.4, -time * 1.9, time * 0.9);
+      const innerScale = 0.85 + morph * 0.42 + Math.sin(time * 6.0) * 0.05;
+      this.ramielInnerOcta.scale.setScalar(innerScale);
+    }
+
+    // 3. 8枚の可変展開ダイヤモンド・プリズムウィング（通常時は八面体の8面に寄り添い、タメ・照射時は前方へ花弁展開＆高速公転！）
+    const wingSpin = time * (0.55 + morph * 3.8);
+    for (let i = 0; i < this.ramielPrismWings.length; i++) {
+      const wing = this.ramielPrismWings[i];
+      wing.visible = true;
+      const isTopHalf = i < 4;
+      const idx4 = i % 4;
+      const octAngle = (idx4 / 4) * Math.PI * 2 + Math.PI * 0.25 + baseSpin * (isTopHalf ? 1 : -1);
+
+      // 通常時: 正八面体の8つの斜面に沿って浮遊配置
+      const idleRadial = 0.36 * s;
+      const idleY = (isTopHalf ? 0.24 : -0.24) * s + Math.sin(time * 3.4 + i * 0.9) * 0.02 * s;
+      const idleX = Math.cos(octAngle) * idleRadial;
+      const idleZ = Math.sin(octAngle) * idleRadial;
+
+      // 展開時(morph→1): 照準方向(_fwd)を取り囲む8枚羽根の巨大パラボラ反射鏡リングへ変形！
+      const cannonAngle = (i / 8) * Math.PI * 2 + wingSpin * (i % 2 === 0 ? 1 : -1.4);
+      const cannonRadius = (0.68 + (i % 2) * 0.16 + (isWindup ? Math.sin(windupProg * Math.PI) * 0.12 : 0)) * s;
+      const cannonRight = Math.cos(cannonAngle) * cannonRadius;
+      const cannonUp = Math.sin(cannonAngle) * cannonRadius;
+      const cannonFwd = (i % 2 === 0 ? 0.28 : -0.10) * s;
+
+      // ワールド座標補間
+      const posIdle = _localHit
+        .copy(pelvis)
+        .addScaledVector(_right, idleX)
+        .addScaledVector(_up, idleY)
+        .addScaledVector(_fwd, idleZ);
+      const posCannon = _voxelWorld
+        .copy(pelvis)
+        .addScaledVector(_right, cannonRight)
+        .addScaledVector(_up, cannonUp)
+        .addScaledVector(_fwd, cannonFwd);
+
+      wing.position.lerpVectors(posIdle, posCannon, morph);
+      placeBasisPart(wing, wing.position, _right, _up, _fwd);
+      if (morph < 0.5) {
+        wing.rotateY(-octAngle);
+        wing.rotateX(isTopHalf ? -0.52 : Math.PI + 0.52);
+      } else {
+        wing.rotateZ(cannonAngle - Math.PI * 0.5);
+        wing.rotateX(0.42 + Math.sin(time * 12.0 + i) * 0.08);
+      }
+    }
+
+    // 4. 中央の真紅使徒コア球体＆エネルギーリング
+    if (this.ramielCoreMesh) {
+      this.ramielCoreMesh.visible = true;
+      this.ramielCoreMesh.position.copy(pelvis);
+      const corePulse = 1.0 + morph * 0.35 + Math.sin(time * (isWindup || isStrike ? 28.0 : 4.5)) * (isWindup || isStrike ? 0.16 : 0.07);
+      this.ramielCoreMesh.scale.setScalar(corePulse);
+      const cMat = this.ramielCoreMesh.material as MeshStandardMaterial;
+      cMat.emissiveIntensity = isStrike ? 3.8 : isWindup ? 1.8 + windupProg * 2.2 : 1.5 + Math.sin(time * 4.0) * 0.4;
+    }
+    if (this.ramielCoreGlow) {
+      this.ramielCoreGlow.visible = true;
+      this.ramielCoreGlow.position.copy(pelvis);
+      const glowScale = 1.0 + morph * 0.55 + Math.sin(time * 16.0) * 0.12;
+      this.ramielCoreGlow.scale.setScalar(glowScale);
+    }
+    const ringSpd = 1.0 + morph * 4.5;
+    if (this.ramielCoreRingA) {
+      this.ramielCoreRingA.visible = true;
+      this.ramielCoreRingA.position.copy(pelvis);
+      this.ramielCoreRingA.rotation.set(time * 2.1 * ringSpd, time * 1.5 * ringSpd, 0);
+      this.ramielCoreRingA.scale.setScalar(1.0 + morph * 0.25);
+    }
+    if (this.ramielCoreRingB) {
+      this.ramielCoreRingB.visible = true;
+      this.ramielCoreRingB.position.copy(pelvis);
+      this.ramielCoreRingB.rotation.set(-time * 1.7 * ringSpd, 0, time * 2.5 * ringSpd);
+      this.ramielCoreRingB.scale.setScalar(1.0 + morph * 0.32);
+    }
+
+    // 5. キラキラ輝く14個の多面体スパークル結晶（鏡面ボディの周囲で絶えず明滅・煌めく）
+    for (let i = 0; i < this.ramielSparkles.length; i++) {
+      const sp = this.ramielSparkles[i];
+      sp.visible = true;
+      const orbAng = time * (1.2 + (i % 3) * 0.5) + (i / this.ramielSparkles.length) * Math.PI * 2;
+      const elevAng = Math.sin(time * 1.8 + i * 1.7) * 1.1;
+      const rad = (0.58 + (i % 4) * 0.11 + morph * 0.24) * s;
+      const sx = Math.cos(orbAng) * Math.cos(elevAng) * rad;
+      const sy = Math.sin(elevAng) * rad;
+      const sz = Math.sin(orbAng) * Math.cos(elevAng) * rad;
+      sp.position.set(pelvis.x + sx, pelvis.y + sy, pelvis.z + sz);
+      sp.rotation.set(time * 5.0 + i, time * 7.0 - i, time * 4.0);
+      // キラキラと鋭く瞬くスケール変化
+      const twinkle = 0.25 + Math.pow(0.5 + 0.5 * Math.sin(time * 8.5 + i * 2.3), 3) * (1.25 + morph * 0.7);
+      sp.scale.set(twinkle * 0.55, twinkle * 1.65, twinkle * 0.55);
+    }
+
+    // 照準ターゲット方向ベクトル aimDir と距離 aimDist を計算
+    const hasAim = u.laserAimPos.lengthSq() > 0.01;
+    const targetPoint = hasAim
+      ? _localHit.copy(u.laserAimPos)
+      : _localHit.copy(pelvis).addScaledVector(_fwd, 24.0);
+    const aimVec = _dir.subVectors(targetPoint, pelvis);
+    const aimDist = Math.max(2.0, aimVec.length());
+    const aimDir = aimVec.clone().divideScalar(aimDist);
+    const aimRight = new Vector3().crossVectors(UP, aimDir);
+    if (aimRight.lengthSq() < 1e-5) aimRight.set(1, 0, 0);
+    else aimRight.normalize();
+    const aimUp = new Vector3().crossVectors(aimDir, aimRight).normalize();
+
+    const muzzleOffset = 0.72 * s;
+    const muzzlePos = _voxelWorld.copy(pelvis).addScaledVector(aimDir, muzzleOffset);
+
+    // 6. タメ時間（windup）＆照射中（strike）の前方3連装・荷電粒子加速リングと収束プラズマ球
+    if (isWindup || isStrike) {
+      const deployFrac = isStrike ? 1.0 : Math.min(1.0, windupProg * 1.25);
+      for (let i = 0; i < this.ramielAccelRings.length; i++) {
+        const ring = this.ramielAccelRings[i];
+        ring.visible = true;
+        const distFwd = (0.45 + i * 0.34) * s * deployFrac;
+        const rPos = pelvis.clone().addScaledVector(aimDir, distFwd);
+        placeBasisPart(ring, rPos, aimRight, aimUp, aimDir);
+        const rotDir = i % 2 === 0 ? 1 : -1;
+        ring.rotateZ(time * (3.5 + windupProg * 14.0 + (isStrike ? 18.0 : 0)) * rotDir);
+        const pulseS = isStrike
+          ? 1.15 + Math.sin(time * 45.0 + i) * 0.12
+          : deployFrac * (0.85 + Math.sin(time * 18.0 + i * 1.2) * 0.12);
+        ring.scale.setScalar(pulseS);
+      }
+
+      // 銃口焦点に収束する高エネルギー球体＆十字スターフレア
+      if (this.ramielMuzzleOrb) {
+        this.ramielMuzzleOrb.visible = true;
+        this.ramielMuzzleOrb.position.copy(muzzlePos);
+        const orbScale = isStrike
+          ? 2.2 + Math.sin(time * 55.0) * 0.35
+          : 0.2 + Math.pow(windupProg, 1.6) * 1.85 + Math.sin(time * 32.0) * 0.18 * windupProg;
+        this.ramielMuzzleOrb.scale.setScalar(orbScale);
+        const orbMat = this.ramielMuzzleOrb.material as MeshBasicMaterial;
+        orbMat.color.setHex(windupProg > 0.8 || isStrike ? 0xffffff : 0x74c0fc);
+      }
+      if (this.ramielMuzzleCrossA && this.ramielMuzzleCrossB) {
+        this.ramielMuzzleCrossA.visible = true;
+        this.ramielMuzzleCrossB.visible = true;
+        this.ramielMuzzleCrossA.position.copy(muzzlePos);
+        this.ramielMuzzleCrossB.position.copy(muzzlePos);
+        const flareLen = (isStrike ? 3.8 : 0.6 + windupProg * 3.0) * (0.9 + Math.sin(time * 40.0) * 0.2);
+        this.ramielMuzzleCrossA.scale.set(flareLen, 0.28, 0.28);
+        this.ramielMuzzleCrossB.scale.set(0.28, flareLen, 0.28);
+        this.ramielMuzzleCrossA.rotation.set(0, 0, time * 8.0);
+        this.ramielMuzzleCrossB.rotation.set(0, 0, time * 8.0);
+      }
+
+      // タメ中のターゲットロックオン・プリズム照準レーザーライン
+      if (this.ramielSightBeam) {
+        this.ramielSightBeam.visible = isWindup;
+        if (isWindup) {
+          const sightLen = Math.max(1.0, aimDist - muzzleOffset);
+          const midSight = muzzlePos.clone().addScaledVector(aimDir, sightLen * 0.5);
+          this.ramielSightBeam.position.copy(midSight);
+          _quat.setFromUnitVectors(UP, aimDir);
+          this.ramielSightBeam.quaternion.copy(_quat);
+          const sightThick = 0.6 + windupProg * 2.2 + (windupProg > 0.8 ? Math.sin(time * 60.0) * 0.8 : 0);
+          this.ramielSightBeam.scale.set(sightThick, sightLen, sightThick);
+          const sMat = this.ramielSightBeam.material as MeshBasicMaterial;
+          sMat.color.setHex(windupProg > 0.82 ? 0xff2a85 : 0x00f5d4);
+          sMat.opacity = 0.35 + windupProg * 0.55;
+        }
+      }
+    } else {
+      for (const ring of this.ramielAccelRings) ring.visible = false;
+      if (this.ramielMuzzleOrb) this.ramielMuzzleOrb.visible = false;
+      if (this.ramielMuzzleCrossA) this.ramielMuzzleCrossA.visible = false;
+      if (this.ramielMuzzleCrossB) this.ramielMuzzleCrossB.visible = false;
+      if (this.ramielSightBeam) this.ramielSightBeam.visible = false;
+    }
+
+    // 7. 超極太・広範囲・高威力3Dレーザービーム＆高速進行ショックリング＆着弾プラズマドーム（strike ～ recover序盤）
+    const showLaser = isStrike || (isRecover && recoverProg < 0.35);
+    if (showLaser) {
+      const fade = isStrike ? 1.0 : Math.max(0, 1.0 - recoverProg / 0.35);
+      const pulse = (1.0 + Math.sin(time * 65.0) * 0.14) * fade;
+      // ターゲットを突き抜けてさらに奥まで貫通する極太レーザー長
+      const beamLength = Math.max(aimDist + 14.0, 38.0);
+      const beamMid = muzzlePos.clone().addScaledVector(aimDir, beamLength * 0.5);
+      _quat.setFromUnitVectors(UP, aimDir);
+
+      if (this.ramielLaserCore) {
+        this.ramielLaserCore.visible = true;
+        this.ramielLaserCore.position.copy(beamMid);
+        this.ramielLaserCore.quaternion.copy(_quat);
+        const rCore = 0.62 * pulse;
+        this.ramielLaserCore.scale.set(rCore, beamLength, rCore);
+        (this.ramielLaserCore.material as MeshBasicMaterial).opacity = 0.98 * fade;
+      }
+      if (this.ramielLaserInner) {
+        this.ramielLaserInner.visible = true;
+        this.ramielLaserInner.position.copy(beamMid);
+        this.ramielLaserInner.quaternion.copy(_quat);
+        const rInner = 1.48 * pulse;
+        this.ramielLaserInner.scale.set(rInner, beamLength, rInner);
+        (this.ramielLaserInner.material as MeshBasicMaterial).opacity = 0.82 * fade;
+      }
+      if (this.ramielLaserOuter) {
+        this.ramielLaserOuter.visible = true;
+        this.ramielLaserOuter.position.copy(beamMid);
+        this.ramielLaserOuter.quaternion.copy(_quat);
+        const rOuter = 2.55 * (1.0 + Math.cos(time * 48.0) * 0.16) * fade;
+        this.ramielLaserOuter.scale.set(rOuter, beamLength, rOuter);
+        (this.ramielLaserOuter.material as MeshBasicMaterial).opacity = 0.44 * fade;
+      }
+
+      // レーザー軸に沿って超高速で駆け抜ける6連プラズマ衝撃波リング
+      for (let i = 0; i < this.ramielLaserShockRings.length; i++) {
+        const sr = this.ramielLaserShockRings[i];
+        sr.visible = true;
+        const travel = ((time * 3.8 + i / this.ramielLaserShockRings.length) % 1.0) * beamLength;
+        const srPos = muzzlePos.clone().addScaledVector(aimDir, travel);
+        placeBasisPart(sr, srPos, aimRight, aimUp, aimDir);
+        const ringScale = (1.65 + Math.sin(travel * 0.4 + i) * 0.45) * fade;
+        sr.scale.setScalar(ringScale);
+      }
+
+      // 着弾点(targetPoint)の超巨大プラズマ爆縮ドーム＆衝撃波リング
+      if (this.ramielImpactDome) {
+        this.ramielImpactDome.visible = true;
+        this.ramielImpactDome.position.copy(targetPoint);
+        const domeScale = (3.4 + Math.sin(time * 50.0) * 0.55) * fade;
+        this.ramielImpactDome.scale.setScalar(domeScale);
+        (this.ramielImpactDome.material as MeshBasicMaterial).opacity = 0.68 * fade;
+      }
+      if (this.ramielImpactRing) {
+        this.ramielImpactRing.visible = true;
+        this.ramielImpactRing.position.set(targetPoint.x, Math.max(0.15, targetPoint.y), targetPoint.z);
+        this.ramielImpactRing.rotation.set(Math.PI * 0.5, 0, time * 10.0);
+        const impRingScale = (4.8 + ((time * 12.0) % 2.4)) * fade;
+        this.ramielImpactRing.scale.setScalar(impRingScale);
+      }
+    } else {
+      if (this.ramielLaserCore) this.ramielLaserCore.visible = false;
+      if (this.ramielLaserInner) this.ramielLaserInner.visible = false;
+      if (this.ramielLaserOuter) this.ramielLaserOuter.visible = false;
+      for (const sr of this.ramielLaserShockRings) sr.visible = false;
+      if (this.ramielImpactDome) this.ramielImpactDome.visible = false;
+      if (this.ramielImpactRing) this.ramielImpactRing.visible = false;
+    }
+
+    // 8. 多重八角形ATフィールド結界（被弾防御時＆タメ終盤〜発射時に前面展開）
+    const defStrength = Math.max(
+      u.hitFlash,
+      Math.min(1.0, u.defenseTimer / 0.45),
+      isWindup && windupProg > 0.65 ? (windupProg - 0.65) * 2.2 : isStrike ? 0.75 : 0,
+    );
+    if (defStrength > 0.02) {
+      const expand = Math.min(1.0, defStrength * 1.15 + 0.35);
+      if (this.ramielAtFieldOuter) {
+        this.ramielAtFieldOuter.visible = true;
+        const posOuter = pelvis.clone().addScaledVector(aimDir, 0.85 * s);
+        placeBasisPart(this.ramielAtFieldOuter, posOuter, aimRight, aimUp, aimDir);
+        this.ramielAtFieldOuter.rotateZ(time * 2.4);
+        this.ramielAtFieldOuter.scale.setScalar(expand);
+        (this.ramielAtFieldOuter.material as MeshBasicMaterial).opacity = defStrength * 0.40;
+      }
+      if (this.ramielAtFieldMid) {
+        this.ramielAtFieldMid.visible = true;
+        const posMid = pelvis.clone().addScaledVector(aimDir, 0.96 * s);
+        placeBasisPart(this.ramielAtFieldMid, posMid, aimRight, aimUp, aimDir);
+        this.ramielAtFieldMid.rotateZ(-time * 3.6);
+        this.ramielAtFieldMid.scale.setScalar(expand * (0.95 + Math.sin(time * 18.0) * 0.08));
+        (this.ramielAtFieldMid.material as MeshBasicMaterial).opacity = defStrength * 0.52;
+      }
+      if (this.ramielAtFieldInner) {
+        this.ramielAtFieldInner.visible = true;
+        const posInner = pelvis.clone().addScaledVector(aimDir, 1.08 * s);
+        placeBasisPart(this.ramielAtFieldInner, posInner, aimRight, aimUp, aimDir);
+        this.ramielAtFieldInner.rotateZ(time * 5.0);
+        this.ramielAtFieldInner.scale.setScalar(expand);
+        (this.ramielAtFieldInner.material as MeshBasicMaterial).opacity = defStrength * 0.68;
+      }
+    } else {
+      if (this.ramielAtFieldOuter) this.ramielAtFieldOuter.visible = false;
+      if (this.ramielAtFieldMid) this.ramielAtFieldMid.visible = false;
+      if (this.ramielAtFieldInner) this.ramielAtFieldInner.visible = false;
+    }
   }
 
   /** 光速アリ専用の昆虫ボディ（頭・胸・腹）＆6本脚高速駆動配置処理 */
@@ -3707,19 +4676,122 @@ export class VoxelCharacterVisual {
         (shield.material as MeshBasicMaterial).dispose();
       }
     }
+    if (this.ramielMirrorMat) this.ramielMirrorMat.dispose();
+    if (this.ramielUpperPyramid) this.ramielUpperPyramid.geometry.dispose();
+    if (this.ramielLowerPyramid) this.ramielLowerPyramid.geometry.dispose();
+    if (this.ramielInnerOcta) {
+      this.ramielInnerOcta.geometry.dispose();
+      (this.ramielInnerOcta.material as MeshPhysicalMaterial).dispose();
+    }
+    if (this.ramielPrismWings.length > 0) {
+      this.ramielPrismWings[0].geometry.dispose();
+    }
+    if (this.ramielCoreMesh) {
+      this.ramielCoreMesh.geometry.dispose();
+      (this.ramielCoreMesh.material as MeshStandardMaterial).dispose();
+    }
+    if (this.ramielCoreGlow) {
+      this.ramielCoreGlow.geometry.dispose();
+      (this.ramielCoreGlow.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielCoreRingA) {
+      this.ramielCoreRingA.geometry.dispose();
+      (this.ramielCoreRingA.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielCoreRingB) {
+      this.ramielCoreRingB.geometry.dispose();
+      (this.ramielCoreRingB.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielSparkles.length > 0) {
+      this.ramielSparkles[0].geometry.dispose();
+      for (const sp of this.ramielSparkles) {
+        (sp.material as MeshBasicMaterial).dispose();
+      }
+    }
+    for (const ring of this.ramielAccelRings) {
+      ring.geometry.dispose();
+      (ring.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielMuzzleOrb) {
+      this.ramielMuzzleOrb.geometry.dispose();
+      (this.ramielMuzzleOrb.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielMuzzleCrossA) {
+      this.ramielMuzzleCrossA.geometry.dispose();
+      (this.ramielMuzzleCrossA.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielMuzzleCrossB) {
+      (this.ramielMuzzleCrossB.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielSightBeam) {
+      this.ramielSightBeam.geometry.dispose();
+      (this.ramielSightBeam.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielLaserCore) {
+      this.ramielLaserCore.geometry.dispose();
+      (this.ramielLaserCore.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielLaserInner) {
+      this.ramielLaserInner.geometry.dispose();
+      (this.ramielLaserInner.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielLaserOuter) {
+      (this.ramielLaserOuter.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielLaserShockRings.length > 0) {
+      this.ramielLaserShockRings[0].geometry.dispose();
+      for (const sr of this.ramielLaserShockRings) {
+        (sr.material as MeshBasicMaterial).dispose();
+      }
+    }
+    if (this.ramielImpactDome) {
+      this.ramielImpactDome.geometry.dispose();
+      (this.ramielImpactDome.material as MeshBasicMaterial).dispose();
+    }
+    if (this.ramielImpactRing) {
+      this.ramielImpactRing.geometry.dispose();
+      (this.ramielImpactRing.material as MeshBasicMaterial).dispose();
+    }
+    for (const shield of [this.ramielAtFieldOuter, this.ramielAtFieldMid, this.ramielAtFieldInner]) {
+      if (shield) {
+        shield.geometry.dispose();
+        (shield.material as MeshBasicMaterial).dispose();
+      }
+    }
   }
 }
 
 /** 配置プレビュー用の半透明ゴーストモデルを生成する */
 export function createPreviewGhost(type: UnitType, team: Team): Group {
+  const s = type.scale;
+  const g = new Group();
+  if (type.id === 'angel_ramiel') {
+    const ghostMirrorMat = new MeshPhysicalMaterial({
+      color: 0xa5f3fc,
+      map: getRamielMirrorFacetTexture(),
+      envMap: getRamielMirrorEnvMap(),
+      envMapIntensity: 2.2,
+      vertexColors: true,
+      metalness: 0.88,
+      roughness: 0.06,
+      transparent: true,
+      opacity: 0.78,
+      flatShading: true,
+    });
+    const upper = new Mesh(createRamielMirrorPyramidGeometry(s, true), ghostMirrorMat);
+    const lower = new Mesh(createRamielMirrorPyramidGeometry(s, false), ghostMirrorMat);
+    upper.position.set(0, 2.7, 0);
+    lower.position.set(0, 2.7, 0);
+    g.add(upper, lower);
+    g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+    return g;
+  }
   const set = getUnitTemplateSet(type, team);
   const mat = new MeshLambertMaterial({
     vertexColors: true,
     transparent: true,
     opacity: 0.65,
   });
-  const s = type.scale;
-  const g = new Group();
   const torso = makeMesh(set.torso.geometry, mat, s);
   const baseY = type.id === 'angel_zeruel' ? 1.01 * s : 0.96 * s;
   torso.position.set(0, baseY, 0);

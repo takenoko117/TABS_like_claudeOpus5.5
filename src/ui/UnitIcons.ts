@@ -545,10 +545,18 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
 
     case 'angel_ramiel':
       return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
-        <polygon points="24,4 40,24 24,44 8,24" stroke="#339af0" stroke-width="2.5" fill="#1c7ed6" fill-opacity="0.25"/>
-        <line points="24,4 24,44" stroke="#a5d8ff" stroke-width="1.5" stroke-dasharray="2 2"/>
-        <line points="8,24 40,24" stroke="#a5d8ff" stroke-width="1.5"/>
-        <circle cx="24" cy="24" r="4.5" fill="#d90429"/>
+        <polygon points="24,2 44,24 24,46 4,24" fill="#1864ab" fill-opacity="0.55" stroke="#e0f2fe" stroke-width="2"/>
+        <polygon points="24,2 44,24 24,24" fill="#74c0fc" fill-opacity="0.65"/>
+        <polygon points="24,2 4,24 24,24" fill="#e0f2fe" fill-opacity="0.75"/>
+        <polygon points="24,46 44,24 24,24" fill="#1971c2" fill-opacity="0.7"/>
+        <polygon points="24,46 4,24 24,24" fill="#339af0" fill-opacity="0.6"/>
+        <polygon points="24,9 37,24 24,39 11,24" stroke="#a5f3fc" stroke-width="1.2" fill="#38bdf8" fill-opacity="0.25"/>
+        <line x1="24" y1="2" x2="24" y2="46" stroke="#ffffff" stroke-width="1.6"/>
+        <line x1="4" y1="24" x2="44" y2="24" stroke="#ffffff" stroke-width="1.6"/>
+        <circle cx="24" cy="24" r="5.5" fill="#ff0044" stroke="#ffffff" stroke-width="1.5"/>
+        <circle cx="15" cy="14" r="1.8" fill="#ffffff"/>
+        <circle cx="34" cy="16" r="1.4" fill="#a5f3fc"/>
+        <circle cx="17" cy="33" r="1.3" fill="#e0f2fe"/>
       </svg>`;
     case 'angel_sachiel':
       return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">

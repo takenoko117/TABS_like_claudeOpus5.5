@@ -70,8 +70,8 @@ export type CombatEffectEvent =
   | { kind: 'robot_punch_fire'; pos: Vector3; dir: Vector3 }
   | { kind: 'robot_punch_impact'; pos: Vector3 }
   | { kind: 'at_field'; pos: Vector3; scale: number; dir?: Vector3 }
-  | { kind: 'ramiel_charge'; pos: Vector3; progress: number }
-  | { kind: 'ramiel_beam'; from: Vector3; to: Vector3 }
+  | { kind: 'ramiel_charge'; pos: Vector3; aim?: Vector3; progress: number }
+  | { kind: 'ramiel_beam'; from: Vector3; to: Vector3; isInitial?: boolean }
   | { kind: 'sachiel_pile'; from: Vector3; to: Vector3 }
   | { kind: 'sachiel_cross'; pos: Vector3 }
   | { kind: 'zeruel_charge'; pos: Vector3; progress: number }
@@ -1068,24 +1068,44 @@ export class CombatSystem {
     });
   }
 
-  /** 幾何神ラミエルの加粒子砲照射 */
-  fireRamielBeam(owner: Unit, from: Vector3, to: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
-    this.emitEffect({ kind: 'ramiel_beam', from: from.clone(), to: to.clone() });
+  /** 幾何神ラミエルの超極太・広範囲・高威力加粒子砲レーザー照射 */
+  fireRamielBeam(
+    owner: Unit,
+    from: Vector3,
+    to: Vector3,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+    isInitial = true,
+  ): void {
     const dir = new Vector3().subVectors(to, from);
     const dist = dir.length();
     if (dist > 0.001) dir.normalize();
+    else dir.copy(owner.forward);
 
-    // 軌道上のユニットへの直撃貫通ダメージ
-    const beamRadius = 1.35;
+    const dirH = new Vector3(dir.x, 0, dir.z);
+    if (dirH.lengthSq() > 1e-4) dirH.normalize();
+    else dirH.set(1, 0, 0);
+
+    // ターゲットを貫通して戦場奥深くまで突き抜ける照射距離
+    const pierceDist = Math.max(dist + 14.0, 38.0);
+    this.emitEffect({ kind: 'ramiel_beam', from: from.clone(), to: to.clone(), isInitial });
+
+    // 超極太レーザー軌道上のユニットへの広範囲貫通大ダメージ（半径 3.2m = 直径 6.4m の極太光柱）
+    const beamRadius = 3.2;
     for (const u of units) {
       if (!u.alive || u.team === owner.team) continue;
       const toU = new Vector3().subVectors(u.pelvis.pos, from);
-      const proj = toU.dot(dir);
-      if (proj >= 0 && proj <= dist) {
-        const perp = toU.clone().addScaledVector(dir, -proj);
-        if (perp.length() <= beamRadius * u.scale) {
-          const dmg = (145 + Math.random() * 25) * owner.damageMul;
-          const impulse = dir.clone().multiplyScalar(9.0);
+      const proj3D = toU.dot(dir);
+      const projH = toU.x * dirH.x + toU.z * dirH.z;
+      if ((proj3D >= -0.8 && proj3D <= pierceDist) || (projH >= -0.8 && projH <= pierceDist)) {
+        const perp3D = toU.clone().addScaledVector(dir, -Math.max(0, proj3D)).length();
+        const perpH = Math.abs(-dirH.z * toU.x + dirH.x * toU.z);
+        const effectivePerp = Math.min(perp3D, perpH);
+        if (effectivePerp <= beamRadius + u.bodyRadius * 0.6) {
+          const dmg = (isInitial ? 280 + Math.random() * 50 : 48 + Math.random() * 12) * owner.damageMul;
+          const impulse = dir.clone().multiplyScalar(isInitial ? 18.0 : 7.5);
+          impulse.y = Math.max(impulse.y, isInitial ? 4.5 : 1.8);
           u.takeDamage(dmg, u.chest, impulse, dt, owner);
           this.onHit?.({
             kind: 'magic',
@@ -1096,27 +1116,38 @@ export class CombatSystem {
             hitParticle: u.chest,
             impulse,
             killed: !u.alive,
+            carveScale: isInitial ? 3.5 : 2.2,
           });
         }
       }
     }
 
-    // 施設への貫通ダメージ
+    // 施設への超極太貫通ダメージ
     for (const f of facilities) {
       if (!f.alive || f.isTerrain || f.team === owner.team) continue;
       const toF = new Vector3().subVectors(f.pos, from);
-      const proj = toF.dot(dir);
-      if (proj >= 0 && proj <= dist) {
-        const perp = toF.clone().addScaledVector(dir, -proj);
-        if (perp.length() <= (f.radius + 1.2)) {
-          f.takeDamage((180 + Math.random() * 40) * owner.damageMul, owner);
-          this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: 180 });
+      const proj3D = toF.dot(dir);
+      const projH = toF.x * dirH.x + toF.z * dirH.z;
+      if ((proj3D >= -0.8 && proj3D <= pierceDist) || (projH >= -0.8 && projH <= pierceDist)) {
+        const perp3D = toF.clone().addScaledVector(dir, -Math.max(0, proj3D)).length();
+        const perpH = Math.abs(-dirH.z * toF.x + dirH.x * toF.z);
+        if (Math.min(perp3D, perpH) <= f.radius + 3.0) {
+          const facDmg = (isInitial ? 320 + Math.random() * 60 : 55 + Math.random() * 15) * owner.damageMul;
+          const killed = f.takeDamage(facDmg, owner);
+          this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: facDmg });
+          if (killed) {
+            this.emitEffect({ kind: 'facility_destroy', pos: f.pos.clone(), team: f.team, radius: f.radius });
+          }
         }
       }
     }
 
-    // 着弾点の大爆発
-    this.applyRadialBlast(owner, to, 3.8, 110 * owner.damageMul, 13.0, 0.85, units, dt, 'explosion', facilities, owner.team);
+    // 着弾点の超広範囲プラズマ大爆発
+    if (isInitial) {
+      this.applyRadialBlast(owner, to, 6.2, 180 * owner.damageMul, 18.0, 1.05, units, dt, 'explosion', facilities, owner.team);
+    } else {
+      this.applyRadialBlast(owner, to, 4.8, 36 * owner.damageMul, 8.0, 0.75, units, dt, 'explosion', facilities, owner.team);
+    }
   }
 
   /** 使徒神サキエルの光杭＆閃光クロス爆発 */

@@ -1537,8 +1537,11 @@ export class SceneView {
         break;
       }
       case 'ramiel_charge': {
-        for (let i = 0; i < 4; i++) {
-          const dist = 2.2 * (1.0 - e.progress * 0.65);
+        const prog = e.progress;
+        // 1. 広範囲から螺旋を描いてコアへ収束するプリズム荷電粒子（シアン・純白・虹彩バイオレット・ゴールド）
+        const count = prog > 0.7 ? 10 : 6;
+        for (let i = 0; i < count; i++) {
+          const dist = (4.2 - prog * 2.6) * (0.6 + Math.random() * 0.6);
           const ang = Math.random() * Math.PI * 2;
           const elev = (Math.random() - 0.5) * Math.PI;
           const offset = new Vector3(
@@ -1546,24 +1549,123 @@ export class SceneView {
             Math.sin(elev) * dist,
             Math.sin(ang) * Math.cos(elev) * dist,
           );
-          const vel = offset.clone().multiplyScalar(-3.0);
-          this.pushFxParticle(e.pos.clone().add(offset), vel, Math.random() < 0.5 ? 0x4dabf7 : 0xffffff, 0.15, 0.3, 0);
+          const tangent = new Vector3(-Math.sin(ang), 0.2, Math.cos(ang)).multiplyScalar(2.5 + prog * 4.0);
+          const vel = offset.clone().multiplyScalar(-(3.2 + prog * 4.5)).add(tangent);
+          const palette = [0xffffff, 0x00f5d4, 0x74c0fc, 0xe599f7, 0xffe066];
+          const col = palette[(i + Math.floor(prog * 10)) % palette.length];
+          const size = 0.14 + prog * 0.14;
+          this.pushFxParticle(e.pos.clone().add(offset), vel, col, size, 0.26, 0);
+        }
+
+        // 2. 反重力で地面から浮かび上がる結晶粒子＆収束オクタゴンリング（中盤以降）
+        if (prog > 0.25 && Math.random() < 0.65) {
+          const ringR = 3.6 * (1.0 - prog * 0.55);
+          for (let k = 0; k < 4; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const gPos = new Vector3(e.pos.x + Math.cos(a) * ringR, 0.1, e.pos.z + Math.sin(a) * ringR);
+            const gVel = new Vector3(0, 3.5 + prog * 5.5, 0);
+            this.pushFxParticle(gPos, gVel, k % 2 === 0 ? 0x00f5d4 : 0xffffff, 0.16, 0.35, -2.0);
+          }
+        }
+
+        // 3. 発射直前の臨界スパーク＆照準先（aim）に収束するロックオンリング
+        if (prog > 0.65 && e.aim) {
+          const lockR = 3.2 * (1.05 - prog);
+          for (let k = 0; k < 4; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const p = e.aim.clone().add(new Vector3(Math.cos(a) * lockR, 0.15, Math.sin(a) * lockR));
+            this.pushFxParticle(p, new Vector3(0, 1.8, 0), k % 2 === 0 ? 0xff2a85 : 0x00f5d4, 0.18, 0.22, 0);
+          }
         }
         break;
       }
       case 'ramiel_beam': {
+        const isInit = e.isInitial !== false;
         const dir = new Vector3().subVectors(e.to, e.from);
         const dist = dir.length();
-        dir.normalize();
-        const step = 0.5;
-        for (let d = 0; d <= dist; d += step) {
-          const p = e.from.clone().addScaledVector(dir, d);
-          p.add(new Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3));
-          this.pushFxParticle(p, new Vector3(0, 0, 0), Math.random() < 0.7 ? 0xffffff : 0x4dabf7, 0.38, 0.45, 0);
+        if (dist > 0.001) dir.normalize();
+        else dir.set(1, 0, 0);
+
+        const right = new Vector3().crossVectors(UP, dir);
+        if (right.lengthSq() < 1e-4) right.set(0, 0, 1);
+        else right.normalize();
+        const planeUp = new Vector3().crossVectors(dir, right).normalize();
+
+        // ターゲットを貫通して戦場奥まで突き抜ける超極太レーザー粒子群
+        const totalLen = Math.max(dist + 12.0, 34.0);
+        const step = isInit ? 0.45 : 0.85;
+        for (let d = 0; d <= totalLen; d += step) {
+          const baseP = e.from.clone().addScaledVector(dir, d);
+          // 中心の純白超高輝度コア粒子
+          this.pushFxParticle(
+            baseP.clone().add(new Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)),
+            dir.clone().multiplyScalar(8.0),
+            0xffffff,
+            isInit ? 0.58 : 0.42,
+            isInit ? 0.48 : 0.26,
+            0,
+          );
+          // 外周を螺旋状に駆け抜ける極太シアン・蒼・紫プラズマ渦
+          const spiralAng = d * 1.4 + Math.random() * Math.PI * 2;
+          const spiralR = 0.9 + Math.random() * 1.45;
+          const radial = right.clone().multiplyScalar(Math.cos(spiralAng)).addScaledVector(planeUp, Math.sin(spiralAng));
+          const outerP = baseP.clone().addScaledVector(radial, spiralR);
+          const outerVel = dir.clone().multiplyScalar(14.0).addScaledVector(radial, 2.5);
+          const col = Math.random() < 0.45 ? 0x00f5d4 : Math.random() < 0.75 ? 0x4dabf7 : 0xe599f7;
+          this.pushFxParticle(outerP, outerVel, col, isInit ? 0.42 : 0.30, isInit ? 0.45 : 0.25, 0);
         }
-        for (let i = 0; i < 36; i++) {
-          const vel = new Vector3((Math.random() - 0.5) * 12, 2.0 + Math.random() * 9, (Math.random() - 0.5) * 12);
-          this.pushFxParticle(e.to.clone(), vel, i % 2 === 0 ? 0x4dabf7 : 0xffffff, 0.28, 0.6, 5.0);
+
+        // 発射口（マズル）＆中間点の垂直ショックウェーブリング
+        if (isInit) {
+          const ringSteps = 24;
+          for (let i = 0; i < ringSteps; i++) {
+            const ang = (i / ringSteps) * Math.PI * 2;
+            const radial = right.clone().multiplyScalar(Math.cos(ang)).addScaledVector(planeUp, Math.sin(ang));
+            const muzzleRingPos = e.from.clone().addScaledVector(dir, 1.2).addScaledVector(radial, 0.8);
+            this.pushFxParticle(muzzleRingPos, radial.clone().multiplyScalar(9.5), i % 2 === 0 ? 0xffffff : 0x00f5d4, 0.32, 0.45, 0);
+          }
+
+          // 着弾点から天を衝く超巨大プラズマ光柱（高さ16m）
+          for (let y = 0; y <= 16; y += 0.65) {
+            const pCol = y % 2 === 0 ? 0xffffff : 0x00f5d4;
+            this.pushFxParticle(
+              new Vector3(e.to.x + (Math.random() - 0.5) * 0.9, e.to.y + y, e.to.z + (Math.random() - 0.5) * 0.9),
+              new Vector3((Math.random() - 0.5) * 3.0, 8.0 + Math.random() * 6.0, (Math.random() - 0.5) * 3.0),
+              pCol,
+              0.46,
+              0.55,
+              0,
+            );
+          }
+
+          // 着弾点の地表大衝撃波リング（半径6m超へ一気に拡散）
+          const groundRingN = 36;
+          for (let i = 0; i < groundRingN; i++) {
+            const ang = (i / groundRingN) * Math.PI * 2;
+            const rDir = new Vector3(Math.cos(ang), 0.08, Math.sin(ang));
+            this.pushFxParticle(
+              e.to.clone().addScaledVector(rDir, 0.5),
+              rDir.clone().multiplyScalar(14.5),
+              i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0x00f5d4 : 0x4dabf7,
+              0.36,
+              0.62,
+              0.5,
+            );
+          }
+
+          // 結晶＆プラズマ破片の大量飛散
+          for (let i = 0; i < 20; i++) {
+            const dVel = new Vector3((Math.random() - 0.5) * 14, 4.0 + Math.random() * 9.0, (Math.random() - 0.5) * 14);
+            this.pushDroppedVoxel(e.to.clone(), dVel, i % 2 === 0 ? 0x74c0fc : 0xe0f2fe, 0.09);
+          }
+        }
+
+        // 着弾点のプラズマ爆炎スパーク
+        const sparkCount = isInit ? 48 : 16;
+        for (let i = 0; i < sparkCount; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 16, 3.0 + Math.random() * 12, (Math.random() - 0.5) * 16);
+          const col = i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0x00f5d4 : 0x4dabf7;
+          this.pushFxParticle(e.to.clone(), vel, col, isInit ? 0.34 : 0.24, isInit ? 0.65 : 0.35, 5.5);
         }
         break;
       }
