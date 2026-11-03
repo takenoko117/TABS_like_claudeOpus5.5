@@ -22,6 +22,7 @@ import {
 } from '../ui/UnitIcons';
 import {
   CATEGORY_LABELS,
+  TEAM_ICONS,
   TEAM_NAMES,
   UNIT_TYPES,
   UNIT_TYPE_LIST,
@@ -42,6 +43,13 @@ import {
   type ArcadeStage,
 } from './ArcadeStages';
 import { Battle, type BattleResult } from './Battle';
+import {
+  VersusSession,
+  getVersusPlacementFacing,
+  getVersusZones,
+  isInsideVersusZone,
+  type PlayerCount,
+} from './VersusMode';
 
 interface PlacedRecord {
   typeId?: UnitTypeId;
@@ -270,11 +278,12 @@ export const PRESETS: readonly PresetScenario[] = [
 ];
 
 export type GameMode = 'placement' | 'battle';
-export type PlayStyle = 'arcade' | 'sandbox';
+export type PlayStyle = 'arcade' | 'sandbox' | 'versus';
 
 /**
  * ゲーム全体の進行管理と UI バインディング。
- * - アーケードモード: 全10面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
+ * - アーケードモード: 全30面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
+ * - 友人対戦モード: 2〜4人オフライン対戦、ランダム初期予算＋手動編集、ブラインド順番配置＆全員完了で戦闘開始
  * - サンドボックスモード: 地面クリックで両軍に自由配置（左半分=赤軍、右半分=青軍）
  */
 export class GameApp {
@@ -285,6 +294,7 @@ export class GameApp {
   playStyle: PlayStyle = 'arcade';
   currentStageIndex = 0;
   arcadeSave: ArcadeSaveData = loadArcadeSave();
+  readonly versus = new VersusSession(2);
 
   mode: GameMode = 'placement';
   selectedId: UnitTypeId | FacilityTypeId = 'clubber';
@@ -319,6 +329,12 @@ export class GameApp {
   private readonly elRestoreHudBtn: HTMLButtonElement | null;
   private readonly elRedStats: HTMLElement;
   private readonly elBlueStats: HTMLElement;
+  private readonly elYellowStats: HTMLElement | null;
+  private readonly elGreenStats: HTMLElement | null;
+  private readonly elVersusHudBar: HTMLElement | null;
+  private readonly elVersusHudBudget: HTMLInputElement | null;
+  private readonly elVersusBudgetInput: HTMLInputElement | null;
+  private readonly elVersusTurnStatus: HTMLElement | null;
   private readonly elStartBtn: HTMLButtonElement;
   private readonly elPhaseBadge: HTMLElement;
   private readonly elBanner: HTMLElement;
@@ -379,6 +395,12 @@ export class GameApp {
     this.elRestoreHudBtn = document.getElementById('btn-restore-hud') as HTMLButtonElement | null;
     this.elRedStats = document.getElementById('red-stats')!;
     this.elBlueStats = document.getElementById('blue-stats')!;
+    this.elYellowStats = document.getElementById('yellow-stats');
+    this.elGreenStats = document.getElementById('green-stats');
+    this.elVersusHudBar = document.getElementById('versus-hud-bar');
+    this.elVersusHudBudget = document.getElementById('versus-hud-budget') as HTMLInputElement | null;
+    this.elVersusBudgetInput = document.getElementById('versus-budget-input') as HTMLInputElement | null;
+    this.elVersusTurnStatus = document.getElementById('versus-turn-status');
     this.elStartBtn = document.getElementById('btn-start') as HTMLButtonElement;
     this.elPhaseBadge = document.getElementById('phase-badge')!;
     this.elBanner = document.getElementById('result-banner')!;
@@ -417,19 +439,23 @@ export class GameApp {
     return ARCADE_STAGES[this.currentStageIndex] ?? ARCADE_STAGES[0];
   }
 
-  private getCurrentRedCost(): number {
+  private getCurrentTeamCost(team: Team = 0): number {
     let cost = 0;
     for (const u of this.battle.units) {
-      if (u.team === 0 && u.splitGen === 0) {
+      if (u.team === team && u.splitGen === 0) {
         cost += UNIT_TYPES[u.type.id].cost;
       }
     }
     for (const f of this.battle.facilities) {
-      if (f.team === 0) {
+      if (f.team === team) {
         cost += f.type.cost;
       }
     }
     return cost;
+  }
+
+  private getCurrentRedCost(): number {
+    return this.getCurrentTeamCost(0);
   }
 
   private getCurrentRedPlacedCount(): number {
@@ -523,18 +549,24 @@ export class GameApp {
       });
     }
 
-    // モード切替ボタン（アーケード / サンドボックス）
+    // モード切替ボタン（アーケード / 友人対戦 / サンドボックス）
     const btnArcade = document.getElementById('btn-mode-arcade');
+    const btnVersus = document.getElementById('btn-mode-versus');
     const btnSandbox = document.getElementById('btn-mode-sandbox');
     const arcadePanel = document.getElementById('arcade-panel');
+    const versusPanel = document.getElementById('versus-panel');
     const sandboxPanel = document.getElementById('sandbox-panel');
 
     const syncModePanels = () => {
       const isArc = this.playStyle === 'arcade';
+      const isVs = this.playStyle === 'versus';
+      const isSb = this.playStyle === 'sandbox';
       btnArcade?.classList.toggle('active', isArc);
-      btnSandbox?.classList.toggle('active', !isArc);
+      btnVersus?.classList.toggle('active', isVs);
+      btnSandbox?.classList.toggle('active', isSb);
       arcadePanel?.classList.toggle('hidden', !isArc);
-      sandboxPanel?.classList.toggle('hidden', isArc);
+      versusPanel?.classList.toggle('hidden', !isVs);
+      sandboxPanel?.classList.toggle('hidden', !isSb);
     };
 
     btnArcade?.addEventListener('click', () => {
@@ -544,11 +576,87 @@ export class GameApp {
       this.loadArcadeStage(this.currentStageIndex);
     });
 
+    btnVersus?.addEventListener('click', () => {
+      if (this.playStyle === 'versus') return;
+      this.playStyle = 'versus';
+      syncModePanels();
+      this.enterVersusMode(this.versus.playerCount, true);
+    });
+
     btnSandbox?.addEventListener('click', () => {
       if (this.playStyle === 'sandbox') return;
       this.playStyle = 'sandbox';
       syncModePanels();
       this.loadPreset(PRESETS[0]);
+    });
+
+    // 友人対戦モードの人数選択ボタン（サイドパネル＆上部HUD）
+    const bindPlayerCountButtons = (selector: string) => {
+      document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const cnt = Number(btn.dataset.pcount) as PlayerCount;
+          if (cnt === 2 || cnt === 3 || cnt === 4) {
+            this.enterVersusMode(cnt, true);
+          }
+        });
+      });
+    };
+    bindPlayerCountButtons('#versus-player-buttons button[data-pcount]');
+    bindPlayerCountButtons('#versus-hud-players button[data-pcount]');
+
+    // 友人対戦モードの予算ランダム決定ボタン
+    const handleRandomBudget = () => {
+      if (this.playStyle !== 'versus' || this.mode !== 'placement') return;
+      this.versus.randomizeBudget();
+      this.syncVersusUI();
+      this.syncPhaseUI();
+      this.updateHUD();
+      this.sound.playPlace();
+    };
+    document.getElementById('btn-versus-random-budget')?.addEventListener('click', handleRandomBudget);
+    document.getElementById('btn-hud-random-budget')?.addEventListener('click', handleRandomBudget);
+
+    // 友人対戦モードの予算手動編集インプット
+    const applyManualBudget = (rawVal: string) => {
+      const parsed = Number(rawVal);
+      if (!Number.isFinite(parsed) || parsed <= 0) return;
+      this.versus.setBudget(parsed);
+      this.syncVersusUI();
+      this.syncPhaseUI();
+      this.updateHUD();
+    };
+    this.elVersusBudgetInput?.addEventListener('change', () => {
+      if (this.elVersusBudgetInput) applyManualBudget(this.elVersusBudgetInput.value);
+    });
+    this.elVersusBudgetInput?.addEventListener('input', () => {
+      if (this.elVersusBudgetInput) applyManualBudget(this.elVersusBudgetInput.value);
+    });
+    this.elVersusHudBudget?.addEventListener('change', () => {
+      if (this.elVersusHudBudget) applyManualBudget(this.elVersusHudBudget.value);
+    });
+    this.elVersusHudBudget?.addEventListener('input', () => {
+      if (this.elVersusHudBudget) applyManualBudget(this.elVersusHudBudget.value);
+    });
+
+    // 友人対戦モードの予算プリセットボタン
+    document.querySelectorAll<HTMLButtonElement>('#versus-budget-presets button[data-budget]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (this.playStyle !== 'versus') return;
+        const b = Number(btn.dataset.budget);
+        if (Number.isFinite(b) && b > 0) {
+          this.versus.setBudget(b);
+          this.syncVersusUI();
+          this.syncPhaseUI();
+          this.updateHUD();
+        }
+      });
+    });
+
+    // 友人対戦モードの新規ラウンドリセットボタン
+    document.getElementById('btn-versus-reset')?.addEventListener('click', () => {
+      if (this.playStyle !== 'versus') return;
+      this.enterVersusMode(this.versus.playerCount, true);
+      this.sound.playRemove();
     });
 
     // 全解放トグルボタン
@@ -625,10 +733,17 @@ export class GameApp {
       presetContainer.appendChild(b);
     });
 
-    // 戦闘開始／配置に戻るボタン
+    // 戦闘開始／配置完了OK／配置に戻るボタン
     this.elStartBtn.addEventListener('click', () => {
-      if (this.mode === 'placement') this.startBattle();
-      else this.returnToPlacement();
+      if (this.mode === 'placement') {
+        if (this.playStyle === 'versus') {
+          this.confirmVersusTurn();
+        } else {
+          this.startBattle();
+        }
+      } else {
+        this.returnToPlacement();
+      }
     });
 
     document.getElementById('btn-retry')!.addEventListener('click', () => {
@@ -636,12 +751,16 @@ export class GameApp {
     });
 
     this.elNextStageBtn?.addEventListener('click', () => {
+      if (this.playStyle === 'versus') {
+        this.enterVersusMode(this.versus.playerCount, true);
+        return;
+      }
       if (this.currentStageIndex < ARCADE_STAGES.length - 1) {
         this.loadArcadeStage(this.currentStageIndex + 1);
       }
     });
 
-    // 全消去ボタン（アーケードモードでは自軍の赤ユニット・施設のみリセット）
+    // 全消去ボタン（アーケードでは自軍のみ、友人対戦では現在手番プレイヤーの配置のみリセット）
     document.getElementById('btn-clear')!.addEventListener('click', () => {
       if (this.mode !== 'placement') this.returnToPlacement();
       if (this.playStyle === 'arcade') {
@@ -651,6 +770,15 @@ export class GameApp {
         }
         for (const f of [...this.battle.facilities]) {
           if (f.team === 0) this.battle.removeFacility(f);
+        }
+      } else if (this.playStyle === 'versus') {
+        const curTeam = this.versus.currentTurn;
+        this.versus.clearCurrentTurnLineup();
+        for (const u of [...this.battle.units]) {
+          if (u.team === curTeam) this.battle.removeUnit(u);
+        }
+        for (const f of [...this.battle.facilities]) {
+          if (f.team === curTeam) this.battle.removeFacility(f);
         }
       } else {
         this.savedLineup = [];
@@ -697,16 +825,23 @@ export class GameApp {
       this.elSpeedButtons.push(b);
     });
 
-    // キーボードショートカット（Space: 戦闘開始/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉、Esc: 詳細閉じる）
+    // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
       if (e.code === 'Escape') {
         if (this.unitDetailVisible) {
           this.hideUnitDetailOverlay();
         }
       } else if (e.code === 'Space') {
         e.preventDefault();
-        if (this.mode === 'placement') this.startBattle();
-        else this.returnToPlacement();
+        if (this.mode === 'placement') {
+          if (this.playStyle === 'versus') this.confirmVersusTurn();
+          else this.startBattle();
+        } else {
+          this.returnToPlacement();
+        }
       } else if (e.code === 'KeyR') {
         if (this.mode !== 'placement') this.returnToPlacement();
       } else if (e.code === 'Tab') {
@@ -1119,12 +1254,21 @@ export class GameApp {
           this.selectedId,
           this.getCurrentRedPlacedCount(),
         );
+        const facing = getStageZoneFacing(this.currentStage, p.x, p.z);
         this.view.updatePlacementGhost(
           this.selectedId,
           0,
           p,
           validZone && canAfford && unlocked && !ruleViolation,
+          facing,
         );
+      } else if (this.playStyle === 'versus') {
+        const team = this.versus.currentTurn;
+        const validZone = isInsideVersusZone(this.versus.playerCount, team, p.x, p.z);
+        const itemCost = this.getItemCost(this.selectedId);
+        const canAfford = this.getCurrentTeamCost(team) + itemCost <= this.versus.budget;
+        const facing = getVersusPlacementFacing(this.versus.playerCount, team, p.x, p.z);
+        this.view.updatePlacementGhost(this.selectedId, team, p, validZone && canAfford, facing);
       } else {
         const team: Team = p.x < 0 ? 0 : 1;
         this.view.updatePlacementGhost(this.selectedId, team, p, Math.abs(p.x) > 1.2);
@@ -1188,6 +1332,33 @@ export class GameApp {
           }
           this.sound.playPlace();
           this.updateHUD();
+        } else if (this.playStyle === 'versus') {
+          const team = this.versus.currentTurn;
+          const pLabel = `${team + 1}P ${TEAM_NAMES[team]}`;
+          if (!isInsideVersusZone(this.versus.playerCount, team, p.x, p.z)) {
+            this.flashPhaseWarning(`⚠ ${pLabel}の配置枠内をタップ／クリックしてください`);
+            return;
+          }
+          const itemCost = this.getItemCost(this.selectedId);
+          const used = this.getCurrentTeamCost(team);
+          if (used + itemCost > this.versus.budget) {
+            this.flashPhaseWarning(
+              `⚠ 予算オーバー！ (残り ${Math.max(0, this.versus.budget - used)} pt / 必要 ${itemCost} pt)`,
+            );
+            return;
+          }
+          const facing = getVersusPlacementFacing(this.versus.playerCount, team, p.x, p.z);
+          const curLineup = this.versus.getCurrentLineup();
+          if (isFacilityTypeId(this.selectedId)) {
+            this.battle.spawnFacility(this.selectedId, team, p.x, p.z, facing);
+            curLineup.push({ facilityId: this.selectedId, team, x: p.x, z: p.z, facing });
+          } else {
+            this.battle.spawnUnit(this.selectedId, team, p.x, p.z, facing);
+            curLineup.push({ typeId: this.selectedId, team, x: p.x, z: p.z, facing });
+          }
+          this.sound.playPlace();
+          this.syncVersusUI();
+          this.updateHUD();
         } else {
           // サンドボックス: x < 0 なら赤軍、x > 0 なら青軍
           if (!this.isInsideArena(p.x, p.z) || Math.abs(p.x) <= 1.2) return;
@@ -1212,11 +1383,16 @@ export class GameApp {
   }
 
   private removeNearestUnitAt(x: number, z: number): void {
+    const activeTurnTeam = this.playStyle === 'versus' ? this.versus.currentTurn : 0;
+    const targetLineup =
+      this.playStyle === 'versus' ? this.versus.getCurrentLineup() : this.savedLineup;
+
     // 1. 施設を優先探索（クリック判定半径 2.0m）
     let bestFac: Facility | null = null;
     let bestFacDist = 2.0;
     for (const f of this.battle.facilities) {
       if (this.playStyle === 'arcade' && f.team !== 0) continue;
+      if (this.playStyle === 'versus' && f.team !== activeTurnTeam) continue;
       const d = Math.hypot(f.pos.x - x, f.pos.z - z);
       if (d < bestFacDist) {
         bestFacDist = d;
@@ -1225,15 +1401,16 @@ export class GameApp {
     }
     if (bestFac) {
       const targetFac = bestFac;
-      const idx = this.savedLineup.findIndex(
+      const idx = targetLineup.findIndex(
         (rec) =>
           rec.facilityId === targetFac.type.id &&
           rec.team === targetFac.team &&
           Math.hypot(rec.x - targetFac.pos.x, rec.z - targetFac.pos.z) < 0.6,
       );
-      if (idx >= 0) this.savedLineup.splice(idx, 1);
+      if (idx >= 0) targetLineup.splice(idx, 1);
       this.battle.removeFacility(targetFac);
       this.sound.playRemove();
+      if (this.playStyle === 'versus') this.syncVersusUI();
       this.updateHUD();
       return;
     }
@@ -1243,8 +1420,9 @@ export class GameApp {
     let bestDist = 1.8;
     for (let i = 0; i < this.battle.units.length; i++) {
       const u = this.battle.units[i];
-      // アーケードモードでは敵軍（青軍）は削除不可
+      // アーケードモードでは敵軍（青軍）は削除不可、友人対戦では自分の手番チームのみ削除可
       if (this.playStyle === 'arcade' && u.team !== 0) continue;
+      if (this.playStyle === 'versus' && u.team !== activeTurnTeam) continue;
       const d = Math.hypot(u.pelvis.pos.x - x, u.pelvis.pos.z - z);
       if (d < bestDist) {
         bestDist = d;
@@ -1253,16 +1431,141 @@ export class GameApp {
     }
     if (bestIdx >= 0) {
       const target = this.battle.units[bestIdx];
-      const lineupIdx = this.savedLineup.findIndex(
+      const lineupIdx = targetLineup.findIndex(
         (rec) =>
           rec.typeId === target.type.id &&
           rec.team === target.team &&
           Math.hypot(rec.x - target.pelvis.pos.x, rec.z - target.pelvis.pos.z) < 0.6,
       );
-      if (lineupIdx >= 0) this.savedLineup.splice(lineupIdx, 1);
+      if (lineupIdx >= 0) targetLineup.splice(lineupIdx, 1);
       this.battle.removeUnit(target);
       this.sound.playRemove();
+      if (this.playStyle === 'versus') this.syncVersusUI();
       this.updateHUD();
+    }
+  }
+
+  /** 友人対戦モード（2〜4人・ブラインド順番配置）を開始・リセットする */
+  enterVersusMode(playerCount: PlayerCount = this.versus.playerCount, randomizeBudget = true): void {
+    this.playStyle = 'versus';
+    this.mode = 'placement';
+    this.battle.aiEnabled = false;
+    this.announcedResult = null;
+    this.elBanner.classList.add('hidden');
+    this.view.setPlacementGuidesVisible(true);
+    this.battle.clear();
+    this.view.clearDebris();
+
+    // ワールドの地形・特殊ルールを標準状態にリセット
+    this.battle.world.obstacles = [];
+    this.battle.world.chasm = null;
+    this.battle.world.pits = [];
+    this.battle.world.slopes = [];
+    this.battle.world.arenaBounds = null;
+    this.battle.world.gravity.set(0, -9.81, 0);
+    this.battle.timeLimitSeconds = null;
+    this.battle.baseDamageMul = 1.0;
+    this.battle.baseSpeedMul = 1.0;
+
+    this.versus.setPlayerCount(playerCount, randomizeBudget);
+    this.savedLineup = [];
+    this.view.setVersusZones(getVersusZones(this.versus.playerCount), this.versus.currentTurn);
+
+    this.renderUnitCards();
+    this.updateUnitDetailOverlay(this.selectedId);
+    this.syncUnitDetailOverlay();
+    this.syncVersusUI();
+    this.syncPhaseUI();
+    this.updateHUD();
+  }
+
+  /** 友人対戦モードのサイドパネルおよび上部HUDバーの表示を同期する */
+  private syncVersusUI(): void {
+    const budgetStr = String(this.versus.budget);
+    if (this.elVersusBudgetInput && document.activeElement !== this.elVersusBudgetInput) {
+      this.elVersusBudgetInput.value = budgetStr;
+    }
+    if (this.elVersusHudBudget && document.activeElement !== this.elVersusHudBudget) {
+      this.elVersusHudBudget.value = budgetStr;
+    }
+
+    const syncButtons = (selector: string) => {
+      document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {
+        const cnt = Number(btn.dataset.pcount);
+        btn.classList.toggle('active', cnt === this.versus.playerCount);
+      });
+    };
+    syncButtons('#versus-player-buttons button[data-pcount]');
+    syncButtons('#versus-hud-players button[data-pcount]');
+
+    if (this.elVersusTurnStatus) {
+      const rows: string[] = [];
+      for (let i = 0; i < this.versus.playerCount; i++) {
+        const t = i as Team;
+        const isCurrent = this.mode === 'placement' && this.versus.currentTurn === t && !this.versus.allReady;
+        const isDone = this.versus.completed[t];
+        const statusText =
+          this.mode === 'battle'
+            ? '⚔ 交戦中'
+            : isDone
+              ? '🙈 配置完了 (ブラインド中)'
+              : isCurrent
+                ? `👉 配置中 (${this.getCurrentTeamCost(t)} / ${this.versus.budget} pt)`
+                : '⏳ 待機中';
+        const rowClass = isCurrent ? 'versus-turn-row active' : isDone ? 'versus-turn-row done' : 'versus-turn-row';
+        rows.push(`
+          <div class="${rowClass}">
+            <span>${TEAM_ICONS[t]} ${i + 1}P ${TEAM_NAMES[t]}</span>
+            <span class="turn-state">${statusText}</span>
+          </div>
+        `);
+      }
+      this.elVersusTurnStatus.innerHTML = rows.join('');
+    }
+  }
+
+  /** 友人対戦モードで現在手番プレイヤーの配置完了OKを確定し、ブラインドして次プレイヤーへ進める（全員完了で戦闘開始） */
+  confirmVersusTurn(): void {
+    if (this.playStyle !== 'versus' || this.mode !== 'placement') return;
+    const team = this.versus.currentTurn;
+    const forceCount = this.battle.aliveCount(team) + this.battle.aliveFacilityCount(team);
+    if (forceCount === 0) {
+      this.flashPhaseWarning(`⚠ ${team + 1}P ${TEAM_NAMES[team]}のユニットまたは防衛施設を1つ以上配置してください`);
+      return;
+    }
+
+    const { allReady, nextTeam } = this.versus.confirmCurrentTurn();
+    if (!allReady) {
+      // 今のプレイヤーの配置をブラインド（戦場から非表示化）し、次のプレイヤーの手番へ切り替え
+      this.battle.clear();
+      this.view.clearDebris();
+      const nextLineup = this.versus.getTeamLineup(nextTeam);
+      for (const item of nextLineup) {
+        if (item.facilityId) {
+          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+        } else if (item.typeId) {
+          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+        }
+      }
+      this.view.setVersusZones(getVersusZones(this.versus.playerCount), nextTeam);
+      this.sound.playPlace();
+      this.syncVersusUI();
+      this.syncPhaseUI();
+      this.updateHUD();
+    } else {
+      // 全員の配置が完了！全プレイヤーのブラインドを解除して一斉スポーン＆戦闘スタート
+      this.battle.clear();
+      this.view.clearDebris();
+      this.savedLineup = this.versus.getAllActiveLineups();
+      for (const item of this.savedLineup) {
+        if (item.facilityId) {
+          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+        } else if (item.typeId) {
+          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+        }
+      }
+      this.syncVersusUI();
+      this.startBattle();
     }
   }
 
@@ -1361,14 +1664,28 @@ export class GameApp {
   }
 
   startBattle(): void {
-    const redForce = this.battle.aliveCount(0) + this.battle.aliveFacilityCount(0);
-    const blueForce = this.battle.aliveCount(1) + this.battle.aliveFacilityCount(1);
-    if (redForce === 0) {
-      this.flashPhaseWarning('⚠ 赤軍ユニットまたは施設を配置してから戦闘開始してください');
-      return;
-    }
-    if (blueForce === 0) {
-      return;
+    if (this.playStyle === 'versus') {
+      let activeTeams = 0;
+      for (let i = 0; i < this.versus.playerCount; i++) {
+        const t = i as Team;
+        if (this.battle.aliveCount(t) + this.battle.aliveFacilityCount(t) > 0) {
+          activeTeams++;
+        }
+      }
+      if (activeTeams < 2) {
+        this.flashPhaseWarning('⚠ 2チーム以上のユニットまたは施設が配置されている必要があります');
+        return;
+      }
+    } else {
+      const redForce = this.battle.aliveCount(0) + this.battle.aliveFacilityCount(0);
+      const blueForce = this.battle.aliveCount(1) + this.battle.aliveFacilityCount(1);
+      if (redForce === 0) {
+        this.flashPhaseWarning('⚠ 赤軍ユニットまたは施設を配置してから戦闘開始してください');
+        return;
+      }
+      if (blueForce === 0) {
+        return;
+      }
     }
     this.mode = 'battle';
     this.battle.aiEnabled = true;
@@ -1381,6 +1698,7 @@ export class GameApp {
       this.syncSidePanelUI();
     }
     this.sound.playBattleStart();
+    if (this.playStyle === 'versus') this.syncVersusUI();
     this.syncPhaseUI();
     this.syncUnitDetailOverlay();
   }
@@ -1393,11 +1711,27 @@ export class GameApp {
     this.view.setPlacementGuidesVisible(true);
     this.battle.clear();
     this.view.clearDebris();
-    for (const item of this.savedLineup) {
-      if (item.facilityId) {
-        this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-      } else if (item.typeId) {
-        this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+
+    if (this.playStyle === 'versus') {
+      // 友人対戦では配置された編成を保持しつつ1Pの手番に戻し、他プレイヤーの編成は再びブラインドする
+      this.versus.reopenPlacementsKeepLineups();
+      const firstLineup = this.versus.getTeamLineup(0);
+      for (const item of firstLineup) {
+        if (item.facilityId) {
+          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+        } else if (item.typeId) {
+          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+        }
+      }
+      this.view.setVersusZones(getVersusZones(this.versus.playerCount), 0);
+      this.syncVersusUI();
+    } else {
+      for (const item of this.savedLineup) {
+        if (item.facilityId) {
+          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+        } else if (item.typeId) {
+          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+        }
       }
     }
     this.syncPhaseUI();
@@ -1421,22 +1755,47 @@ export class GameApp {
     return `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used} ｜ ${starPreview})${maxUnitsStr}`;
   }
 
+  private formatVersusBudgetBadge(): string {
+    const t = this.versus.currentTurn;
+    const used = this.getCurrentTeamCost(t);
+    const budget = this.versus.budget;
+    const remain = Math.max(0, budget - used);
+    return `👥 ${this.versus.playerCount}人対戦 ｜ ${TEAM_ICONS[t]} <b>${t + 1}P ${TEAM_NAMES[t]}の配置番</b> ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${budget} (残り ${remain}) ｜ 完了OKでブラインドして次へ`;
+  }
+
   private syncPhaseUI(): void {
+    const isVersusPlacement = this.playStyle === 'versus' && this.mode === 'placement';
+    this.elVersusHudBar?.classList.toggle('hidden', !isVersusPlacement);
+
     if (this.mode === 'placement') {
       if (this.playStyle === 'arcade') {
         const st = this.currentStage;
         const used = this.getCurrentRedCost();
         this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(st, used);
+        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        this.elStartBtn.className = 'start-btn';
+      } else if (this.playStyle === 'versus') {
+        const t = this.versus.currentTurn;
+        const isLastTurn = t + 1 >= this.versus.playerCount;
+        this.elPhaseBadge.innerHTML = this.formatVersusBudgetBadge();
+        this.elStartBtn.textContent = isLastTurn
+          ? `✅ ${t + 1}P 配置完了OK（全員完了→⚔戦闘開始！）`
+          : `✅ ${t + 1}P (${TEAM_NAMES[t]}) 配置完了OK → 🙈ブラインドして${t + 2}Pへ`;
+        this.elStartBtn.className = isLastTurn ? 'start-btn' : 'start-btn confirm-turn';
       } else {
         this.elPhaseBadge.textContent = '配置フェーズ（左半分：赤軍 ／ 右半分：青軍）';
+        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        this.elStartBtn.className = 'start-btn';
       }
       this.elPhaseBadge.className = 'phase-badge placement';
-      this.elStartBtn.textContent = '⚔ 戦闘開始';
-      this.elStartBtn.className = 'start-btn';
       this.elUnitBar.classList.remove('disabled');
     } else {
       this.elPhaseBadge.textContent =
-        this.playStyle === 'arcade' ? `戦闘中 - ${this.currentStage.name}` : '戦闘中';
+        this.playStyle === 'arcade'
+          ? `戦闘中 - ${this.currentStage.name}`
+          : this.playStyle === 'versus'
+            ? `⚔ 友人対戦 (${this.versus.playerCount}人バトル) - 戦闘中！`
+            : '戦闘中';
       this.elPhaseBadge.className = 'phase-badge battle';
       this.elStartBtn.textContent = '↺ 配置に戻る';
       this.elStartBtn.className = 'start-btn stop';
@@ -1474,6 +1833,65 @@ export class GameApp {
       const ratio = maxHp > 0 ? Math.round((hp / maxHp) * 100) : 0;
       return { alive, total, cost, ratio };
     };
+
+    const showYellow = this.playStyle === 'versus' && this.versus.playerCount >= 3;
+    const showGreen = this.playStyle === 'versus' && this.versus.playerCount >= 4;
+    this.elYellowStats?.classList.toggle('hidden', !showYellow);
+    this.elGreenStats?.classList.toggle('hidden', !showGreen);
+
+    const panels: Array<{ el: HTMLElement | null; fillClass: string }> = [
+      { el: this.elRedStats, fillClass: 'red' },
+      { el: this.elBlueStats, fillClass: 'blue' },
+      { el: this.elYellowStats, fillClass: 'yellow' },
+      { el: this.elGreenStats, fillClass: 'green' },
+    ];
+    for (const p of panels) {
+      p.el?.classList.remove('active-turn');
+    }
+
+    if (this.playStyle === 'versus') {
+      const budget = this.versus.budget;
+      for (let i = 0; i < this.versus.playerCount; i++) {
+        const team = i as Team;
+        const panel = panels[i];
+        if (!panel.el) continue;
+
+        if (this.mode === 'placement') {
+          const isCurrent = this.versus.currentTurn === team && !this.versus.allReady;
+          const isDone = this.versus.completed[team];
+          panel.el.classList.toggle('active-turn', isCurrent);
+
+          if (isDone) {
+            panel.el.innerHTML = `
+              <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]} <span class="blind-tag">🙈 配置完了</span></div>
+              <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:100%"></div></div>
+            `;
+          } else if (isCurrent) {
+            const s = statsFor(team);
+            panel.el.innerHTML = `
+              <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]}: ${s.alive}体 <span class="cost-tag">${COST_ICON_SVG}${s.cost}/${budget}</span></div>
+              <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:${s.ratio}%"></div></div>
+            `;
+          } else {
+            panel.el.innerHTML = `
+              <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]} <span class="cost-tag">待機中 (予算${budget})</span></div>
+              <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:0%"></div></div>
+            `;
+          }
+        } else {
+          const s = statsFor(team);
+          panel.el.innerHTML = `
+            <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]}: ${s.alive}/${s.total} <span class="cost-tag">${COST_ICON_SVG}${s.cost}</span></div>
+            <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:${s.ratio}%"></div></div>
+          `;
+        }
+      }
+
+      if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
+        this.elPhaseBadge.innerHTML = this.formatVersusBudgetBadge();
+      }
+      return;
+    }
 
     const r = statsFor(0);
     const b = statsFor(1);
@@ -1576,6 +1994,18 @@ export class GameApp {
               ? '⏱ タイムアップ！ 作戦失敗'
               : '敗北… 作戦失敗';
         this.elBannerSub.textContent = st.hint;
+      }
+    } else if (this.playStyle === 'versus') {
+      if (res === 'draw') {
+        this.elBannerText.textContent = '引き分け！';
+        this.elBannerSub.textContent = '全軍ともに全滅しました';
+      } else {
+        this.elBannerText.textContent = `${TEAM_ICONS[res]} ${res + 1}P（${TEAM_NAMES[res]}）の勝利！`;
+        this.elBannerSub.textContent = `生存ユニット: ${this.battle.aliveCount(res)} 体 ｜ 設定予算: ${this.versus.budget} pt`;
+      }
+      if (this.elNextStageBtn) {
+        this.elNextStageBtn.textContent = '🎲 新しいランダム予算で次の対戦へ';
+        this.elNextStageBtn.classList.remove('hidden');
       }
     } else {
       if (res === 'draw') {

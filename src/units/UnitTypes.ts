@@ -1,12 +1,16 @@
-/** 陣営（0 = 赤軍, 1 = 青軍） */
-export type Team = 0 | 1;
+/** 陣営（0 = 赤軍, 1 = 青軍, 2 = 黄軍, 3 = 緑軍） */
+export type Team = 0 | 1 | 2 | 3;
 
-export const TEAM_NAMES: readonly string[] = ['赤軍', '青軍'];
+export const TEAM_NAMES: readonly string[] = ['赤軍', '青軍', '黄軍', '緑軍'];
+
+export const TEAM_ICONS: readonly string[] = ['🔴', '🔵', '🟡', '🟢'];
 
 /** 陣営ごとの配色 */
 export const TEAM_COLORS = [
   { shirt: 0xc8372d, pants: 0x5a2a24, accent: 0xffc23a, css: '#e0473a' },
   { shirt: 0x2d62c8, pants: 0x24305a, accent: 0xf2f2f2, css: '#3a72e0' },
+  { shirt: 0xd99b16, pants: 0x5c4314, accent: 0xfff3bf, css: '#f59f00' },
+  { shirt: 0x12b886, pants: 0x0b4f3a, accent: 0xc3fae8, css: '#20c997' },
 ] as const;
 
 export type AttackStyle =

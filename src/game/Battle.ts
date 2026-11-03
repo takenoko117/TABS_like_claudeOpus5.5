@@ -41,7 +41,9 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   /** ユニットを地面上の (x, z) に生成する。向きを省略すると敵陣の方向を向く */
   spawnUnit(typeId: UnitTypeId, team: Team, x: number, z: number, facing?: number): Unit {
-    const f = facing ?? (team === 0 ? Math.PI / 2 : -Math.PI / 2);
+    const defaultFacing =
+      team === 0 ? Math.PI / 2 : team === 1 ? -Math.PI / 2 : team === 2 ? Math.PI : 0;
+    const f = facing ?? defaultFacing;
     const groundY = this.world.getSlopeHeightAt(x, z);
     const unit = new Unit(this.world, UNIT_TYPES[typeId], team, new Vector3(x, groundY, z), f);
     unit.context = this;
@@ -90,7 +92,9 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   /** 施設（召喚ポータル・トーテム・増殖ゲート・防衛砲台・地形ブロック）を生成する */
   spawnFacility(typeId: FacilityTypeId, team: Team, x: number, z: number, facing?: number): Facility {
-    const f = facing ?? (team === 0 ? Math.PI / 2 : -Math.PI / 2);
+    const defaultFacing =
+      team === 0 ? Math.PI / 2 : team === 1 ? -Math.PI / 2 : team === 2 ? Math.PI : 0;
+    const f = facing ?? defaultFacing;
     const facility = new Facility(typeId, team, x, z, f);
     this.facilities.push(facility);
 
@@ -274,19 +278,18 @@ export class Battle implements UnitContext, FacilityBattleContext {
     );
   }
 
-  /** 勝敗判定（決着前は null） */
+  /** 指定チームに生存ユニットまたは稼働中の召喚・砲台施設が残っているか */
+  isTeamAlive(team: Team): boolean {
+    return this.aliveCount(team) > 0 || this.hasActiveSpawner(team);
+  }
+
+  /** 勝敗判定（2〜4陣営対応。決着前は null） */
   result(): BattleResult {
-    const redUnits = this.aliveCount(0);
-    const blueUnits = this.aliveCount(1);
-    const redSpawner = this.hasActiveSpawner(0);
-    const blueSpawner = this.hasActiveSpawner(1);
+    const allTeams: readonly Team[] = [0, 1, 2, 3];
+    const aliveTeams = allTeams.filter((t) => this.isTeamAlive(t));
 
-    const redAlive = redUnits > 0 || redSpawner;
-    const blueAlive = blueUnits > 0 || blueSpawner;
-
-    if (!redAlive && !blueAlive) return 'draw';
-    if (!redAlive) return 1;
-    if (!blueAlive) return 0;
+    if (aliveTeams.length === 0) return 'draw';
+    if (aliveTeams.length === 1) return aliveTeams[0];
 
     // タイムリミット超過時は敵軍が残っていれば防衛側（青軍 = 1）の勝利
     if (this.aiEnabled && this.timeLimitSeconds !== null && this.time >= this.timeLimitSeconds) {

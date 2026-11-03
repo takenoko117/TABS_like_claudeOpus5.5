@@ -451,7 +451,7 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   // 7. 分裂キングスライムの頭部（王冠とゼリー上部）
   if (type.id === 'slime') {
     const g = new VoxelGrid(11, 10, 11);
-    const jelly = team === 0 ? 0x4cd97b : 0x38d996;
+    const jelly = team === 0 ? 0x4cd97b : team === 1 ? 0x38d996 : team === 2 ? 0xfcc419 : 0x20c997;
     g.fillBox(1, 0, 1, 9, 6, 9, jelly);
     // ぎょろ目
     g.fillBox(2, 3, 8, 4, 5, 9, eyeWhite);
@@ -959,9 +959,9 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     const seaOfTrees = 0x1b4332;
     const baseGreen = 0x2d6a4f;
 
-    const mountainCol1 = team === 0 ? 0x9e2a2b : 0x1e3a8a;
-    const mountainCol2 = team === 0 ? 0xba181b : 0x1d4ed8;
-    const mountainCol3 = team === 0 ? 0xe5383b : 0x2563eb;
+    const mountainCol1 = team === 0 ? 0x9e2a2b : team === 1 ? 0x1e3a8a : team === 2 ? 0x92400e : 0x065f46;
+    const mountainCol2 = team === 0 ? 0xba181b : team === 1 ? 0x1d4ed8 : team === 2 ? 0xd97706 : 0x059669;
+    const mountainCol3 = team === 0 ? 0xe5383b : team === 1 ? 0x2563eb : team === 2 ? 0xf59e0b : 0x10b981;
 
     const snowWhite = 0xffffff;
     const snowSoft = 0xf1f5f9;
@@ -1181,7 +1181,7 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   // 分裂キングスライムのゼリー胴体（内部にコアが透けて見える）
   if (type.id === 'slime') {
     const g = new VoxelGrid(12, 12, 10);
-    const jelly = team === 0 ? 0x3bc96b : 0x28c986;
+    const jelly = team === 0 ? 0x3bc96b : team === 1 ? 0x28c986 : team === 2 ? 0xf59f00 : 0x12b886;
     g.fillBox(0, 0, 0, 11, 11, 9, jelly);
     // 中心の輝くスライムコア
     g.fillBox(4, 4, 3, 7, 7, 6, tc.shirt);

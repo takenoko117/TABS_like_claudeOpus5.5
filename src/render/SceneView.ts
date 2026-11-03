@@ -29,7 +29,7 @@ import {
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
 import { isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
-import { DEFAULT_RED_ZONES, type StageTerrainConfig } from '../game/ArcadeStages';
+import { DEFAULT_RED_ZONES, type PlacementZone, type StageTerrainConfig } from '../game/ArcadeStages';
 import type { Battle } from '../game/Battle';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
@@ -506,6 +506,66 @@ export class SceneView {
     }
   }
 
+  /**
+   * 友人対戦モード用の配置ゾーン枠（2〜4人）を描画し、現在の手番プレイヤーのゾーンを強調表示する。
+   */
+  setVersusZones(zones: readonly PlacementZone[], activeTeam: Team): void {
+    while (this.terrainGroup.children.length > 0) {
+      this.terrainGroup.remove(this.terrainGroup.children[0]);
+    }
+    while (this.dividerGroup.children.length > 0) {
+      this.dividerGroup.remove(this.dividerGroup.children[0]);
+    }
+
+    const lineGeoV = new BoxGeometry(0.14, 0.03, 0.9);
+    const whiteMat = new MeshBasicMaterial({ color: 0xf8f8f2 });
+    for (let z = -22; z <= 22; z += 1.6) {
+      const dash = new Mesh(lineGeoV, whiteMat);
+      dash.position.set(0, 0.02, z);
+      this.dividerGroup.add(dash);
+    }
+
+    // 3〜4人対戦時は横方向の中央分割破線も描画
+    if (zones.length >= 3) {
+      const lineGeoH = new BoxGeometry(0.9, 0.03, 0.14);
+      for (let x = -22; x <= 22; x += 1.6) {
+        const dash = new Mesh(lineGeoH, whiteMat);
+        dash.position.set(x, 0.02, 0);
+        this.dividerGroup.add(dash);
+      }
+    }
+
+    zones.forEach((z, idx) => {
+      const team = idx as Team;
+      const isActive = team === activeTeam;
+      const color = TEAM_COLORS[team]?.shirt ?? 0xffffff;
+      const opacity = isActive ? 0.85 : 0.25;
+      const thickness = isActive ? 0.22 : 0.14;
+      const mat = new MeshBasicMaterial({ color, transparent: true, opacity });
+      const w = z.maxX - z.minX;
+      const h = z.maxZ - z.minZ;
+      const cx = (z.minX + z.maxX) * 0.5;
+      const cz = (z.minZ + z.maxZ) * 0.5;
+      const topB = new Mesh(new BoxGeometry(w, 0.035, thickness), mat);
+      topB.position.set(cx, 0.022, z.minZ);
+      const botB = topB.clone();
+      botB.position.set(cx, 0.022, z.maxZ);
+      const leftB = new Mesh(new BoxGeometry(thickness, 0.035, h), mat);
+      leftB.position.set(z.minX, 0.022, cz);
+      const rightB = leftB.clone();
+      rightB.position.set(z.maxX, 0.022, cz);
+      this.dividerGroup.add(topB, botB, leftB, rightB);
+
+      // 現在配置中のプレイヤーのエリアには薄い地面ハイライトを敷く
+      if (isActive) {
+        const floorMat = new MeshBasicMaterial({ color, transparent: true, opacity: 0.12 });
+        const floorMesh = new Mesh(new BoxGeometry(w, 0.01, h), floorMat);
+        floorMesh.position.set(cx, 0.01, cz);
+        this.dividerGroup.add(floorMesh);
+      }
+    });
+  }
+
   private setupInputListeners(): void {
     const dom = this.renderer.domElement;
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -648,6 +708,7 @@ export class SceneView {
     team: Team,
     pos: Vector3 | null,
     valid: boolean,
+    facing?: number,
   ): void {
     if (!typeId || !pos) {
       if (this.ghostGroup) this.ghostGroup.visible = false;
@@ -667,6 +728,8 @@ export class SceneView {
     if (this.ghostGroup) {
       this.ghostGroup.visible = valid;
       this.ghostGroup.position.copy(pos);
+      this.ghostGroup.rotation.y =
+        facing ?? (team === 0 ? Math.PI / 2 : team === 1 ? -Math.PI / 2 : team === 2 ? Math.PI : 0);
     }
   }
 
@@ -708,7 +771,7 @@ export class SceneView {
     const bgMesh = new Mesh(new BoxGeometry(barWidth + 0.04, barHeight + 0.04, 0.04), bgMat);
     hpBarGroup.add(bgMesh);
 
-    const fillMat = new MeshBasicMaterial({ color: facility.team === 0 ? 0xe0473a : 0x3a72e0 });
+    const fillMat = new MeshBasicMaterial({ color: TEAM_COLORS[facility.team]?.shirt ?? 0xe0473a });
     const fillMesh = new Mesh(new BoxGeometry(barWidth, barHeight, 0.05), fillMat);
     hpBarGroup.add(fillMesh);
     hpBarGroup.visible = !facility.isTerrain;
@@ -1156,7 +1219,7 @@ export class SceneView {
       case 'slime_slam':
       case 'slime_split': {
         const count = e.kind === 'slime_jump' ? 10 : 22;
-        const jellyCol = e.team === 0 ? 0x4cd97b : 0x38d996;
+        const jellyCol = e.team === 0 ? 0x4cd97b : e.team === 1 ? 0x38d996 : e.team === 2 ? 0xfcc419 : 0x20c997;
         for (let i = 0; i < count; i++) {
           const vel = new Vector3(
             (Math.random() - 0.5) * 6,

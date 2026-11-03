@@ -75,6 +75,13 @@ body {
   z-index: 10;
 }
 
+.team-panels-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
 .team-panel {
   pointer-events: auto;
   min-width: 210px;
@@ -91,6 +98,19 @@ body {
 
 .team-panel.blue {
   border-color: rgba(58, 114, 224, 0.75);
+}
+
+.team-panel.yellow {
+  border-color: rgba(245, 159, 0, 0.75);
+}
+
+.team-panel.green {
+  border-color: rgba(32, 201, 151, 0.75);
+}
+
+.team-panel.active-turn {
+  box-shadow: 0 0 14px rgba(255, 212, 59, 0.45);
+  background: rgba(28, 38, 54, 0.92);
 }
 
 .team-title {
@@ -116,6 +136,18 @@ body {
   border-radius: 999px;
 }
 
+.blind-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #ced4da;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
 .hp-bar {
   width: 100%;
   height: 8px;
@@ -135,6 +167,14 @@ body {
 
 .hp-fill.blue {
   background: linear-gradient(90deg, #3a72e0, #62a3ff);
+}
+
+.hp-fill.yellow {
+  background: linear-gradient(90deg, #f59f00, #ffd43b);
+}
+
+.hp-fill.green {
+  background: linear-gradient(90deg, #12b886, #38d9a9);
 }
 
 .center-panel {
@@ -193,6 +233,143 @@ body {
 
 .start-btn.stop {
   background: linear-gradient(135deg, #495057, #343a40);
+}
+
+.start-btn.confirm-turn {
+  background: linear-gradient(135deg, #2b8a3e, #40c057);
+}
+
+/* 友人対戦モードの上部HUDバー・サイドパネルUI */
+.versus-hud-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(18, 24, 34, 0.9);
+  border: 1px solid rgba(255, 212, 59, 0.45);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.versus-hud-label {
+  color: #dee2e6;
+  font-size: 11.5px;
+}
+
+.versus-hud-sep {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.versus-hud-players {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.versus-pcount-btn {
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ced4da;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  transition: all 0.12s;
+}
+
+.versus-pcount-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.versus-pcount-btn.active {
+  background: #ffd43b;
+  border-color: #ffd43b;
+  color: #181820;
+}
+
+.versus-budget-input {
+  width: 78px;
+  padding: 2px 6px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #ffd43b;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 212, 59, 0.55);
+  border-radius: 6px;
+  text-align: right;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.versus-budget-input.large {
+  flex: 1;
+  width: auto;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.versus-budget-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.versus-budget-unit,
+.versus-hud-unit {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #ffd43b;
+}
+
+.mini-budget-btn {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.versus-turn-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(10, 14, 22, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.versus-status-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+}
+
+.versus-status-item.current {
+  background: rgba(255, 212, 59, 0.15);
+  border-color: rgba(255, 212, 59, 0.6);
+  color: #fff;
+}
+
+.versus-status-item.done {
+  background: rgba(43, 138, 62, 0.22);
+  border-color: rgba(81, 207, 102, 0.45);
+  color: #b2f2bb;
+}
+
+.versus-status-badge {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .mode-toggle-btn {
@@ -281,6 +458,15 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.mode-switch-group.three-cols {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.mode-switch-group.three-cols .ctrl-btn {
+  padding: 6px 4px;
+  font-size: 11px;
 }
 
 .stage-grid {
