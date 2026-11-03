@@ -1,7 +1,7 @@
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { UnitCategory, UnitTypeId } from '../units/UnitTypes';
 
-export type PaletteCategory = UnitCategory | 'facility';
+export type PaletteCategory = UnitCategory | 'facility' | 'terrain';
 
 /** カテゴリごとのシンボルアイコン（タブ・バッジ表示用） */
 export const CATEGORY_ICONS: Readonly<Record<PaletteCategory | 'all', string>> = {
@@ -14,6 +14,7 @@ export const CATEGORY_ICONS: Readonly<Record<PaletteCategory | 'all', string>> =
   mythical: '🐉',
   divine: '👁️',
   facility: '🏛️',
+  terrain: '🧱',
 };
 
 /** カテゴリごとのテーマ背景グラデーション色 */
@@ -26,6 +27,7 @@ export const CATEGORY_THEME_COLORS: Readonly<Record<PaletteCategory, { bg: strin
   mythical: { bg: 'linear-gradient(135deg, #4f1d1d, #2d1010)', border: '#ff6b6b' },
   divine: { bg: 'linear-gradient(135deg, #341a4a, #1a0d26)', border: '#845ef7' },
   facility: { bg: 'linear-gradient(135deg, #2a3a40, #17242a)', border: '#38d9a9' },
+  terrain: { bg: 'linear-gradient(135deg, #3d352a, #241f18)', border: '#f59f00' },
 };
 
 /** コスト（コイン）アイコン SVG */
@@ -746,6 +748,39 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <polygon points="31,19 35,20.5 31,22 32,20.5" fill="#34d399"/>
         <polygon points="30,4 34,2 32,6" fill="#fde047"/>
       </svg>`;
+
+    case 'lightspeed_ant':
+      // 光速アリ: 超高速のシアン＆イエロー残像ラインと鋭い大顎・触角・6本脚のアリ
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 背後の光速スピードライン・残像 -->
+        <line x1="1" y1="9" x2="17" y2="9" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+        <line x1="2" y1="15" x2="14" y2="15" stroke="#fef08a" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="1" y1="22" x2="13" y2="22" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+        <line x1="3" y1="28" x2="16" y2="28" stroke="#fef08a" stroke-width="1.6" stroke-linecap="round"/>
+        <!-- アリの6本脚（黒キチン質＋シアン関節） -->
+        <polyline points="16,22 12,28 8,33" fill="none" stroke="#18181b" stroke-width="2" stroke-linecap="round"/>
+        <polyline points="20,20 19,27 16,33" fill="none" stroke="#18181b" stroke-width="2" stroke-linecap="round"/>
+        <polyline points="24,18 25,26 24,33" fill="none" stroke="#18181b" stroke-width="2" stroke-linecap="round"/>
+        <polyline points="17,18 14,12 10,8" fill="none" stroke="#18181b" stroke-width="1.8" stroke-linecap="round"/>
+        <polyline points="21,17 20,11 18,6" fill="none" stroke="#18181b" stroke-width="1.8" stroke-linecap="round"/>
+        <!-- 腹部（Gaster）＆光速ネオンストライプ -->
+        <ellipse cx="11" cy="19" rx="6.5" ry="4.8" fill="#18181b" stroke="#38bdf8" stroke-width="1"/>
+        <path d="M 9,14.5 L 9,23.5" stroke="#e0473a" stroke-width="2"/>
+        <path d="M 12.5,14.8 L 12.5,23.2" stroke="#fef08a" stroke-width="1.5"/>
+        <!-- くびれ（腹柄節）＆胸部（Thorax） -->
+        <circle cx="17.5" cy="18.5" r="2" fill="#27272a"/>
+        <ellipse cx="21.5" cy="17.5" rx="4.2" ry="3" fill="#18181b" stroke="#38bdf8" stroke-width="0.9"/>
+        <!-- 頭部（Head）＆光速複眼 -->
+        <circle cx="27" cy="16.5" r="3.8" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+        <ellipse cx="27.8" cy="15.2" rx="1.6" ry="1.1" fill="#38bdf8"/>
+        <circle cx="28.2" cy="15.0" r="0.6" fill="#fef08a"/>
+        <!-- 鋭い光速大顎（Mandibles） -->
+        <path d="M 30,15 L 35,13.5 L 32.5,16.5 Z" fill="#38bdf8"/>
+        <path d="M 30,18 L 35,19.5 L 32.5,16.8 Z" fill="#fef08a"/>
+        <!-- 2本のくの字触角 -->
+        <polyline points="27,13 29,8 34,6" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round"/>
+        <polyline points="28.5,14 31,10 35,9.5" fill="none" stroke="#fef08a" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>`;
   }
 }
 
@@ -826,6 +861,66 @@ export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
           <rect x="14" y="5" width="16" height="6" rx="1.5" fill="#202226" stroke="#121315" stroke-width="1"/>
           <circle cx="30" cy="8" r="2.2" fill="#343840"/>
         </g>
+      </svg>`;
+
+    case 'terrain_wall':
+      // 防壁ブロック（壁）: 重厚な石積み城壁とクレネル（銃眼）
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 城壁上部の凸部（クレネル） -->
+        <rect x="3" y="7" width="6" height="5" rx="0.8" fill="#8a8275" stroke="#3b3731" stroke-width="1"/>
+        <rect x="11" y="7" width="6" height="5" rx="0.8" fill="#8a8275" stroke="#3b3731" stroke-width="1"/>
+        <rect x="19" y="7" width="6" height="5" rx="0.8" fill="#8a8275" stroke="#3b3731" stroke-width="1"/>
+        <rect x="27" y="7" width="6" height="5" rx="0.8" fill="#8a8275" stroke="#3b3731" stroke-width="1"/>
+        <!-- 主壁面 -->
+        <rect x="3" y="11" width="30" height="20" rx="1.5" fill="#787166" stroke="#3b3731" stroke-width="1.2"/>
+        <!-- 石積みレンガ目地 -->
+        <line x1="3" y1="16" x2="33" y2="16" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="3" y1="21" x2="33" y2="21" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="3" y1="26" x2="33" y2="26" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="12" y1="11" x2="12" y2="16" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="24" y1="11" x2="24" y2="16" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="18" y1="16" x2="18" y2="21" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="10" y1="21" x2="10" y2="26" stroke="#4b463e" stroke-width="1.2"/>
+        <line x1="26" y1="21" x2="26" y2="26" stroke="#4b463e" stroke-width="1.2"/>
+        <!-- 補強の琥珀リベット帯 -->
+        <rect x="5" y="18" width="26" height="2" fill="#f59f00" opacity="0.85"/>
+        <!-- 下部土台 -->
+        <rect x="2" y="29" width="32" height="4" rx="1" fill="#524c43" stroke="#2b2927" stroke-width="1"/>
+      </svg>`;
+
+    case 'terrain_slope':
+      // スロープブロック（坂道）: 登坂ランプと進行方向シェブロン矢印
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- スロープ側面（三角形の石・鉄骨構造） -->
+        <polygon points="3,30 31,10 31,30" fill="#5f5950" stroke="#2b2927" stroke-width="1.2"/>
+        <!-- スロープ天面（斜めの登坂路） -->
+        <polygon points="3,30 9,26 33,8 31,13" fill="#8a7968" stroke="#3b3731" stroke-width="1"/>
+        <!-- 登坂シェブロン矢印 -->
+        <polyline points="11,23 17,17 17,22" fill="none" stroke="#ffd43b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="19,17 25,11 25,16" fill="none" stroke="#f59f00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- 支柱トラスライン -->
+        <line x1="14" y1="22" x2="14" y2="30" stroke="#3b3731" stroke-width="1.5"/>
+        <line x1="23" y1="16" x2="23" y2="30" stroke="#3b3731" stroke-width="1.5"/>
+        <!-- ベースプレート -->
+        <rect x="2" y="29" width="31" height="3.5" rx="1" fill="#495057"/>
+      </svg>`;
+
+    case 'terrain_pit':
+      // 落とし穴ブロック（奈落）: 地面に空いた漆黒のホールと危険ストライプ・内向きスパイク
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 外周の危険石枠 -->
+        <ellipse cx="18" cy="21" rx="15" ry="9.5" fill="#524c44" stroke="#f59f00" stroke-width="1.6" stroke-dasharray="3.5 2"/>
+        <!-- 奈落の暗黒開口部 -->
+        <ellipse cx="18" cy="21" rx="11.5" ry="6.8" fill="#07060a" stroke="#2b2927" stroke-width="1.2"/>
+        <!-- 深淵の渦リング -->
+        <ellipse cx="18" cy="22" rx="7.5" ry="4" fill="none" stroke="#3b2854" stroke-width="1" stroke-dasharray="3 2"/>
+        <!-- 内向きスパイク牙 -->
+        <polygon points="7,20 11,21 8,23" fill="#ced4da"/>
+        <polygon points="29,20 25,21 28,23" fill="#ced4da"/>
+        <polygon points="18,14 17,17.5 19,17.5" fill="#ced4da"/>
+        <polygon points="18,28 17,24.5 19,24.5" fill="#ced4da"/>
+        <!-- 落下を示す下向き矢印 -->
+        <path d="M18 4 L18 13 M14.5 10 L18 14 L21.5 10" stroke="#ff6b6b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
       </svg>`;
   }
 }

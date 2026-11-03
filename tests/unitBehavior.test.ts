@@ -487,6 +487,29 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(slashHits).toBeGreaterThan(0);
     expect(totalDmg).toBeGreaterThan(60);
   });
+
+  it('光速アリが超高速で接近し連続噛みつき攻撃でダメージを与える', () => {
+    const battle = new DiagBattle();
+    const ant = battle.spawnUnit('lightspeed_ant', 0, -10, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 6, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let dashes = 0;
+    let bites = 0;
+    let totalDmg = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'ant_dash') dashes++;
+      if (e.kind === 'ant_bite') bites++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === ant && e.victim === dummy) totalDmg += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 4; i++) battle.step(battle.fixedDt);
+    expect(dashes).toBeGreaterThan(2);
+    expect(bites).toBeGreaterThan(2);
+    expect(totalDmg).toBeGreaterThan(20);
+  });
 });
 
 describe('1対1 総当たりで膠着しない', () => {

@@ -711,6 +711,7 @@ export class SceneView {
     const fillMat = new MeshBasicMaterial({ color: facility.team === 0 ? 0xe0473a : 0x3a72e0 });
     const fillMesh = new Mesh(new BoxGeometry(barWidth, barHeight, 0.05), fillMat);
     hpBarGroup.add(fillMesh);
+    hpBarGroup.visible = !facility.isTerrain;
     group.add(hpBarGroup);
 
     this.scene.add(group);
@@ -1682,6 +1683,31 @@ export class SceneView {
           const ang = (i / 3) * Math.PI;
           const dir = new Vector3(Math.cos(ang), Math.sin(ang), (Math.random() - 0.5) * 0.5).normalize();
           this.pushDroppedVoxel(e.pos.clone(), dir.multiplyScalar(6.0), 0x34d399, 0.06);
+        }
+        break;
+      }
+      case 'ant_dash': {
+        // 光速アリの超高速残像トレイル（シアン＆イエロー＆チームカラーの光の軌跡）
+        const teamCol = TEAM_COLORS[e.team].shirt;
+        const dir = new Vector3().subVectors(e.to, e.from);
+        const dist = dir.length();
+        const steps = Math.max(3, Math.min(8, Math.ceil(dist / 0.25)));
+        for (let i = 0; i <= steps; i++) {
+          const frac = i / steps;
+          const p = e.from.clone().lerp(e.to, frac);
+          p.y += 0.08 + Math.random() * 0.1;
+          const vel = new Vector3((Math.random() - 0.5) * 1.2, 0.4 + Math.random() * 0.8, (Math.random() - 0.5) * 1.2);
+          const col = i % 3 === 0 ? 0x38bdf8 : i % 3 === 1 ? 0xfef08a : teamCol;
+          this.pushFxParticle(p, vel, col, 0.085, 0.16 + Math.random() * 0.08, 0);
+        }
+        break;
+      }
+      case 'ant_bite': {
+        // 光速アリの大顎噛みつきスパーク
+        for (let i = 0; i < 8; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 5.0, 1.0 + Math.random() * 3.5, (Math.random() - 0.5) * 5.0);
+          const col = i % 2 === 0 ? 0x38bdf8 : 0xfef08a;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.08, 0.18 + Math.random() * 0.1, 3.0);
         }
         break;
       }

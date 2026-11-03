@@ -619,6 +619,41 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.038, [5, 4, 5]);
   }
 
+  // 光速アリの頭部（鋭く湾曲した大顎・2本のくの字触角・光速発光複眼）
+  if (type.id === 'lightspeed_ant') {
+    const g = new VoxelGrid(11, 10, 14);
+    const chitin = 0x18181b;
+    const chitinMid = 0x27272a;
+    const cyanGlow = 0x38bdf8;
+    const yellowGlow = 0xfef08a;
+    // 楕円形のアリ頭部甲殻
+    g.fillBox(2, 2, 2, 8, 6, 8, chitin);
+    g.fillBox(3, 1, 3, 7, 7, 7, chitinMid);
+    // 頭頂部のチームカラー＆光速ライン
+    g.fillBox(4, 7, 3, 6, 7, 7, tc.shirt);
+    g.fillBox(5, 7, 4, 5, 7, 8, cyanGlow);
+    // 大きく張り出した光速複眼（シアン＆イエロー発光）
+    g.fillBox(1, 3, 5, 2, 5, 7, cyanGlow);
+    g.fillBox(8, 3, 5, 9, 5, 7, cyanGlow);
+    g.set(1, 4, 6, yellowGlow);
+    g.set(9, 4, 6, yellowGlow);
+    // 前方に突き出す鋭い大顎（クワガタ・アリ型のハサミ顎）
+    g.fillBox(2, 2, 8, 3, 3, 11, chitinMid);
+    g.fillBox(7, 2, 8, 8, 3, 11, chitinMid);
+    g.fillBox(3, 2, 11, 4, 3, 13, cyanGlow);
+    g.fillBox(6, 2, 11, 7, 3, 13, cyanGlow);
+    g.set(4, 2, 13, yellowGlow);
+    g.set(6, 2, 13, yellowGlow);
+    // 頭頂から前方へ伸びる2本のくの字触角
+    g.fillBox(3, 6, 8, 3, 8, 9, chitinMid);
+    g.fillBox(2, 8, 9, 2, 9, 12, tc.shirt);
+    g.set(2, 9, 12, yellowGlow);
+    g.fillBox(7, 6, 8, 7, 8, 9, chitinMid);
+    g.fillBox(8, 8, 9, 8, 9, 12, tc.shirt);
+    g.set(8, 9, 12, yellowGlow);
+    return makeTemplate(g, 0.042, [5.5, 3.5, 4.5]);
+  }
+
   const g = new VoxelGrid(11, 12, 11);
   // 頭部本体（7×7×7, 中心を x=2..8, y=1..7, z=2..8 に配置）
   g.fillBox(2, 1, 2, 8, 7, 8, look.skin);
@@ -1025,6 +1060,40 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(4, 8, 3, 7, 9, 8, tc.shirt);
     g.fillBox(3, 7, 4, 8, 8, 7, tc.accent);
     return makeTemplate(g, 0.044, [5.5, 2.0, 5.5]);
+  }
+
+  // 光速アリの胴体（前方の引き締まった胸部＋くびれた腹柄節＋後方の膨らんだ腹部＆光速発光ストライプ）
+  if (type.id === 'lightspeed_ant') {
+    const g = new VoxelGrid(12, 10, 22);
+    const chitin = 0x18181b;
+    const chitinMid = 0x27272a;
+    const cyanGlow = 0x38bdf8;
+    const yellowGlow = 0xfef08a;
+
+    // 1. 後方の膨らんだ腹部 (Gaster: z=0..9)
+    g.fillBox(2, 2, 1, 9, 7, 8, chitin);
+    g.fillBox(1, 3, 2, 10, 6, 7, chitinMid);
+    g.fillBox(3, 1, 2, 8, 8, 7, chitin);
+    // 腹部のチームカラー＆光速ネオンストライプ帯
+    g.fillBox(2, 3, 2, 9, 7, 3, tc.shirt);
+    g.fillBox(2, 4, 5, 9, 8, 6, tc.shirt);
+    g.fillBox(3, 8, 3, 8, 8, 4, cyanGlow);
+    g.fillBox(3, 8, 6, 8, 8, 6, yellowGlow);
+    // 尾端の光速スラスター発光
+    g.fillBox(4, 4, 0, 7, 5, 1, cyanGlow);
+
+    // 2. くびれた腰（腹柄節 Petiole: z=9..12）
+    g.fillBox(4, 3, 9, 7, 5, 12, chitinMid);
+    g.fillBox(5, 5, 10, 6, 6, 11, tc.shirt);
+
+    // 3. 前方の胸部（Thorax: z=12..20）
+    g.fillBox(3, 2, 12, 8, 6, 19, chitin);
+    g.fillBox(2, 3, 13, 9, 5, 18, chitinMid);
+    // 胸部背面の光速エネルギーライン
+    g.fillBox(4, 6, 13, 7, 7, 18, tc.shirt);
+    g.fillBox(5, 7, 13, 6, 7, 19, cyanGlow);
+
+    return makeTemplate(g, 0.044, [6.0, 3.0, 12.0]);
   }
 
   // おとりの胴体（藁束・ターゲットマーク・チームカラー帯）
@@ -1772,6 +1841,12 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm = buildLimbTemplate(3, 6, 3, 0x18181b, type.look.skin, 0.26);
     thigh = buildLimbTemplate(4, 8, 4, 0x14532d, 0x14532d, 0.41);
     shin = buildLimbTemplate(4, 8, 4, 0x18181b, 0x14532d, 0.4);
+  } else if (type.id === 'lightspeed_ant') {
+    // 光速アリ: 細く俊敏な昆虫の6本脚（黒キチン質＋シアン発光関節）
+    upperArm = buildLimbTemplate(2, 7, 2, 0x38bdf8, 0x18181b, 0.34);
+    forearm = buildLimbTemplate(2, 7, 2, 0xfef08a, 0x18181b, 0.34);
+    thigh = buildLimbTemplate(2, 8, 2, 0x38bdf8, 0x18181b, 0.38);
+    shin = buildLimbTemplate(2, 8, 2, 0xfef08a, 0x18181b, 0.38);
   } else {
     upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
@@ -2151,6 +2226,11 @@ export class VoxelCharacterVisual {
     }
     if (u.type.id === 'angel_ramiel') {
       this.syncRamiel();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'lightspeed_ant') {
+      this.syncLightspeedAnt();
       this.updateMaterialStatus();
       return;
     }
@@ -2551,6 +2631,65 @@ export class VoxelCharacterVisual {
     this.parts.shinL.mesh.visible = false;
     this.parts.thighR.mesh.visible = false;
     this.parts.shinR.mesh.visible = false;
+  }
+
+  /** 光速アリ専用の昆虫ボディ（頭・胸・腹）＆6本脚高速駆動配置処理 */
+  private syncLightspeedAnt(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+    const head = P[J.Head].pos;
+
+    // アリの進行方向ベクトル（水平〜前傾）
+    _fwd.subVectors(chest, pelvis);
+    if (_fwd.lengthSq() < 1e-5) _fwd.copy(u.forward);
+    else _fwd.normalize();
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+    if (_right.lengthSq() < 1e-5) _right.set(1, 0, 0);
+    _up.crossVectors(_fwd, _right).normalize();
+
+    // 1. 胴体（胸部＋くびれ＋腹部）
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    // 2. 頭部（触角・大顎・複眼）を胸部前端に配置
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      _dir.subVectors(head, chest);
+      if (_dir.lengthSq() < 1e-5) _dir.copy(_fwd);
+      else _dir.normalize();
+      const headRight = _localHit.crossVectors(UP, _dir).normalize();
+      if (headRight.lengthSq() < 1e-5) headRight.copy(_right);
+      const headUp = _headUp.crossVectors(_dir, headRight).normalize();
+      const headPos = _voxelWorld.copy(chest).addScaledVector(_fwd, 0.14 * s);
+      placeBasisPart(this.parts.head.mesh, headPos, headRight, headUp, _dir);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    // 3. アリの6本脚（前脚2本・中脚2本・後脚2本を胸部〜腹柄節から接地させる）
+    const thoraxFrontL = _voxelWorld.copy(chest).addScaledVector(_right, -0.14 * s).addScaledVector(_fwd, 0.10 * s);
+    const thoraxMidL = _headPos.copy(pelvis).addScaledVector(_right, -0.15 * s).addScaledVector(_fwd, 0.12 * s);
+    placeLimb(this.parts.upperArmL.mesh, thoraxFrontL, P[J.ElbowL].pos);
+    placeLimb(this.parts.forearmL.mesh, thoraxMidL, P[J.HandL].pos);
+
+    const thoraxFrontR = _voxelWorld.copy(chest).addScaledVector(_right, 0.14 * s).addScaledVector(_fwd, 0.10 * s);
+    const thoraxMidR = _headPos.copy(pelvis).addScaledVector(_right, 0.15 * s).addScaledVector(_fwd, 0.12 * s);
+    placeLimb(this.parts.upperArmR.mesh, thoraxFrontR, P[J.ElbowR].pos);
+    placeLimb(this.parts.forearmR.mesh, thoraxMidR, P[J.HandR].pos);
+
+    // 後脚（2関節で力強く地面を蹴る）
+    placeLimb(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos);
+    placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
+    placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
+    placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
   }
 
   /** 被弾フラッシュ・感電・炎上発光と死亡時の暗転マテリアル更新 */
@@ -3192,6 +3331,168 @@ export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { gr
             if (z >= 20 && (x === 11 || x === 12) && y === 21) continue;
             g.set(x, y, z, 0x202226);
           }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+
+    case 'terrain_wall': {
+      // 防壁ブロック（壁）: 横幅約3.0m・高さ2.6mの重厚な石造り城壁・銃眼（クレネル）付き
+      const sx = 32;
+      const sy = 26;
+      const sz = 12;
+      const voxelSize = 0.095;
+      const g = new VoxelGrid(sx, sy, sz);
+
+      // 土台（y: 0..3）
+      for (let y = 0; y <= 3; y++) {
+        for (let z = 1; z <= 10; z++) {
+          for (let x = 1; x <= 30; x++) {
+            const baseCol = ((x * 13 + y * 29 + z * 41) & 3) === 0 ? 0x4b463e : 0x5c554b;
+            g.set(x, y, z, baseCol);
+          }
+        }
+      }
+
+      // 主壁体（y: 4..21）レンガ積みパターン
+      for (let y = 4; y <= 21; y++) {
+        const brickRow = Math.floor(y / 3);
+        const isMortarY = y % 3 === 0;
+        for (let z = 2; z <= 9; z++) {
+          for (let x = 1; x <= 30; x++) {
+            const isPillar = x <= 4 || x >= 27 || (x >= 14 && x <= 17);
+            const isMortarX = ((x + (brickRow % 2) * 3) % 6) === 0;
+            let col = 0x787166;
+            if (isPillar) {
+              col = y === 12 || y === 13 ? 0xd97706 : 0x625c52;
+            } else if (isMortarY || isMortarX) {
+              col = 0x544e45;
+            } else if (((x * 17 + brickRow * 31) & 3) === 0) {
+              col = 0x8a8275;
+            }
+            g.set(x, y, z, col);
+          }
+        }
+      }
+
+      // 柱の張り出しバットレス（控え壁）
+      for (let y = 0; y <= 22; y++) {
+        for (const px of [2, 3, 15, 16, 28, 29]) {
+          g.set(px, y, 1, 0x524c43);
+          g.set(px, y, 10, 0x524c43);
+        }
+      }
+
+      // 上部の胸壁・銃眼（クレネル y: 22..25）
+      for (let y = 22; y <= 25; y++) {
+        for (let z = 2; z <= 9; z++) {
+          for (let x = 1; x <= 30; x++) {
+            // 4箇所の凸部を作る
+            const merlon =
+              (x >= 1 && x <= 6) ||
+              (x >= 9 && x <= 14) ||
+              (x >= 17 && x <= 22) ||
+              (x >= 25 && x <= 30);
+            if (y === 22 || merlon) {
+              g.set(x, y, z, y === 25 ? 0x8c8478 : 0x6d665c);
+            }
+          }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+
+    case 'terrain_slope': {
+      // スロープブロック（坂道）: -Z（手前）から+Z（奥）へ向かって登る幅2.6m・長さ3.2m・高さ1.8mの突撃スロープ
+      const sx = 26;
+      const sy = 19;
+      const sz = 32;
+      const voxelSize = 0.1;
+      const g = new VoxelGrid(sx, sy, sz);
+
+      for (let z = 0; z < sz; z++) {
+        const t = z / (sz - 1);
+        const maxH = Math.max(1, Math.round(t * 18));
+        for (let y = 0; y <= maxH; y++) {
+          const isTopSurface = y >= maxH - 1;
+          for (let x = 1; x <= 24; x++) {
+            const isSideRail = x <= 2 || x >= 23;
+            if (isSideRail && y === maxH) {
+              // サイドの金属・石材ガードレール
+              g.set(x, Math.min(sy - 1, y + 1), z, 0x495057);
+            }
+            if (isTopSurface) {
+              // 登坂面の矢印シェブロン模様と滑り止めステップ
+              const relX = Math.abs(x - 12.5);
+              const chevron = ((z - Math.floor(relX * 0.8) + 32) % 8);
+              if (relX <= 7 && (chevron === 0 || chevron === 1)) {
+                g.set(x, y, z, 0xf59f00); // 黄橙色の進行方向シェブロン
+              } else if (z % 4 === 0) {
+                g.set(x, y, z, 0x6c584c); // 滑り止め横木
+              } else {
+                g.set(x, y, z, 0x8a7968); // スロープ天板
+              }
+            } else {
+              // 側面・内部の石積み構造（軽量化のため内部は中空にし外殻と梁のみ配置）
+              if (x <= 2 || x >= 23 || y === 0 || z >= sz - 2 || z % 8 === 0) {
+                const stoneCol = ((x + y + z) % 3 === 0) ? 0x4f4a42 : 0x5f5950;
+                g.set(x, y, z, stoneCol);
+              }
+            }
+          }
+        }
+      }
+
+      return { grid: g, voxelSize };
+    }
+
+    case 'terrain_pit': {
+      // 落とし穴ブロック（奈落）: 地面にぽっかり空いた暗黒の奈落ホール＋危険警告の石枠と内向きスパイク
+      const sx = 32;
+      const sy = 5;
+      const sz = 32;
+      const voxelSize = 0.11;
+      const g = new VoxelGrid(sx, sy, sz);
+      const cx = 15.5;
+      const cz = 15.5;
+      const holeR = 11.8;
+      const rimOuterR = 15.2;
+
+      for (let z = 0; z < sz; z++) {
+        for (let x = 0; x < sx; x++) {
+          const dist = Math.hypot(x - cx, z - cz);
+          if (dist <= holeR) {
+            // 奈落の底面（y: 0 に漆黒の虚無と渦巻く深淵リングを描画）
+            const isAbyssRing = Math.abs(dist - holeR * 0.65) < 0.8 || Math.abs(dist - holeR * 0.32) < 0.7;
+            g.set(x, 0, z, isAbyssRing ? 0x1a1426 : 0x07060a);
+            if (dist >= holeR - 1.2) {
+              g.set(x, 1, z, 0x1e1b24);
+            }
+          } else if (dist <= rimOuterR) {
+            // 外周の崩れた石枠と黒黄の危険ストライプ縁石 (y: 0..2)
+            const ang = Math.atan2(z - cz, x - cx);
+            const stripe = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 16) % 2 === 0;
+            g.set(x, 0, z, 0x3b3731);
+            g.set(x, 1, z, dist <= holeR + 1.4 ? (stripe ? 0xe67700 : 0x2b2927) : 0x524c44);
+            if (((x * 19 + z * 37) & 3) === 0 && dist > holeR + 1.2) {
+              g.set(x, 2, z, 0x665e54);
+            }
+          }
+        }
+      }
+
+      // 穴の縁から内側へ突き出す8本の鋭い牙スパイク
+      for (let i = 0; i < 8; i++) {
+        const ang = (i * Math.PI) / 4;
+        const cos = Math.cos(ang);
+        const sin = Math.sin(ang);
+        for (let s = 0; s < 3; s++) {
+          const r = holeR - s * 0.85;
+          const sxPos = Math.round(cx + cos * r);
+          const szPos = Math.round(cz + sin * r);
+          g.set(sxPos, 1, szPos, s === 2 ? 0xd8dee9 : 0x868e96);
         }
       }
 

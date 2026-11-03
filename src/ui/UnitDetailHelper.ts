@@ -37,6 +37,7 @@ export function getAttackDamageDisplay(ut: UnitType): string {
   if (ut.id === 'giant_eagle') return '45 (急降下)';
   if (ut.id === 'anaconda') return '50 (締め付け)';
   if (ut.id === 'buggy') return '35 (突撃)';
+  if (ut.id === 'lightspeed_ant') return '9 (光速噛みつき)';
   return '-';
 }
 
@@ -74,41 +75,64 @@ export function getPlaceableDetail(
 ): PlaceableDetailData {
   if (isFacilityTypeId(id)) {
     const fac = FACILITY_TYPES[id];
-    const theme = CATEGORY_THEME_COLORS.facility;
+    const isTerrain = Boolean(fac.isTerrain);
+    const theme = isTerrain ? CATEGORY_THEME_COLORS.terrain : CATEGORY_THEME_COLORS.facility;
     return {
       id,
       isFacility: true,
       name: fac.name,
-      categoryLabel: '防衛施設',
-      categoryIcon: CATEGORY_ICONS.facility,
+      categoryLabel: isTerrain ? '地形ブロック' : '防衛施設',
+      categoryIcon: isTerrain ? CATEGORY_ICONS.terrain : CATEGORY_ICONS.facility,
       theme,
       iconSvg: getFacilityIconSvg(id),
       description: fac.description,
       cost: fac.cost,
       hp: fac.hp,
       isFeatured: false,
-      statPills: [
-        {
-          label: 'コスト',
-          value: fac.cost,
-          className: 'stat-pill cost',
-          iconSvg: COST_ICON_SVG,
-          title: '配置コスト',
-        },
-        {
-          label: '耐久力',
-          value: fac.hp,
-          className: 'stat-pill hp',
-          iconSvg: HP_ICON_SVG,
-          title: '施設耐久力 (HP)',
-        },
-        {
-          label: '影響範囲',
-          value: `半径 ${fac.radius}m`,
-          className: 'stat-pill range',
-          title: '占有・影響半径',
-        },
-      ],
+      statPills: isTerrain
+        ? [
+            {
+              label: 'コスト',
+              value: '0 (無料)',
+              className: 'stat-pill cost',
+              iconSvg: COST_ICON_SVG,
+              title: '配置コスト（無料）',
+            },
+            {
+              label: '耐久力',
+              value: '♾️ 破壊不可',
+              className: 'stat-pill hp',
+              title: '地形ブロックは破壊されません',
+            },
+            {
+              label: 'サイズ',
+              value: `半径 ${fac.radius}m`,
+              className: 'stat-pill range',
+              title: '地形効果半径',
+            },
+          ]
+        : [
+            {
+              label: 'コスト',
+              value: fac.cost,
+              className: 'stat-pill cost',
+              iconSvg: COST_ICON_SVG,
+              title: '配置コスト',
+            },
+            {
+              label: '耐久力',
+              value: fac.hp,
+              className: 'stat-pill hp',
+              iconSvg: HP_ICON_SVG,
+              title: '施設耐久力 (HP)',
+            },
+            {
+              label: '影響範囲',
+              value: `半径 ${fac.radius}m`,
+              className: 'stat-pill range',
+              title: '占有・影響半径',
+            },
+          ],
     };
   }
 

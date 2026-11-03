@@ -1436,6 +1436,38 @@ export class SoundManager {
         osc.stop(t + 0.15);
         break;
       }
+      case 'ant_dash': {
+        if (!this.throttle('ant_dsh', 75)) return;
+        // 光速アリの「シュンッ！」という高周波光速ステップ音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1100, t);
+        osc.frequency.exponentialRampToValueAtTime(2800, t + 0.055);
+        g.gain.setValueAtTime(0.11, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.065);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.07);
+        break;
+      }
+      case 'ant_bite': {
+        if (!this.throttle('ant_bt', 55)) return;
+        // 大顎の「カチッ！ガチッ！」という鋭い噛みつき音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(1600 + Math.random() * 400, t);
+        osc.frequency.exponentialRampToValueAtTime(320, t + 0.045);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.06);
+        break;
+      }
     }
   }
 }

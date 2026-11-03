@@ -84,7 +84,9 @@ export type CombatEffectEvent =
   | { kind: 'piano_note'; pos: Vector3; color?: number }
   | { kind: 'dragon_charge'; pos: Vector3; team: Team }
   | { kind: 'dragon_slash'; pos: Vector3; dir: Vector3; roll: number; team: Team }
-  | { kind: 'dragon_slash_hit'; pos: Vector3 };
+  | { kind: 'dragon_slash_hit'; pos: Vector3 }
+  | { kind: 'ant_dash'; from: Vector3; to: Vector3; team: Team }
+  | { kind: 'ant_bite'; pos: Vector3 };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -271,7 +273,7 @@ export class CombatSystem {
     if (!spec) return;
 
     for (const fac of facilities) {
-      if (!fac.alive || fac.team === attacker.team) continue;
+      if (!fac.alive || fac.isTerrain || fac.team === attacker.team) continue;
       // 武器の先端粒子
       const tip = attacker.weaponParticles[attacker.weaponParticles.length - 1];
       const dx = tip.pos.x - fac.pos.x;
@@ -480,7 +482,7 @@ export class CombatSystem {
 
     // 範囲内の敵施設にも爆発ダメージを適用
     for (const fac of facilities) {
-      if (!fac.alive || fac.team === attackerTeam) continue;
+      if (!fac.alive || fac.isTerrain || fac.team === attackerTeam) continue;
       const d2 = fac.pos.distanceToSquared(center);
       if (d2 <= (radius + fac.radius) * (radius + fac.radius)) {
         const dist = Math.sqrt(d2);
@@ -595,7 +597,7 @@ export class CombatSystem {
     }
     // 施設へのダメージ
     for (const fac of facilities) {
-      if (!fac.alive || fac.team === owner.team) continue;
+      if (!fac.alive || fac.isTerrain || fac.team === owner.team) continue;
       const d = fac.pos.distanceTo(pos);
       if (d <= range) {
         const dmg = damage * 0.8 * owner.damageMul;
@@ -694,7 +696,7 @@ export class CombatSystem {
     dt: number,
   ): boolean {
     for (const fac of facilities) {
-      if (!fac.alive || fac.team === a.team) continue;
+      if (!fac.alive || fac.isTerrain || fac.team === a.team) continue;
       if (from.y > fac.height && to.y > fac.height) continue;
       const dx = to.x - from.x;
       const dz = to.z - from.z;
@@ -1098,7 +1100,7 @@ export class CombatSystem {
 
     // 施設への貫通ダメージ
     for (const f of facilities) {
-      if (!f.alive || f.team === owner.team) continue;
+      if (!f.alive || f.isTerrain || f.team === owner.team) continue;
       const toF = new Vector3().subVectors(f.pos, from);
       const proj = toF.dot(dir);
       if (proj >= 0 && proj <= dist) {
@@ -1168,7 +1170,7 @@ export class CombatSystem {
       }
     }
     for (const f of facilities) {
-      if (!f.alive || f.team === owner.team) continue;
+      if (!f.alive || f.isTerrain || f.team === owner.team) continue;
       const diff = new Vector3().subVectors(f.pos, from);
       if (diff.length() <= reach + f.radius) {
         if (diff.clone().normalize().dot(forwardDir) > 0.4) {

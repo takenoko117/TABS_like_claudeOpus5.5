@@ -115,7 +115,8 @@ export type UnitTypeId =
   | 'sezain'
   | 'yamamuron'
   | 'hongon'
-  | 'zaisan';
+  | 'zaisan'
+  | 'lightspeed_ant';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -981,6 +982,27 @@ giant_robot: {
     strikeImpulse: 12.0,
     look: { skin: 0xf0c39c, hair: 0x16a34a, helmet: null, hood: null, armor: 0x14532d, beard: null },
   },
+  lightspeed_ant: {
+    id: 'lightspeed_ant',
+    name: '光速アリ',
+    category: 'animal',
+    description: '攻撃力・耐久力は低いが、非常に小さく目にも留まらぬ光速で戦場を駆け巡る超高速アリ。鋭い大顎で連続して噛みつく。',
+    cost: 35,
+    scale: 0.58,
+    massMul: 2.2,
+    hp: 35,
+    speed: 10.5,
+    style: 'thrust',
+    weapon: null,
+    projectile: null,
+    range: 2.6,
+    windup: 0.06,
+    strike: 0.12,
+    recover: 0.06,
+    cooldown: 0.16,
+    strikeImpulse: 9.0,
+    look: { skin: 0x1e293b, hair: null, helmet: 0x38bdf8, hood: null, armor: 0x0f172a, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -1017,4 +1039,5 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.yamamuron,
   UNIT_TYPES.hongon,
   UNIT_TYPES.zaisan,
+  UNIT_TYPES.lightspeed_ant,
 ];
