@@ -2,8 +2,10 @@ import { Vector3 } from 'three';
 import { SoundManager } from '../audio/SoundManager';
 import type { Facility } from '../facilities/Facility';
 import {
+  COMBAT_FACILITY_TYPE_LIST,
   FACILITY_TYPES,
   FACILITY_TYPE_LIST,
+  TERRAIN_BLOCK_TYPE_LIST,
   isFacilityTypeId,
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
@@ -436,7 +438,7 @@ export class GameApp {
       if (u.team === 0 && u.splitGen === 0) count++;
     }
     for (const f of this.battle.facilities) {
-      if (f.team === 0) count++;
+      if (f.team === 0 && !f.isTerrain) count++;
     }
     return count;
   }
@@ -577,7 +579,8 @@ export class GameApp {
         { id: 'animal', label: `${CATEGORY_ICONS.animal} ${CATEGORY_LABELS.animal}` },
         { id: 'mythical', label: `${CATEGORY_ICONS.mythical} ${CATEGORY_LABELS.mythical}` },
         { id: 'divine', label: `${CATEGORY_ICONS.divine} ${CATEGORY_LABELS.divine}` },
-        { id: 'facility', label: `${CATEGORY_ICONS.facility} 施設 (${FACILITY_TYPE_LIST.length})` },
+        { id: 'facility', label: `${CATEGORY_ICONS.facility} 施設 (${COMBAT_FACILITY_TYPE_LIST.length})` },
+        { id: 'terrain', label: `${CATEGORY_ICONS.terrain} 地形 (${TERRAIN_BLOCK_TYPE_LIST.length})` },
       ];
       cats.forEach((c) => {
         const b = document.createElement('button');
@@ -850,8 +853,8 @@ export class GameApp {
     const isArc = this.playStyle === 'arcade';
     const featuredSet = new Set<UnitTypeId>(isArc ? this.currentStage.featuredUnits : []);
 
-    // 兵種カードの表示（施設以外のカテゴリ、またはすべて）
-    if (this.selectedCategory !== 'facility') {
+    // 兵種カードの表示（施設・地形以外のカテゴリ、またはすべて）
+    if (this.selectedCategory !== 'facility' && this.selectedCategory !== 'terrain') {
       const filtered = UNIT_TYPE_LIST.filter(
         (ut) => this.selectedCategory === 'all' || ut.category === this.selectedCategory,
       );
@@ -917,17 +920,44 @@ export class GameApp {
       });
     }
 
-    // 施設カードの表示（施設カテゴリ、またはすべて）
-    if (this.selectedCategory === 'all' || this.selectedCategory === 'facility') {
-      FACILITY_TYPE_LIST.forEach((fac, fIdx) => {
+    // 施設・地形ブロックカードの表示（施設・地形カテゴリ、またはすべて）
+    if (
+      this.selectedCategory === 'all' ||
+      this.selectedCategory === 'facility' ||
+      this.selectedCategory === 'terrain'
+    ) {
+      const targetFacilities =
+        this.selectedCategory === 'facility'
+          ? COMBAT_FACILITY_TYPE_LIST
+          : this.selectedCategory === 'terrain'
+            ? TERRAIN_BLOCK_TYPE_LIST
+            : FACILITY_TYPE_LIST;
+
+      targetFacilities.forEach((fac, fIdx) => {
+        const isTerrain = Boolean(fac.isTerrain);
         const ruleViolation = isArc ? checkStageRuleViolation(this.currentStage, fac.id, 0) : null;
         const btn = document.createElement('button');
         btn.className = 'unit-card' + (fac.id === this.selectedId ? ' active' : '') + (ruleViolation ? ' locked' : '');
         btn.dataset.type = fac.id;
         btn.title = `${fac.name} - ${fac.description}（クリックで詳細表示）`;
-        const theme = CATEGORY_THEME_COLORS.facility;
-        const keyLabel = this.selectedCategory === 'facility' && fIdx < 9 ? `${fIdx + 1}` : '';
+        const theme = isTerrain ? CATEGORY_THEME_COLORS.terrain : CATEGORY_THEME_COLORS.facility;
+        const keyLabel =
+          (this.selectedCategory === 'facility' || this.selectedCategory === 'terrain') && fIdx < 9
+            ? `${fIdx + 1}`
+            : '';
         const lockOverlay = ruleViolation ? `<div class="unit-lock-badge" title="${ruleViolation}">🚫</div>` : '';
+        const catBadge = isTerrain
+          ? `<span class="unit-cat-badge">${CATEGORY_ICONS.terrain} 地形</span>`
+          : `<span class="unit-cat-badge">${CATEGORY_ICONS.facility} 施設</span>`;
+        const statsHtml = isTerrain
+          ? `
+            <span class="stat-pill cost" title="配置コスト（無料）">${COST_ICON_SVG}<span>0 (無料)</span></span>
+            <span class="stat-pill hp" title="破壊不可"><span>♾️ 不壊</span></span>
+          `
+          : `
+            <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${fac.cost}</span></span>
+            <span class="stat-pill hp" title="最大耐久力">${HP_ICON_SVG}<span>${fac.hp}</span></span>
+          `;
 
         btn.innerHTML = `
           <div class="unit-card-top">
@@ -937,13 +967,12 @@ export class GameApp {
             </div>
             <div class="unit-head-info">
               <div class="unit-badges-line">
-                <span class="unit-cat-badge">${CATEGORY_ICONS.facility} 施設</span>
+                ${catBadge}
                 <span class="unit-key">${keyLabel}</span>
               </div>
               <div class="unit-name">${fac.name}</div>
               <div class="unit-stats-row">
-                <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${fac.cost}</span></span>
-                <span class="stat-pill hp" title="最大耐久力">${HP_ICON_SVG}<span>${fac.hp}</span></span>
+                ${statsHtml}
               </div>
             </div>
           </div>
@@ -1260,6 +1289,7 @@ export class GameApp {
     this.battle.world.obstacles = st.terrain.obstacles ? [...st.terrain.obstacles] : [];
     this.battle.world.chasm = st.terrain.chasm ? { ...st.terrain.chasm } : null;
     this.battle.world.pits = st.terrain.pits ? [...st.terrain.pits] : [];
+    this.battle.world.slopes = [];
     this.battle.world.arenaBounds = st.terrain.arenaBounds ? { ...st.terrain.arenaBounds } : null;
 
     const rules = st.specialRules;
@@ -1308,6 +1338,7 @@ export class GameApp {
     this.battle.world.obstacles = [];
     this.battle.world.chasm = null;
     this.battle.world.pits = [];
+    this.battle.world.slopes = [];
     this.battle.world.arenaBounds = null;
     this.battle.world.gravity.set(0, -9.81, 0);
     this.battle.timeLimitSeconds = null;
@@ -1431,7 +1462,7 @@ export class GameApp {
         }
       }
       for (const f of this.battle.facilities) {
-        if (f.team !== team) continue;
+        if (f.team !== team || f.isTerrain) continue;
         total++;
         cost += f.type.cost;
         maxHp += f.maxHp;

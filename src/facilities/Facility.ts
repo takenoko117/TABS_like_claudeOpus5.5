@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import type { ObstacleCylinder } from '../physics/PhysicsWorld';
+import type { ObstacleCylinder, PitSpec, SlopeSpec } from '../physics/PhysicsWorld';
 import type { Unit } from '../units/Unit';
 import type { Team, UnitTypeId } from '../units/UnitTypes';
 import {
@@ -23,8 +23,9 @@ export interface FacilityBattleContext {
 let nextFacilityId = 1;
 
 /**
- * 戦場に配置される固定施設。
- * 破壊されるまで、ユニット生成・バフ付与・通過ユニット増殖・防衛射撃などの支援効果を継続発動する。
+ * 戦場に配置される固定施設および地形ブロック。
+ * 施設は破壊されるまでユニット生成・バフ付与・通過ユニット増殖・防衛射撃などの支援効果を継続発動する。
+ * 地形ブロック（壁・スロープ・落とし穴）はコスト0で配置でき、戦場の地形を物理的に変化させる。
  */
 export class Facility {
   readonly id: number = nextFacilityId++;
@@ -42,6 +43,10 @@ export class Facility {
 
   /** 物理障害物コライダー（円柱）のリスト */
   readonly obstacles: ObstacleCylinder[] = [];
+  /** 落とし穴（奈落ホール）のリスト */
+  readonly pits: PitSpec[] = [];
+  /** スロープ（坂道）のリスト */
+  readonly slopes: SlopeSpec[] = [];
 
   // 施設固有のタイマー
   private actionTimer = 0;
@@ -76,7 +81,7 @@ export class Facility {
       this.actionTimer = 1.2;
     }
 
-    // 障害物コライダーを構成
+    // 障害物・地形コライダーを構成
     this.setupObstacles();
   }
 
@@ -88,7 +93,12 @@ export class Facility {
     return this.type.height;
   }
 
-  /** 施設の種類に応じた物理コライダーの生成 */
+  /** 地形ブロック（壁・スロープ・落とし穴）かどうか */
+  get isTerrain(): boolean {
+    return Boolean(this.type.isTerrain);
+  }
+
+  /** 施設・地形ブロックの種類に応じた物理コライダーの生成 */
   private setupObstacles(): void {
     if (this.type.id === 'multiplier_gate') {
       // 増殖ゲートは左右に2本の支柱コライダーを配置し、中央は通過可能にする
@@ -103,6 +113,40 @@ export class Facility {
         { x: leftX, z: leftZ, radius: poleRadius, height: this.type.height },
         { x: rightX, z: rightZ, radius: poleRadius, height: this.type.height },
       );
+    } else if (this.type.id === 'terrain_wall') {
+      // 防壁ブロック: 横幅約3.0mの壁として3連の円柱コライダーを隙間なく配置
+      const colRadius = 0.56;
+      const offsets = [-0.95, 0, 0.95];
+      for (const off of offsets) {
+        this.obstacles.push({
+          x: this.pos.x + this.rightDir.x * off,
+          z: this.pos.z + this.rightDir.z * off,
+          radius: colRadius,
+          height: this.type.height,
+        });
+      }
+    } else if (this.type.id === 'terrain_slope') {
+      // スロープブロック: 登坂スロープを登録（ユニットが上を駆け上がれる）
+      this.slopes.push({
+        x: this.pos.x,
+        z: this.pos.z,
+        width: 2.6,
+        length: 3.2,
+        height: this.type.height,
+        facing: this.facing,
+        forwardX: this.forward.x,
+        forwardZ: this.forward.z,
+        rightX: this.rightDir.x,
+        rightZ: this.rightDir.z,
+      });
+    } else if (this.type.id === 'terrain_pit') {
+      // 落とし穴ブロック: 円形奈落ホール（トラップ）を登録
+      this.pits.push({
+        x: this.pos.x,
+        z: this.pos.z,
+        radius: this.type.radius,
+        isTrap: true,
+      });
     } else {
       // 通常の施設は中央に単一の円柱コライダー
       this.obstacles.push({
@@ -114,9 +158,9 @@ export class Facility {
     }
   }
 
-  /** ダメージを受ける。HPが0になると破壊される */
+  /** ダメージを受ける。地形ブロックは無敵（破壊不可） */
   takeDamage(damage: number, attacker?: Unit): boolean {
-    if (!this.alive) return false;
+    if (!this.alive || this.isTerrain) return false;
     this.hp = Math.max(0, this.hp - damage);
     this.hitFlash = 1.0;
 
@@ -284,10 +328,10 @@ export class Facility {
       }
     }
 
-    // 敵ユニットがいなければ敵施設を探す
+    // 敵ユニットがいなければ敵施設を探す（地形ブロックは攻撃対象外）
     if (!targetPos) {
       for (const fac of ctx.facilities) {
-        if (!fac.alive || fac.team === this.team) continue;
+        if (!fac.alive || fac.isTerrain || fac.team === this.team) continue;
         const d2 = fac.pos.distanceToSquared(this.pos);
         if (d2 <= bestDist2) {
           bestDist2 = d2;

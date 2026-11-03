@@ -154,4 +154,59 @@ describe('施設システム (Facilities)', () => {
     // ユニットは0だがポータルがあるので決着しない (null)
     expect(battle.result()).toBeNull();
   });
+
+  it('コスト0の地形ブロック（壁・スロープ・落とし穴）が配置でき、それぞれ物理的に機能する', () => {
+    const battle = new Battle();
+    const wall = battle.spawnFacility('terrain_wall', 0, -4, 0);
+    const slope = battle.spawnFacility('terrain_slope', 0, 0, -4, Math.PI / 2);
+    const pit = battle.spawnFacility('terrain_pit', 0, 4, 0);
+
+    // 1. 全地形ブロックのコストが0で、破壊不可（isTerrain = true）である
+    expect(wall.type.cost).toBe(0);
+    expect(slope.type.cost).toBe(0);
+    expect(pit.type.cost).toBe(0);
+    expect(wall.isTerrain).toBe(true);
+    expect(slope.isTerrain).toBe(true);
+    expect(pit.isTerrain).toBe(true);
+    expect(wall.takeDamage(9999)).toBe(false);
+    expect(wall.alive).toBe(true);
+
+    // 戦闘施設の生存数にはカウントされない
+    expect(battle.aliveFacilityCount(0)).toBe(0);
+
+    // 2. 防壁ブロックは3連の障害物コライダーを登録する
+    expect(wall.obstacles.length).toBe(3);
+    expect(battle.world.obstacles.length).toBe(3);
+
+    // 3. スロープブロックは坂道コライダーを登録し、スロープ上の地面高さを上昇させる
+    expect(slope.slopes.length).toBe(1);
+    expect(battle.world.slopes.length).toBe(1);
+    const lowH = battle.world.getSlopeHeightAt(-1.2, -4);
+    const midH = battle.world.getSlopeHeightAt(0, -4);
+    const highH = battle.world.getSlopeHeightAt(1.2, -4);
+    expect(midH).toBeGreaterThan(lowH);
+    expect(highH).toBeGreaterThan(midH);
+
+    // スロープ上にユニットを配置するとスロープの高さでスポーンし、落下しない
+    const climber = battle.spawnUnit('swordsman', 0, 0.8, -4);
+    expect(climber.pelvis.pos.y).toBeGreaterThan(1.0);
+
+    // 4. 落とし穴ブロックは奈落ホール（isTrap: true）を登録し、上のユニットを奈落へ落とす
+    expect(pit.pits.length).toBe(1);
+    expect(pit.pits[0].isTrap).toBe(true);
+    expect(battle.world.isOverChasm(4, 0)).toBe(true);
+
+    const victim = battle.spawnUnit('clubber', 1, 4, 0);
+    battle.aiEnabled = true;
+    simulate(battle, 2.0);
+    expect(victim.pelvis.pos.y).toBeLessThan(-1.0);
+
+    // 削除時にそれぞれの物理コライダーも解除される
+    battle.removeFacility(wall);
+    battle.removeFacility(slope);
+    battle.removeFacility(pit);
+    expect(battle.world.obstacles.length).toBe(0);
+    expect(battle.world.slopes.length).toBe(0);
+    expect(battle.world.pits.length).toBe(0);
+  });
 });

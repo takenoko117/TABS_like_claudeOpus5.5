@@ -1155,7 +1155,7 @@ export class Unit {
           }
         }
         const lunge = dirH.clone().multiplyScalar(5.5);
-        lunge.y = isAir ? 3.5 : 0.35;
+        lunge.y = isAir ? 3.5 : 0.2;
         for (const p of this.joints) p.addVelocity(lunge, dt);
         ctx.combat.emitEffect({ kind: 'ant_dash', from: startPos, to: this.pelvis.pos.clone(), team: this.team });
 
@@ -1163,7 +1163,7 @@ export class Unit {
         ctx.combat.emitEffect({ kind: 'ant_bite', pos: t.chest.pos.clone() });
         const push = dirH.clone().multiplyScalar(2.2);
         push.y = 0.6;
-        const dmg = 9 * this.damageMul;
+        const dmg = 22 * this.damageMul;
         const killed = t.takeDamage(dmg, t.chest, push, dt, this);
         ctx.combat.onHit?.({
           kind: 'melee',
@@ -2078,7 +2078,7 @@ export class Unit {
     let footGap: number;
     if (overChasm) {
       footGap = 999;
-    } else if (isVehicle) {
+    } else if (isVehicle || this.type.id === 'lightspeed_ant') {
       let minG = Infinity;
       for (let i = 0; i < JOINT_COUNT; i++) {
         const jGroundH = this.context ? this.context.world.getSlopeHeightAt(this.joints[i].pos.x, this.joints[i].pos.z) : slopeH;

@@ -1,4 +1,4 @@
-import { FACILITY_TYPES, type FacilityTypeId } from '../facilities/FacilityTypes';
+import { FACILITY_TYPES, isTerrainBlockId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { ChasmSpec, ObstacleCylinder, PitSpec } from '../physics/PhysicsWorld';
 import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId, type UnitCategory } from '../units/UnitTypes';
 
@@ -1368,6 +1368,9 @@ export function checkStageRuleViolation(
   itemId: UnitTypeId | FacilityTypeId,
   currentPlacedCount: number,
 ): string | null {
+  // 地形ブロック（コスト0）はどのステージでも制限なく配置可能
+  if (isTerrainBlockId(itemId)) return null;
+
   const rules = stage?.specialRules;
   if (!rules) return null;
 

@@ -42,7 +42,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   /** ユニットを地面上の (x, z) に生成する。向きを省略すると敵陣の方向を向く */
   spawnUnit(typeId: UnitTypeId, team: Team, x: number, z: number, facing?: number): Unit {
     const f = facing ?? (team === 0 ? Math.PI / 2 : -Math.PI / 2);
-    const unit = new Unit(this.world, UNIT_TYPES[typeId], team, new Vector3(x, 0, z), f);
+    const groundY = this.world.getSlopeHeightAt(x, z);
+    const unit = new Unit(this.world, UNIT_TYPES[typeId], team, new Vector3(x, groundY, z), f);
     unit.context = this;
     this.units.push(unit);
     this.onUnitAdded?.(unit);
@@ -53,11 +54,12 @@ export class Battle implements UnitContext, FacilityBattleContext {
   spawnSplitSlime(parent: Unit, x: number, z: number, splitGen: number): Unit {
     const scaleOverride = splitGen === 1 ? 0.9 : 0.55;
     const hpOverride = splitGen === 1 ? 90 : 35;
+    const groundY = this.world.getSlopeHeightAt(x, z);
     const unit = new Unit(
       this.world,
       UNIT_TYPES.slime,
       parent.team,
-      new Vector3(x, 0, z),
+      new Vector3(x, groundY, z),
       parent.facing,
       { scaleOverride, hpOverride, splitGen },
     );
@@ -69,11 +71,12 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   /** 増殖ゲート通過時にユニットのクローン（複製体）を生成する */
   spawnCloneUnit(parent: Unit, x: number, z: number): Unit {
+    const groundY = this.world.getSlopeHeightAt(x, z);
     const unit = new Unit(
       this.world,
       parent.type,
       parent.team,
-      new Vector3(x, 0, z),
+      new Vector3(x, groundY, z),
       parent.facing,
       { scaleOverride: parent.scale, splitGen: parent.splitGen },
     );
@@ -85,15 +88,21 @@ export class Battle implements UnitContext, FacilityBattleContext {
     return unit;
   }
 
-  /** 施設（召喚ポータル・トーテム・増殖ゲート・防衛砲台）を生成する */
+  /** 施設（召喚ポータル・トーテム・増殖ゲート・防衛砲台・地形ブロック）を生成する */
   spawnFacility(typeId: FacilityTypeId, team: Team, x: number, z: number, facing?: number): Facility {
     const f = facing ?? (team === 0 ? Math.PI / 2 : -Math.PI / 2);
     const facility = new Facility(typeId, team, x, z, f);
     this.facilities.push(facility);
 
-    // 物理ワールドの障害物リストに施設のコライダーを登録
+    // 物理ワールドの障害物・落とし穴・スロープリストに施設のコライダーを登録
     for (const obs of facility.obstacles) {
       this.world.obstacles.push(obs);
+    }
+    for (const pit of facility.pits) {
+      this.world.pits.push(pit);
+    }
+    for (const slope of facility.slopes) {
+      this.world.slopes.push(slope);
     }
 
     this.onFacilityAdded?.(facility);
@@ -113,10 +122,18 @@ export class Battle implements UnitContext, FacilityBattleContext {
     if (idx < 0) return;
     this.facilities.splice(idx, 1);
 
-    // 物理障害物リストから削除
+    // 物理障害物・落とし穴・スロープリストから削除
     for (const obs of facility.obstacles) {
       const oIdx = this.world.obstacles.indexOf(obs);
       if (oIdx >= 0) this.world.obstacles.splice(oIdx, 1);
+    }
+    for (const pit of facility.pits) {
+      const pIdx = this.world.pits.indexOf(pit);
+      if (pIdx >= 0) this.world.pits.splice(pIdx, 1);
+    }
+    for (const slope of facility.slopes) {
+      const sIdx = this.world.slopes.indexOf(slope);
+      if (sIdx >= 0) this.world.slopes.splice(sIdx, 1);
     }
 
     this.onFacilityRemoved?.(facility);
@@ -243,10 +260,10 @@ export class Battle implements UnitContext, FacilityBattleContext {
     return n;
   }
 
-  /** 生存している施設の数を取得する */
+  /** 生存している施設の数を取得する（地形ブロックは除外） */
   aliveFacilityCount(team: Team): number {
     let n = 0;
-    for (const f of this.facilities) if (f.alive && f.team === team) n++;
+    for (const f of this.facilities) if (f.alive && !f.isTerrain && f.team === team) n++;
     return n;
   }
 

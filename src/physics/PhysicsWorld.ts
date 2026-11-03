@@ -35,11 +35,27 @@ export interface ChasmSpec {
   bridgeCentersZ?: readonly number[];
 }
 
-/** 戦場の奈落ホール（すり鉢・中央クレーター等の円形落下穴）定義 */
+/** 戦場の奈落ホール（すり鉢・中央クレーター・落とし穴ブロック等の円形落下穴）定義 */
 export interface PitSpec {
   x: number;
   z: number;
   radius: number;
+  /** プレイヤー/サンドボックス設置の落とし穴トラップかどうか（trueの場合、ユニットAIが回避せず落下する） */
+  isTrap?: boolean;
+}
+
+/** 戦場のスロープ（坂道ブロック）定義 */
+export interface SlopeSpec {
+  x: number;
+  z: number;
+  width: number;
+  length: number;
+  height: number;
+  facing: number;
+  forwardX: number;
+  forwardZ: number;
+  rightX: number;
+  rightZ: number;
 }
 
 const _va = new Vector3();
@@ -49,7 +65,7 @@ const _vb = new Vector3();
  * 自前の物理エンジン本体。
  * - Verlet 積分（位置ベース）
  * - 距離拘束の反復解法（Gauss-Seidel）
- * - 地面（y = groundY の無限平面）との衝突と摩擦
+ * - 地面（y = groundY の無限平面およびスロープ・落とし穴）との衝突と摩擦
  * - 空間ハッシュを用いた球同士の衝突（異なるボディ間のみ）
  */
 export class PhysicsWorld {
@@ -70,8 +86,10 @@ export class PhysicsWorld {
   obstacles: ObstacleCylinder[] = [];
   /** 断崖・橋ステージの奈落設定（null なら全面が地面） */
   chasm: ChasmSpec | null = null;
-  /** 円形奈落ホール（すり鉢クレーター等）のリスト */
+  /** 円形奈落ホール（すり鉢クレーター・落とし穴等）のリスト */
   pits: PitSpec[] = [];
+  /** スロープ（坂道ブロック）のリスト */
+  slopes: SlopeSpec[] = [];
   /** 戦場外周（|x|>arenaMaxX または |z|>arenaMaxZ）を奈落とする浮島アリーナ設定 */
   arenaBounds: { maxX: number; maxZ: number } | null = null;
 
@@ -201,13 +219,44 @@ export class PhysicsWorld {
     return false;
   }
 
+  /** 指定座標 (x, z) におけるスロープ（坂道）の路面高さを返す（スロープ外は 0） */
+  getSlopeHeightAt(x: number, z: number): number {
+    let maxH = 0;
+    const slopes = this.slopes;
+    for (let i = 0; i < slopes.length; i++) {
+      const s = slopes[i];
+      const dx = x - s.x;
+      const dz = z - s.z;
+      const localRight = dx * s.rightX + dz * s.rightZ;
+      const halfW = s.width * 0.5;
+      if (Math.abs(localRight) > halfW) continue;
+      const localFwd = dx * s.forwardX + dz * s.forwardZ;
+      const halfL = s.length * 0.5;
+      if (Math.abs(localFwd) > halfL) continue;
+
+      // 後端 (-halfL) で高さ 0、前端 (+halfL * 0.65) で最大高さ s.height、その先は平坦な天板デッキ
+      const rampEnd = halfL * 0.65;
+      const t = Math.max(0, Math.min(1, (localFwd + halfL) / (halfL + rampEnd)));
+      const h = t * s.height;
+      if (h > maxH) maxH = h;
+    }
+    return maxH;
+  }
+
+  /** 指定座標 (x, z) における有効な地面の高さ（奈落・通常地面・スロープを考慮）を返す */
+  getGroundHeightAt(x: number, z: number): number {
+    if (this.isOverChasm(x, z)) return -20;
+    return this.groundY + this.getSlopeHeightAt(x, z);
+  }
+
   private solveGround(applyFriction: boolean): void {
     const gy = this.groundY;
     const chasm = this.chasm;
     for (const p of this.particles) {
       // 奈落エリア上（またはすでに崖下へ落下中）の粒子は地面を y = -20 とする
       const inPit = p.pos.y < gy - 0.18 || this.isOverChasm(p.pos.x, p.pos.z);
-      const localGroundY = inPit ? -20 : gy;
+      const slopeH = inPit ? 0 : this.getSlopeHeightAt(p.pos.x, p.pos.z);
+      const localGroundY = inPit ? -20 : gy + slopeH;
       const minY = localGroundY + p.radius;
 
       // 崖下に落下した粒子が崖の側面へめり込まないように水平位置を制限

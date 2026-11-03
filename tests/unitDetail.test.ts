@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FACILITY_TYPE_IDS } from '../src/facilities/FacilityTypes';
+import { FACILITY_TYPE_IDS, isTerrainBlockId } from '../src/facilities/FacilityTypes';
 import { getAttackDamageDisplay, getPlaceableDetail } from '../src/ui/UnitDetailHelper';
 import { UNIT_TYPE_LIST, UNIT_TYPES } from '../src/units/UnitTypes';
 
@@ -19,13 +19,19 @@ describe('UnitDetailHelper', () => {
     }
   });
 
-  it('全施設で詳細情報と説明テキストが正しく取得できる', () => {
+  it('全施設・地形ブロックで詳細情報と説明テキストが正しく取得できる', () => {
     for (const facId of FACILITY_TYPE_IDS) {
       const detail = getPlaceableDetail(facId);
       expect(detail.id).toBe(facId);
       expect(detail.isFacility).toBe(true);
       expect(detail.name).toBeTruthy();
-      expect(detail.cost).toBeGreaterThan(0);
+      if (isTerrainBlockId(facId)) {
+        expect(detail.cost).toBe(0);
+        expect(detail.categoryLabel).toBe('地形ブロック');
+      } else {
+        expect(detail.cost).toBeGreaterThan(0);
+        expect(detail.categoryLabel).toBe('防衛施設');
+      }
       expect(detail.hp).toBeGreaterThan(0);
       expect(detail.description.length).toBeGreaterThan(10);
       expect(detail.statPills.length).toBeGreaterThanOrEqual(2);

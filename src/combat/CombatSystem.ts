@@ -977,7 +977,9 @@ export class CombatSystem {
       const isShieldBlock =
         bestU.type.id === 'shielder' &&
         a.projectileKind !== 'flame' &&
-        (bestP === bestU.shieldParticle || bestU.isAttackFromFront(from));
+        (bestP === bestU.shieldParticle ||
+          bestU.isAttackFromFront(from) ||
+          (a.owner ? bestU.isAttackFromFront(a.owner.pelvis.pos) : false));
       if (isShieldBlock) {
         this.emitEffect({ kind: 'shield_block', pos: a.pos.clone() });
       }
