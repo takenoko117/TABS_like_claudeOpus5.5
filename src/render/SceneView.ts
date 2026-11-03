@@ -1408,17 +1408,68 @@ export class SceneView {
         break;
       }
       case 'at_field': {
-        const r = 1.35 * e.scale;
-        const ringN = 16;
+        const isSuper = e.scale >= 3.0;
+        const r = (isSuper ? 1.65 : 1.35) * e.scale;
+        const ringN = isSuper ? 32 : 16;
+        // 進行方向に対して垂直な3D八角形バリア平面基底を構築
+        const fwd = e.dir && e.dir.lengthSq() > 1e-4 ? e.dir.clone().normalize() : new Vector3(0, 0, 1);
+        const up = new Vector3(0, 1, 0);
+        const right = new Vector3().crossVectors(up, fwd);
+        if (right.lengthSq() < 1e-4) right.set(1, 0, 0);
+        else right.normalize();
+        const planeUp = new Vector3().crossVectors(fwd, right).normalize();
+        const center = e.pos.clone().addScaledVector(fwd, isSuper ? 0.55 * e.scale : 0.2 * e.scale);
+
+        // 外層八角形・幾何学リング
         for (let i = 0; i < ringN; i++) {
           const ang = (i / ringN) * Math.PI * 2;
-          const p = e.pos.clone().add(new Vector3(Math.cos(ang) * r, Math.sin(ang) * r, 0));
-          this.pushFxParticle(p, new Vector3(Math.cos(ang) * 0.6, Math.sin(ang) * 0.6, 0), 0xffa94d, 0.22, 0.38, 0);
+          const cos = Math.cos(ang);
+          const sin = Math.sin(ang);
+          const radial = right.clone().multiplyScalar(cos).addScaledVector(planeUp, sin);
+          const p = center.clone().addScaledVector(radial, r);
+          this.pushFxParticle(p, radial.clone().multiplyScalar(1.2), isSuper ? 0xff922b : 0xffa94d, isSuper ? 0.30 : 0.22, 0.45, 0);
         }
-        for (let i = 0; i < 8; i++) {
-          const ang = (i / 8) * Math.PI * 2;
-          const p = e.pos.clone().add(new Vector3(Math.cos(ang) * (r * 0.55), Math.sin(ang) * (r * 0.55), 0));
-          this.pushFxParticle(p, new Vector3(0, 0, 0), 0xffd43b, 0.18, 0.28, 0);
+        // 中層バリアライン
+        const midN = isSuper ? 24 : 8;
+        for (let i = 0; i < midN; i++) {
+          const ang = (i / midN) * Math.PI * 2;
+          const radial = right.clone().multiplyScalar(Math.cos(ang)).addScaledVector(planeUp, Math.sin(ang));
+          const p = center.clone().addScaledVector(radial, r * 0.65);
+          this.pushFxParticle(p, radial.clone().multiplyScalar(0.6), 0xffd43b, isSuper ? 0.25 : 0.18, 0.35, 0);
+        }
+        // ゼルエルの神話級多重拒絶結界: 内層コアと8方向の空間歪曲放電＆前方拒絶衝撃波
+        if (isSuper) {
+          for (let i = 0; i < 16; i++) {
+            const ang = (i / 16) * Math.PI * 2;
+            const radial = right.clone().multiplyScalar(Math.cos(ang)).addScaledVector(planeUp, Math.sin(ang));
+            const p = center.clone().addScaledVector(radial, r * 0.35);
+            this.pushFxParticle(p, fwd.clone().multiplyScalar(2.5), 0xff1744, 0.24, 0.32, 0);
+          }
+          // 8方向の八角形頂点からの電撃・拒絶スパーク
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2 + Math.PI / 8;
+            const radial = right.clone().multiplyScalar(Math.cos(ang)).addScaledVector(planeUp, Math.sin(ang));
+            for (let d = 0.4; d <= r * 1.25; d += 0.5) {
+              const p = center.clone().addScaledVector(radial, d);
+              this.pushFxParticle(p, radial.clone().multiplyScalar(2.5).addScaledVector(fwd, 3.0), 0xff6b6b, 0.20, 0.38, 0);
+            }
+          }
+        }
+        break;
+      }
+      case 'zeruel_charge': {
+        for (let i = 0; i < 5; i++) {
+          const dist = 3.2 * (1.0 - e.progress * 0.65);
+          const ang = Math.random() * Math.PI * 2;
+          const elev = (Math.random() - 0.5) * Math.PI;
+          const offset = new Vector3(
+            Math.cos(ang) * Math.cos(elev) * dist,
+            Math.sin(elev) * dist,
+            Math.sin(ang) * Math.cos(elev) * dist,
+          );
+          const vel = offset.clone().multiplyScalar(-3.8);
+          const col = i % 3 === 0 ? 0xff0033 : i % 3 === 1 ? 0xffffff : 0x9d4edd;
+          this.pushFxParticle(e.pos.clone().add(offset), vel, col, 0.22, 0.28, 0);
         }
         break;
       }
@@ -1477,13 +1528,56 @@ export class SceneView {
         break;
       }
       case 'zeruel_ribbon': {
-        const n = 18;
-        for (let i = 0; i < n; i++) {
-          const frac = i / n;
-          const p = e.from.clone().addScaledVector(e.dir, frac * e.reach);
-          const right = new Vector3(-e.dir.z, 0, e.dir.x).multiplyScalar((frac - 0.5) * 3.5);
-          p.add(right);
-          this.pushFxParticle(p, e.dir.clone().multiplyScalar(10.0), frac < 0.5 ? 0xffffff : 0xd90429, 0.26, 0.32, 0);
+        const reach = e.reach;
+        const dir = e.dir.clone().normalize();
+        const right = new Vector3(-dir.z, 0, dir.x).normalize();
+        // 1. 双胴リボンカッター光刃（左右から交差して突き抜ける超高速光条）
+        const steps = 32;
+        for (let i = 0; i <= steps; i++) {
+          const frac = i / steps;
+          const dist = frac * reach;
+          // 左刃と右刃の交差スウィープ
+          const sweepL = Math.sin(frac * Math.PI * 1.5) * 2.8 - (frac - 0.5) * 1.2;
+          const sweepR = -Math.sin(frac * Math.PI * 1.5) * 2.8 + (frac - 0.5) * 1.2;
+          const pL = e.from.clone().addScaledVector(dir, dist).addScaledVector(right, sweepL);
+          const pR = e.from.clone().addScaledVector(dir, dist).addScaledVector(right, sweepR);
+          pL.y += Math.sin(frac * Math.PI) * 0.4;
+          pR.y -= Math.sin(frac * Math.PI) * 0.4;
+
+          this.pushFxParticle(pL, dir.clone().multiplyScalar(18.0), frac < 0.6 ? 0xffffff : 0xff1744, 0.32, 0.38, 0);
+          this.pushFxParticle(pR, dir.clone().multiplyScalar(18.0), frac < 0.6 ? 0xffffff : 0xd90429, 0.32, 0.38, 0);
+
+          // 中央の超高速空間断裂光線
+          if (i % 2 === 0) {
+            const pMid = e.from.clone().addScaledVector(dir, dist);
+            this.pushFxParticle(pMid, dir.clone().multiplyScalar(24.0), 0xff4d6d, 0.36, 0.3, 0);
+          }
+        }
+        // 2. 前方に炸裂する横断真空スライス衝撃波リング
+        for (let k = 1; k <= 3; k++) {
+          const shockDist = reach * (k * 0.3);
+          const shockCenter = e.from.clone().addScaledVector(dir, shockDist);
+          for (let s = -6; s <= 6; s++) {
+            const sp = shockCenter.clone().addScaledVector(right, s * 0.7);
+            const vel = right.clone().multiplyScalar(s * 1.5).addScaledVector(dir, 5.0);
+            this.pushFxParticle(sp, vel, 0xff0033, 0.28, 0.45, 0);
+          }
+        }
+        // 3. 先端および直線軌道の飛散プラズマスパーク＆十字火柱インパクト
+        const crossCenter = e.from.clone().addScaledVector(dir, reach * 0.72);
+        for (let y = -3; y <= 14; y += 0.9) {
+          this.pushFxParticle(crossCenter.clone().add(new Vector3(0, y, 0)), new Vector3(0, 2.0, 0), 0xff0033, 0.36, 0.48, 0);
+        }
+        for (let s = -5; s <= 5; s += 0.8) {
+          this.pushFxParticle(crossCenter.clone().addScaledVector(right, s).add(new Vector3(0, 2.5, 0)), right.clone().multiplyScalar(s * 0.6), 0xff4d6d, 0.32, 0.42, 0);
+        }
+        for (let j = 0; j < 36; j++) {
+          const randDist = Math.random() * reach;
+          const pos = e.from.clone().addScaledVector(dir, randDist).addScaledVector(right, (Math.random() - 0.5) * 3.5);
+          pos.y += (Math.random() - 0.5) * 2.0;
+          const vel = new Vector3((Math.random() - 0.5) * 8.0, Math.random() * 6.0 + 1.0, (Math.random() - 0.5) * 8.0);
+          const col = j % 3 === 0 ? 0xffffff : j % 3 === 1 ? 0xff1744 : 0xffa94d;
+          this.pushFxParticle(pos, vel, col, 0.22, 0.45, 2.5);
         }
         break;
       }

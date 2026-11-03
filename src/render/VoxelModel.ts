@@ -1,12 +1,21 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  CircleGeometry,
   Color,
+  DoubleSide,
+  EdgesGeometry,
   Group,
+  LineBasicMaterial,
+  LineSegments,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshStandardMaterial,
   Quaternion,
+  SphereGeometry,
+  TorusGeometry,
   Vector3,
 } from 'three';
 import type { ProjectileKind } from '../combat/CombatSystem';
@@ -568,21 +577,78 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.04, [5, 4, 6]);
   }
 
-  // 13. 拒絶神ゼルエル: ドクロ状の白い仮面と赤い眼光
+  // 13. 拒絶神ゼルエル: 死神の髑髏仮面・冷酷な複眼光・神聖金紋・黒曜石ヘルメット
   if (type.id === 'angel_zeruel') {
-    const g = new VoxelGrid(13, 13, 13);
-    const bone = 0xf1f3f5;
-    const dark = 0x1f1f23;
-    g.fillBox(2, 2, 1, 10, 9, 7, dark);
-    g.fillBox(3, 2, 7, 9, 9, 9, bone);
-    g.fillBox(4, 1, 8, 8, 3, 10, bone);
-    g.fillBox(4, 5, 9, 5, 6, 10, dark);
-    g.fillBox(7, 5, 9, 8, 6, 10, dark);
-    g.set(4, 5, 9, 0xff1744);
-    g.set(8, 5, 9, 0xff1744);
-    g.fillBox(1, 4, 3, 2, 7, 7, dark);
-    g.fillBox(10, 4, 3, 11, 7, 7, dark);
-    return makeTemplate(g, 0.042, [6, 4, 6]);
+    const g = new VoxelGrid(17, 16, 17);
+    const bone = 0xf8f9fa;
+    const boneShade = 0xdce0e5;
+    const boneEdge = 0xb0b8c1;
+    const obsidian = 0x141518;
+    const darkArmor = 0x1f2126;
+    const armorLight = 0x2c2e35;
+    const eyeRed = 0xff0033;
+    const eyeCore = 0xff758f;
+    const markRed = 0xc92a2a;
+    const gold = 0xf59f00;
+
+    // 後頭部・頭頂部の黒曜石重装甲カウル（流線形の多段装甲）
+    g.fillBox(2, 2, 1, 14, 12, 8, obsidian);
+    g.fillBox(3, 12, 1, 13, 14, 9, darkArmor);
+    g.fillBox(5, 14, 2, 11, 15, 8, armorLight);
+    // 後頭部の白骨脊椎クレストと赤色排熱スリット
+    g.fillBox(7, 3, 0, 9, 13, 1, boneShade);
+    g.fillBox(8, 4, 0, 8, 12, 0, markRed);
+    // 側頭部の重厚な装甲リブフィン＆金色の神聖紋章ライン
+    g.fillBox(1, 4, 2, 2, 10, 7, darkArmor);
+    g.fillBox(14, 4, 2, 15, 10, 7, darkArmor);
+    g.fillBox(0, 5, 3, 1, 9, 6, obsidian);
+    g.fillBox(15, 5, 3, 16, 9, 6, obsidian);
+    g.fillBox(1, 7, 4, 1, 8, 8, gold);
+    g.fillBox(15, 7, 4, 15, 8, 8, gold);
+
+    // 髑髏の骨質ベース（前面: リアルな頭蓋骨の立体造形）
+    g.fillBox(3, 3, 8, 13, 12, 11, boneShade);
+    g.fillBox(4, 3, 11, 12, 12, 13, bone);
+    // 額から頭頂への傾斜ドームライン
+    g.fillBox(4, 12, 9, 12, 13, 11, bone);
+    g.fillBox(5, 13, 9, 11, 14, 10, boneShade);
+
+    // 張り出した頬骨（頬弓）と輪郭のシャープなエッジ
+    g.fillBox(2, 4, 9, 3, 8, 12, boneEdge);
+    g.fillBox(13, 4, 9, 14, 8, 12, boneEdge);
+    g.fillBox(3, 3, 12, 4, 5, 13, boneShade);
+    g.fillBox(12, 3, 12, 13, 5, 13, boneShade);
+
+    // 鋭利な下顎と噛み合わさる骨牙ディテール
+    g.fillBox(5, 0, 9, 11, 3, 13, boneShade);
+    g.fillBox(6, 0, 13, 10, 2, 14, bone);
+    // 牙の噛み合わせスリット
+    g.fillBox(6, 2, 13, 10, 2, 14, obsidian);
+    g.set(6, 2, 14, bone);
+    g.set(8, 2, 14, bone);
+    g.set(10, 2, 14, bone);
+
+    // 鼻腔の逆三角形スリット
+    g.fillBox(8, 4, 13, 8, 5, 14, obsidian);
+
+    // 窪んだ深い眼窩スリット（漆黒）
+    g.fillBox(4, 6, 12, 7, 8, 13, obsidian);
+    g.fillBox(9, 6, 12, 12, 8, 13, obsidian);
+
+    // 眼窩の奥に妖しく光る複眼・真紅の光条
+    g.set(5, 7, 12, eyeRed);
+    g.set(6, 7, 13, eyeCore);
+    g.set(5, 6, 13, markRed);
+    g.set(11, 7, 12, eyeRed);
+    g.set(10, 7, 13, eyeCore);
+    g.set(11, 6, 13, markRed);
+
+    // 眉間の第三の目（黄金枠＋真紅コア）と額の血脈紋様
+    g.fillBox(7, 9, 12, 9, 11, 13, gold);
+    g.set(8, 10, 13, eyeRed);
+    g.fillBox(8, 11, 12, 8, 13, 12, markRed);
+
+    return makeTemplate(g, 0.038, [8.5, 4.0, 8.0]);
   }
 
   // 14. 天落神サハクィエル: 巨大な使徒の瞳孔と幾何学翼頭部
@@ -1233,24 +1299,101 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.045, [5.5, 1.0, 4.5]);
   }
 
-  // 拒絶神ゼルエル: 巨大なマント状肩装甲・露出コア・肋骨ガード
+  // 拒絶神ゼルエル: 圧倒的な翼状マント肩装甲・白骨肋骨ケージ・くびれた腹筋装甲・脊椎スタビライザー
   if (type.id === 'angel_zeruel') {
-    const g = new VoxelGrid(16, 15, 12);
-    const dark = 0x1f1f23;
-    const armor = 0x2b2b2b;
-    const bone = 0xf1f3f5;
-    const core = 0xd90429;
-    g.fillBox(3, 0, 2, 12, 12, 8, dark);
-    g.fillBox(0, 7, 1, 3, 14, 9, armor);
-    g.fillBox(12, 7, 1, 15, 14, 9, armor);
-    g.fillBox(1, 14, 2, 14, 15, 8, armor);
-    g.fillBox(6, 4, 8, 9, 7, 9, core);
-    g.fillBox(7, 5, 9, 8, 6, 10, 0xff6b6b);
-    g.fillBox(4, 3, 8, 5, 8, 9, bone);
-    g.fillBox(10, 3, 8, 11, 8, 9, bone);
-    g.fillBox(5, 8, 8, 10, 9, 8, bone);
-    g.fillBox(4, 2, 0, 11, 13, 2, 0x141517);
-    return makeTemplate(g, 0.046, [7.5, 1.0, 5.0]);
+    const g = new VoxelGrid(26, 22, 16);
+    const obsidian = 0x141518;
+    const darkArmor = 0x1f2126;
+    const armorLight = 0x2c2e35;
+    const armorEdge = 0x3d414a;
+    const bone = 0xf8f9fa;
+    const boneShade = 0xdce0e5;
+    const coreGlow = 0xd90429;
+    const warnRed = 0xff1744;
+    const gold = 0xf59f00;
+
+    // 1. 骨盤ガード・腰部外装スカート (y: 0..3) — 逆三角形の威厳あるシルエットの基部
+    g.fillBox(6, 0, 3, 19, 3, 12, obsidian);
+    g.fillBox(7, 1, 4, 18, 3, 11, darkArmor);
+    // 腰前面の白骨ペルビスプレート＆黄金紋章
+    g.fillBox(9, 0, 11, 16, 2, 12, boneShade);
+    g.fillBox(11, 0, 12, 14, 3, 13, bone);
+    g.fillBox(12, 1, 13, 13, 2, 13, gold);
+
+    // 2. 引き締まった腹部・生体装甲ウエスト (y: 3..7)
+    g.fillBox(7, 3, 4, 18, 7, 11, obsidian);
+    g.fillBox(8, 3, 5, 17, 7, 10, darkArmor);
+    // 腹部の白骨外骨格リブと赤色エネルギー血管ライン
+    for (let y = 4; y <= 6; y += 2) {
+      g.fillBox(8, y, 10, 11, y, 11, boneShade);
+      g.fillBox(14, y, 10, 17, y, 11, boneShade);
+    }
+    g.fillBox(12, 3, 10, 13, 7, 11, warnRed);
+
+    // 3. 広大な胸郭ベース (y: 7..17)
+    g.fillBox(5, 7, 3, 20, 16, 11, obsidian);
+    g.fillBox(6, 8, 4, 19, 17, 10, darkArmor);
+    // 首元の重厚なカラー（襟装甲）
+    g.fillBox(8, 16, 5, 17, 18, 11, armorLight);
+    g.fillBox(9, 17, 10, 16, 18, 12, gold);
+
+    // 4. 巨大な左右翼状マント肩装甲（頭部の両脇まで聳え立つ圧倒的シルエット）
+    // 左肩マント (x: 0..6, y: 6..21)
+    g.fillBox(1, 6, 2, 6, 18, 12, obsidian);
+    g.fillBox(0, 8, 3, 5, 20, 11, darkArmor);
+    g.fillBox(0, 11, 4, 4, 21, 10, armorLight);
+    g.fillBox(1, 19, 4, 4, 21, 10, armorEdge);
+    // 左肩の白骨ブレードクレスト・黄金ライン・赤色発光スリット
+    g.fillBox(1, 20, 5, 3, 21, 9, bone);
+    g.fillBox(0, 14, 11, 4, 15, 11, gold);
+    g.fillBox(1, 17, 4, 4, 17, 10, warnRed);
+    g.fillBox(0, 10, 11, 5, 11, 11, warnRed);
+
+    // 右肩マント (x: 19..25, y: 6..21)
+    g.fillBox(19, 6, 2, 24, 18, 12, obsidian);
+    g.fillBox(20, 8, 3, 25, 20, 11, darkArmor);
+    g.fillBox(21, 11, 4, 25, 21, 10, armorLight);
+    g.fillBox(21, 19, 4, 24, 21, 10, armorEdge);
+    // 右肩の白骨ブレードクレスト・黄金ライン・赤色発光スリット
+    g.fillBox(22, 20, 5, 24, 21, 9, bone);
+    g.fillBox(21, 14, 11, 25, 15, 11, gold);
+    g.fillBox(21, 17, 4, 24, 17, 10, warnRed);
+    g.fillBox(20, 10, 11, 25, 11, 11, warnRed);
+
+    // 5. 背面の白骨脊椎ノード＆対空推進スタビライザーフィン
+    g.fillBox(8, 4, 1, 17, 16, 3, obsidian);
+    g.fillBox(11, 2, 0, 14, 18, 2, darkArmor);
+    for (let y = 3; y <= 17; y += 2) {
+      g.fillBox(12, y, 0, 13, y, 1, bone);
+      g.fillBox(10, y, 1, 15, y, 2, boneShade);
+    }
+    // 背面左右の斜めスタビライザーウイング
+    g.fillBox(5, 9, 0, 7, 17, 2, armorLight);
+    g.fillBox(18, 9, 0, 20, 17, 2, armorLight);
+    g.fillBox(6, 11, 0, 6, 15, 0, warnRed);
+    g.fillBox(19, 11, 0, 19, 15, 0, warnRed);
+
+    // 6. 胸部白骨肋骨ケージ（中央の滑らか真紅コア球体を包み込むリアルな湾曲リブ）
+    // 下段肋骨 (y: 8..9)
+    g.fillBox(6, 8, 11, 9, 9, 13, boneShade);
+    g.fillBox(16, 8, 11, 19, 9, 13, boneShade);
+    g.fillBox(9, 8, 13, 10, 8, 14, bone);
+    g.fillBox(15, 8, 13, 16, 8, 14, bone);
+    // 中段肋骨 (y: 11..12)
+    g.fillBox(5, 11, 11, 8, 12, 13, bone);
+    g.fillBox(17, 11, 11, 20, 12, 13, bone);
+    g.fillBox(8, 11, 13, 9, 12, 15, bone);
+    g.fillBox(16, 11, 13, 17, 12, 15, bone);
+    // 上段肋骨・鎖骨アーチ (y: 14..15)
+    g.fillBox(6, 14, 11, 9, 15, 13, bone);
+    g.fillBox(16, 14, 11, 19, 15, 13, bone);
+    g.fillBox(8, 15, 11, 17, 16, 13, boneShade);
+
+    // 7. 中央コアチャンバー（滑らか球体コアが収まる深紅の炉心座）
+    g.fillBox(9, 8, 9, 16, 14, 11, coreGlow);
+    g.fillBox(10, 9, 8, 15, 13, 10, 0x5a0011);
+
+    return makeTemplate(g, 0.042, [13.0, 3.0, 7.5]);
   }
 
   // 天落神サハクィエル: 巨大な幾何学使徒ボディ
@@ -1847,6 +1990,28 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm = buildLimbTemplate(2, 7, 2, 0xfef08a, 0x18181b, 0.34);
     thigh = buildLimbTemplate(2, 8, 2, 0x38bdf8, 0x18181b, 0.38);
     shin = buildLimbTemplate(2, 8, 2, 0xfef08a, 0x18181b, 0.38);
+  } else if (type.id === 'angel_zeruel') {
+    // 拒絶神ゼルエル: 浮遊する黒曜石＆白骨外骨格の威厳ある両脚（腕は滑らかリボンメッシュで描画）
+    upperArm = buildLimbTemplate(2, 2, 2, 0x141518, 0x141518, 0.15);
+    forearm = buildLimbTemplate(2, 2, 2, 0x141518, 0x141518, 0.15);
+
+    const th = new VoxelGrid(6, 9, 6);
+    th.fillBox(1, 0, 1, 4, 8, 4, 0x141518);
+    th.fillBox(0, 2, 1, 5, 7, 4, 0x1f2126);
+    // 大腿部の白骨外骨格プレート＆真紅エネルギーライン
+    th.fillBox(1, 3, 4, 4, 7, 5, 0xdce0e5);
+    th.fillBox(2, 1, 4, 3, 8, 4, 0xff1744);
+    thigh = makeTemplate(th, 0.36 / 9, [3, 0, 3]);
+
+    const sh = new VoxelGrid(6, 10, 7);
+    sh.fillBox(1, 2, 1, 4, 9, 4, 0x141518);
+    sh.fillBox(1, 4, 2, 4, 8, 5, 0x1f2126);
+    // 鋭利な白骨ニーガード（膝当て）と黄金リング・浮遊鉤爪足先
+    sh.fillBox(1, 7, 4, 4, 9, 6, 0xf8f9fa);
+    sh.fillBox(1, 3, 1, 4, 3, 5, 0xf59f00);
+    sh.fillBox(2, 0, 2, 3, 2, 5, 0xdce0e5);
+    sh.fillBox(2, 0, 5, 3, 1, 6, 0xff1744);
+    shin = makeTemplate(sh, 0.38 / 10, [3, 0, 3]);
   } else {
     upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
@@ -2127,6 +2292,62 @@ function placeOrientedPart(mesh: Mesh, origin: Vector3, upDir: Vector3, shoulder
   mesh.quaternion.copy(_quat);
 }
 
+/** 拒絶神ゼルエル専用: 滑らかな帯状リボンカッター（波打つ高分割・立体稜線付き有機メッシュ）のジオメトリを生成 */
+function createZeruelRibbonGeometry(segCount: number, s: number): BufferGeometry {
+  const geom = new BufferGeometry();
+  const cols = 5;
+  const vertCount = (segCount + 1) * cols;
+  const positions = new Float32Array(vertCount * 3);
+  const colors = new Float32Array(vertCount * 3);
+  const normals = new Float32Array(vertCount * 3);
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segCount; i++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = (i * cols + c) * 3;
+      positions[idx] = (c - 2) * 0.06 * s;
+      positions[idx + 1] = -i * 0.09 * s;
+      positions[idx + 2] = c === 2 ? 0.018 * s : 0;
+
+      normals[idx] = 0;
+      normals[idx + 1] = 0;
+      normals[idx + 2] = 1;
+
+      // 頂点カラー: 中央稜線は白銀ゴールド、中間層は冷徹なシルバーボーン、両端エッジは鮮烈な真紅の光刃
+      if (c === 2) {
+        colors[idx] = 1.0;
+        colors[idx + 1] = 0.96;
+        colors[idx + 2] = 0.88;
+      } else if (c === 1 || c === 3) {
+        colors[idx] = 0.92;
+        colors[idx + 1] = 0.94;
+        colors[idx + 2] = 0.98;
+      } else {
+        colors[idx] = 1.0;
+        colors[idx + 1] = 0.04;
+        colors[idx + 2] = 0.22;
+      }
+    }
+  }
+
+  for (let i = 0; i < segCount; i++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const a = i * cols + c;
+      const b = i * cols + (c + 1);
+      const c1 = (i + 1) * cols + c;
+      const d = (i + 1) * cols + (c + 1);
+      indices.push(a, c1, b);
+      indices.push(b, c1, d);
+    }
+  }
+
+  geom.setAttribute('position', new BufferAttribute(positions, 3));
+  geom.setAttribute('color', new BufferAttribute(colors, 3));
+  geom.setAttribute('normal', new BufferAttribute(normals, 3));
+  geom.setIndex(indices);
+  return geom;
+}
+
 /**
  * 物理ラグドールの各関節位置に合わせてボクセルパーツを毎フレーム追従させ、
  * 被弾時にはボクセルの欠損・部位破壊を適用するクラス。
@@ -2137,6 +2358,25 @@ export class VoxelCharacterVisual {
   private readonly parts: Record<BodyPartId, DestructiblePart>;
   private readonly weaponMesh: Mesh | null;
   private readonly bowMesh: Mesh | null;
+
+  // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的波打ちエフェクト
+  private zeruelCoreMesh: Mesh | null = null;
+  private zeruelCoreGlow: Mesh | null = null;
+  private zeruelCoreRingA: Mesh | null = null;
+  private zeruelCoreRingB: Mesh | null = null;
+  private zeruelHalo: Mesh | null = null;
+  private zeruelHaloInner: Mesh | null = null;
+  private zeruelRibbonL: Mesh | null = null;
+  private zeruelRibbonR: Mesh | null = null;
+  private zeruelSubRibbonL: Mesh | null = null;
+  private zeruelSubRibbonR: Mesh | null = null;
+  private zeruelRibbonGeomL: BufferGeometry | null = null;
+  private zeruelRibbonGeomR: BufferGeometry | null = null;
+  private zeruelSubRibbonGeomL: BufferGeometry | null = null;
+  private zeruelSubRibbonGeomR: BufferGeometry | null = null;
+  private zeruelAtFieldOuter: Mesh | null = null;
+  private zeruelAtFieldMid: Mesh | null = null;
+  private zeruelAtFieldInner: Mesh | null = null;
 
   constructor(readonly unit: Unit) {
     const set = getUnitTemplateSet(unit.type, unit.team);
@@ -2193,12 +2433,120 @@ export class VoxelCharacterVisual {
       this.bowMesh = null;
     }
 
+    // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的異質パーツ群の初期化
+    if (unit.type.id === 'angel_zeruel') {
+      // 1. 滑らかな深紅のコア球体 (SphereGeometry: ボクセル肋骨の中央に収まる異質球体)
+      const coreMat = new MeshStandardMaterial({
+        color: 0xff0033,
+        roughness: 0.08,
+        metalness: 0.35,
+        emissive: 0xd90429,
+        emissiveIntensity: 1.1,
+      });
+      this.zeruelCoreMesh = new Mesh(new SphereGeometry(0.165 * s, 32, 32), coreMat);
+      this.group.add(this.zeruelCoreMesh);
+
+      // コアの半透明グローオーラ球体
+      const glowMat = new MeshBasicMaterial({
+        color: 0xff2255,
+        transparent: true,
+        opacity: 0.38,
+      });
+      this.zeruelCoreGlow = new Mesh(new SphereGeometry(0.205 * s, 24, 24), glowMat);
+      this.group.add(this.zeruelCoreGlow);
+
+      // コア周囲を旋回する滑らかなエネルギーリングA/B (TorusGeometry)
+      const ringMatA = new MeshBasicMaterial({
+        color: 0xff3366,
+        transparent: true,
+        opacity: 0.88,
+      });
+      this.zeruelCoreRingA = new Mesh(new TorusGeometry(0.24 * s, 0.012 * s, 16, 48), ringMatA);
+      this.group.add(this.zeruelCoreRingA);
+
+      const ringMatB = new MeshBasicMaterial({
+        color: 0xffd43b,
+        transparent: true,
+        opacity: 0.78,
+      });
+      this.zeruelCoreRingB = new Mesh(new TorusGeometry(0.28 * s, 0.009 * s, 16, 48), ringMatB);
+      this.group.add(this.zeruelCoreRingB);
+
+      // 2. 使徒の頭上二重ヘイロー光輪 (TorusGeometry)
+      const haloMat = new MeshStandardMaterial({
+        color: 0x141518,
+        emissive: 0x9d4edd,
+        emissiveIntensity: 1.1,
+        roughness: 0.2,
+        metalness: 0.5,
+      });
+      this.zeruelHalo = new Mesh(new TorusGeometry(0.54 * s, 0.026 * s, 16, 64), haloMat);
+      this.group.add(this.zeruelHalo);
+
+      const haloInnerMat = new MeshBasicMaterial({
+        color: 0xffd43b,
+        transparent: true,
+        opacity: 0.85,
+      });
+      this.zeruelHaloInner = new Mesh(new TorusGeometry(0.36 * s, 0.014 * s, 16, 48), haloInnerMat);
+      this.group.add(this.zeruelHaloInner);
+
+      // 3. 滑らかで常に波打つ主リボンカッター帯 & 副リボン帯 (左右計4条)
+      const ribbonMat = new MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.16,
+        metalness: 0.38,
+        side: DoubleSide,
+        emissive: 0x3a0012,
+      });
+      this.zeruelRibbonGeomL = createZeruelRibbonGeometry(28, s);
+      this.zeruelRibbonL = new Mesh(this.zeruelRibbonGeomL, ribbonMat);
+      this.group.add(this.zeruelRibbonL);
+
+      this.zeruelRibbonGeomR = createZeruelRibbonGeometry(28, s);
+      this.zeruelRibbonR = new Mesh(this.zeruelRibbonGeomR, ribbonMat);
+      this.group.add(this.zeruelRibbonR);
+
+      this.zeruelSubRibbonGeomL = createZeruelRibbonGeometry(28, s);
+      this.zeruelSubRibbonL = new Mesh(this.zeruelSubRibbonGeomL, ribbonMat);
+      this.group.add(this.zeruelSubRibbonL);
+
+      this.zeruelSubRibbonGeomR = createZeruelRibbonGeometry(28, s);
+      this.zeruelSubRibbonR = new Mesh(this.zeruelSubRibbonGeomR, ribbonMat);
+      this.group.add(this.zeruelSubRibbonR);
+
+      // 4. 多重八角形ATフィールドシールド (外層・中層・内層の3重回転幾何学結界)
+      const makeOctagonLayer = (radius: number, fillCol: number, edgeCol: number): Mesh => {
+        const mat = new MeshBasicMaterial({
+          color: fillCol,
+          transparent: true,
+          opacity: 0,
+          side: DoubleSide,
+        });
+        const geom = new CircleGeometry(radius, 8);
+        const mesh = new Mesh(geom, mat);
+        const edges = new LineSegments(new EdgesGeometry(geom), new LineBasicMaterial({ color: edgeCol }));
+        mesh.add(edges);
+        mesh.visible = false;
+        this.group.add(mesh);
+        return mesh;
+      };
+      this.zeruelAtFieldOuter = makeOctagonLayer(1.45 * s, 0xff922b, 0xffd43b);
+      this.zeruelAtFieldMid = makeOctagonLayer(1.02 * s, 0xff6b6b, 0xffa94d);
+      this.zeruelAtFieldInner = makeOctagonLayer(0.58 * s, 0xff0033, 0xffffff);
+    }
+
     this.sync();
   }
 
   /** 物理粒子の現在位置に合わせて各ボクセルメッシュの座標・回転・発光色を更新する */
   sync(): void {
     const u = this.unit;
+    if (u.type.id === 'angel_zeruel') {
+      this.syncZeruel();
+      this.updateMaterialStatus();
+      return;
+    }
     if (u.type.id === 'buggy') {
       this.syncBuggy();
       this.updateMaterialStatus();
@@ -2604,6 +2952,355 @@ export class VoxelCharacterVisual {
     this.parts.forearmR.mesh.visible = false;
   }
 
+  /** 拒絶神ゼルエル: 圧倒的な神威、滑らかな真紅コア、多重AT結界、常に妖しく波打つ両腕リボンカッター */
+  private syncZeruel(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const time = performance.now() * 0.001;
+
+    // 前方・上・右基底ベクトル（直立・浮遊姿勢の安定＋攻撃時の前傾・反り）
+    _fwd.copy(u.forward).normalize();
+    if (_fwd.lengthSq() < 1e-4) _fwd.set(1, 0, 0);
+    _up.copy(UP);
+    // ワインドアップ時は溜めでやや反り、ストライク時は前方へ威圧的に前傾する
+    if (u.attackPhase === 'windup') {
+      _up.addScaledVector(_fwd, -0.10).normalize();
+    } else if (u.attackPhase === 'strike') {
+      _up.addScaledVector(_fwd, 0.16).normalize();
+    } else if (u.defenseTimer > 0) {
+      _up.addScaledVector(_fwd, -0.06).normalize();
+    }
+    _right.crossVectors(_up, _fwd).normalize();
+    if (_right.lengthSq() < 1e-4) _right.set(1, 0, 0);
+    _fwd.crossVectors(_right, _up).normalize();
+
+    // 1. 胴体（Torso）の配置: Pelvis にマウント
+    if (!this.parts.torso.destroyed && u.alive) {
+      this.parts.torso.mesh.visible = true;
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    // 2. 頭部（Head）の配置: 巨大な両肩マントの間に低く威圧的にマウント（首浮きゼロ）
+    const headAnchor = _headPos.copy(pelvis).addScaledVector(_up, 0.56 * s).addScaledVector(_fwd, 0.14 * s);
+    if (!this.parts.head.destroyed && u.alive) {
+      this.parts.head.mesh.visible = true;
+      placeBasisPart(this.parts.head.mesh, headAnchor, _right, _up, _fwd);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    // 3. 浮遊する黒曜石＆白骨外骨格の両脚（腕ボクセルは滑らかリボンメッシュで代替するため非表示）
+    this.parts.upperArmL.mesh.visible = false;
+    this.parts.forearmL.mesh.visible = false;
+    this.parts.upperArmR.mesh.visible = false;
+    this.parts.forearmR.mesh.visible = false;
+    if (u.alive) {
+      this.parts.thighL.mesh.visible = !this.parts.thighL.destroyed;
+      this.parts.shinL.mesh.visible = !this.parts.shinL.destroyed;
+      this.parts.thighR.mesh.visible = !this.parts.thighR.destroyed;
+      this.parts.shinR.mesh.visible = !this.parts.shinR.destroyed;
+      placeLimb(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos);
+      placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
+      placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
+      placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
+    } else {
+      this.parts.thighL.mesh.visible = false;
+      this.parts.shinL.mesh.visible = false;
+      this.parts.thighR.mesh.visible = false;
+      this.parts.shinR.mesh.visible = false;
+    }
+
+    if (!u.alive) {
+      if (this.zeruelCoreMesh) this.zeruelCoreMesh.visible = false;
+      if (this.zeruelCoreGlow) this.zeruelCoreGlow.visible = false;
+      if (this.zeruelCoreRingA) this.zeruelCoreRingA.visible = false;
+      if (this.zeruelCoreRingB) this.zeruelCoreRingB.visible = false;
+      if (this.zeruelHalo) this.zeruelHalo.visible = false;
+      if (this.zeruelHaloInner) this.zeruelHaloInner.visible = false;
+      if (this.zeruelRibbonL) this.zeruelRibbonL.visible = false;
+      if (this.zeruelRibbonR) this.zeruelRibbonR.visible = false;
+      if (this.zeruelSubRibbonL) this.zeruelSubRibbonL.visible = false;
+      if (this.zeruelSubRibbonR) this.zeruelSubRibbonR.visible = false;
+      if (this.zeruelAtFieldOuter) this.zeruelAtFieldOuter.visible = false;
+      if (this.zeruelAtFieldMid) this.zeruelAtFieldMid.visible = false;
+      if (this.zeruelAtFieldInner) this.zeruelAtFieldInner.visible = false;
+      return;
+    }
+
+    // 4. 滑らかな深紅コア球体 & エネルギーリング（ボクセル肋骨ケージの中央にピタリと収まる異質球体）
+    if (this.zeruelCoreMesh) {
+      if (!this.parts.torso.destroyed) {
+        this.zeruelCoreMesh.visible = true;
+        const corePos = _voxelWorld.copy(pelvis).addScaledVector(_up, 0.34 * s).addScaledVector(_fwd, 0.21 * s);
+        this.zeruelCoreMesh.position.copy(corePos);
+
+        // 呼吸・生命の有機的波打ち脈動とワインドアップ／防御時の高揚
+        const isWindup = u.attackPhase === 'windup';
+        const isStrike = u.attackPhase === 'strike';
+        const isDefending = u.defenseTimer > 0;
+        const pulseX = 1.0 + Math.sin(time * 4.2) * 0.08 + (isWindup ? Math.sin(time * 24.0) * 0.20 : 0);
+        const pulseY = 1.0 + Math.cos(time * 3.6) * 0.08 + (isWindup ? Math.cos(time * 24.0) * 0.20 : 0);
+        const pulseZ = 1.0 + Math.sin(time * 5.0 + 1.0) * 0.10 + (isStrike ? 0.25 : 0);
+        this.zeruelCoreMesh.scale.set(pulseX, pulseY, pulseZ);
+
+        const coreMat = this.zeruelCoreMesh.material as MeshStandardMaterial;
+        coreMat.emissiveIntensity = isStrike ? 3.2 : isWindup ? 2.6 : isDefending ? 2.2 : 0.95 + Math.sin(time * 3.8) * 0.35;
+
+        if (this.zeruelCoreGlow) {
+          this.zeruelCoreGlow.visible = true;
+          this.zeruelCoreGlow.position.copy(corePos);
+          const glowPulse = ((pulseX + pulseY) * 0.5) * (1.15 + Math.sin(time * 3.2) * 0.08);
+          this.zeruelCoreGlow.scale.set(glowPulse, glowPulse, glowPulse);
+        }
+
+        const ringSpeed = isWindup || isStrike ? 3.2 : isDefending ? 2.6 : 1.0;
+        if (this.zeruelCoreRingA) {
+          this.zeruelCoreRingA.visible = true;
+          this.zeruelCoreRingA.position.copy(corePos);
+          this.zeruelCoreRingA.rotation.x = time * 2.4 * ringSpeed;
+          this.zeruelCoreRingA.rotation.y = time * 1.7 * ringSpeed;
+        }
+        if (this.zeruelCoreRingB) {
+          this.zeruelCoreRingB.visible = true;
+          this.zeruelCoreRingB.position.copy(corePos);
+          this.zeruelCoreRingB.rotation.z = -time * 2.8 * ringSpeed;
+          this.zeruelCoreRingB.rotation.x = time * 1.3 * ringSpeed;
+        }
+      } else {
+        this.zeruelCoreMesh.visible = false;
+        if (this.zeruelCoreGlow) this.zeruelCoreGlow.visible = false;
+        if (this.zeruelCoreRingA) this.zeruelCoreRingA.visible = false;
+        if (this.zeruelCoreRingB) this.zeruelCoreRingB.visible = false;
+      }
+    }
+
+    // 5. 滑らかな使徒の二重ヘイロー（頭上光輪・有機的揺動と逆回転）
+    if (this.zeruelHalo) {
+      if (!this.parts.head.destroyed) {
+        this.zeruelHalo.visible = true;
+        const haloPos = _voxelWorld.copy(headAnchor)
+          .addScaledVector(_up, (0.44 + Math.sin(time * 2.2) * 0.04) * s)
+          .addScaledVector(_fwd, -0.08 * s);
+        this.zeruelHalo.position.copy(haloPos);
+        this.zeruelHalo.rotation.x = Math.PI * 0.46 + Math.sin(time * 1.5) * 0.10;
+        this.zeruelHalo.rotation.y = Math.cos(time * 1.2) * 0.08;
+        this.zeruelHalo.rotation.z = time * 0.8;
+
+        if (this.zeruelHaloInner) {
+          this.zeruelHaloInner.visible = true;
+          this.zeruelHaloInner.position.copy(haloPos);
+          this.zeruelHaloInner.rotation.x = Math.PI * 0.46 - Math.sin(time * 1.8) * 0.12;
+          this.zeruelHaloInner.rotation.z = -time * 1.6;
+        }
+      } else {
+        this.zeruelHalo.visible = false;
+        if (this.zeruelHaloInner) this.zeruelHaloInner.visible = false;
+      }
+    }
+
+    // 6. 滑らかで常に波打つ主・副リボンカッター帯（左右計4条: 肩マント内部から隙間なく出現）
+    const shoulderOffset = 0.43 * s;
+    const shoulderUp = 0.48 * s;
+    const shoulderFwd = 0.06 * s;
+
+    if (!this.parts.torso.destroyed) {
+      if (this.zeruelRibbonL && this.zeruelRibbonGeomL) {
+        this.zeruelRibbonL.visible = true;
+        const leftAnchor = _voxelWorld.copy(pelvis)
+          .addScaledVector(_right, -shoulderOffset)
+          .addScaledVector(_up, shoulderUp)
+          .addScaledVector(_fwd, shoulderFwd);
+        placeBasisPart(this.zeruelRibbonL, leftAnchor, _right, _up, _fwd);
+        this.updateRibbonGeometry(this.zeruelRibbonGeomL, true, false, time, u, s);
+      }
+      if (this.zeruelRibbonR && this.zeruelRibbonGeomR) {
+        this.zeruelRibbonR.visible = true;
+        const rightAnchor = _voxelWorld.copy(pelvis)
+          .addScaledVector(_right, shoulderOffset)
+          .addScaledVector(_up, shoulderUp)
+          .addScaledVector(_fwd, shoulderFwd);
+        placeBasisPart(this.zeruelRibbonR, rightAnchor, _right, _up, _fwd);
+        this.updateRibbonGeometry(this.zeruelRibbonGeomR, false, false, time, u, s);
+      }
+      if (this.zeruelSubRibbonL && this.zeruelSubRibbonGeomL) {
+        this.zeruelSubRibbonL.visible = true;
+        const subLeftAnchor = _voxelWorld.copy(pelvis)
+          .addScaledVector(_right, -0.34 * s)
+          .addScaledVector(_up, 0.36 * s)
+          .addScaledVector(_fwd, -0.02 * s);
+        placeBasisPart(this.zeruelSubRibbonL, subLeftAnchor, _right, _up, _fwd);
+        this.updateRibbonGeometry(this.zeruelSubRibbonGeomL, true, true, time, u, s);
+      }
+      if (this.zeruelSubRibbonR && this.zeruelSubRibbonGeomR) {
+        this.zeruelSubRibbonR.visible = true;
+        const subRightAnchor = _voxelWorld.copy(pelvis)
+          .addScaledVector(_right, 0.34 * s)
+          .addScaledVector(_up, 0.36 * s)
+          .addScaledVector(_fwd, -0.02 * s);
+        placeBasisPart(this.zeruelSubRibbonR, subRightAnchor, _right, _up, _fwd);
+        this.updateRibbonGeometry(this.zeruelSubRibbonGeomR, false, true, time, u, s);
+      }
+    } else {
+      if (this.zeruelRibbonL) this.zeruelRibbonL.visible = false;
+      if (this.zeruelRibbonR) this.zeruelRibbonR.visible = false;
+      if (this.zeruelSubRibbonL) this.zeruelSubRibbonL.visible = false;
+      if (this.zeruelSubRibbonR) this.zeruelSubRibbonR.visible = false;
+    }
+
+    // 7. 多重八角形ATフィールド結界（防御時に3層の八角形バリアが展開・逆回転・脈動）
+    const defStrength = Math.max(u.hitFlash, Math.min(1.0, u.defenseTimer / 0.45));
+    if (defStrength > 0.02) {
+      const expand = Math.min(1.0, (1.0 - u.defenseTimer / 0.68) * 3.5 + 0.35);
+      const basePos = _voxelWorld.copy(pelvis).addScaledVector(_up, 0.38 * s);
+
+      if (this.zeruelAtFieldOuter) {
+        this.zeruelAtFieldOuter.visible = true;
+        const posOuter = _localHit.copy(basePos).addScaledVector(_fwd, 0.78 * s);
+        placeBasisPart(this.zeruelAtFieldOuter, posOuter, _right, _up, _fwd);
+        this.zeruelAtFieldOuter.rotateZ(time * 2.2);
+        this.zeruelAtFieldOuter.scale.setScalar(expand);
+        (this.zeruelAtFieldOuter.material as MeshBasicMaterial).opacity = defStrength * 0.42;
+      }
+      if (this.zeruelAtFieldMid) {
+        this.zeruelAtFieldMid.visible = true;
+        const posMid = _localHit.copy(basePos).addScaledVector(_fwd, 0.88 * s);
+        placeBasisPart(this.zeruelAtFieldMid, posMid, _right, _up, _fwd);
+        this.zeruelAtFieldMid.rotateZ(-time * 3.4);
+        this.zeruelAtFieldMid.scale.setScalar(expand * (0.95 + Math.sin(time * 18.0) * 0.08));
+        (this.zeruelAtFieldMid.material as MeshBasicMaterial).opacity = defStrength * 0.55;
+      }
+      if (this.zeruelAtFieldInner) {
+        this.zeruelAtFieldInner.visible = true;
+        const posInner = _localHit.copy(basePos).addScaledVector(_fwd, 0.98 * s);
+        placeBasisPart(this.zeruelAtFieldInner, posInner, _right, _up, _fwd);
+        this.zeruelAtFieldInner.rotateZ(time * 4.8);
+        this.zeruelAtFieldInner.scale.setScalar(expand);
+        (this.zeruelAtFieldInner.material as MeshBasicMaterial).opacity = defStrength * 0.72;
+      }
+    } else {
+      if (this.zeruelAtFieldOuter) this.zeruelAtFieldOuter.visible = false;
+      if (this.zeruelAtFieldMid) this.zeruelAtFieldMid.visible = false;
+      if (this.zeruelAtFieldInner) this.zeruelAtFieldInner.visible = false;
+    }
+  }
+
+  /** ゼルエルの帯状リボンカッターの動的3D波打ち・ねじれ・攻撃伸縮・防御クロスガード変形 */
+  private updateRibbonGeometry(
+    geom: BufferGeometry,
+    isLeft: boolean,
+    isSub: boolean,
+    time: number,
+    u: Unit,
+    s: number,
+  ): void {
+    const posAttr = geom.getAttribute('position') as BufferAttribute;
+    const pos = posAttr.array as Float32Array;
+    const segCount = 28;
+    const cols = 5;
+    const phase = u.attackPhase;
+    const sideSign = isLeft ? 1 : -1;
+
+    let windupProgress = 0;
+    if (phase === 'windup') {
+      windupProgress = Math.min(1.0, u.phaseTime / Math.max(0.01, u.type.windup));
+    }
+    let strikeProgress = 0;
+    if (phase === 'strike') {
+      strikeProgress = Math.min(1.0, u.phaseTime / Math.max(0.01, u.type.strike));
+    }
+    let recoverProgress = 0;
+    if (phase === 'recover') {
+      recoverProgress = Math.min(1.0, u.phaseTime / Math.max(0.01, u.type.recover));
+    }
+
+    const baseWidth = (isSub ? 0.14 : 0.24) * s;
+
+    for (let i = 0; i <= segCount; i++) {
+      const frac = i / segCount;
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      let twist = 0;
+      // 先端に向かって鋭利なブレード状にテーパー
+      const width = baseWidth * (1.0 - frac * 0.42);
+
+      if (phase === 'strike') {
+        // 攻撃モーション: 前方へ超高速・長大に伸長し、左右の刃がX字に交差しながら敵陣を薙ぎ払う！
+        const maxReach = (isSub ? 2.6 : 3.8) * s;
+        const ext = Math.sin(Math.min(1.0, strikeProgress * 1.45) * Math.PI * 0.5);
+        const whipWave = Math.sin(frac * Math.PI * 2.5 - strikeProgress * 12.0) * 0.18 * s * (1.0 - strikeProgress * 0.5);
+        const crossSweep = sideSign * (Math.cos(strikeProgress * Math.PI) * 0.45 * frac + Math.sin(frac * Math.PI) * 0.22) * s;
+
+        z = frac * maxReach * Math.max(0.18, ext);
+        x = crossSweep + whipWave;
+        y = -frac * (isSub ? 0.35 : 0.18) * s + Math.sin(frac * Math.PI * 2.0 + time * 16.0) * 0.10 * s;
+        twist = (isLeft ? 1 : -1) * (0.65 + frac * 1.4);
+      } else if (phase === 'windup') {
+        // 溜めモーション: 肩の周囲で折り紙のように高速螺旋トルネード状に凝縮・展開待機
+        const phaseOffset = isSub ? Math.PI * 0.7 : 0;
+        const angle = time * 16.0 + i * 0.42 + phaseOffset;
+        const radius = (isSub ? 0.22 : 0.32) * (1.0 + frac * 0.35) * s * (1.0 - windupProgress * 0.35);
+        x = sideSign * (0.08 * s + Math.cos(angle) * radius * frac);
+        y = (0.12 * windupProgress - frac * 0.45) * s + Math.sin(angle) * radius * 0.65 * frac;
+        z = (frac * 0.42 + Math.sin(windupProgress * Math.PI * 0.5) * 0.28) * s;
+        twist = angle * 0.5;
+      } else if (u.defenseTimer > 0 && phase === 'none') {
+        // 防御モーション: 両腕のリボンが胸部コアの前面でX字の防護クロスシールドを織り成し、波打ちながら敵弾を拒絶！
+        const defBlend = Math.min(1.0, u.defenseTimer / 0.25);
+        const idleLen = (isSub ? 1.85 : 2.5) * s;
+        const idleY = -frac * idleLen;
+        const idleX = sideSign * 0.06 * s + Math.sin(time * 4.0 + i * 0.35) * (0.04 + frac * 0.22) * s;
+        const idleZ = Math.cos(time * 3.1 + i * 0.4) * (0.05 + frac * 0.24) * s;
+
+        // 胸部前面をX字に覆う防護軌道
+        const guardX = sideSign * (0.42 * (1.0 - frac * 1.65)) * s;
+        const guardY = (-0.08 - frac * (isSub ? 0.55 : 0.42) + Math.sin(frac * Math.PI) * 0.12) * s;
+        const guardZ = (0.38 + Math.sin(frac * Math.PI) * 0.26 + Math.sin(time * 24.0 + i * 0.6) * 0.04) * s;
+
+        x = idleX * (1 - defBlend) + guardX * defBlend;
+        y = idleY * (1 - defBlend) + guardY * defBlend;
+        z = idleZ * (1 - defBlend) + guardZ * defBlend;
+        twist = sideSign * 0.8 * defBlend;
+      } else {
+        // 通常時 & リカバー時: 体の一部が常に妖しく滑らかに3D波打ち・捻れ続ける演出
+        const length = (isSub ? 1.85 : 2.55) * s;
+        const recPull = phase === 'recover' ? (1.0 - recoverProgress) * 0.9 * s * frac : 0;
+        const freq = isSub ? 4.4 : 3.4;
+        const phaseShift = (isLeft ? 0 : Math.PI * 0.65) + (isSub ? 1.8 : 0);
+
+        const waveX = Math.sin(time * freq + i * 0.34 + phaseShift) * (0.03 + frac * (isSub ? 0.28 : 0.22)) * s;
+        const waveZ = Math.cos(time * (freq * 0.82) + i * 0.38 + phaseShift) * (0.04 + frac * (isSub ? 0.30 : 0.26)) * s;
+        const harmonic = Math.sin(time * 7.8 - i * 0.65) * 0.035 * s * frac;
+
+        x = sideSign * (0.05 * s * frac) + waveX + harmonic;
+        y = -frac * length + Math.sin(time * 3.0 + i * 0.25) * 0.04 * s * frac;
+        z = waveZ + recPull;
+        twist = Math.sin(time * 2.9 + i * 0.32 + phaseShift) * 0.65 * frac;
+      }
+
+      const cosT = Math.cos(twist);
+      const sinT = Math.sin(twist);
+      const ridgeZ = 0.022 * s;
+
+      // 横5列の頂点座標を更新（ねじれ角度 twist と中央立体稜線を反映）
+      for (let c = 0; c < cols; c++) {
+        const idx = (i * cols + c) * 3;
+        const uOff = ((c - 2) / 2) * (width * 0.5);
+        const vOff = c === 2 ? ridgeZ : (c === 1 || c === 3 ? ridgeZ * 0.45 : 0);
+        pos[idx] = x + uOff * cosT - vOff * sinT;
+        pos[idx + 1] = y + uOff * sinT * 0.25;
+        pos[idx + 2] = z + uOff * sinT + vOff * cosT;
+      }
+    }
+
+    posAttr.needsUpdate = true;
+    geom.computeVertexNormals();
+  }
+
   /** 幾何神ラミエル: 浮遊する完全な正八面体結晶ボディ（四肢非表示） */
   private syncRamiel(): void {
     const u = this.unit;
@@ -2973,6 +3670,43 @@ export class VoxelCharacterVisual {
       }
     }
     this.material.dispose();
+    if (this.zeruelCoreMesh) {
+      this.zeruelCoreMesh.geometry.dispose();
+      (this.zeruelCoreMesh.material as MeshStandardMaterial).dispose();
+    }
+    if (this.zeruelCoreGlow) {
+      this.zeruelCoreGlow.geometry.dispose();
+      (this.zeruelCoreGlow.material as MeshBasicMaterial).dispose();
+    }
+    if (this.zeruelCoreRingA) {
+      this.zeruelCoreRingA.geometry.dispose();
+      (this.zeruelCoreRingA.material as MeshBasicMaterial).dispose();
+    }
+    if (this.zeruelCoreRingB) {
+      this.zeruelCoreRingB.geometry.dispose();
+      (this.zeruelCoreRingB.material as MeshBasicMaterial).dispose();
+    }
+    if (this.zeruelHalo) {
+      this.zeruelHalo.geometry.dispose();
+      (this.zeruelHalo.material as MeshStandardMaterial).dispose();
+    }
+    if (this.zeruelHaloInner) {
+      this.zeruelHaloInner.geometry.dispose();
+      (this.zeruelHaloInner.material as MeshBasicMaterial).dispose();
+    }
+    if (this.zeruelRibbonGeomL) this.zeruelRibbonGeomL.dispose();
+    if (this.zeruelRibbonGeomR) this.zeruelRibbonGeomR.dispose();
+    if (this.zeruelSubRibbonGeomL) this.zeruelSubRibbonGeomL.dispose();
+    if (this.zeruelSubRibbonGeomR) this.zeruelSubRibbonGeomR.dispose();
+    if (this.zeruelRibbonL) {
+      (this.zeruelRibbonL.material as MeshStandardMaterial).dispose();
+    }
+    for (const shield of [this.zeruelAtFieldOuter, this.zeruelAtFieldMid, this.zeruelAtFieldInner]) {
+      if (shield) {
+        shield.geometry.dispose();
+        (shield.material as MeshBasicMaterial).dispose();
+      }
+    }
   }
 }
 
@@ -2987,9 +3721,20 @@ export function createPreviewGhost(type: UnitType, team: Team): Group {
   const s = type.scale;
   const g = new Group();
   const torso = makeMesh(set.torso.geometry, mat, s);
-  torso.position.set(0, 0.96 * s, 0);
+  const baseY = type.id === 'angel_zeruel' ? 1.01 * s : 0.96 * s;
+  torso.position.set(0, baseY, 0);
   const head = makeMesh(set.head.geometry, mat, s);
-  head.position.set(0, 1.74 * s, 0);
+  if (type.id === 'angel_zeruel') {
+    head.position.set(0, baseY + 0.56 * s, 0.14 * s);
+    const coreMesh = new Mesh(
+      new SphereGeometry(0.165 * s, 24, 24),
+      new MeshBasicMaterial({ color: 0xff0033, transparent: true, opacity: 0.75 }),
+    );
+    coreMesh.position.set(0, baseY + 0.34 * s, 0.21 * s);
+    g.add(coreMesh);
+  } else {
+    head.position.set(0, 1.74 * s, 0);
+  }
   g.add(torso, head);
   g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
   return g;

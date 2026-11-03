@@ -560,12 +560,20 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
     case 'angel_zeruel':
       return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
-        <path d="M12,10 L36,10 L40,28 L34,42 L14,42 L8,28 Z" fill="#212529" stroke="#495057" stroke-width="2"/>
-        <circle cx="24" cy="20" r="8" fill="#f1f3f5"/>
-        <circle cx="21" cy="18" r="2.2" fill="#ff1744"/>
-        <circle cx="27" cy="18" r="2.2" fill="#ff1744"/>
-        <path d="M6,22 Q12,32 6,42 M42,22 Q36,32 42,42" stroke="#ced4da" stroke-width="2.5" fill="none"/>
-        <circle cx="24" cy="34" r="3.5" fill="#d90429"/>
+        <path d="M4,12 L44,12 L38,36 L30,44 L18,44 L10,36 Z" fill="#141518" stroke="#343a40" stroke-width="2"/>
+        <path d="M4,14 L14,14 L12,28 L4,22 Z M44,14 L34,14 L36,28 L44,22 Z" fill="#1f2126" stroke="#c92a2a" stroke-width="1.2"/>
+        <path d="M18,12 C18,12 21,8 24,8 C27,8 30,12 30,12 L31,21 C31,23 27,25 24,25 C21,25 17,23 17,21 Z" fill="#f8f9fa"/>
+        <ellipse cx="21" cy="16" rx="1.8" ry="2.2" fill="#141518"/>
+        <ellipse cx="27" cy="16" rx="1.8" ry="2.2" fill="#141518"/>
+        <circle cx="21" cy="16" r="0.8" fill="#ff0033"/>
+        <circle cx="27" cy="16" r="0.8" fill="#ff0033"/>
+        <path d="M21,21 L27,21" stroke="#141518" stroke-width="1.2"/>
+        <path d="M7,16 Q2,28 7,42" stroke="#f8f9fa" stroke-width="2.5" fill="none"/>
+        <path d="M5,16 Q0,28 5,42" stroke="#ff0033" stroke-width="1.2" fill="none"/>
+        <path d="M41,16 Q46,28 41,42" stroke="#f8f9fa" stroke-width="2.5" fill="none"/>
+        <path d="M43,16 Q48,28 43,42" stroke="#ff0033" stroke-width="1.2" fill="none"/>
+        <circle cx="24" cy="33" r="4.2" fill="#ff0033" stroke="#ffa8b8" stroke-width="1.2"/>
+        <ellipse cx="24" cy="33" rx="6.5" ry="2.2" stroke="#ff8787" stroke-width="0.9" fill="none"/>
       </svg>`;
     case 'angel_sahaquiel':
       return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">

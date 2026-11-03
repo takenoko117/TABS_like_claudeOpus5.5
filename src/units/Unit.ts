@@ -98,6 +98,8 @@ export class Unit {
   cooldown = 0;
   /** 被弾演出用（1 → 0 に減衰） */
   hitFlash = 0;
+  /** 拒絶神ゼルエルの多重ATフィールド＆リボン防御展開タイマー（秒） */
+  defenseTimer = 0;
   /** 骨盤の速度（毎ステップ更新） */
   readonly velocity = new Vector3();
   /** 水平面での前方向・右方向 */
@@ -194,6 +196,8 @@ export class Unit {
         ? 0.56
         : type.id === 'lightspeed_ant'
         ? 0.65
+        : type.id === 'angel_zeruel'
+        ? 1.05
         : 1.0;
     const origin = new Vector3(groundPos.x, groundPos.y + PELVIS_HEIGHT * s * hoverMul, groundPos.z);
     for (let i = 0; i < JOINT_COUNT; i++) {
@@ -302,6 +306,7 @@ export class Unit {
   update(dt: number, ctx: UnitContext): void {
     this.context = ctx;
     this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
+    this.defenseTimer = Math.max(0, this.defenseTimer - dt);
     for (const [id, t] of this.hitCooldowns) {
       if (t - dt <= 0) this.hitCooldowns.delete(id);
       else this.hitCooldowns.set(id, t - dt);
@@ -486,7 +491,7 @@ export class Unit {
       let mz = dz / Math.max(0.001, dist);
 
       // 飛行ユニット以外は奈落（一本橋ステージ）や石柱を迂回する
-      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
+      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel';
       if (!isFlyer) {
         const chasm = ctx.world.chasm;
         if (chasm) {
@@ -622,7 +627,8 @@ export class Unit {
       st === 'dual_minigun' ||
       st === 'eruption' ||
       st === 'piano_performance' ||
-      st === 'dragon_twister'
+      st === 'dragon_twister' ||
+      st === 'zeruel_cutter'
     ) {
       return this.type.range;
     }
@@ -669,7 +675,8 @@ export class Unit {
       st === 'dual_minigun' ||
       st === 'eruption' ||
       st === 'piano_performance' ||
-      st === 'dragon_twister'
+      st === 'dragon_twister' ||
+      st === 'zeruel_cutter'
     ) {
       return this.type.range;
     }
@@ -731,7 +738,8 @@ export class Unit {
       this.type.id === 'yamamuron' ||
       this.type.id === 'sezain' ||
       this.type.id === 'zaisan' ||
-      this.type.id === 'lightspeed_ant'
+      this.type.id === 'lightspeed_ant' ||
+      this.type.category === 'divine'
         ? 0.16
         : 0.3;
     if (this.muscle < minMuscle) {
@@ -770,6 +778,14 @@ export class Unit {
       }
     } else {
       this.laserActive = false;
+    }
+
+    if (ty.style === 'zeruel_cutter' && this.attackPhase === 'windup') {
+      ctx.combat.emitEffect({
+        kind: 'zeruel_charge',
+        pos: this.chest.pos.clone().addScaledVector(this.forward, 0.3 * this.scale),
+        progress: this.phaseTime / ty.windup,
+      });
     }
 
     if (this.attackPhase === 'windup' && this.phaseTime >= ty.windup) {
@@ -2070,7 +2086,7 @@ export class Unit {
     const pv = pelvis.getVelocity(dt, this.velocity);
     this.updateFrame();
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel';
     const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
     const slopeH = !overChasm && this.context ? this.context.world.getSlopeHeightAt(pelvis.pos.x, pelvis.pos.z) : 0;
     // 足（またはビークルの各接地粒子）が地面・スロープ付近にあれば「支えられている」とみなす
@@ -2112,6 +2128,8 @@ export class Unit {
         targetH = PELVIS_HEIGHT * s * 1.32 + Math.sin(this.walkPhase * 1.6) * 0.15;
       } else if (this.type.id === 'angel_ramiel') {
         targetH = 2.6 + Math.sin(this.walkPhase * 1.2) * 0.12;
+      } else if (this.type.id === 'angel_zeruel') {
+        targetH = PELVIS_HEIGHT * s * 1.05 + Math.sin(this.walkPhase * 0.9) * 0.22;
       } else if (this.type.id === 'angel_sahaquiel') {
         targetH = 3.2 + Math.sin(this.walkPhase * 1.2) * 0.15;
       } else if (this.type.id === 'samurai' && this.attackPhase === 'windup') {
@@ -2247,7 +2265,7 @@ export class Unit {
       lp[i].set(p[0], p[1], p[2]);
     }
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel';
     // 歩行・羽ばたきサイクル
     const w = isFlyer ? 1.0 : clamp(speedH / (1.2 * s), 0, 1);
     const phaseRate = isFlyer ? 9.5 : (Math.PI * 2 * speedH) / (1.0 * s);
@@ -2400,6 +2418,19 @@ export class Unit {
       lp[J.HipR].set(0.22, -0.02, -0.22);
       lp[J.KneeR].set(0.40, -0.18, -0.28 - scurry * 0.22);
       lp[J.FootR].set(0.44, -0.35, -0.34 - scurry * 0.22);
+    } else if (this.type.id === 'angel_zeruel') {
+      // ゼルエル: 神聖な浮遊直立姿勢（脚は緩やかに浮遊揺動、腕は肩から垂れ下がる）
+      const floatWave = Math.sin(this.walkPhase * 0.5);
+      lp[J.HipL].set(-0.14, -0.06, 0.0);
+      lp[J.KneeL].set(-0.15, -0.42, 0.05 + floatWave * 0.03);
+      lp[J.FootL].set(-0.14, -0.78, -0.04 + floatWave * 0.05);
+      lp[J.HipR].set(0.14, -0.06, 0.0);
+      lp[J.KneeR].set(0.15, -0.42, 0.05 - floatWave * 0.03);
+      lp[J.FootR].set(0.14, -0.78, -0.04 - floatWave * 0.05);
+      lp[J.ElbowL].set(-0.48, 0.22, 0.04);
+      lp[J.HandL].set(-0.56, -0.10, 0.08);
+      lp[J.ElbowR].set(0.48, 0.22, 0.04);
+      lp[J.HandR].set(0.56, -0.10, 0.08);
     } else if (isFlyer) {
       // 翼（両腕）の大きな羽ばたきモーション
       const flap = Math.sin(this.walkPhase);
@@ -2686,15 +2717,20 @@ export class Unit {
       let cutRatio = 0.3;
       if (this.type.id === 'angel_ramiel') cutRatio = 0.35;
       else if (this.type.id === 'angel_sachiel') cutRatio = 0.25;
-      else if (this.type.id === 'angel_zeruel') cutRatio = 0.4;
+      else if (this.type.id === 'angel_zeruel') cutRatio = 0.45;
       else if (this.type.id === 'angel_sahaquiel') cutRatio = 0.3;
       amount *= (1 - cutRatio);
+
+      if (this.type.id === 'angel_zeruel') {
+        this.defenseTimer = 0.68;
+      }
 
       if (this.context) {
         this.context.combat.emitEffect({
           kind: 'at_field',
           pos: hitParticle.pos.clone(),
           scale: this.scale,
+          dir: this.forward.clone(),
         });
       }
     }

@@ -69,12 +69,13 @@ export type CombatEffectEvent =
   | { kind: 'satellite_beam'; pos: Vector3; radius: number }
   | { kind: 'robot_punch_fire'; pos: Vector3; dir: Vector3 }
   | { kind: 'robot_punch_impact'; pos: Vector3 }
-  | { kind: 'at_field'; pos: Vector3; scale: number }
+  | { kind: 'at_field'; pos: Vector3; scale: number; dir?: Vector3 }
   | { kind: 'ramiel_charge'; pos: Vector3; progress: number }
   | { kind: 'ramiel_beam'; from: Vector3; to: Vector3 }
   | { kind: 'sachiel_pile'; from: Vector3; to: Vector3 }
   | { kind: 'sachiel_cross'; pos: Vector3 }
-  | { kind: 'zeruel_ribbon'; from: Vector3; dir: Vector3; reach: number }
+  | { kind: 'zeruel_charge'; pos: Vector3; progress: number }
+  | { kind: 'zeruel_ribbon'; from: Vector3; dir: Vector3; reach: number; scale?: number }
   | { kind: 'sahaquiel_bomb'; pos: Vector3 }
   | { kind: 'sezain_ram'; pos: Vector3 }
   | { kind: 'sezain_shot'; from: Vector3; dir: Vector3 }
@@ -1145,18 +1146,20 @@ export class CombatSystem {
   /** 拒絶神ゼルエルの帯状リボンカッター */
   executeZeruelCutter(owner: Unit, forwardDir: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
     const from = owner.chest.pos.clone();
-    const reach = 10.5;
-    this.emitEffect({ kind: 'zeruel_ribbon', from, dir: forwardDir.clone(), reach });
-    // 前方扇状〜直線範囲の敵を高速両断
+    const reach = owner.type.range;
+    this.emitEffect({ kind: 'zeruel_ribbon', from, dir: forwardDir.clone(), reach, scale: owner.scale });
+    // 前方広範囲〜長大な直線範囲の敵を高速両断（上空の飛行ユニットも両断）
+    const fwdH = new Vector3(forwardDir.x, 0, forwardDir.z).normalize();
     for (const u of units) {
       if (!u.alive || u.team === owner.team) continue;
       const diff = new Vector3().subVectors(u.pelvis.pos, from);
       const d = diff.length();
-      if (d <= reach * owner.scale) {
-        const dot = diff.normalize().dot(forwardDir);
-        if (dot > -0.2) {
-          const dmg = (220 + Math.random() * 40) * owner.damageMul;
-          const impulse = forwardDir.clone().multiplyScalar(11.0).add(new Vector3(0, 4.0, 0));
+      if (d <= reach + u.bodyRadius + 0.8) {
+        const diffH = new Vector3(diff.x, 0, diff.z);
+        const dot = diffH.lengthSq() > 1e-6 ? diffH.normalize().dot(fwdH) : 1;
+        if (dot > -0.3 && Math.abs(diff.y) <= 7.0) {
+          const dmg = (420 + Math.random() * 80) * owner.damageMul;
+          const impulse = forwardDir.clone().multiplyScalar(18.0).add(new Vector3(0, 6.0, 0));
           u.takeDamage(dmg, u.chest, impulse, dt, owner);
           this.onHit?.({
             kind: 'slash',
@@ -1175,12 +1178,11 @@ export class CombatSystem {
       if (!f.alive || f.isTerrain || f.team === owner.team) continue;
       const diff = new Vector3().subVectors(f.pos, from);
       if (diff.length() <= reach + f.radius) {
-        if (diff.clone().normalize().dot(forwardDir) > 0.4) {
-          f.takeDamage((130 + Math.random() * 25) * owner.damageMul, owner);
-          this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: 130 });
+        if (diff.clone().normalize().dot(forwardDir) > 0.3) {
+          f.takeDamage((240 + Math.random() * 50) * owner.damageMul, owner);
+          this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: 240 });
         }
       }
     }
   }
-
 }
