@@ -694,37 +694,53 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <circle cx="12" cy="7" r="1.8" fill="#f97316" stroke="#fef08a" stroke-width="0.8"/>
       </svg>`;
     case 'hongon':
-      // ホンゴン: グランドピアノ＋鍵盤＋音符
+      // ホンゴン: 巨大グランドピアノ（跳ね上げ大屋根）＋ブロンド長髪の女性ピアニスト＋舞う音符
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
-        <!-- グランドピアノ屋根＆ボディ -->
-        <path d="M 4,24 L 4,14 Q 8,8 18,10 Q 28,12 30,20 L 30,24 Z" fill="#18181b" stroke="#3f3f46" stroke-width="1"/>
+        <!-- ピアノ跳ね上げ大屋根（斜めに開いたシルエット） -->
+        <path d="M 12,24 L 28,10 L 32,12 L 18,25 Z" fill="#18181b" stroke="#3f3f46" stroke-width="0.8"/>
+        <!-- 黄金の大屋根支え棒 -->
+        <line x1="26" y1="12" x2="26" y2="23" stroke="#f59e0b" stroke-width="1"/>
+        <!-- ピアノ内部の黄金ハープ -->
+        <polygon points="14,24 25,23 23,17 14,19" fill="#d97706" opacity="0.85"/>
+        <line x1="16" y1="20" x2="22" y2="23" stroke="#fef08a" stroke-width="0.8"/>
+        <line x1="18" y1="19" x2="24" y2="22" stroke="#fef08a" stroke-width="0.8"/>
+        <!-- ピアノボディ本体 -->
+        <path d="M 6,24 L 6,19 Q 12,17 26,19 L 28,24 Z" fill="#09090b" stroke="#27272a" stroke-width="1"/>
         <!-- ピアノ脚 -->
-        <line x1="7" y1="24" x2="7" y2="31" stroke="#18181b" stroke-width="2"/>
-        <line x1="27" y1="24" x2="27" y2="31" stroke="#18181b" stroke-width="2"/>
-        <line x1="17" y1="24" x2="17" y2="29" stroke="#18181b" stroke-width="1.5"/>
-        <!-- 白鍵盤 -->
-        <rect x="5" y="21" width="22" height="4" rx="0.5" fill="#f8f9fa"/>
+        <line x1="8" y1="24" x2="8" y2="32" stroke="#09090b" stroke-width="1.8"/>
+        <line x1="26" y1="24" x2="26" y2="32" stroke="#09090b" stroke-width="1.8"/>
+        <circle cx="8" cy="32" r="0.9" fill="#ffd43b"/>
+        <circle cx="26" cy="32" r="0.9" fill="#ffd43b"/>
+        <!-- 白鍵盤＆赤フェルト -->
+        <rect x="7" y="22" width="20" height="0.8" fill="#e11d48"/>
+        <rect x="7" y="23" width="20" height="3" rx="0.3" fill="#ffffff"/>
         <!-- 黒鍵 -->
-        <rect x="8" y="21" width="1.8" height="2.5" fill="#09090b"/>
-        <rect x="11" y="21" width="1.8" height="2.5" fill="#09090b"/>
-        <rect x="15" y="21" width="1.8" height="2.5" fill="#09090b"/>
-        <rect x="18" y="21" width="1.8" height="2.5" fill="#09090b"/>
-        <rect x="21" y="21" width="1.8" height="2.5" fill="#09090b"/>
-        <!-- 譜面台＆楽譜 -->
-        <rect x="13" y="14" width="7" height="6" fill="#ffffff" stroke="#18181b" stroke-width="0.5"/>
-        <line x1="14" y1="16" x2="19" y2="16" stroke="#71717a" stroke-width="0.6"/>
-        <line x1="14" y1="18" x2="19" y2="18" stroke="#71717a" stroke-width="0.6"/>
+        <rect x="9" y="23" width="1.2" height="1.8" fill="#09090b"/>
+        <rect x="11" y="23" width="1.2" height="1.8" fill="#09090b"/>
+        <rect x="14" y="23" width="1.2" height="1.8" fill="#09090b"/>
+        <rect x="16" y="23" width="1.2" height="1.8" fill="#09090b"/>
+        <rect x="18" y="23" width="1.2" height="1.8" fill="#09090b"/>
+        <!-- ブロンド長髪の女性ピアニスト（演奏姿） -->
+        <!-- 長いウェーブ金髪（背中・肩へ流れる髪） -->
+        <path d="M 7,10 Q 5,14 4,21 Q 6,21 7,16 Q 8,22 9,24 Q 10,18 10,12 Z" fill="#f59e0b"/>
+        <path d="M 6,11 Q 5,16 5,20 Q 7,18 8,14 Q 9,19 9,22" fill="#fbbf24"/>
+        <!-- 女性ピアニストの頭部・顔 -->
+        <circle cx="8.5" cy="11.5" r="2.8" fill="#fde2e4"/>
+        <!-- 金髪トップ＆前髪 -->
+        <path d="M 6,11 Q 8.5,8 11,10 Q 9.5,12 8,12 Z" fill="#fef08a"/>
+        <!-- ゴールドティアラ -->
+        <path d="M 8.5,8.8 L 9.5,8.2 L 10.5,9" stroke="#ffd43b" stroke-width="0.8" fill="none"/>
+        <circle cx="9.5" cy="8.2" r="0.5" fill="#38bdf8"/>
+        <!-- ドレス＆伸びる腕（演奏ポーズ） -->
+        <path d="M 6.5,14 Q 5,18 4.5,23 L 9,23 Q 9,18 8.5,14 Z" fill="#f43f5e"/>
+        <line x1="8" y1="14.5" x2="13" y2="19" stroke="#fde2e4" stroke-width="1.2"/>
+        <line x1="13" y1="19" x2="15" y2="22.5" stroke="#ffffff" stroke-width="1.2"/>
         <!-- 舞い上がるカラフルな音符 ♪ ♫ -->
-        <!-- 音符1 (♪ ゴールド) -->
-        <ellipse cx="8" cy="8" rx="2" ry="1.5" fill="#eab308" transform="rotate(-20 8 8)"/>
-        <line x1="9.5" y1="7.5" x2="9.5" y2="2" stroke="#eab308" stroke-width="1.2"/>
-        <path d="M 9.5,2 Q 13,3 12,6" stroke="#eab308" stroke-width="1.2" fill="none"/>
-        <!-- 音符2 (♫ シアン) -->
-        <ellipse cx="23" cy="7" rx="1.8" ry="1.3" fill="#06b6d4" transform="rotate(-20 23 7)"/>
-        <ellipse cx="28" cy="5" rx="1.8" ry="1.3" fill="#06b6d4" transform="rotate(-20 28 5)"/>
-        <line x1="24.5" y1="6.5" x2="24.5" y2="1.5" stroke="#06b6d4" stroke-width="1.2"/>
-        <line x1="29.5" y1="4.5" x2="29.5" y2="0" stroke="#06b6d4" stroke-width="1.2"/>
-        <line x1="24" y1="1.5" x2="30" y2="0" stroke="#06b6d4" stroke-width="1.5"/>
+        <ellipse cx="19" cy="6" rx="1.6" ry="1.2" fill="#ffd43b" transform="rotate(-20 19 6)"/>
+        <line x1="20.3" y1="5.6" x2="20.3" y2="1.5" stroke="#ffd43b" stroke-width="1"/>
+        <path d="M 20.3,1.5 Q 23,2.2 22,4.5" stroke="#ffd43b" stroke-width="1" fill="none"/>
+        <ellipse cx="29" cy="5" rx="1.5" ry="1.1" fill="#38bdf8" transform="rotate(-20 29 5)"/>
+        <line x1="30.2" y1="4.6" x2="30.2" y2="1" stroke="#38bdf8" stroke-width="0.9"/>
       </svg>`;
     case 'zaisan':
       // ザイサン: 三刀流剣士（口と両手の刀）＋深緑の短髪・黒バンダナ＋翡翠のドラゴンオーラ

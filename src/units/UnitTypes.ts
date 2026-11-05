@@ -937,7 +937,7 @@ giant_robot: {
     id: 'hongon',
     name: 'ホンゴン',
     category: 'magic',
-    description: '名器グランドピアノを情熱的に演奏する奇跡のピアニスト。響き渡る旋律と音符の衝撃波が、広範囲の敵軍を圧倒して吹き飛ばす。【特殊効果：遠距離攻撃無効】音楽の旋律結界により、矢・銃弾・爆弾・砲撃・遠距離魔法などのあらゆる遠距離攻撃を完全に無効化する。',
+    description: '名器フルコンサートグランドピアノを情熱的に演奏するブロンドの天才ピアニスト。響き渡る旋律と音符の衝撃波が、広範囲の敵軍を圧倒して吹き飛ばす。【特殊効果：遠距離攻撃無効】音楽の旋律結界により、矢・銃弾・爆弾・砲撃・遠距離魔法などのあらゆる遠距離攻撃を完全に無効化する。',
     cost: 340,
     scale: 1.15,
     massMul: 1.8,
@@ -952,7 +952,7 @@ giant_robot: {
     recover: 0.5,
     cooldown: 1.4,
     strikeImpulse: 0,
-    look: { skin: 0xf0c39c, hair: 0xd0d5dd, helmet: null, hood: null, armor: 0x18181b, beard: null },
+    look: { skin: 0xfde2e4, hair: 0xfbbf24, helmet: null, hood: null, armor: 0x18181b, beard: null },
   },
   zaisan: {
     id: 'zaisan',

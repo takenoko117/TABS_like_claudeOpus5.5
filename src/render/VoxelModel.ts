@@ -263,23 +263,105 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   }
 
   if (type.id === 'hongon') {
-    // ホンゴン: クラシック音楽の巨匠（豊かな銀白ウェーブヘア＋真剣なまなざし）
-    const g = new VoxelGrid(10, 10, 10);
-    const skin = type.look.skin;
-    const maestroHair = 0xd0d5dd;
-    const maestroHairHighlight = 0xf1f5f9;
-    g.fillBox(2, 1, 2, 7, 7, 7, skin);
-    g.fillBox(2, 4, 8, 7, 4, 8, 0x334155);
-    g.set(3, 4, 8, 0x1e293b);
-    g.set(6, 4, 8, 0x1e293b);
-    g.set(3, 3, 8, 0x0f172a);
-    g.set(6, 3, 8, 0x0f172a);
-    g.fillBox(1, 2, 1, 1, 8, 7, maestroHair);
-    g.fillBox(8, 2, 1, 8, 8, 7, maestroHair);
-    g.fillBox(2, 1, 1, 7, 8, 1, maestroHair);
-    g.fillBox(1, 7, 1, 8, 9, 8, maestroHairHighlight);
-    g.fillBox(2, 6, 8, 7, 8, 8, maestroHair);
-    return makeTemplate(g, 0.045, [4.5, 4.0, 4.5]);
+    // ホンゴン: 豊かに波打つブロンドヘアーの長髪が美しい天才女性ピアニスト
+    const g = new VoxelGrid(12, 16, 13);
+    const skin = type.look.skin; // 0xfde2e4
+    const skinShadow = 0xf8d7da;
+    const blush = 0xfca5a5;
+    const lipColor = 0xf43f5e;
+    const eyeWhite = 0xffffff;
+    const eyeIris = 0x0284c7; // 澄んだサファイアブルーの瞳
+    const eyeLight = 0xffffff; // 瞳のキラキラハイライト
+    const eyePupil = 0x0c4a6e;
+    const eyeLash = 0x18181b;
+
+    // 煌びやかなブロンドヘアーの多層カラーパレット
+    const blondHighlight = 0xfef08a; // プラチナゴールドハイライト
+    const blondMain = 0xfbbf24;      // 輝くゴールドブロンド
+    const blondMid = 0xf59e0b;       // 蜂蜜ハニーブロンド
+    const blondShadow = 0xd97706;    // アンバーシャドウ
+
+    // ゴールドティアラ＆イヤリング＆宝石
+    const tiaraGold = 0xffd43b;
+    const tiaraGem = 0x38bdf8; // 額中央のサファイアジュエル
+    const pearlEarring = 0xf8f9fa;
+
+    // 1. 顔・頭部ベース（x=3..8, y=3..10, z=4..9）
+    g.fillBox(3, 3, 4, 8, 10, 9, skin);
+    g.fillBox(4, 2, 5, 7, 2, 7, skinShadow); // 顎・首元
+
+    // 2. 表情（z=9 が顔正面）
+    // 瞳（x=4, x=7）＋きらめくアイライト
+    g.set(4, 7, 9, eyeWhite);
+    g.set(5, 7, 9, eyeIris);
+    g.set(5, 6, 9, eyePupil);
+    g.set(4, 8, 9, eyeLight); // 左目ハイライト
+    g.set(7, 7, 9, eyeIris);
+    g.set(6, 7, 9, eyeWhite);
+    g.set(6, 6, 9, eyePupil);
+    g.set(7, 8, 9, eyeLight); // 右目ハイライト
+
+    // 上まつげライン
+    g.fillBox(4, 8, 9, 5, 8, 9, eyeLash);
+    g.fillBox(6, 8, 9, 7, 8, 9, eyeLash);
+    g.set(3, 8, 9, eyeLash); // 目尻の跳ね上げまつげ
+    g.set(8, 8, 9, eyeLash);
+
+    // チーク（ほんのり桜色）
+    g.set(3, 5, 9, blush);
+    g.set(8, 5, 9, blush);
+    // リップ（上品なローズピンク）
+    g.fillBox(5, 4, 9, 6, 4, 9, lipColor);
+
+    // 左右耳元の揺れるパールイヤリング
+    g.set(2, 5, 6, tiaraGold);
+    g.set(2, 4, 6, pearlEarring);
+    g.set(9, 5, 6, tiaraGold);
+    g.set(9, 4, 6, pearlEarring);
+
+    // 3. ブロンドヘアー
+    // 頭頂部（y=11..13）ふんわり立ち上がるリッチなボリューム
+    g.fillBox(2, 11, 2, 9, 12, 10, blondMain);
+    g.fillBox(3, 13, 3, 8, 13, 9, blondHighlight);
+    g.fillBox(4, 14, 4, 7, 14, 8, blondHighlight);
+
+    // 前髪（額の上 y=9..10, z=10）自然な毛流れ
+    g.fillBox(3, 9, 10, 8, 10, 10, blondMain);
+    g.set(5, 9, 10, blondHighlight);
+    g.set(6, 10, 10, blondHighlight);
+    g.set(3, 8, 10, blondMid); // サイドへ流れる前髪
+    g.set(8, 8, 10, blondMid);
+    g.set(4, 8, 10, blondHighlight);
+
+    // 左右サイドヘア（x=1..2, x=9..10, y=2..12）
+    g.fillBox(1, 4, 3, 2, 11, 9, blondMain);
+    g.fillBox(9, 4, 3, 10, 11, 9, blondMain);
+    // 胸元・鎖骨へ優雅に流れるフロントサイド毛束（y=0..3, z=6..8）
+    g.fillBox(2, 0, 7, 2, 3, 8, blondMain);
+    g.fillBox(9, 0, 7, 9, 3, 8, blondMain);
+    g.set(2, 1, 8, blondHighlight);
+    g.set(9, 1, 8, blondHighlight);
+    g.set(2, 0, 7, blondMid);
+    g.set(9, 0, 7, blondMid);
+
+    // 後頭部〜背中へと豊かに流れ落ちるウェーブ長髪（z=0..3, y=0..12）
+    g.fillBox(2, 5, 1, 9, 11, 3, blondMain);
+    g.fillBox(2, 2, 0, 9, 4, 2, blondMain);
+    g.fillBox(3, 0, 0, 8, 1, 2, blondMid); // 毛先ウェーブ
+    // ハイライトとシャドウの筋（立体的な美しい毛流れ）
+    g.fillBox(4, 2, 1, 5, 8, 1, blondHighlight);
+    g.fillBox(6, 2, 1, 7, 8, 1, blondHighlight);
+    g.fillBox(2, 3, 1, 2, 7, 1, blondShadow);
+    g.fillBox(9, 3, 1, 9, 7, 1, blondShadow);
+
+    // 4. ゴールドティアラ（額の上の装飾）
+    g.fillBox(3, 11, 10, 8, 11, 10, tiaraGold);
+    g.set(5, 12, 10, tiaraGold);
+    g.set(6, 12, 10, tiaraGold);
+    g.set(5, 12, 11, tiaraGem); // 額中央の輝く宝石
+    g.set(6, 12, 11, tiaraGem);
+
+    return makeTemplate(g, 0.040, [5.5, 6.0, 5.5]);
   }
 
   if (type.id === 'zaisan') {
@@ -1118,51 +1200,203 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   }
 
   if (type.id === 'hongon') {
-    // ホンゴン: 名器黒塗りグランドピアノ＋鍵盤＋譜面台＋タキシードのピアニスト
-    const g = new VoxelGrid(18, 18, 24);
-    const pianoBlack = 0x111113;
-    const pianoLid = 0x18181b;
-    const whiteKey = 0xf8f9fa;
-    const blackKey = 0x09090b;
-    const sheetPaper = 0xffffff;
-    const goldPedal = 0xd4af37;
+    // ホンゴン: 巨大な名器フルコンサートグランドピアノ＋演奏会用イブニングドレスの女性ピアニスト
+    const g = new VoxelGrid(30, 28, 46);
 
-    // ピアノ本体
-    g.fillBox(1, 4, 10, 16, 10, 22, pianoBlack);
-    g.fillBox(1, 10, 10, 16, 11, 22, pianoLid);
-    g.fillBox(13, 4, 18, 16, 10, 22, 0); // グランドピアノカーブ
-    // 脚
-    g.fillBox(2, 0, 11, 3, 3, 12, pianoBlack);
-    g.fillBox(14, 0, 11, 15, 3, 12, pianoBlack);
-    g.fillBox(3, 0, 20, 4, 3, 21, pianoBlack);
-    g.fillBox(8, 0, 11, 9, 1, 12, goldPedal);
+    // ピアノ用カラーパレット
+    const pianoBlack = 0x0c0c0e;     // 最上級ピアノブラック（漆黒）
+    const pianoRim = 0x1f1f24;       // 側板エッジライン
+    const soundboardWood = 0xc89d66; // スプルース響板（明るい木目）
+    const castIronPlate = 0xd4af37;  // 黄金の鋳鉄フレーム（ハープ）
+    const castIronGlow = 0xf59f00;   // フレームの彫刻・リブ
+    const stringSilver = 0xcfd4dc;   // ピアノ弦
+    const whiteKey = 0xffffff;       // 象牙白鍵
+    const blackKey = 0x09090b;       // 黒檀黒鍵
+    const redFelt = 0xd90429;        // 鍵盤奥の深紅フェルト
+    const sheetPaper = 0xffffff;     // 楽譜用紙
+    const noteBlack = 0x18181b;      // 音符
+    const goldPedal = 0xffd43b;      // 真鍮ペダル＆キャスター
+    const stoolCushion = 0x1e1e24;   // ベルベットスツール
 
-    // 鍵盤
-    g.fillBox(2, 7, 8, 15, 7, 10, whiteKey);
-    for (let k = 3; k <= 14; k++) {
-      if (k % 7 !== 2 && k % 7 !== 6) {
-        g.set(k, 8, 9, blackKey);
-        g.set(k, 8, 10, blackKey);
-      }
+    // ピアニスト用カラーパレット
+    const skin = look.skin;          // 0xfde2e4
+    const dressColor = tc.shirt;     // 陣営カラーのサテンドレス
+    const dressAccent = tc.accent;   // ドレスのフリル・トリミング
+    const pearl = 0xf8f9fa;          // 真珠のネックレス
+    const goldJewelry = 0xfcd34d;    // ゴールドアクセサリー
+
+    // -------------------------------------------------------------
+    // 1. 巨大グランドピアノの本体（側板リム・底板・響板）
+    // -------------------------------------------------------------
+    // 底板
+    g.fillBox(4, 5, 17, 25, 5, 42, pianoBlack);
+    // 側板リム（左側はストレートライン x=3..4, z=13..42）
+    g.fillBox(3, 6, 13, 4, 11, 42, pianoBlack);
+    g.fillBox(3, 11, 13, 4, 11, 42, pianoRim);
+
+    // 側板リム（右側はグランドピアノ特有の流麗なS字カーブ）
+    // z=13..22 はストレート x=25..26
+    g.fillBox(25, 6, 13, 26, 11, 22, pianoBlack);
+    g.fillBox(25, 11, 13, 26, 11, 22, pianoRim);
+    // z=23..32 は緩やかに内側へ湾曲（くびれカーブ x=21..24）
+    for (let z = 23; z <= 32; z++) {
+      const curveX = Math.round(25 - (z - 22) * 0.45);
+      g.fillBox(curveX, 6, z, curveX + 1, 11, z, pianoBlack);
+      g.set(curveX + 1, 11, z, pianoRim);
+      // 内側の底板
+      g.fillBox(4, 5, z, curveX, 5, z, pianoBlack);
+    }
+    // z=33..43 はテールへの流線型ラウンド絞り込み（x=4..21 → x=4..12）
+    for (let z = 33; z <= 42; z++) {
+      const tailX = Math.round(20 - (z - 32) * 1.0);
+      g.fillBox(tailX, 6, z, tailX + 1, 11, z, pianoBlack);
+      g.set(tailX + 1, 11, z, pianoRim);
+      g.fillBox(4, 5, z, tailX, 5, z, pianoBlack);
+    }
+    // テールエンド（丸みを帯びた終端 z=42..43, x=4..10）
+    g.fillBox(4, 6, 42, 10, 11, 43, pianoBlack);
+    g.fillBox(4, 11, 42, 10, 11, 43, pianoRim);
+
+    // 響板（Soundboard: スプルース材の温かな木目）
+    g.fillBox(5, 6, 18, 23, 6, 23, soundboardWood);
+    for (let z = 24; z <= 40; z++) {
+      const maxX = Math.round(23 - (z - 23) * 0.7);
+      if (maxX >= 5) g.fillBox(5, 6, z, maxX, 6, z, soundboardWood);
     }
 
-    // 譜面台＆楽譜
-    g.fillBox(5, 11, 11, 12, 11, 12, pianoBlack);
-    g.fillBox(6, 12, 11, 11, 15, 11, sheetPaper);
-    g.set(7, 13, 11, 0x18181b);
-    g.set(9, 14, 11, 0x18181b);
-    g.set(10, 13, 11, 0x18181b);
+    // 内部の鋳鉄フレーム（ハープ / 金色フレーム）
+    // 外周リブ
+    g.fillBox(6, 7, 20, 7, 7, 38, castIronPlate);
+    g.fillBox(14, 7, 22, 15, 7, 36, castIronPlate);
+    g.fillBox(20, 7, 20, 21, 7, 28, castIronPlate);
+    // 斜めリブクロス
+    for (let i = 0; i < 9; i++) {
+      g.set(8 + i, 7, 22 + i, castIronGlow);
+      g.set(13 + i, 7, 20 + i, castIronGlow);
+    }
+    // 弦（ストリングス: シルバーライン）
+    for (let z = 21; z <= 36; z += 2) {
+      g.fillBox(8, 7, z, 13, 7, z, stringSilver);
+      g.fillBox(16, 7, Math.min(28, z), 19, 7, Math.min(28, z), stringSilver);
+    }
 
-    // ピアニスト
-    g.fillBox(5, 3, 3, 12, 5, 7, 0x27272a); // スツール
-    g.fillBox(6, 0, 4, 7, 2, 5, 0x18181b);
-    g.fillBox(10, 0, 4, 11, 2, 5, 0x18181b);
-    g.fillBox(6, 6, 4, 11, 15, 7, 0x18181b); // 胴体タキシード
-    g.fillBox(7, 8, 7, 10, 14, 7, 0xffffff); // 白シャツ
-    g.fillBox(8, 13, 8, 9, 14, 8, tc.shirt); // 蝶ネクタイ
-    g.fillBox(6, 3, 3, 11, 7, 3, 0x18181b); // テールコート
+    // -------------------------------------------------------------
+    // 2. 跳ね上げられた大屋根（Open Grand Lid & 突上棒）
+    // -------------------------------------------------------------
+    // ピアノの右上が斜めに持ち上がり、内部の金色のハープが美しく露出！
+    // 左ヒンジ x=4 を軸として、右側が y=12 から y=24 へ斜めに跳ね上がる
+    for (let z = 18; z <= 41; z++) {
+      const maxLidX = Math.round(25 - (z - 18) * 0.55);
+      for (let x = 4; x <= Math.max(5, maxLidX); x++) {
+        // x に応じて高さ y が上がる（傾斜した屋根）
+        const lidY = Math.min(24, Math.round(11 + (x - 4) * 0.65));
+        g.set(x, lidY, z, pianoBlack);
+        if (x === maxLidX || z === 41) g.set(x, lidY, z, pianoRim);
+      }
+    }
+    // 金色の突上棒（Lid Prop）: 本体右側から大屋根を支える
+    g.fillBox(22, 11, 28, 22, 21, 28, castIronPlate);
 
-    return makeTemplate(g, 0.045, [8.5, 5.0, 7.5]);
+    // -------------------------------------------------------------
+    // 3. 鍵盤部（白鍵・黒鍵の美しさと深紅フェルト・ネームロゴ）
+    // -------------------------------------------------------------
+    // キーベッド（鍵盤床）
+    g.fillBox(4, 7, 13, 25, 8, 16, pianoBlack);
+    // 鍵盤奥の深紅フェルトクロス
+    g.fillBox(5, 9, 17, 24, 9, 17, redFelt);
+
+    // 鍵盤（白鍵 x=5..24, y=9, z=14..16）
+    g.fillBox(5, 9, 14, 24, 9, 16, whiteKey);
+    g.fillBox(5, 8, 14, 24, 8, 14, whiteKey); // 鍵盤フロントエッジ
+    // 黒鍵（立体的な黒檀キー）
+    for (let k = 6; k <= 23; k++) {
+      const mod = k % 7;
+      if (mod !== 2 && mod !== 6) {
+        g.fillBox(k, 10, 15, k, 10, 16, blackKey);
+      }
+    }
+    // 鍵盤蓋の金文字ネームロゴ（ゴールドプレート）
+    g.fillBox(12, 10, 17, 17, 10, 17, castIronPlate);
+
+    // -------------------------------------------------------------
+    // 4. 譜面台 & 開かれた楽譜
+    // -------------------------------------------------------------
+    // 譜面台フレーム
+    g.fillBox(10, 11, 17, 19, 12, 18, pianoBlack);
+    g.fillBox(11, 13, 18, 18, 17, 18, sheetPaper); // 開かれた楽譜
+    g.fillBox(14, 13, 18, 15, 17, 18, 0xe2e8f0);   // 楽譜の中央折り目（影）
+    g.fillBox(10, 13, 18, 10, 17, 18, pianoBlack); // 譜面台サイド
+    g.fillBox(19, 13, 18, 19, 17, 18, pianoBlack);
+    // 楽譜の五線譜＆音符ディテール
+    g.fillBox(12, 14, 18, 14, 14, 18, noteBlack);
+    g.fillBox(16, 15, 18, 17, 15, 18, noteBlack);
+    g.set(13, 16, 18, noteBlack);
+    g.set(16, 16, 18, noteBlack);
+
+    // -------------------------------------------------------------
+    // 5. ピアノ脚（3本の重厚な脚＋キャスター）＆ ペダル
+    // -------------------------------------------------------------
+    // 左前脚（x=5..6, z=15..16, y=0..5）
+    g.fillBox(5, 1, 15, 6, 5, 16, pianoBlack);
+    g.fillBox(5, 0, 15, 6, 0, 16, goldPedal); // 真鍮キャスター
+    // 右前脚（x=23..24, z=15..16, y=0..5）
+    g.fillBox(23, 1, 15, 24, 5, 16, pianoBlack);
+    g.fillBox(23, 0, 15, 24, 0, 16, goldPedal);
+    // 後部脚（x=6..7, z=39..40, y=0..5）
+    g.fillBox(6, 1, 39, 7, 5, 40, pianoBlack);
+    g.fillBox(6, 0, 39, 7, 0, 40, goldPedal);
+
+    // ペダルライラ（中央のペダル柱 & 3本の黄金ペダル）
+    g.fillBox(13, 1, 16, 16, 5, 16, pianoBlack);
+    g.set(13, 0, 16, goldPedal); // ソフトペダル
+    g.set(14, 0, 16, goldPedal); // ソステヌートペダル
+    g.set(15, 0, 16, goldPedal); // ダンパーペダル
+
+    // -------------------------------------------------------------
+    // 6. ピアニストのスツール（演奏用ピアノ椅子）
+    // -------------------------------------------------------------
+    // クッション座面（x=10..19, y=5..6, z=5..9）
+    g.fillBox(10, 5, 5, 19, 6, 9, stoolCushion);
+    g.fillBox(9, 5, 7, 9, 6, 7, goldPedal);   // 昇降調整ノブ（左）
+    g.fillBox(20, 5, 7, 20, 6, 7, goldPedal); // 昇降調整ノブ（右）
+    // スツール脚（4本脚）
+    g.fillBox(10, 0, 5, 11, 4, 5, pianoBlack);
+    g.fillBox(18, 0, 5, 19, 4, 5, pianoBlack);
+    g.fillBox(10, 0, 9, 11, 4, 9, pianoBlack);
+    g.fillBox(18, 0, 9, 19, 4, 9, pianoBlack);
+
+    // -------------------------------------------------------------
+    // 7. ドレス姿の女性ピアニスト（上半身・ドレス・美肌）
+    // -------------------------------------------------------------
+    // 座る位置: x=12..17, z=6..8, y=7..15
+    // 下半身・ドレスのスカート広がり（スツールから足元・鍵盤下へ）
+    g.fillBox(11, 5, 5, 18, 7, 9, dressColor);
+    g.fillBox(10, 4, 4, 19, 5, 9, dressColor);
+    g.fillBox(12, 1, 9, 17, 4, 11, dressColor); // 前面スカートのドレープ
+    g.fillBox(11, 4, 4, 18, 4, 5, dressAccent); // スカート裾フリル
+
+    // ウエスト & コルセット（y=7..9, x=12..17, z=6..8）
+    g.fillBox(12, 7, 6, 17, 9, 8, dressColor);
+    g.fillBox(13, 7, 8, 16, 9, 8, dressAccent); // コルセットリボン装飾
+
+    // 胸元ビスチェ & デコルテ（y=10..15）
+    // バスト・ビスチェ（ドレス生地）
+    g.fillBox(12, 10, 6, 17, 12, 8, dressColor);
+    g.fillBox(13, 12, 8, 16, 12, 9, dressAccent); // ビスチェトップライン
+
+    // デコルテ・胸元・首元の透き通るような美肌
+    g.fillBox(13, 13, 7, 16, 15, 8, skin);
+    g.fillBox(13, 13, 6, 16, 14, 6, skin); // 背中開き
+    // 真珠のネックレス
+    g.fillBox(13, 13, 8, 16, 13, 8, pearl);
+    g.set(14, 12, 8, goldJewelry); // ネックレスのペンダントトップ
+
+    // 背中の優美なドレスビッグリボン
+    g.fillBox(13, 8, 5, 16, 9, 5, dressAccent);
+    g.fillBox(12, 6, 4, 13, 8, 5, dressAccent); // リボンの垂れ布
+    g.fillBox(16, 6, 4, 17, 8, 5, dressAccent);
+
+    return makeTemplate(g, 0.042, [14.5, 6.0, 6.5]);
   }
 
   // 鎧戦象の巨躯と鞍
@@ -2057,11 +2291,15 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     thigh = buildLimbTemplate(3, 3, 3, 0x1e3621, 0x1e3621, 0.3);
     shin = buildLimbTemplate(3, 3, 3, 0x1e3621, 0x1e3621, 0.3);
   } else if (type.id === 'hongon') {
-    // ホンゴン: ピアニストのタキシード腕とスラックス脚
-    upperArm = buildLimbTemplate(3, 7, 3, 0x18181b, 0x18181b, 0.29);
-    forearm = buildLimbTemplate(3, 6, 3, 0xffffff, 0x18181b, 0.26);
-    thigh = buildLimbTemplate(3, 7, 3, 0x18181b, 0x18181b, 0.38);
-    shin = buildLimbTemplate(3, 7, 3, 0x09090b, 0x18181b, 0.38);
+    // ホンゴン: 女性ピアニストの優美な腕（オフショルダー袖＋ロンググローブ）としなやかな美脚（ヒールパンプス）
+    // 上腕: ドレスのオフショルダー袖（チームカラー）＋美肌
+    upperArm = buildLimbTemplate(3, 7, 3, type.look.skin, tc.shirt, 0.27);
+    // 前腕: 白いシルクのロングオペラグローブ＋手首のゴールドブレスレット
+    forearm = buildLimbTemplate(3, 6, 3, 0xf8f9fa, 0xd4af37, 0.25);
+    // 大腿: ドレスのドレープに包まれたしなやかな脚部
+    thigh = buildLimbTemplate(3, 7, 3, tc.shirt, tc.shirt, 0.35);
+    // 脛・足先: ドレスの裾から覗く美脚＋エレガントな黒のハイヒール・パンプス
+    shin = buildLimbTemplate(3, 7, 3, 0x18181b, type.look.skin, 0.35);
   } else if (type.id === 'zaisan') {
     // ザイサン: 羽織の袖・手甲と黒袴
     upperArm = buildLimbTemplate(3, 7, 3, type.look.skin, 0x14532d, 0.29);
