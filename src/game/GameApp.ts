@@ -870,16 +870,19 @@ export class GameApp {
     ARCADE_STAGES.forEach((st, idx) => {
       const stars = this.arcadeSave.clearedStars[st.stageNumber] ?? 0;
       const btn = document.createElement('button');
+      const isHazard = Boolean(st.hazard);
       btn.className =
         'stage-btn' +
+        (isHazard ? ' hazard-stage' : '') +
         (idx === this.currentStageIndex ? ' active' : '') +
         (stars > 0 ? ' cleared' : '');
       const starStr = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+      const hazardIcon = isHazard ? `<span class="stage-hazard-icon" title="状態異常: ${st.hazard!.name}">⚠️</span>` : '';
       btn.innerHTML = `
-        <span>${st.stageNumber}面</span>
+        <span>${hazardIcon}${st.stageNumber}面</span>
         <span class="stage-stars">${starStr}</span>
       `;
-      btn.title = `${st.name} (予算 ${st.budget} pt)`;
+      btn.title = `${st.name} (予算 ${st.budget} pt)${isHazard ? ` 【${st.hazard!.name}】` : ''}`;
       btn.addEventListener('click', () => {
         this.loadArcadeStage(idx);
       });
@@ -944,6 +947,18 @@ export class GameApp {
             .join('')
         : `<span class="reward-chip">🏆 最終決戦ステージ</span>`;
 
+    const hazardHtml = st.hazard
+      ? `<div class="brief-hazard-card">
+          <div class="hazard-card-header">
+            <span class="hazard-pulse-icon">⚠️</span>
+            <span class="hazard-card-title">【ステージ状態異常】${st.hazard.name}</span>
+            <span class="hazard-badge-pill">${st.hazard.badge}</span>
+          </div>
+          <div class="hazard-card-desc">${st.hazard.description}</div>
+          <div class="hazard-card-summary">💡 <b>要警戒</b>: ${st.hazard.effectSummary}</div>
+        </div>`
+      : '';
+
     const specialRuleHtml = st.specialRules
       ? `<div class="brief-special-rule">
           <div class="special-rule-title">⚡ 限定ルール: ${st.specialRules.title}</div>
@@ -954,6 +969,7 @@ export class GameApp {
     el.innerHTML = `
       <div class="brief-title">${st.name}</div>
       <div class="brief-sub">${st.subtitle}</div>
+      ${hazardHtml}
       ${specialRuleHtml}
       <div class="brief-desc">${st.description}</div>
       <div class="brief-hint">${st.hint}</div>
@@ -1284,6 +1300,7 @@ export class GameApp {
     });
 
     dom.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch' && this.view.isMultiTouchInvolved()) return;
       const moved = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
       if (moved > 8 || this.mode !== 'placement') return;
 
@@ -1601,8 +1618,10 @@ export class GameApp {
     this.battle.timeLimitSeconds = rules?.timeLimitSeconds ?? null;
     this.battle.baseDamageMul = rules?.damageMultiplier ?? 1.0;
     this.battle.baseSpeedMul = rules?.speedMultiplier ?? 1.0;
+    this.battle.hazardConfig = st.hazard ?? null;
 
     this.view.setStageTerrain(st.terrain, true);
+    this.view.setStageTheme(st.visualTheme);
 
     // 敵（青軍）の固定配置を生成
     this.savedLineup = st.enemies.map((e) => ({
@@ -1647,7 +1666,9 @@ export class GameApp {
     this.battle.timeLimitSeconds = null;
     this.battle.baseDamageMul = 1.0;
     this.battle.baseSpeedMul = 1.0;
+    this.battle.hazardConfig = null;
     this.view.setStageTerrain(null, false);
+    this.view.setStageTheme(undefined);
     this.savedLineup = preset.units.map((u) => ({ ...u }));
     for (const item of this.savedLineup) {
       if (item.facilityId) {
@@ -1790,9 +1811,13 @@ export class GameApp {
       this.elPhaseBadge.className = 'phase-badge placement';
       this.elUnitBar.classList.remove('disabled');
     } else {
-      this.elPhaseBadge.textContent =
+      const hazardStr =
+        this.playStyle === 'arcade' && this.currentStage.hazard
+          ? ` ｜ <span class="hud-hazard-badge">${this.currentStage.hazard.badge} 発動中</span>`
+          : '';
+      this.elPhaseBadge.innerHTML =
         this.playStyle === 'arcade'
-          ? `戦闘中 - ${this.currentStage.name}`
+          ? `戦闘中 - ${this.currentStage.name}${hazardStr}`
           : this.playStyle === 'versus'
             ? `⚔ 友人対戦 (${this.versus.playerCount}人バトル) - 戦闘中！`
             : '戦闘中';
@@ -1907,9 +1932,16 @@ export class GameApp {
       `;
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
         this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(this.currentStage, r.cost);
-      } else if (this.mode === 'battle' && this.battle.timeLimitSeconds !== null) {
-        const remain = Math.max(0, this.battle.timeLimitSeconds - this.battle.time);
-        this.elPhaseBadge.innerHTML = `戦闘中 - ${this.currentStage.name} ｜ ⏱ 残り時間: <b>${remain.toFixed(1)}s</b>`;
+      } else if (this.mode === 'battle') {
+        const hazardStr = this.currentStage.hazard
+          ? ` ｜ <span class="hud-hazard-badge">${this.currentStage.hazard.badge} 発動中</span>`
+          : '';
+        if (this.battle.timeLimitSeconds !== null) {
+          const remain = Math.max(0, this.battle.timeLimitSeconds - this.battle.time);
+          this.elPhaseBadge.innerHTML = `戦闘中 - ${this.currentStage.name} ｜ ⏱ 残り時間: <b>${remain.toFixed(1)}s</b>${hazardStr}`;
+        } else {
+          this.elPhaseBadge.innerHTML = `戦闘中 - ${this.currentStage.name}${hazardStr}`;
+        }
       }
     } else {
       this.elRedStats.innerHTML = `

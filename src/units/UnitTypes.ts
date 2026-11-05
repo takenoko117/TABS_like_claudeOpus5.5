@@ -41,7 +41,8 @@ export type AttackStyle =
   | 'dual_minigun'
   | 'eruption'
   | 'piano_performance'
-  | 'dragon_twister';
+  | 'dragon_twister'
+  | 'psychic';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical' | 'divine';
@@ -120,7 +121,8 @@ export type UnitTypeId =
   | 'yamamuron'
   | 'hongon'
   | 'zaisan'
-  | 'lightspeed_ant';
+  | 'lightspeed_ant'
+  | 'deoxys';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -1007,6 +1009,27 @@ giant_robot: {
     strikeImpulse: 9.0,
     look: { skin: 0x1e293b, hair: null, helmet: 0x38bdf8, hood: null, armor: 0x0f172a, beard: null },
   },
+  deoxys: {
+    id: 'deoxys',
+    name: 'デオキシス',
+    category: 'mythical',
+    description: '宇宙ウイルスから変異したDNAポケモン。強大な念力「サイコキネシス」で敵を捕らえて浮かせ、吹き飛ばして粉砕する。敵に接近されると「テレポート」で瞬時に安全圏へ跳躍して間合いを支配する。',
+    cost: 480,
+    scale: 1.22,
+    massMul: 1.15,
+    hp: 480,
+    speed: 2.3,
+    style: 'psychic',
+    weapon: null,
+    projectile: null,
+    range: 16.5,
+    windup: 0.38,
+    strike: 0.95,
+    recover: 0.35,
+    cooldown: 1.0,
+    strikeImpulse: 0,
+    look: { skin: 0xee5a24, hair: null, helmet: null, hood: null, armor: 0x00d2d3, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -1044,4 +1067,5 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.hongon,
   UNIT_TYPES.zaisan,
   UNIT_TYPES.lightspeed_ant,
+  UNIT_TYPES.deoxys,
 ];

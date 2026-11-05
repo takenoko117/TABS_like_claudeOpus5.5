@@ -29,7 +29,7 @@ import {
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
 import { isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
-import { DEFAULT_RED_ZONES, type PlacementZone, type StageTerrainConfig } from '../game/ArcadeStages';
+import { DEFAULT_RED_ZONES, type PlacementZone, type StageTerrainConfig, type StageVisualTheme } from '../game/ArcadeStages';
 import type { Battle } from '../game/Battle';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
@@ -126,7 +126,7 @@ export class SceneView {
   private ghostGroup: Group | null = null;
   private ghostKey = '';
 
-  // カメラ制御（オービット＋WASD 平行移動＋スマホ用タッチ＆ピンチズーム）
+  // カメラ制御（オービット＋WASD 平行移動＋スマホ用タッチ＆2本指スワイプ平行移動＆ピンチズーム）
   private readonly camTarget = new Vector3(0, 0.8, 0);
   private camYaw = 0;
   private camPitch = 0.58;
@@ -139,12 +139,23 @@ export class SceneView {
   private lastPointerY = 0;
   private readonly activeTouches = new Map<number, { x: number; y: number }>();
   private lastPinchDist = 0;
+  private lastTwoFingerMidX = 0;
+  private lastTwoFingerMidY = 0;
+  private hadMultiTouch = false;
   private readonly keys = new Set<string>();
 
   // 地面とのレイキャスト
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
   private readonly ndc = new Vector2();
+
+  // ステージ固有ビジュアルテーマ（空・フォグ・地面・ライト・環境パーティクル）
+  private currentVisualTheme: StageVisualTheme | null = null;
+  private ambientWeatherTimer = 0;
+  private dirLight!: DirectionalLight;
+  private hemiLight!: HemisphereLight;
+  private groundCanvas!: HTMLCanvasElement;
+  private groundTex!: CanvasTexture;
 
   constructor(container: HTMLElement) {
     this.scene.background = new Color(0x87b8de);
@@ -190,50 +201,43 @@ export class SceneView {
   }
 
   private setupLights(): void {
-    const hemi = new HemisphereLight(0xdff0ff, 0x5d7a47, 0.85);
-    this.scene.add(hemi);
+    this.hemiLight = new HemisphereLight(0xdff0ff, 0x5d7a47, 0.85);
+    this.scene.add(this.hemiLight);
 
     const amb = new AmbientLight(0xffffff, 0.25);
     this.scene.add(amb);
 
-    const dir = new DirectionalLight(0xfff6e5, 1.35);
-    dir.position.set(18, 32, 20);
-    dir.castShadow = true;
-    dir.shadow.mapSize.set(2048, 2048);
+    this.dirLight = new DirectionalLight(0xfff6e5, 1.35);
+    this.dirLight.position.set(18, 32, 20);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.set(2048, 2048);
     const d = 28;
-    dir.shadow.camera.left = -d;
-    dir.shadow.camera.right = d;
-    dir.shadow.camera.top = d;
-    dir.shadow.camera.bottom = -d;
-    dir.shadow.camera.near = 2;
-    dir.shadow.camera.far = 80;
-    dir.shadow.bias = -0.0005;
-    this.scene.add(dir);
+    this.dirLight.shadow.camera.left = -d;
+    this.dirLight.shadow.camera.right = d;
+    this.dirLight.shadow.camera.top = d;
+    this.dirLight.shadow.camera.bottom = -d;
+    this.dirLight.shadow.camera.near = 2;
+    this.dirLight.shadow.camera.far = 80;
+    this.dirLight.shadow.bias = -0.0005;
+    this.scene.add(this.dirLight);
   }
 
   private setupEnvironment(): void {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-    for (let y = 0; y < 8; y++) {
-      for (let x = 0; x < 8; x++) {
-        const even = (x + y) % 2 === 0;
-        ctx.fillStyle = even ? '#6ea84f' : '#659c47';
-        ctx.fillRect(x * 8, y * 8, 8, 8);
-      }
-    }
-    const tex = new CanvasTexture(canvas);
-    tex.magFilter = NearestFilter;
-    tex.minFilter = NearestFilter;
-    tex.wrapS = RepeatWrapping;
-    tex.wrapT = RepeatWrapping;
-    tex.repeat.set(30, 30);
-    tex.colorSpace = SRGBColorSpace;
+    this.groundCanvas = document.createElement('canvas');
+    this.groundCanvas.width = 64;
+    this.groundCanvas.height = 64;
+    this.groundTex = new CanvasTexture(this.groundCanvas);
+    this.groundTex.magFilter = NearestFilter;
+    this.groundTex.minFilter = NearestFilter;
+    this.groundTex.wrapS = RepeatWrapping;
+    this.groundTex.wrapT = RepeatWrapping;
+    this.groundTex.repeat.set(30, 30);
+    this.groundTex.colorSpace = SRGBColorSpace;
+    this.drawGroundTexture();
 
     const groundGeo = new PlaneGeometry(120, 120);
     groundGeo.rotateX(-Math.PI / 2);
-    const groundMat = new MeshLambertMaterial({ map: tex });
+    const groundMat = new MeshLambertMaterial({ map: this.groundTex });
     const ground = new Mesh(groundGeo, groundMat);
     ground.receiveShadow = true;
     this.scene.add(ground);
@@ -308,6 +312,126 @@ export class SceneView {
     makeBorder(1);
     this.scene.add(this.dividerGroup);
     this.scene.add(this.terrainGroup);
+  }
+
+  /** ステージ固有のビジュアル環境（背景色・フォグ・床テクスチャ・環境光・天候）を適用する */
+  setStageTheme(theme?: StageVisualTheme): void {
+    this.currentVisualTheme = theme ?? null;
+    const sky = theme ? theme.skyColor : 0x87b8de;
+    const fog = theme ? theme.fogColor : 0x87b8de;
+    const density = theme?.fogDensity ?? 0.0085;
+
+    this.scene.background = new Color(sky);
+    this.scene.fog = new FogExp2(fog, density);
+
+    if (this.dirLight) {
+      this.dirLight.color.setHex(theme?.lightColor ?? 0xfff6e5);
+      this.dirLight.intensity = theme?.lightIntensity ?? 1.35;
+    }
+    if (this.hemiLight) {
+      this.hemiLight.color.setHex(theme?.hemiSkyColor ?? 0xdff0ff);
+      this.hemiLight.groundColor.setHex(theme?.hemiGroundColor ?? 0x5d7a47);
+    }
+
+    this.drawGroundTexture(theme);
+  }
+
+  private drawGroundTexture(theme?: StageVisualTheme): void {
+    if (!this.groundCanvas || !this.groundTex) return;
+    const ctx = this.groundCanvas.getContext('2d')!;
+    const c1 = theme?.groundColor1 ?? '#6ea84f';
+    const c2 = theme?.groundColor2 ?? '#659c47';
+    const pType = theme?.particleType;
+
+    ctx.fillStyle = c1;
+    ctx.fillRect(0, 0, 64, 64);
+
+    if (pType === 'embers') {
+      ctx.fillStyle = c2;
+      ctx.fillRect(0, 14, 64, 4);
+      ctx.fillRect(28, 0, 4, 64);
+      ctx.fillRect(10, 40, 44, 4);
+      ctx.fillRect(44, 18, 4, 36);
+      ctx.fillStyle = '#ffedd5';
+      ctx.fillRect(29, 15, 2, 2);
+      ctx.fillRect(45, 41, 2, 2);
+    } else if (pType === 'snow') {
+      ctx.fillStyle = c2;
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+          if ((x + y) % 2 === 0) ctx.fillRect(x * 8, y * 8, 8, 8);
+        }
+      }
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(4, 4, 56, 56);
+      ctx.strokeRect(20, 20, 24, 24);
+    } else if (pType === 'spores') {
+      ctx.fillStyle = c2;
+      ctx.beginPath();
+      ctx.arc(16, 16, 10, 0, Math.PI * 2);
+      ctx.arc(48, 48, 12, 0, Math.PI * 2);
+      ctx.arc(48, 16, 7, 0, Math.PI * 2);
+      ctx.arc(16, 48, 8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (pType === 'gravity') {
+      ctx.strokeStyle = c2;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, 62, 62);
+      ctx.strokeRect(16, 16, 32, 32);
+      ctx.fillStyle = c2;
+      ctx.fillRect(30, 30, 4, 4);
+    } else if (pType === 'sparks') {
+      ctx.fillStyle = c2;
+      ctx.fillRect(8, 0, 2, 64);
+      ctx.fillRect(40, 0, 2, 64);
+      ctx.fillRect(0, 24, 64, 2);
+      ctx.fillRect(0, 56, 64, 2);
+    } else if (pType === 'blood') {
+      ctx.fillStyle = c2;
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+          if ((x * 3 + y * 7) % 5 === 0) ctx.fillRect(x * 8, y * 8, 8, 8);
+        }
+      }
+    } else if (pType === 'void') {
+      ctx.fillStyle = c2;
+      ctx.fillRect(0, 0, 32, 32);
+      ctx.fillRect(32, 32, 32, 32);
+    } else if (pType === 'time') {
+      ctx.strokeStyle = c2;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(32, 32, 24, 0, Math.PI * 2);
+      ctx.arc(32, 32, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeRect(2, 2, 60, 60);
+    } else if (pType === 'flare') {
+      ctx.strokeStyle = c2;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(6, 6, 52, 52);
+      ctx.fillStyle = c2;
+      ctx.fillRect(28, 6, 8, 52);
+      ctx.fillRect(6, 28, 52, 8);
+    } else if (pType === 'apocalypse') {
+      ctx.fillStyle = c2;
+      ctx.fillRect(0, 20, 64, 4);
+      ctx.fillRect(20, 0, 4, 64);
+      ctx.fillRect(36, 10, 4, 54);
+      ctx.fillRect(10, 48, 54, 4);
+      ctx.fillStyle = '#f43f5e';
+      ctx.fillRect(22, 22, 12, 12);
+    } else {
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+          const even = (x + y) % 2 === 0;
+          ctx.fillStyle = even ? c1 : c2;
+          ctx.fillRect(x * 8, y * 8, 8, 8);
+        }
+      }
+    }
+
+    this.groundTex.needsUpdate = true;
   }
 
   /**
@@ -574,16 +698,20 @@ export class SceneView {
       if (e.pointerType === 'touch') {
         this.activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (this.activeTouches.size === 1) {
+          this.hadMultiTouch = false;
           this.isTouchOrbitPending = true;
           this.touchStartX = e.clientX;
           this.touchStartY = e.clientY;
           this.lastPointerX = e.clientX;
           this.lastPointerY = e.clientY;
-        } else if (this.activeTouches.size === 2) {
+        } else if (this.activeTouches.size >= 2) {
+          this.hadMultiTouch = true;
           this.isTouchOrbitPending = false;
           this.isDraggingOrbit = false;
           const pts = [...this.activeTouches.values()];
           this.lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          this.lastTwoFingerMidX = (pts[0].x + pts[1].x) * 0.5;
+          this.lastTwoFingerMidY = (pts[0].y + pts[1].y) * 0.5;
         }
         return;
       }
@@ -598,7 +726,12 @@ export class SceneView {
     const endPointer = (e: PointerEvent) => {
       if (e.pointerType === 'touch') {
         this.activeTouches.delete(e.pointerId);
-        if (this.activeTouches.size < 2) {
+        if (this.activeTouches.size === 2) {
+          const pts = [...this.activeTouches.values()];
+          this.lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          this.lastTwoFingerMidX = (pts[0].x + pts[1].x) * 0.5;
+          this.lastTwoFingerMidY = (pts[0].y + pts[1].y) * 0.5;
+        } else if (this.activeTouches.size < 2) {
           this.lastPinchDist = 0;
         }
         if (this.activeTouches.size === 0) {
@@ -617,15 +750,34 @@ export class SceneView {
       if (e.pointerType === 'touch' && this.activeTouches.has(e.pointerId)) {
         this.activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-        if (this.activeTouches.size === 2) {
+        if (this.activeTouches.size >= 2) {
           const pts = [...this.activeTouches.values()];
+          const midX = (pts[0].x + pts[1].x) * 0.5;
+          const midY = (pts[0].y + pts[1].y) * 0.5;
+          const dxMid = midX - this.lastTwoFingerMidX;
+          const dyMid = midY - this.lastTwoFingerMidY;
+          this.lastTwoFingerMidX = midX;
+          this.lastTwoFingerMidY = midY;
+
+          // 2本指スワイプでカメラ平行移動（地面を掴んでドラッグする感覚でパン）
+          if (dxMid !== 0 || dyMid !== 0) {
+            const viewHeight = Math.max(300, this.renderer.domElement.clientHeight || window.innerHeight);
+            const worldPerPixel =
+              (2 * Math.tan((this.camera.fov * Math.PI) / 360) * this.camDistance) / viewHeight;
+            const pitchFactor = 1 / Math.max(0.45, Math.sin(this.camPitch));
+            const rightOffset = -dxMid * worldPerPixel;
+            const forwardOffset = dyMid * worldPerPixel * pitchFactor;
+            this.panCameraByOffsets(rightOffset, forwardOffset);
+          }
+
+          // ピンチイン・ピンチアウトでズーム
           const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
           if (this.lastPinchDist > 10 && dist > 10) {
             const ratio = this.lastPinchDist / dist;
             this.camDistance = Math.max(6, Math.min(55, this.camDistance * ratio));
-            this.updateCameraTransform();
           }
           this.lastPinchDist = dist;
+          this.updateCameraTransform();
           return;
         }
 
@@ -686,6 +838,11 @@ export class SceneView {
     this.isDraggingOrbit = true;
     this.lastPointerX = clientX;
     this.lastPointerY = clientY;
+  }
+
+  /** 2本指以上のマルチタッチ操作が関与した一連のタッチ中かどうかを返す */
+  isMultiTouchInvolved(): boolean {
+    return this.hadMultiTouch || this.activeTouches.size > 1;
   }
 
   resetCamera(): void {
@@ -1970,6 +2127,269 @@ export class SceneView {
         }
         break;
       }
+      case 'deoxys_teleport': {
+        // デオキシスの瞬間移動（テレポート）: 空間跳躍の紫＆シアン幾何学フラッシュ＆残像
+        const colors = [0xa855f7, 0x00d2d3, 0xffffff, 0xc084fc];
+        // 移動元の空間消滅パーティクル
+        for (let i = 0; i < 16; i++) {
+          const angle = (i / 16) * Math.PI * 2;
+          const speed = 2.5 + Math.random() * 3.0;
+          const vel = new Vector3(Math.cos(angle) * speed, (Math.random() - 0.2) * 2.0, Math.sin(angle) * speed);
+          const col = colors[i % colors.length];
+          this.pushFxParticle(e.from.clone(), vel, col, 0.14, 0.35 + Math.random() * 0.15, -1.0);
+        }
+        // 移動先での空間再構成フラッシュ
+        for (let i = 0; i < 18; i++) {
+          const angle = (i / 18) * Math.PI * 2;
+          const speed = 3.0 + Math.random() * 3.5;
+          const vel = new Vector3(Math.cos(angle) * speed, (Math.random() + 0.3) * 3.0, Math.sin(angle) * speed);
+          const col = colors[(i + 1) % colors.length];
+          this.pushFxParticle(e.to.clone(), vel, col, 0.16, 0.4 + Math.random() * 0.2, 2.0);
+        }
+        // 移動の軌跡をつなぐ量子サイキックストリーム
+        const streamCount = 10;
+        for (let i = 0; i <= streamCount; i++) {
+          const frac = i / streamCount;
+          const p = e.from.clone().lerp(e.to, frac);
+          p.y += Math.sin(frac * Math.PI) * 0.8;
+          const vel = new Vector3((Math.random() - 0.5) * 1.5, 0.8 + Math.random() * 1.5, (Math.random() - 0.5) * 1.5);
+          const col = i % 2 === 0 ? 0x00d2d3 : 0xa855f7;
+          this.pushFxParticle(p, vel, col, 0.12, 0.28, 0);
+        }
+        break;
+      }
+      case 'deoxys_psychic_wave': {
+        // デオキシスのサイコキネシス: ターゲットへ照射される螺旋状のサイキック念力波束
+        const colors = [0xa855f7, 0x00d2d3, 0xe879f9, 0xffffff];
+        const dir = new Vector3().subVectors(e.to, e.from);
+        const dist = dir.length();
+        const steps = Math.max(6, Math.min(18, Math.ceil(dist / 0.8)));
+        for (let i = 0; i <= steps; i++) {
+          const frac = i / steps;
+          const p = e.from.clone().lerp(e.to, frac);
+          // 螺旋状のうねりオフセット
+          const helixAngle = frac * Math.PI * 8;
+          const hRadius = 0.35 * (1 - frac * 0.3);
+          p.x += Math.cos(helixAngle) * hRadius;
+          p.y += Math.sin(helixAngle) * hRadius;
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 0.8,
+            0.5 + Math.random() * 0.8,
+            (Math.random() - 0.5) * 0.8,
+          );
+          const col = colors[i % colors.length];
+          this.pushFxParticle(p, vel, col, 0.13, 0.22 + Math.random() * 0.1, -0.5);
+        }
+        // ターゲット周囲の反重力浮遊フィールド（上へ舞い上がるサイキック粒子）
+        const r = e.radius ?? 4.5;
+        for (let i = 0; i < 8; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const distFromTarget = Math.random() * r;
+          const p = e.to.clone();
+          p.x += Math.cos(angle) * distFromTarget;
+          p.z += Math.sin(angle) * distFromTarget;
+          p.y = Math.max(0.1, p.y - 0.5 + Math.random() * 1.2);
+          const liftVel = new Vector3(
+            -Math.cos(angle) * 1.2,
+            3.5 + Math.random() * 2.5,
+            -Math.sin(angle) * 1.2,
+          );
+          const col = i % 2 === 0 ? 0xa855f7 : 0x00d2d3;
+          this.pushFxParticle(p, liftVel, col, 0.15, 0.35 + Math.random() * 0.15, -1.5);
+        }
+        break;
+      }
+      case 'deoxys_psychic_hit': {
+        // サイコキネシス衝撃・拘束パルス
+        for (let i = 0; i < 10; i++) {
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 6.0,
+            1.5 + Math.random() * 4.0,
+            (Math.random() - 0.5) * 6.0,
+          );
+          const col = i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0xa855f7 : 0x00d2d3;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.12, 0.25 + Math.random() * 0.12, 1.0);
+        }
+        break;
+      }
+      case 'stage_inferno_surge': {
+        // マグマ熱波: 5本の火柱が地底から噴出
+        const cols = [0xff4500, 0xff7700, 0xffd000];
+        for (let pillar = 0; pillar < 5; pillar++) {
+          const px = (pillar - 2) * 8 + (Math.random() - 0.5) * 3;
+          const pz = (Math.random() - 0.5) * 16;
+          for (let i = 0; i < 22; i++) {
+            const vel = new Vector3(
+              (Math.random() - 0.5) * 2.5,
+              6.0 + Math.random() * 9.0,
+              (Math.random() - 0.5) * 2.5,
+            );
+            const col = cols[Math.floor(Math.random() * cols.length)];
+            this.pushFxParticle(
+              new Vector3(px, 0.1, pz),
+              vel,
+              col,
+              0.16 + Math.random() * 0.12,
+              0.6 + Math.random() * 0.4,
+              2.0,
+            );
+          }
+        }
+        break;
+      }
+      case 'stage_blizzard_blast': {
+        // 永久凍土: 画面を横切る猛吹雪ストーム
+        for (let i = 0; i < 60; i++) {
+          const rx = (Math.random() - 0.5) * 44;
+          const rz = (Math.random() - 0.5) * 32;
+          const vel = new Vector3(
+            -16.0 - Math.random() * 8.0,
+            -2.0 + (Math.random() - 0.5) * 3.0,
+            (Math.random() - 0.5) * 4.0,
+          );
+          const col = i % 3 === 0 ? 0x38bdf8 : i % 3 === 1 ? 0xbae6fd : 0xffffff;
+          this.pushFxParticle(
+            new Vector3(rx + 15, 3.0 + Math.random() * 4.0, rz),
+            vel,
+            col,
+            0.12 + Math.random() * 0.08,
+            0.5 + Math.random() * 0.3,
+            0,
+          );
+        }
+        break;
+      }
+      case 'stage_poison_spore': {
+        // 腐食毒胞子バブル爆発
+        for (let i = 0; i < 20; i++) {
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 4.5,
+            1.5 + Math.random() * 4.0,
+            (Math.random() - 0.5) * 4.5,
+          );
+          const col = i % 2 === 0 ? 0x84cc16 : 0xa855f7;
+          this.pushFxParticle(
+            e.pos.clone(),
+            vel,
+            col,
+            0.18 + Math.random() * 0.1,
+            0.7 + Math.random() * 0.5,
+            -0.8,
+          );
+        }
+        break;
+      }
+      case 'stage_gravity_wave': {
+        // 重力特異点: 全方位へ広がるリング衝撃波
+        const segs = 32;
+        for (let i = 0; i < segs; i++) {
+          const ang = (i / segs) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 9.0, 1.2, Math.sin(ang) * 9.0);
+          const col = i % 2 === 0 ? 0xc084fc : 0xec4899;
+          this.pushFxParticle(
+            new Vector3(0, 0.6, 0),
+            vel,
+            col,
+            0.2,
+            0.6,
+            0,
+          );
+        }
+        break;
+      }
+      case 'stage_lightning_strike': {
+        // 電磁嵐の天罰落雷
+        const top = e.pos.clone().setY(18);
+        const sub = 12;
+        for (let s = 1; s <= sub; s++) {
+          const next = new Vector3().lerpVectors(top, e.pos, s / sub);
+          if (s < sub) {
+            next.x += (Math.random() - 0.5) * 1.5;
+            next.z += (Math.random() - 0.5) * 1.5;
+          }
+          for (let p = 0; p < 3; p++) {
+            const vel = new Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+            this.pushFxParticle(next.clone(), vel, 0x67e8f9, 0.16, 0.25, 0);
+          }
+        }
+        // 着弾点の放電
+        for (let i = 0; i < 28; i++) {
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 9.0,
+            2.0 + Math.random() * 5.0,
+            (Math.random() - 0.5) * 9.0,
+          );
+          const col = i % 2 === 0 ? 0x38bdf8 : 0xfef08a;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.14, 0.35 + Math.random() * 0.2, 3.0);
+        }
+        break;
+      }
+      case 'stage_blood_surge': {
+        // 狂乱血煙パルス
+        const segs = 28;
+        for (let i = 0; i < segs; i++) {
+          const ang = (i / segs) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 7.5, 0.6, Math.sin(ang) * 7.5);
+          this.pushFxParticle(
+            new Vector3(0, 0.5, 0),
+            vel,
+            0xdc2626,
+            0.18,
+            0.6,
+            -0.5,
+          );
+        }
+        break;
+      }
+      case 'stage_time_slip': {
+        // 時空歪曲の波動
+        const segs = 24;
+        const col = e.isFast ? 0x10b981 : 0x06b6d4;
+        for (let i = 0; i < segs; i++) {
+          const ang = (i / segs) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 6.5, 0.5, Math.sin(ang) * 6.5);
+          this.pushFxParticle(new Vector3(0, 0.5, 0), vel, col, 0.16, 0.55, 0);
+        }
+        break;
+      }
+      case 'stage_flare_blind': {
+        // 日食フレア金環閃光
+        for (let i = 0; i < 40; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 4.0 + Math.random() * 7.0;
+          const vel = new Vector3(Math.cos(ang) * spd, 1.0 + Math.random() * 4.0, Math.sin(ang) * spd);
+          const col = i % 2 === 0 ? 0xfacc15 : 0xffffff;
+          this.pushFxParticle(new Vector3(0, 1.2, 0), vel, col, 0.18, 0.5 + Math.random() * 0.3, 0);
+        }
+        break;
+      }
+      case 'stage_meteor_impact': {
+        // 終末巨大隕石直撃
+        for (let i = 0; i < 50; i++) {
+          const vel = new Vector3(
+            (Math.random() - 0.5) * 14.0,
+            4.0 + Math.random() * 11.0,
+            (Math.random() - 0.5) * 14.0,
+          );
+          const col = i % 3 === 0 ? 0xf43f5e : i % 3 === 1 ? 0xf97316 : 0xa855f7;
+          this.pushFxParticle(
+            e.pos.clone(),
+            vel,
+            col,
+            0.24 + Math.random() * 0.16,
+            0.8 + Math.random() * 0.4,
+            6.0,
+          );
+        }
+        // 爆風衝撃波
+        const segs = 32;
+        for (let i = 0; i < segs; i++) {
+          const ang = (i / segs) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 12.0, 0.5, Math.sin(ang) * 12.0);
+          this.pushFxParticle(e.pos.clone(), vel, 0xf43f5e, 0.22, 0.7, 0);
+        }
+        break;
+      }
     }
   }
 
@@ -2105,6 +2525,9 @@ export class SceneView {
    * 単一の InstancedMesh (fxMesh) に合成して高速描画する。
    */
   private updateFxAndDynamicVisuals(battle: Battle, dt: number): void {
+    // 0. ステージ環境アンビエントパーティクルの常時発生
+    this.emitAmbientWeatherParticles(dt);
+
     // 1. 延焼ゾーンや炎上中ユニットから火の粉を発生させる
     for (const z of battle.combat.fireZones) {
       if (Math.random() < 0.45) {
@@ -2141,6 +2564,16 @@ export class SceneView {
           0.075,
           0.14,
           0,
+        );
+      }
+      if (u.freezeTimer > 0 && Math.random() < 0.65) {
+        this.pushFxParticle(
+          u.chest.pos.clone().add(new Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5)),
+          new Vector3((Math.random() - 0.5) * 0.5, 0.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.5),
+          Math.random() < 0.4 ? 0x38bdf8 : 0xffffff,
+          0.12,
+          0.3,
+          -0.5,
         );
       }
     }
@@ -2271,6 +2704,15 @@ export class SceneView {
     this.fxMesh.setColorAt(idx, color);
   }
 
+  private panCameraByOffsets(rightOffset: number, forwardOffset: number): void {
+    const sin = Math.sin(this.camYaw);
+    const cos = Math.cos(this.camYaw);
+    this.camTarget.x += rightOffset * cos - forwardOffset * sin;
+    this.camTarget.z += -rightOffset * sin - forwardOffset * cos;
+    this.camTarget.x = Math.max(-35, Math.min(35, this.camTarget.x));
+    this.camTarget.z = Math.max(-35, Math.min(35, this.camTarget.z));
+  }
+
   private updateCameraMovement(dt: number): void {
     const moveSpeed = 14 * dt * (this.camDistance / 20);
     let forward = 0;
@@ -2283,12 +2725,7 @@ export class SceneView {
     if (this.keys.has('KeyE')) this.camYaw -= 1.6 * dt;
 
     if (forward !== 0 || right !== 0 || this.keys.has('KeyQ') || this.keys.has('KeyE')) {
-      const sin = Math.sin(this.camYaw);
-      const cos = Math.cos(this.camYaw);
-      this.camTarget.x += (right * cos - forward * sin) * moveSpeed;
-      this.camTarget.z += (-right * sin - forward * cos) * moveSpeed;
-      this.camTarget.x = Math.max(-35, Math.min(35, this.camTarget.x));
-      this.camTarget.z = Math.max(-35, Math.min(35, this.camTarget.z));
+      this.panCameraByOffsets(right * moveSpeed, forward * moveSpeed);
       this.updateCameraTransform();
     }
   }
@@ -2302,6 +2739,85 @@ export class SceneView {
       this.camTarget.z + Math.cos(this.camYaw) * horiz,
     );
     this.camera.lookAt(this.camTarget);
+  }
+
+  /** ステージ環境アンビエントパーティクルを毎フレーム発生させる */
+  private emitAmbientWeatherParticles(dt: number): void {
+    const theme = this.currentVisualTheme;
+    if (!theme || !theme.particleType) return;
+    this.ambientWeatherTimer += dt;
+    if (this.ambientWeatherTimer < 0.035) return;
+    this.ambientWeatherTimer = 0;
+
+    const pType = theme.particleType;
+    const count = pType === 'snow' || pType === 'embers' || pType === 'apocalypse' ? 5 : 3;
+
+    for (let k = 0; k < count; k++) {
+      const rx = (Math.random() - 0.5) * 44;
+      const rz = (Math.random() - 0.5) * 32;
+
+      if (pType === 'embers') {
+        // 溶岩の火の粉
+        const p = new Vector3(rx, 0.1 + Math.random() * 0.4, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 0.8, 1.2 + Math.random() * 1.8, (Math.random() - 0.5) * 0.8);
+        const col = Math.random() < 0.6 ? 0xff5500 : 0xffa200;
+        this.pushFxParticle(p, vel, col, 0.12, 0.8 + Math.random() * 0.6, -1.2);
+      } else if (pType === 'snow') {
+        // 横殴りの猛吹雪
+        const p = new Vector3(rx + 10, 6.0 + Math.random() * 6.0, rz);
+        const vel = new Vector3(-6.5 - Math.random() * 3.0, -3.5 - Math.random() * 2.0, (Math.random() - 0.5) * 1.5);
+        const col = Math.random() < 0.3 ? 0xbae6fd : 0xffffff;
+        this.pushFxParticle(p, vel, col, 0.1, 1.4 + Math.random() * 0.8, 0.2);
+      } else if (pType === 'spores') {
+        // 毒胞子バブル
+        const p = new Vector3(rx, 0.2, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 0.5, 0.8 + Math.random() * 1.0, (Math.random() - 0.5) * 0.5);
+        const col = Math.random() < 0.5 ? 0x84cc16 : 0xa855f7;
+        this.pushFxParticle(p, vel, col, 0.13, 1.2 + Math.random() * 0.6, -0.6);
+      } else if (pType === 'gravity') {
+        // 重力反転オーブ逆流
+        const p = new Vector3(rx, 0.1, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 0.4, 2.0 + Math.random() * 1.6, (Math.random() - 0.5) * 0.4);
+        const col = Math.random() < 0.5 ? 0xc084fc : 0xec4899;
+        this.pushFxParticle(p, vel, col, 0.14, 1.6 + Math.random() * 0.8, -1.8);
+      } else if (pType === 'sparks') {
+        // 電磁スパーク放電
+        const p = new Vector3(rx, 0.5 + Math.random() * 3.5, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3);
+        const col = Math.random() < 0.5 ? 0x38bdf8 : 0xfde047;
+        this.pushFxParticle(p, vel, col, 0.08, 0.12 + Math.random() * 0.08, 0);
+      } else if (pType === 'blood') {
+        // 真紅の血霧
+        const p = new Vector3(rx, 0.2 + Math.random() * 1.0, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6);
+        const col = Math.random() < 0.6 ? 0xb91c1c : 0x7f1d1d;
+        this.pushFxParticle(p, vel, col, 0.14, 1.0 + Math.random() * 0.5, -0.4);
+      } else if (pType === 'void') {
+        // 虚無の黒灰
+        const p = new Vector3(rx, 2.0 + Math.random() * 4.0, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 0.4, -0.6 - Math.random() * 0.6, (Math.random() - 0.5) * 0.4);
+        const col = Math.random() < 0.5 ? 0x27272a : 0x71717a;
+        this.pushFxParticle(p, vel, col, 0.11, 1.5, 0.2);
+      } else if (pType === 'time') {
+        // 時空の光子
+        const p = new Vector3(rx, 0.8 + Math.random() * 2.5, rz);
+        const vel = new Vector3(2.5 + Math.random() * 2.0, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
+        const col = Math.random() < 0.5 ? 0x10b981 : 0xfacc15;
+        this.pushFxParticle(p, vel, col, 0.12, 1.2, 0);
+      } else if (pType === 'flare') {
+        // 日食フレア金粉
+        const p = new Vector3(rx, 0.5 + Math.random() * 3.0, rz);
+        const vel = new Vector3((Math.random() - 0.5) * 1.2, 0.8 + Math.random() * 0.8, (Math.random() - 0.5) * 1.2);
+        const col = Math.random() < 0.6 ? 0xfacc15 : 0x1c1917;
+        this.pushFxParticle(p, vel, col, 0.13, 0.9 + Math.random() * 0.4, -0.6);
+      } else if (pType === 'apocalypse') {
+        // 終末隕石火片
+        const p = new Vector3(rx, 8.0 + Math.random() * 5.0, rz);
+        const vel = new Vector3(-3.0 + (Math.random() - 0.5) * 2, -7.0 - Math.random() * 3, (Math.random() - 0.5) * 2);
+        const col = Math.random() < 0.4 ? 0xf43f5e : Math.random() < 0.7 ? 0xfb923c : 0xa855f7;
+        this.pushFxParticle(p, vel, col, 0.18, 1.2, 2.0);
+      }
+    }
   }
 
   /** 毎フレームの描画更新 */

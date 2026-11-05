@@ -1509,6 +1509,67 @@ export class SoundManager {
         osc.stop(t + 0.06);
         break;
       }
+      case 'deoxys_teleport': {
+        if (!this.throttle('dxy_tel', 80)) return;
+        // デオキシスの瞬間移動ワープ音（高周波から低周波への空間歪みワープ）
+        const osc1 = ctx.createOscillator();
+        const g1 = ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(2400, t);
+        osc1.frequency.exponentialRampToValueAtTime(280, t + 0.12);
+        g1.gain.setValueAtTime(0.22, t);
+        g1.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        osc1.connect(g1);
+        g1.connect(this.masterGain);
+        osc1.start(t);
+        osc1.stop(t + 0.15);
+
+        const osc2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(350, t);
+        osc2.frequency.exponentialRampToValueAtTime(1800, t + 0.14);
+        g2.gain.setValueAtTime(0.15, t);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        osc2.connect(g2);
+        g2.connect(this.masterGain);
+        osc2.start(t);
+        osc2.stop(t + 0.17);
+        break;
+      }
+      case 'deoxys_psychic_wave': {
+        if (!this.throttle('dxy_psy', 100)) return;
+        // サイコキネシスの強大で神秘的な超能力共鳴パルス音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(620, t);
+        osc.frequency.linearRampToValueAtTime(940, t + 0.08);
+        osc.frequency.linearRampToValueAtTime(540, t + 0.16);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.2);
+        break;
+      }
+      case 'deoxys_psychic_hit': {
+        if (!this.throttle('dxy_hit', 70)) return;
+        // サイコキネシス衝撃破裂音
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(480, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.12);
+        g.gain.setValueAtTime(0.16, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.15);
+        break;
+      }
     }
   }
 }

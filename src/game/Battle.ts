@@ -5,6 +5,7 @@ import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Unit, type UnitContext } from '../units/Unit';
 import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
+import type { StageHazardConfig } from './ArcadeStages';
 
 export type BattleResult = Team | 'draw' | null;
 
@@ -30,6 +31,12 @@ export class Battle implements UnitContext, FacilityBattleContext {
   baseDamageMul = 1.0;
   /** ステージ限定ルール: 基本移動速度倍率補正 */
   baseSpeedMul = 1.0;
+  /** ステージ固有状態異常（31面〜） */
+  hazardConfig: StageHazardConfig | null = null;
+  /** 状態異常の周期タイマー */
+  hazardTimer = 0;
+  /** 時空歪曲の現在フェーズ（'fast' | 'slow'） */
+  timeSlipPhase: 'fast' | 'slow' = 'fast';
 
   onUnitAdded: ((u: Unit) => void) | null = null;
   onUnitRemoved: ((u: Unit) => void) | null = null;
@@ -150,6 +157,9 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.combat.clear();
     this.time = 0;
     this.accumulator = 0;
+    this.hazardConfig = null;
+    this.hazardTimer = 0;
+    this.timeSlipPhase = 'fast';
   }
 
   fireArrow(owner: Unit, from: Vector3, velocity: Vector3): void {
@@ -228,8 +238,14 @@ export class Battle implements UnitContext, FacilityBattleContext {
     for (const u of this.units) {
       u.damageMul = this.baseDamageMul;
       u.speedMul = this.baseSpeedMul;
+      u.vulnerabilityMul = 1.0;
+      u.targetRangeMul = 1.0;
       u.hasBuff = false;
     }
+    this.combat.projectileDamageMultiplier = 1.0;
+
+    // ステージ状態異常の更新（AI有効時）
+    this.updateStageHazard(dt);
 
     // 施設更新（AI有効時のみ効果を発揮: トーテムが味方にバフ適用、ポータルがユニット召喚等）
     if (this.aiEnabled) {
@@ -256,6 +272,164 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.combat.processContacts(this.world.contacts, dt);
     this.combat.updateArrows(dt, this.units, this.world.obstacles, this.facilities);
     this.time += dt;
+  }
+
+  /** ステージ状態異常（31面〜）の周期・常時効果を適用する */
+  private updateStageHazard(dt: number): void {
+    if (!this.aiEnabled || !this.hazardConfig) return;
+    const hz = this.hazardConfig.type;
+    this.hazardTimer += dt;
+
+    if (hz === 'inferno') {
+      // 31面: 3.2秒ごとに地底からマグマ熱波
+      if (this.hazardTimer >= 3.2) {
+        this.hazardTimer = 0;
+        this.emitEffect({ kind: 'stage_inferno_surge', pos: new Vector3(0, 0, 0) });
+        for (const u of this.units) {
+          if (!u.alive) continue;
+          if (u.type.id === 'dragon' || u.pelvis.pos.y > 2.5) continue;
+          u.burnTimer = Math.max(u.burnTimer, 2.5);
+          const heatImpulse = new Vector3(0, 1.2 + Math.random() * 0.8, 0);
+          for (const p of u.joints) {
+            p.addVelocity(heatImpulse, dt);
+          }
+        }
+      }
+    } else if (hz === 'blizzard') {
+      // 32面: 常時移動速度40%減、4.5秒ごとに1.8秒完全凍結
+      for (const u of this.units) {
+        u.speedMul *= 0.6;
+      }
+      if (this.hazardTimer >= 4.5) {
+        this.hazardTimer = 0;
+        this.emitEffect({ kind: 'stage_blizzard_blast', pos: new Vector3(0, 0, 0) });
+        for (const u of this.units) {
+          if (u.alive) {
+            u.freezeTimer = 1.8;
+          }
+        }
+      }
+    } else if (hz === 'poison_swamp') {
+      // 33面: 常時毒（被ダメージ1.5倍＋毒スリップ減速）
+      for (const u of this.units) {
+        u.vulnerabilityMul = 1.5;
+        if (u.alive && u.type.id !== 'slime') {
+          u.poisonTimer = Math.max(u.poisonTimer, 1.2);
+        }
+      }
+      if (this.hazardTimer >= 2.0) {
+        this.hazardTimer = 0;
+        this.emitEffect({
+          kind: 'stage_poison_spore',
+          pos: new Vector3((Math.random() - 0.5) * 20, 0, (Math.random() - 0.5) * 20),
+        });
+      }
+    } else if (hz === 'gravity_flux') {
+      // 34面: 4.0秒ごとに空間斥力パルスで奈落へ吹き飛ばす
+      if (this.hazardTimer >= 4.0) {
+        this.hazardTimer = 0;
+        this.emitEffect({ kind: 'stage_gravity_wave', pos: new Vector3(0, 0, 0) });
+        for (const u of this.units) {
+          if (!u.alive) continue;
+          const isSuperHeavy =
+            u.type.id === 'yamamuron' || u.type.id === 'giant_tank' || u.type.id === 'giant_robot';
+          const boostY = isSuperHeavy ? 1.6 : 4.5 + Math.random() * 1.5;
+          const outwardScale = isSuperHeavy ? 1.0 : 3.0;
+          const distXZ = Math.hypot(u.pelvis.pos.x, u.pelvis.pos.z) || 1;
+          const outX = (u.pelvis.pos.x / distXZ) * outwardScale;
+          const outZ = (u.pelvis.pos.z / distXZ) * outwardScale;
+          const pushVel = new Vector3(outX, boostY, outZ);
+          for (const p of u.joints) {
+            p.addVelocity(pushVel, dt);
+          }
+        }
+      }
+    } else if (hz === 'thunderstorm') {
+      // 35面: 2.5秒ごとに落雷直撃＋密集連鎖放電スタン
+      if (this.hazardTimer >= 2.5) {
+        this.hazardTimer = 0;
+        const aliveList = this.units.filter((u) => u.alive);
+        if (aliveList.length > 0) {
+          const target = aliveList[Math.floor(Math.random() * aliveList.length)];
+          const hitPos = target.pelvis.pos.clone();
+          this.emitEffect({ kind: 'stage_lightning_strike', pos: hitPos });
+          target.takeDamage(60, target.chest, new Vector3(0, 2.0, 0), dt);
+          target.shockTimer = 1.6;
+          for (const u of aliveList) {
+            if (u === target || u.team !== target.team) continue;
+            if (u.pelvis.pos.distanceTo(hitPos) <= 3.8) {
+              u.takeDamage(35, u.chest, new Vector3(0, 1.2, 0), dt);
+              u.shockTimer = 1.3;
+            }
+          }
+        }
+      }
+    } else if (hz === 'bloodlust') {
+      // 36面: 攻撃力2倍、被ダメージ2倍、移動速度1.6倍
+      for (const u of this.units) {
+        u.damageMul *= 2.0;
+        u.speedMul *= 1.6;
+        u.vulnerabilityMul = 2.0;
+      }
+      if (this.hazardTimer >= 3.0) {
+        this.hazardTimer = 0;
+        this.emitEffect({ kind: 'stage_blood_surge', pos: new Vector3(0, 0, 0) });
+      }
+    } else if (hz === 'null_magic') {
+      // 37面: 飛び道具・魔法威力半減
+      this.combat.projectileDamageMultiplier = 0.5;
+    } else if (hz === 'time_slip') {
+      // 38面: 3.0秒ごとに「時間加速2.0倍」と「超低速0.35倍」が反転
+      if (this.hazardTimer >= 3.0) {
+        this.hazardTimer = 0;
+        this.timeSlipPhase = this.timeSlipPhase === 'fast' ? 'slow' : 'fast';
+        this.emitEffect({
+          kind: 'stage_time_slip',
+          pos: new Vector3(0, 0, 0),
+          isFast: this.timeSlipPhase === 'fast',
+        });
+      }
+      const mult = this.timeSlipPhase === 'fast' ? 2.0 : 0.35;
+      for (const u of this.units) {
+        u.speedMul *= mult;
+      }
+    } else if (hz === 'chaos_flare') {
+      // 39面: 索敵距離40%制限＋3.5秒ごとに金環フレア
+      for (const u of this.units) {
+        u.targetRangeMul = 0.4;
+      }
+      if (this.hazardTimer >= 3.5) {
+        this.hazardTimer = 0;
+        this.emitEffect({ kind: 'stage_flare_blind', pos: new Vector3(0, 0, 0) });
+        for (const u of this.units) {
+          if (u.alive) {
+            u.facing += (Math.random() - 0.5) * 1.8;
+            u.muscle = Math.max(0.15, u.muscle - 0.35);
+          }
+        }
+      }
+    } else if (hz === 'apocalypse') {
+      // 40面: 終末崩壊カタストロフィ（3秒ごとに巨大隕石落下爆発）
+      if (this.hazardTimer >= 3.0) {
+        this.hazardTimer = 0;
+        const meteorX = (Math.random() - 0.3) * 24;
+        const meteorZ = (Math.random() - 0.5) * 22;
+        const meteorPos = new Vector3(meteorX, 0, meteorZ);
+        this.emitEffect({ kind: 'stage_meteor_impact', pos: meteorPos });
+        this.combat.applyRadialBlast(
+          null,
+          meteorPos,
+          5.2,
+          140,
+          15.0,
+          1.0,
+          this.units,
+          dt,
+          'explosion',
+          this.facilities,
+        );
+      }
+    }
   }
 
   aliveCount(team: Team): number {

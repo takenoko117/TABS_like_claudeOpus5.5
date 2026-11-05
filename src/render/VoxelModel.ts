@@ -729,6 +729,47 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.042, [5.5, 3.5, 4.5]);
   }
 
+  // デオキシス: 三叉の角状突起・白いフェイスマスク・額の紫クリスタル・シアン眼光
+  if (type.id === 'deoxys') {
+    const g = new VoxelGrid(15, 14, 13);
+    const redOrange = 0xee5a24;
+    const cyan = 0x00d2d3;
+    const white = 0xf1f5f9;
+    const purple = 0xa855f7;
+
+    // 頭部中央コア（流線型）
+    g.fillBox(4, 2, 3, 10, 9, 9, redOrange);
+    // 中央フェイス（白いマスク状）
+    g.fillBox(5, 3, 8, 9, 8, 10, white);
+    // 顔の中央縦ライン（シアン）
+    g.fillBox(6, 2, 9, 8, 9, 10, cyan);
+    // 額の紫クリスタルコア
+    g.fillBox(6, 8, 9, 8, 10, 10, purple);
+    g.set(7, 9, 10, 0xffffff);
+    // 鋭い眼光
+    g.fillBox(4, 5, 9, 5, 6, 10, cyan);
+    g.set(5, 5, 10, 0xffffff);
+    g.fillBox(9, 5, 9, 10, 6, 10, cyan);
+    g.set(9, 5, 10, 0xffffff);
+
+    // 左サイドの三叉突起
+    g.fillBox(1, 4, 4, 3, 7, 7, redOrange);
+    g.fillBox(0, 5, 4, 1, 9, 6, cyan);
+    g.fillBox(0, 9, 4, 1, 12, 5, redOrange);
+    g.fillBox(0, 3, 5, 1, 6, 8, redOrange);
+    // 右サイドの三叉突起
+    g.fillBox(11, 4, 4, 13, 7, 7, redOrange);
+    g.fillBox(13, 5, 4, 14, 9, 6, cyan);
+    g.fillBox(13, 9, 4, 14, 12, 5, redOrange);
+    g.fillBox(13, 3, 5, 14, 6, 8, redOrange);
+
+    // 頭頂部のセンタークレスト
+    g.fillBox(6, 10, 3, 8, 13, 7, redOrange);
+    g.fillBox(7, 10, 4, 7, 13, 6, cyan);
+
+    return makeTemplate(g, 0.042, [7, 4, 6]);
+  }
+
   const g = new VoxelGrid(11, 12, 11);
   // 頭部本体（7×7×7, 中心を x=2..8, y=1..7, z=2..8 に配置）
   g.fillBox(2, 1, 2, 8, 7, 8, look.skin);
@@ -823,6 +864,40 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
 function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   const look = type.look;
   const tc = TEAM_COLORS[team];
+
+  // デオキシス: V字トルソー・胸中央の光輝く紫「DNAクリスタルコア」・シアンエネルギーライン
+  if (type.id === 'deoxys') {
+    const g = new VoxelGrid(11, 13, 9);
+    const redOrange = 0xee5a24;
+    const darkRed = 0xc0392b;
+    const cyan = 0x00d2d3;
+    const purple = 0x9333ea;
+    const purpleBright = 0xc084fc;
+
+    // 骨盤・腰部（細身のエイリアンウェスト）
+    g.fillBox(3, 0, 2, 7, 3, 6, redOrange);
+    g.fillBox(4, 1, 2, 6, 2, 6, cyan);
+
+    // 胸部（V字・引き締まったトルソー）
+    g.fillBox(2, 4, 2, 8, 11, 6, redOrange);
+    g.fillBox(1, 8, 2, 9, 11, 6, redOrange);
+
+    // 腹部・側面のシアンエネルギーライン
+    g.fillBox(2, 3, 3, 2, 9, 5, cyan);
+    g.fillBox(8, 3, 3, 8, 9, 5, cyan);
+    g.fillBox(4, 4, 6, 6, 6, 6, cyan);
+
+    // 胸の中央に輝く「DNAクリスタルコア」（紫色・発光）
+    g.fillBox(4, 7, 6, 6, 9, 7, purple);
+    g.fillBox(4, 7, 7, 6, 9, 7, purpleBright);
+    g.set(5, 8, 7, 0xffffff);
+
+    // 背面のシアンリブ構造
+    g.fillBox(4, 5, 1, 6, 10, 1, cyan);
+    g.fillBox(3, 7, 1, 7, 8, 1, darkRed);
+
+    return makeTemplate(g, 0.038, [5, 1, 4]);
+  }
 
   if (type.id === 'sezain') {
     // セザイン: 1000cc超え超弩級リッターバイク（極太タイヤ・4気筒水冷大排気量エンジン・4本出しマフラー・大型カウル）＋重装バイカー胴体
@@ -2021,6 +2096,49 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     sh.fillBox(2, 0, 2, 3, 2, 5, 0xdce0e5);
     sh.fillBox(2, 0, 5, 3, 1, 6, 0xff1744);
     shin = makeTemplate(sh, 0.38 / 10, [3, 0, 3]);
+  } else if (type.id === 'deoxys') {
+    // デオキシス: DNA二重螺旋の触手腕（赤橙＆シアン）と流線型の鋭い脚部
+    const redOrange = 0xee5a24;
+    const cyan = 0x00d2d3;
+
+    // 上腕: 赤橙とシアンの螺旋パターン
+    const ua = new VoxelGrid(4, 7, 4);
+    for (let y = 0; y < 7; y++) {
+      const shift = Math.floor(y * 0.7) % 4;
+      ua.fillBox(0, y, 0, 3, y, 3, redOrange);
+      if (shift === 0) ua.fillBox(0, y, 0, 1, y, 1, cyan);
+      else if (shift === 1) ua.fillBox(2, y, 0, 3, y, 1, cyan);
+      else if (shift === 2) ua.fillBox(2, y, 2, 3, y, 3, cyan);
+      else ua.fillBox(0, y, 2, 1, y, 3, cyan);
+    }
+    upperArm = makeTemplate(ua, 0.32 / 7, [2, 0, 2]);
+
+    // 前腕: 触手状に伸びるDNAハンド
+    const fa = new VoxelGrid(4, 7, 4);
+    for (let y = 0; y < 7; y++) {
+      const shift = (Math.floor(y * 0.7) + 2) % 4;
+      fa.fillBox(0, y, 0, 3, y, 3, redOrange);
+      if (shift === 0) fa.fillBox(0, y, 0, 1, y, 1, cyan);
+      else if (shift === 1) fa.fillBox(2, y, 0, 3, y, 1, cyan);
+      else if (shift === 2) fa.fillBox(2, y, 2, 3, y, 3, cyan);
+      else fa.fillBox(0, y, 2, 1, y, 3, cyan);
+    }
+    fa.set(1, 0, 1, cyan);
+    fa.set(2, 0, 2, cyan);
+    forearm = makeTemplate(fa, 0.30 / 7, [2, 0, 2]);
+
+    // 大腿: 細身の赤橙＋シアンサイドライン
+    const th = new VoxelGrid(4, 8, 4);
+    th.fillBox(0, 0, 0, 3, 7, 3, redOrange);
+    th.fillBox(1, 2, 3, 2, 6, 3, cyan);
+    thigh = makeTemplate(th, 0.40 / 8, [2, 0, 2]);
+
+    // 脛・尖った足先
+    const sh = new VoxelGrid(4, 9, 4);
+    sh.fillBox(0, 1, 0, 3, 8, 3, redOrange);
+    sh.fillBox(1, 3, 3, 2, 7, 3, cyan);
+    sh.fillBox(1, 0, 1, 2, 1, 2, cyan);
+    shin = makeTemplate(sh, 0.42 / 9, [2, 0, 2]);
   } else {
     upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)

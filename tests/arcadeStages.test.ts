@@ -14,9 +14,9 @@ import {
 import { FACILITY_TYPES, type FacilityTypeId } from '../src/facilities/FacilityTypes';
 import { UNIT_TYPES, type UnitTypeId } from '../src/units/UnitTypes';
 
-describe('アーケードモード全30面 整合性テスト', () => {
-  it('ステージ数が30面あり、ステージ番号が1から30まで連番で並んでいる', () => {
-    expect(ARCADE_STAGES.length).toBe(30);
+describe('アーケードモード全40面 整合性テスト', () => {
+  it('ステージ数が40面あり、ステージ番号が1から40まで連番で並んでいる', () => {
+    expect(ARCADE_STAGES.length).toBe(40);
     ARCADE_STAGES.forEach((st, idx) => {
       expect(st.stageNumber).toBe(idx + 1);
       expect(st.id).toBe(`stage_${idx + 1}`);
@@ -114,6 +114,48 @@ describe('アーケードモード全30面 整合性テスト', () => {
     expect(stagesWithPits).toBeGreaterThanOrEqual(4);
     expect(stagesWithMultiBridges).toBeGreaterThanOrEqual(3);
     expect(stagesWithArenaBounds).toBeGreaterThanOrEqual(1);
+  });
+
+  it('31〜40面の全10面にステージ固有状態異常 (hazard) とビジュアルテーマ (visualTheme) が設定され、敵コストが予算を上回る高難度設計になっている', () => {
+    const hazardTypes = new Set<string>();
+    const particleTypes = new Set<string>();
+
+    for (let i = 30; i < 40; i++) {
+      const st = ARCADE_STAGES[i];
+      // 状態異常が設定されている
+      expect(st.hazard).toBeDefined();
+      expect(st.hazard!.type).not.toBe('none');
+      expect(st.hazard!.name.length).toBeGreaterThan(0);
+      expect(st.hazard!.badge.length).toBeGreaterThan(0);
+      expect(st.hazard!.description.length).toBeGreaterThan(0);
+      expect(st.hazard!.effectSummary.length).toBeGreaterThan(0);
+      hazardTypes.add(st.hazard!.type);
+
+      // ビジュアルテーマが設定されている
+      expect(st.visualTheme).toBeDefined();
+      expect(Number.isFinite(st.visualTheme!.skyColor)).toBe(true);
+      expect(Number.isFinite(st.visualTheme!.fogColor)).toBe(true);
+      expect(st.visualTheme!.groundColor1).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(st.visualTheme!.groundColor2).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(st.visualTheme!.particleType).toBeDefined();
+      particleTypes.add(st.visualTheme!.particleType!);
+
+      // 高難度設計: 敵の総コストがプレイヤーの最大予算を大きく上回っている
+      const enemyCost = getStageEnemyCost(st);
+      expect(enemyCost).toBeGreaterThan(st.budget);
+    }
+
+    // 10面それぞれにユニークな状態異常とパーティクルが割り当てられている
+    expect(hazardTypes.size).toBe(10);
+    expect(particleTypes.size).toBe(10);
+
+    // 第35面で新ユニット lightspeed_ant がアンロック報酬として設定されている
+    const st35 = ARCADE_STAGES[34];
+    expect(st35.unlockUnits).toContain('lightspeed_ant');
+
+    // 第38面で新ユニット deoxys がアンロック報酬として設定されている
+    const st38 = ARCADE_STAGES[37];
+    expect(st38.unlockUnits).toContain('deoxys');
   });
 
   it('ステージ限定ルール判定 (checkStageRuleViolation) が正しく機能する', () => {

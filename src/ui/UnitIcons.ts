@@ -797,6 +797,45 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <polyline points="27,13 29,8 34,6" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round"/>
         <polyline points="28.5,14 31,10 35,9.5" fill="none" stroke="#fef08a" stroke-width="1.3" stroke-linecap="round"/>
       </svg>`;
+
+    case 'deoxys':
+      // デオキシス: 三叉の角状突起・白いフェイスマスク・胸の紫クリスタルコア・DNA二重螺旋腕
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <!-- 背景のサイキックオーラリング -->
+        <circle cx="18" cy="18" r="16" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>
+        <circle cx="18" cy="18" r="14" fill="none" stroke="#00d2d3" stroke-width="0.8" opacity="0.5"/>
+        <!-- DNA二重螺旋の触手腕（左右） -->
+        <path d="M 12,17 C 8,19 6,24 8,28 C 9,30 11,27 10,24 C 9,21 11,19 13,18" fill="none" stroke="#ee5a24" stroke-width="2" stroke-linecap="round"/>
+        <path d="M 11,18 C 9,22 11,25 9,29" fill="none" stroke="#00d2d3" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M 24,17 C 28,19 30,24 28,28 C 27,30 25,27 26,24 C 27,21 25,19 23,18" fill="none" stroke="#ee5a24" stroke-width="2" stroke-linecap="round"/>
+        <path d="M 25,18 C 27,22 25,25 27,29" fill="none" stroke="#00d2d3" stroke-width="1.6" stroke-linecap="round"/>
+        <!-- 細身の流線型胴体（赤橙） -->
+        <path d="M 15,16 L 21,16 L 19,25 L 17,25 Z" fill="#ee5a24"/>
+        <!-- 胸の中央に輝く紫クリスタルコア -->
+        <polygon points="18,17 20.5,20 18,23 15.5,20" fill="#a855f7" stroke="#ffffff" stroke-width="0.8"/>
+        <circle cx="18" cy="20" r="1" fill="#ffffff"/>
+        <!-- 頭部サイドの三叉突起（左右の大きな角） -->
+        <path d="M 13,8 L 6,4 L 8,11 L 13,11 Z" fill="#ee5a24"/>
+        <polygon points="6,4 4,2 7,6" fill="#00d2d3"/>
+        <path d="M 23,8 L 30,4 L 28,11 L 23,11 Z" fill="#ee5a24"/>
+        <polygon points="30,4 32,2 29,6" fill="#00d2d3"/>
+        <!-- 頭頂部センタークレスト -->
+        <polygon points="17,8 18,2 19,8" fill="#ee5a24"/>
+        <line x1="18" y1="3" x2="18" y2="7" stroke="#00d2d3" stroke-width="1"/>
+        <!-- 頭部中央（赤橙ベース） -->
+        <ellipse cx="18" cy="9.5" rx="5" ry="4.5" fill="#ee5a24"/>
+        <!-- 白いフェイスマスク -->
+        <ellipse cx="18" cy="10" rx="3.2" ry="3.5" fill="#f1f5f9"/>
+        <!-- 顔のセンター縦ライン（シアン） -->
+        <line x1="18" y1="6.8" x2="18" y2="13.2" stroke="#00d2d3" stroke-width="1.4"/>
+        <!-- 額の紫コア -->
+        <circle cx="18" cy="7.5" r="1.1" fill="#9333ea"/>
+        <!-- 鋭い眼光（シアン） -->
+        <ellipse cx="16.2" cy="9.8" rx="1.0" ry="0.6" fill="#00d2d3"/>
+        <circle cx="16.2" cy="9.8" r="0.4" fill="#ffffff"/>
+        <ellipse cx="19.8" cy="9.8" rx="1.0" ry="0.6" fill="#00d2d3"/>
+        <circle cx="19.8" cy="9.8" r="0.4" fill="#ffffff"/>
+      </svg>`;
   }
 }
 

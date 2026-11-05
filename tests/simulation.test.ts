@@ -375,8 +375,8 @@ describe('アーケードモード追加ユニット（盾兵・突撃兵・爆�
     expect(behindPillar.hp).toBe(behindPillar.maxHp);
   });
 
-  it('アーケードモード全30ステージの定義・予算・スター評価・兵種アンロックが正しく機能する', () => {
-    expect(ARCADE_STAGES.length).toBe(30);
+  it('アーケードモード全40ステージの定義・予算・スター評価・兵種アンロックが正しく機能する', () => {
+    expect(ARCADE_STAGES.length).toBe(40);
     for (const st of ARCADE_STAGES) {
       expect(st.enemies.length).toBeGreaterThan(0);
       // すべての面で敵総コスト > プレイヤー予算（戦術パズル性）になっていることを確認

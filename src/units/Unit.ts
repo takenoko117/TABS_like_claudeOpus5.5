@@ -128,8 +128,20 @@ export class Unit {
   poisonTimer = 0;
   poisonAttacker: Unit | null = null;
   private poisonTickTimer = 0;
+  /** 凍結硬直残り時間（永久凍土ブリザード） */
+  freezeTimer = 0;
+  /** 被ダメージ倍率（腐食毒霧や狂乱で変化、デフォルト 1.0） */
+  vulnerabilityMul = 1.0;
+  /** 索敵射程倍率（日食フレア等で短縮、デフォルト 1.0） */
+  targetRangeMul = 1.0;
   /** 変わり身の術クールダウン（からくり忍者） */
   kawariCooldown = 0;
+  /** デオキシスの距離取りテレポートクールダウン */
+  teleportCooldown = 0;
+  /** デオキシスの被弾回避テレポートクールダウン */
+  teleportEvasionCooldown = 0;
+  private psychicPulseTimer = 0;
+  private psychicFinished = false;
   /** 突撃兵の跳躍チャージクールダウン */
   chargeCooldown = 0;
   /** スライムの伸縮アニメーション係数（1=通常, <1=潰れ, >1=伸び） */
@@ -198,6 +210,8 @@ export class Unit {
         ? 0.65
         : type.id === 'angel_zeruel'
         ? 1.05
+        : type.id === 'deoxys'
+        ? 1.45
         : 1.0;
     const origin = new Vector3(groundPos.x, groundPos.y + PELVIS_HEIGHT * s * hoverMul, groundPos.z);
     for (let i = 0; i < JOINT_COUNT; i++) {
@@ -331,7 +345,19 @@ export class Unit {
     }
 
     if (this.kawariCooldown > 0) this.kawariCooldown = Math.max(0, this.kawariCooldown - dt);
+    if (this.teleportCooldown > 0) this.teleportCooldown = Math.max(0, this.teleportCooldown - dt);
+    if (this.teleportEvasionCooldown > 0) this.teleportEvasionCooldown = Math.max(0, this.teleportEvasionCooldown - dt);
     if (this.chargeCooldown > 0) this.chargeCooldown = Math.max(0, this.chargeCooldown - dt);
+
+    // 凍結硬直の処理（永久凍土ブリザード）
+    if (this.freezeTimer > 0) {
+      this.freezeTimer = Math.max(0, this.freezeTimer - dt);
+      this.muscle = 0.95;
+      for (const p of this.joints) {
+        p.prev.lerp(p.pos, 0.25);
+      }
+      return;
+    }
 
     // 感電麻痺の処理
     if (this.shockTimer > 0) {
@@ -455,6 +481,12 @@ export class Unit {
       return;
     }
 
+    // デオキシスの瞬間移動（テレポート）: 敵が接近したときに瞬時に安全圏へ距離を取る
+    if (this.type.id === 'deoxys' && this.teleportCooldown <= 0 && dist < 6.8) {
+      this.triggerDeoxysTeleport(ctx, 'escape');
+      return;
+    }
+
     // 炎上中はパニックでランダム方向に走る
     if (this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant') {
       const panicAngle = this.facing + Math.sin(this.walkPhase * 2.5) * 1.2;
@@ -491,7 +523,7 @@ export class Unit {
       let mz = dz / Math.max(0.001, dist);
 
       // 飛行ユニット以外は奈落（一本橋ステージ）や石柱を迂回する
-      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel';
+      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys';
       if (!isFlyer) {
         const chasm = ctx.world.chasm;
         if (chasm) {
@@ -628,6 +660,7 @@ export class Unit {
       st === 'eruption' ||
       st === 'piano_performance' ||
       st === 'dragon_twister' ||
+      st === 'psychic' ||
       st === 'zeruel_cutter'
     ) {
       return this.type.range;
@@ -676,6 +709,7 @@ export class Unit {
       st === 'eruption' ||
       st === 'piano_performance' ||
       st === 'dragon_twister' ||
+      st === 'psychic' ||
       st === 'zeruel_cutter'
     ) {
       return this.type.range;
@@ -689,6 +723,12 @@ export class Unit {
     const p = this.pelvis.pos;
     for (const u of units) {
       if (!u.alive || u.team === this.team) continue;
+      // 日食フレア等による索敵制限
+      if (this.targetRangeMul < 1.0) {
+        const maxVision = 45 * this.targetRangeMul;
+        const rawDist2 = (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2;
+        if (rawDist2 > maxVision * maxVision) continue;
+      }
       // 地上近接ユニットや火炎ブレスは高空の敵よりも地上の敵を優先する
       const airPenalty =
         (this.type.range < 3.0 || this.type.style === 'breath') && u.pelvis.pos.y > 2.2 ? 160 : 0;
@@ -717,6 +757,9 @@ export class Unit {
       ctx.combat.emitEffect({ kind: 'anaconda_hiss', pos: this.head.pos.clone() });
     } else if (id === 'zaisan') {
       ctx.combat.emitEffect({ kind: 'dragon_charge', pos: this.pelvis.pos.clone(), team: this.team });
+    } else if (id === 'deoxys') {
+      this.psychicPulseTimer = 0.05;
+      this.psychicFinished = false;
     }
   }
 
@@ -741,6 +784,7 @@ export class Unit {
           this.type.id === 'sezain' ||
           this.type.id === 'zaisan' ||
           this.type.id === 'lightspeed_ant' ||
+          this.type.id === 'deoxys' ||
           this.type.category === 'divine'
         ? 0.16
         : 0.3;
@@ -865,6 +909,21 @@ export class Unit {
         roll: 0,
         team: this.team,
       });
+      return;
+    }
+
+    if (st === 'psychic') {
+      this.psychicPulseTimer = 0.22;
+      this.psychicFinished = false;
+      ctx.combat.castDeoxysPsychic(
+        this,
+        t,
+        fac,
+        ctx.units,
+        ctx.facilities ?? [],
+        dt,
+        false,
+      );
       return;
     }
 
@@ -1452,6 +1511,39 @@ export class Unit {
           dt,
         );
       }
+    } else if (st === 'psychic') {
+      if (t && t.alive) {
+        const dx = t.chest.pos.x - this.pelvis.pos.x;
+        const dz = t.chest.pos.z - this.pelvis.pos.z;
+        if (dx * dx + dz * dz > 1e-3) {
+          this.desiredFacing = Math.atan2(dx, dz);
+        }
+      }
+      this.psychicPulseTimer -= dt;
+      const isFinishTime = this.phaseTime >= this.type.strike - 0.09;
+      if (!this.psychicFinished && isFinishTime) {
+        this.psychicFinished = true;
+        ctx.combat.castDeoxysPsychic(
+          this,
+          t,
+          this.targetFacility,
+          ctx.units,
+          ctx.facilities ?? [],
+          dt,
+          true,
+        );
+      } else if (this.psychicPulseTimer <= 0 && !isFinishTime) {
+        this.psychicPulseTimer = 0.22;
+        ctx.combat.castDeoxysPsychic(
+          this,
+          t,
+          this.targetFacility,
+          ctx.units,
+          ctx.facilities ?? [],
+          dt,
+          false,
+        );
+      }
     } else if (st === 'ramiel_beam') {
       if (t && t.alive) {
         this.laserAimPos.lerp(t.chest.pos, Math.min(1.0, dt * 4.5));
@@ -1872,6 +1964,17 @@ export class Unit {
       }
     }
 
+    // 1-8. デオキシスの敵接近監視・瞬間移動（テレポート）距離取り
+    if (id === 'deoxys' && ctx.aiEnabled && this.teleportCooldown <= 0) {
+      const nearest = this.target ?? this.findNearestEnemy(ctx.units);
+      if (nearest && nearest.alive) {
+        const d = this.pelvis.pos.distanceTo(nearest.pelvis.pos);
+        if (d < 6.5) {
+          this.triggerDeoxysTeleport(ctx, 'escape');
+        }
+      }
+    }
+
     // 2. 大鷲の鷲掴み運搬と上空リリース
     if (id === 'giant_eagle' && this.grabbedUnit) {
       this.grabTimer -= dt;
@@ -2016,6 +2119,72 @@ export class Unit {
     });
   }
 
+  /** デオキシスの瞬間移動（テレポート）: 敵から安全な距離へ瞬時に跳躍して間合いを支配 */
+  private triggerDeoxysTeleport(ctx: UnitContext, reason: 'escape' | 'evade' | 'reposition'): void {
+    const fromPos = this.pelvis.pos.clone();
+    this.teleportCooldown = 3.6;
+    if (reason === 'evade') {
+      this.teleportEvasionCooldown = 4.8;
+    }
+
+    // 敵から離れる向き（後方・斜め後方）を計算
+    let backDir = this.forward.clone().multiplyScalar(-1);
+    if (this.target && this.target.alive) {
+      backDir.subVectors(this.pelvis.pos, this.target.pelvis.pos).setY(0);
+      if (backDir.lengthSq() > 0.01) {
+        backDir.normalize();
+      } else {
+        backDir.copy(this.forward).multiplyScalar(-1);
+      }
+    }
+
+    // 斜め後方や左右への適度な散開角度を加える
+    const sideAngle = (Math.random() - 0.5) * 1.05;
+    const cosA = Math.cos(sideAngle);
+    const sinA = Math.sin(sideAngle);
+    const jumpDirX = backDir.x * cosA - backDir.z * sinA;
+    const jumpDirZ = backDir.x * sinA + backDir.z * cosA;
+
+    const jumpDist = 8.5 + Math.random() * 3.5;
+    let targetX = fromPos.x + jumpDirX * jumpDist;
+    let targetZ = fromPos.z + jumpDirZ * jumpDist;
+
+    // ステージ境界内にクランプ
+    const boundaryX = 21.0;
+    const boundaryZ = 14.5;
+    targetX = clamp(targetX, -boundaryX, boundaryX);
+    targetZ = clamp(targetZ, -boundaryZ, boundaryZ);
+
+    const delta = new Vector3(targetX - fromPos.x, 0, targetZ - fromPos.z);
+
+    // 全関節粒子と武器粒子を瞬時に移動
+    for (const p of this.joints) {
+      p.pos.add(delta);
+      p.prev.copy(p.pos);
+      p.force.set(0, 0, 0);
+    }
+    for (const wp of this.weaponParticles) {
+      wp.pos.add(delta);
+      wp.prev.copy(wp.pos);
+      wp.force.set(0, 0, 0);
+    }
+
+    // 敵の方向へ即座に向き直す
+    if (this.target && this.target.alive) {
+      const ndx = this.target.pelvis.pos.x - targetX;
+      const ndz = this.target.pelvis.pos.z - targetZ;
+      this.desiredFacing = Math.atan2(ndx, ndz);
+      this.facing = this.desiredFacing;
+    }
+
+    ctx.combat.emitEffect({
+      kind: 'deoxys_teleport',
+      from: fromPos,
+      to: this.pelvis.pos.clone(),
+      team: this.team,
+    });
+  }
+
   /** 弾道計算をして矢を放つ */
   private shootArrow(targetPos: Vector3, targetVel: Vector3, ctx: UnitContext): void {
     const spec = this.type.projectile;
@@ -2132,7 +2301,7 @@ export class Unit {
     const pv = pelvis.getVelocity(dt, this.velocity);
     this.updateFrame();
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys';
     const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
     const slopeH = !overChasm && this.context ? this.context.world.getSlopeHeightAt(pelvis.pos.x, pelvis.pos.z) : 0;
     // 足（またはビークルの各接地粒子）が地面・スロープ付近にあれば「支えられている」とみなす
@@ -2206,6 +2375,9 @@ export class Unit {
         } else {
           targetH = PELVIS_HEIGHT * s * 0.65;
         }
+      } else if (this.type.id === 'deoxys') {
+        const psychicLift = this.attackPhase === 'strike' ? 0.35 : 0;
+        targetH = PELVIS_HEIGHT * s * 1.35 + psychicLift + Math.sin(this.walkPhase * 1.2) * 0.12;
       }
       if (!isFlyer) {
         targetH += slopeH;
@@ -2317,7 +2489,7 @@ export class Unit {
       lp[i].set(p[0], p[1], p[2]);
     }
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys';
     // 歩行・羽ばたきサイクル
     const w = isFlyer ? 1.0 : clamp(speedH / (1.2 * s), 0, 1);
     const phaseRate = isFlyer ? 9.5 : (Math.PI * 2 * speedH) / (1.0 * s);
@@ -2483,6 +2655,21 @@ export class Unit {
       lp[J.HandL].set(-0.56, -0.10, 0.08);
       lp[J.ElbowR].set(0.48, 0.22, 0.04);
       lp[J.HandR].set(0.56, -0.10, 0.08);
+    } else if (this.type.id === 'deoxys') {
+      // デオキシス: 神秘的な宇宙サイキック浮遊姿勢（脚を伸ばして後方へ流し、両腕は流麗に構える）
+      const floatWave = Math.sin(this.walkPhase * 0.8);
+      lp[J.HipL].set(-0.13, -0.05, 0.0);
+      lp[J.KneeL].set(-0.14, -0.44, -0.08 + floatWave * 0.04);
+      lp[J.FootL].set(-0.13, -0.82, -0.16 + floatWave * 0.06);
+      lp[J.HipR].set(0.13, -0.05, 0.0);
+      lp[J.KneeR].set(0.14, -0.44, -0.08 - floatWave * 0.04);
+      lp[J.FootR].set(0.13, -0.82, -0.16 - floatWave * 0.06);
+      if (this.attackPhase === 'none') {
+        lp[J.ElbowL].set(-0.36, 0.24, 0.06 + floatWave * 0.03);
+        lp[J.HandL].set(-0.32, -0.04, 0.14 + floatWave * 0.04);
+        lp[J.ElbowR].set(0.36, 0.24, 0.06 - floatWave * 0.03);
+        lp[J.HandR].set(0.32, -0.04, 0.14 - floatWave * 0.04);
+      }
     } else if (isFlyer) {
       // 翼（両腕）の大きな羽ばたきモーション
       const flap = Math.sin(this.walkPhase);
@@ -2691,6 +2878,30 @@ export class Unit {
         lp[J.Chest].set(0, 0.28, 0.05);
         lp[J.Head].set(0, 0.58, 0.1);
       }
+    } else if (style === 'psychic') {
+      if (phase === 'windup') {
+        // 胸の前で両手を引き寄せサイキックチャージ
+        lp[J.HandL].set(-0.14, 0.42, 0.32);
+        lp[J.ElbowL].set(-0.28, 0.35, 0.18);
+        lp[J.HandR].set(0.14, 0.42, 0.32);
+        lp[J.ElbowR].set(0.28, 0.35, 0.18);
+        lp[J.Chest].set(0, 0.44, -0.04);
+        lp[J.Head].set(0, 0.78, 0.02);
+      } else if (phase === 'strike') {
+        // 前方へ両手を強く突き出し、サイコキネシスの念力波束を放射
+        const vibration = Math.sin(this.phaseTime * 36) * 0.025;
+        lp[J.HandL].set(-0.22, 0.46 + vibration, 0.62);
+        lp[J.ElbowL].set(-0.32, 0.44, 0.32);
+        lp[J.HandR].set(0.22, 0.46 - vibration, 0.62);
+        lp[J.ElbowR].set(0.32, 0.44, 0.32);
+        lp[J.Chest].set(0, 0.42, 0.06);
+        lp[J.Head].set(0, 0.76, 0.08);
+      } else if (phase === 'recover') {
+        lp[J.HandL].set(-0.28, 0.32, 0.35);
+        lp[J.ElbowL].set(-0.34, 0.30, 0.18);
+        lp[J.HandR].set(0.28, 0.32, 0.35);
+        lp[J.ElbowR].set(0.34, 0.30, 0.18);
+      }
     }
 
     if (phase === 'strike' && this.type.weapon !== null) {
@@ -2764,6 +2975,19 @@ export class Unit {
       return false;
     }
 
+    // デオキシスの緊急回避テレポート（被弾時に瞬時に安全圏へ跳躍回避しダメージ大幅カット）
+    if (
+      this.type.id === 'deoxys' &&
+      this.context &&
+      this.context.aiEnabled &&
+      this.teleportEvasionCooldown <= 0 &&
+      attacker &&
+      attacker !== this
+    ) {
+      this.triggerDeoxysTeleport(this.context, 'evade');
+      amount *= 0.2;
+    }
+
     // 使徒・神（divine）の「ATフィールド」パッシブダメージカット＆エフェクト
     if (this.type.category === 'divine') {
       let cutRatio = 0.3;
@@ -2786,7 +3010,8 @@ export class Unit {
         });
       }
     }
-    this.hp -= amount;
+    const finalDamage = amount * this.vulnerabilityMul;
+    this.hp -= finalDamage;
     this.hitFlash = 1;
     // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴン・大蛇・バギーは強靭でよろめきにくい）
     const isSuperHeavy =
@@ -2797,6 +3022,7 @@ export class Unit {
       this.type.id === 'buggy' ||
       this.type.id === 'yamamuron' ||
       this.type.id === 'sezain' ||
+      this.type.id === 'deoxys' ||
       this.type.category === 'divine';
     const staggerMul = isSuperHeavy ? 0.7 : 2.2;
     const flatLoss = isSuperHeavy ? 0.012 : 0.05;

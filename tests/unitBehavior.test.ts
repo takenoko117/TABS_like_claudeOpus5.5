@@ -522,6 +522,42 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(bites).toBeGreaterThan(2);
     expect(totalDmg).toBeGreaterThan(20);
   });
+
+  it('デオキシスがサイコキネシスで攻撃し、敵接近時に瞬間移動で距離を取る', () => {
+    const battle = new DiagBattle();
+    const deoxys = battle.spawnUnit('deoxys', 0, -8, 0);
+    const dummy = battle.spawnUnit('swordsman', 1, 3, 0);
+    battle.frozen.add(dummy);
+    dummy.hp = 1e7;
+    let teleports = 0;
+    let psychicWaves = 0;
+    let psychicHits = 0;
+    let totalDmg = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'deoxys_teleport') teleports++;
+      if (e.kind === 'deoxys_psychic_wave') psychicWaves++;
+      if (e.kind === 'deoxys_psychic_hit') psychicHits++;
+    };
+    battle.combat.onHit = (e) => {
+      if (e.attacker === deoxys && e.victim === dummy) totalDmg += e.damage;
+    };
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 4; i++) battle.step(battle.fixedDt);
+    // 初期配置が距離11mなのでサイコキネシスで攻撃開始
+    expect(psychicWaves).toBeGreaterThan(0);
+    expect(psychicHits).toBeGreaterThan(0);
+    expect(totalDmg).toBeGreaterThan(30);
+
+    // 敵を至近距離に瞬間移動させてテレポート距離取りをテスト
+    dummy.pelvis.pos.set(deoxys.pelvis.pos.x + 2.0, deoxys.pelvis.pos.y, deoxys.pelvis.pos.z);
+    for (const p of dummy.joints) {
+      p.pos.set(deoxys.pelvis.pos.x + 2.0, p.pos.y, deoxys.pelvis.pos.z);
+      p.prev.copy(p.pos);
+    }
+    const initialTeleports = teleports;
+    for (let i = 0; i < 60; i++) battle.step(battle.fixedDt);
+    expect(teleports).toBeGreaterThan(initialTeleports);
+  });
 });
 
 describe('1対1 総当たりで膠着しない', () => {

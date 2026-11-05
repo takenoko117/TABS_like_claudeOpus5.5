@@ -87,7 +87,19 @@ export type CombatEffectEvent =
   | { kind: 'dragon_slash'; pos: Vector3; dir: Vector3; roll: number; team: Team }
   | { kind: 'dragon_slash_hit'; pos: Vector3 }
   | { kind: 'ant_dash'; from: Vector3; to: Vector3; team: Team }
-  | { kind: 'ant_bite'; pos: Vector3 };
+  | { kind: 'ant_bite'; pos: Vector3 }
+  | { kind: 'deoxys_teleport'; from: Vector3; to: Vector3; team: Team }
+  | { kind: 'deoxys_psychic_wave'; from: Vector3; to: Vector3; radius: number; team: Team }
+  | { kind: 'deoxys_psychic_hit'; pos: Vector3; team: Team }
+  | { kind: 'stage_inferno_surge'; pos: Vector3 }
+  | { kind: 'stage_blizzard_blast'; pos: Vector3 }
+  | { kind: 'stage_poison_spore'; pos: Vector3 }
+  | { kind: 'stage_gravity_wave'; pos: Vector3 }
+  | { kind: 'stage_lightning_strike'; pos: Vector3 }
+  | { kind: 'stage_blood_surge'; pos: Vector3 }
+  | { kind: 'stage_time_slip'; pos: Vector3; isFast: boolean }
+  | { kind: 'stage_flare_blind'; pos: Vector3 }
+  | { kind: 'stage_meteor_impact'; pos: Vector3 };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -179,6 +191,8 @@ export class CombatSystem {
   readonly lightningBolts: LightningBolt[] = [];
   readonly fireZones: FireZone[] = [];
   private readonly delayedSlashes: DelayedSlash[] = [];
+  /** 飛び道具・魔法・爆風の威力補正（虚無領域ステージ等で半減） */
+  projectileDamageMultiplier = 1.0;
 
   onHit: ((e: HitEvent) => void) | null = null;
   onShootArrow: ((owner: Unit) => void) | null = null;
@@ -189,6 +203,8 @@ export class CombatSystem {
     this.gravityOrbs.length = 0;
     this.lightningBolts.length = 0;
     this.fireZones.length = 0;
+    this.delayedSlashes.length = 0;
+    this.projectileDamageMultiplier = 1.0;
     this.delayedSlashes.length = 0;
   }
 
@@ -448,7 +464,7 @@ export class CombatSystem {
     let hitCount = 0;
     const r2 = radius * radius;
     const attackerTeam = teamOverride ?? attacker?.team ?? 0;
-    const dmgMul = attacker?.damageMul ?? 1.0;
+    const dmgMul = (attacker?.damageMul ?? 1.0) * this.projectileDamageMultiplier;
 
     for (const u of units) {
       if (!u.alive || u.team === attackerTeam) continue;
@@ -602,6 +618,90 @@ export class CombatSystem {
       const d = fac.pos.distanceTo(pos);
       if (d <= range) {
         const dmg = damage * 0.8 * owner.damageMul;
+        const killed = fac.takeDamage(dmg, owner);
+        this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+        if (killed) {
+          this.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+        }
+      }
+    }
+  }
+
+  /** デオキシスのサイコキネシス攻撃（反重力浮遊・念力拘束・吹き飛ばし衝撃波） */
+  castDeoxysPsychic(
+    owner: Unit,
+    target: Unit | null,
+    targetFacility: Facility | null,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+    isFinish: boolean,
+  ): void {
+    const from = owner.chest.pos.clone().addScaledVector(owner.forward, 0.45 * owner.scale);
+    let targetPos: Vector3;
+    if (target && target.alive) {
+      targetPos = target.chest.pos.clone();
+    } else if (targetFacility && targetFacility.alive) {
+      targetPos = targetFacility.pos.clone().setY(targetFacility.height * 0.5);
+    } else {
+      targetPos = owner.pelvis.pos.clone().addScaledVector(owner.forward, 12.0).setY(1.2);
+    }
+
+    const radius = 5.2;
+    this.emitEffect({
+      kind: 'deoxys_psychic_wave',
+      from,
+      to: targetPos.clone(),
+      radius,
+      team: owner.team,
+    });
+
+    const baseDmg = isFinish ? 48 : 16;
+
+    // 範囲内の敵ユニットへの念力効果
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const d = u.pelvis.pos.distanceTo(targetPos);
+      if (d > radius) continue;
+
+      // 反重力リフト＆中心への引き寄せ
+      const toCenter = targetPos.clone().sub(u.pelvis.pos).setY(0);
+      const pullLen = toCenter.length();
+      if (pullLen > 0.1) toCenter.normalize();
+
+      const liftY = isFinish ? 4.2 : 2.8;
+      const pushDir = isFinish
+        ? new Vector3().subVectors(u.pelvis.pos, from).setY(0).normalize().multiplyScalar(6.5)
+        : toCenter.multiplyScalar(1.5);
+
+      const impulse = pushDir.setY(liftY);
+      const dmg = baseDmg * owner.damageMul;
+      const killed = u.takeDamage(dmg, u.chest, impulse, dt, owner);
+
+      // 関節全体にも上向き・拘束力を適用して無力化
+      for (const p of u.joints) {
+        p.force.y += (isFinish ? 40 : 25) * p.mass;
+      }
+
+      this.emitEffect({ kind: 'deoxys_psychic_hit', pos: u.chest.pos.clone(), team: owner.team });
+      this.onHit?.({
+        kind: 'magic',
+        point: u.chest.pos.clone(),
+        damage: dmg,
+        attacker: owner,
+        victim: u,
+        hitParticle: u.chest,
+        impulse,
+        killed,
+      });
+    }
+
+    // 施設への念力圧壊ダメージ
+    for (const fac of facilities) {
+      if (!fac.alive || fac.isTerrain || fac.team === owner.team) continue;
+      const d = fac.pos.distanceTo(targetPos);
+      if (d <= radius + fac.radius) {
+        const dmg = baseDmg * 0.85 * owner.damageMul;
         const killed = fac.takeDamage(dmg, owner);
         this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
         if (killed) {
@@ -963,7 +1063,7 @@ export class CombatSystem {
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
     if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
-      const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0);
+      const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0) * this.projectileDamageMultiplier;
       if (bestU.alive && bestU.team !== a.team) {
         bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined);
       }
@@ -989,9 +1089,9 @@ export class CombatSystem {
       const isSlimeBounce = bestU.type.id === 'slime' && a.projectileKind !== 'flame';
       const shieldDamageMul = isShieldBlock ? (a.projectileKind === 'sniper' ? 0.28 : 0.1) : 1.0;
       const rawDamage =
-        a.projectileKind === 'flame'
+        (a.projectileKind === 'flame'
           ? a.damage
-          : a.damage * clamp(speed / a.refSpeed, 0.5, 1.2) * (isSlimeBounce ? 0.5 : 1.0) * shieldDamageMul;
+          : a.damage * clamp(speed / a.refSpeed, 0.5, 1.2) * (isSlimeBounce ? 0.5 : 1.0) * shieldDamageMul) * this.projectileDamageMultiplier;
 
       const kbFactor =
         a.projectileKind === 'sniper'
