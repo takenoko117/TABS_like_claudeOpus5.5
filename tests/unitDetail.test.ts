@@ -49,6 +49,13 @@ describe('UnitDetailHelper', () => {
     expect(featured.featuredNote).toBe('★ステージ特効ユニット！');
   });
 
+  it('ホンゴンの詳細情報に特殊効果（遠距離無効）のステータスピルが含まれる', () => {
+    const detail = getPlaceableDetail('hongon');
+    const specialPill = detail.statPills.find((p) => p.className.includes('special'));
+    expect(specialPill).toBeDefined();
+    expect(specialPill?.value).toContain('遠距離無効');
+  });
+
   it('特殊攻撃や各スタイルのダメージ表示が適切に行われる', () => {
     expect(getAttackDamageDisplay(UNIT_TYPES.clubber)).toBe('17');
     expect(getAttackDamageDisplay(UNIT_TYPES.archer)).toBe('22');

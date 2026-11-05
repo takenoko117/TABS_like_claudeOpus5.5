@@ -474,6 +474,33 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(hitCount).toBeGreaterThan(2);
   });
 
+  it('ホンゴンは特殊効果で遠距離攻撃（矢・銃弾・爆弾など）を完全に無効化し、近接攻撃のみダメージを受ける', () => {
+    const battle = new DiagBattle();
+    const pianist = battle.spawnUnit('hongon', 0, 0, 0);
+    battle.spawnUnit('archer', 1, 8, 0);
+    battle.spawnUnit('sniper', 1, 14, 0);
+    battle.spawnUnit('bomber', 1, 7, 0);
+    battle.frozen.add(pianist);
+
+    let blockedNotes = 0;
+    battle.combat.onEffect = (e) => {
+      if (e.kind === 'piano_note') blockedNotes++;
+    };
+
+    const initialHp = pianist.hp;
+    battle.aiEnabled = true;
+    for (let i = 0; i < 120 * 3; i++) battle.step(battle.fixedDt);
+
+    // 遠距離攻撃ユニットからの射撃・爆撃を多数受けても、ホンゴンのHPは全く減らない！
+    expect(pianist.hp).toBe(initialHp);
+    expect(blockedNotes).toBeGreaterThan(0);
+
+    // 一方、近接攻撃（剣士）を受けると通常通りダメージを受ける
+    battle.spawnUnit('swordsman', 1, 1, 0);
+    for (let i = 0; i < 120 * 2; i++) battle.step(battle.fixedDt);
+    expect(pianist.hp).toBeLessThan(initialHp);
+  });
+
   it('ザイサンが翠龍の気を纏ってきりもみ回転突進し三刀流で多段ヒットダメージを与える', () => {
     const battle = new DiagBattle();
     const zaisan = battle.spawnUnit('zaisan', 0, -8, 0);

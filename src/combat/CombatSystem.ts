@@ -378,21 +378,26 @@ export class CombatSystem {
       const hitPos = currentTarget.chest.pos.clone();
       chainPoints.push(hitPos);
 
-      // 感電麻痺とランダムな痙攣インパルス
-      currentTarget.shockTimer = Math.max(currentTarget.shockTimer, 0.85);
-      currentTarget.muscle = Math.min(currentTarget.muscle, 0.08);
-      const jolt = new Vector3((Math.random() - 0.5) * 4, 2.5, (Math.random() - 0.5) * 4);
-      const killed = currentTarget.takeDamage(currentDamage, currentTarget.chest, jolt, dt, owner);
-      this.onHit?.({
-        kind: 'magic',
-        point: hitPos.clone(),
-        damage: currentDamage,
-        attacker: owner,
-        victim: currentTarget,
-        hitParticle: currentTarget.chest,
-        impulse: jolt,
-        killed,
-      });
+      // ホンゴンの特殊効果: 遠距離攻撃無効（遠距離魔法・雷撃を無効化）
+      if (currentTarget.type.id === 'hongon') {
+        this.emitEffect({ kind: 'piano_note', pos: hitPos.clone() });
+      } else {
+        // 感電麻痺とランダムな痙攣インパルス
+        currentTarget.shockTimer = Math.max(currentTarget.shockTimer, 0.85);
+        currentTarget.muscle = Math.min(currentTarget.muscle, 0.08);
+        const jolt = new Vector3((Math.random() - 0.5) * 4, 2.5, (Math.random() - 0.5) * 4);
+        const killed = currentTarget.takeDamage(currentDamage, currentTarget.chest, jolt, dt, owner, true);
+        this.onHit?.({
+          kind: 'magic',
+          point: hitPos.clone(),
+          damage: currentDamage,
+          attacker: owner,
+          victim: currentTarget,
+          hitParticle: currentTarget.chest,
+          impulse: jolt,
+          killed,
+        });
+      }
 
       // 次の連鎖ターゲット（3.5m 以内の最も近い未訪問の敵）を探す
       let nextTarget: Unit | null = null;
@@ -468,6 +473,11 @@ export class CombatSystem {
 
     for (const u of units) {
       if (!u.alive || u.team === attackerTeam) continue;
+      // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（爆撃・砲撃・ビームなどの遠距離爆風を完全無効化）
+      if (u.type.id === 'hongon' && hitKind !== 'melee') {
+        this.emitEffect({ kind: 'piano_note', pos: u.chest.pos.clone() });
+        continue;
+      }
       const d2 = u.pelvis.pos.distanceToSquared(center);
       if (d2 > r2) continue;
       const dist = Math.sqrt(d2);
@@ -1063,9 +1073,15 @@ export class CombatSystem {
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
     if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
-      const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0) * this.projectileDamageMultiplier;
-      if (bestU.alive && bestU.team !== a.team) {
-        bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined);
+      const isHongon = bestU.alive && bestU.type.id === 'hongon';
+      if (isHongon) {
+        // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（爆発弾直撃を無効化）
+        this.emitEffect({ kind: 'piano_note', pos: a.pos.clone() });
+      } else {
+        const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0) * this.projectileDamageMultiplier;
+        if (bestU.alive && bestU.team !== a.team) {
+          bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined, true);
+        }
       }
       this.triggerExplosiveProjectileHit(a, a.pos, units, [], dt);
       return true;
@@ -1074,6 +1090,13 @@ export class CombatSystem {
     const speed = a.vel.length();
 
     if (bestU.alive) {
+      // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（矢・銃弾・狙撃・手裏剣・火炎などを完全無効化）
+      if (bestU.type.id === 'hongon') {
+        this.emitEffect({ kind: 'piano_note', pos: a.pos.clone() });
+        a.life = 0;
+        a.pierceLeft = 0;
+        return true;
+      }
       // 盾兵の正面ガード判定（盾粒子への命中、または正面からの射撃）
       const isShieldBlock =
         bestU.type.id === 'shielder' &&
@@ -1203,10 +1226,15 @@ export class CombatSystem {
         const perpH = Math.abs(-dirH.z * toU.x + dirH.x * toU.z);
         const effectivePerp = Math.min(perp3D, perpH);
         if (effectivePerp <= beamRadius + u.bodyRadius * 0.6) {
+          // ホンゴンの特殊効果: 遠距離攻撃無効（貫通レーザービームを無効化）
+          if (u.type.id === 'hongon') {
+            this.emitEffect({ kind: 'piano_note', pos: u.chest.pos.clone() });
+            continue;
+          }
           const dmg = (isInitial ? 280 + Math.random() * 50 : 48 + Math.random() * 12) * owner.damageMul;
           const impulse = dir.clone().multiplyScalar(isInitial ? 18.0 : 7.5);
           impulse.y = Math.max(impulse.y, isInitial ? 4.5 : 1.8);
-          u.takeDamage(dmg, u.chest, impulse, dt, owner);
+          u.takeDamage(dmg, u.chest, impulse, dt, owner, true);
           this.onHit?.({
             kind: 'magic',
             point: u.chest.pos.clone(),
@@ -1255,19 +1283,23 @@ export class CombatSystem {
     const from = owner.joints[J.HandR].pos.clone();
     this.emitEffect({ kind: 'sachiel_pile', from, to: targetPos.clone() });
     if (target && target.alive && target.team !== owner.team) {
-      const dmg = (110 + Math.random() * 25) * owner.damageMul;
-      const dir = new Vector3().subVectors(targetPos, from).normalize();
-      target.takeDamage(dmg, target.chest, dir.clone().multiplyScalar(12.0), dt, owner);
-      this.onHit?.({
-        kind: 'melee',
-        point: targetPos.clone(),
-        damage: dmg,
-        attacker: owner,
-        victim: target,
-        hitParticle: target.chest,
-        impulse: dir.multiplyScalar(12.0),
-        killed: !target.alive,
-      });
+      if (target.type.id === 'hongon') {
+        this.emitEffect({ kind: 'piano_note', pos: targetPos.clone() });
+      } else {
+        const dmg = (110 + Math.random() * 25) * owner.damageMul;
+        const dir = new Vector3().subVectors(targetPos, from).normalize();
+        target.takeDamage(dmg, target.chest, dir.clone().multiplyScalar(12.0), dt, owner, true);
+        this.onHit?.({
+          kind: 'melee',
+          point: targetPos.clone(),
+          damage: dmg,
+          attacker: owner,
+          victim: target,
+          hitParticle: target.chest,
+          impulse: dir.multiplyScalar(12.0),
+          killed: !target.alive,
+        });
+      }
     }
     // 十字架状の閃光クロス爆発（大威力＆広範囲）
     this.emitEffect({ kind: 'sachiel_cross', pos: targetPos.clone() });

@@ -193,6 +193,15 @@ export function getPlaceableDetail(
     });
   }
 
+  if (ut.id === 'hongon') {
+    pills.push({
+      label: '特効',
+      value: '🛡️ 遠距離無効',
+      className: 'stat-pill special',
+      title: '特殊効果: 矢・銃弾・爆弾・砲撃・遠距離魔法などあらゆる遠距離攻撃を完全に無効化',
+    });
+  }
+
   return {
     id,
     isFacility: false,

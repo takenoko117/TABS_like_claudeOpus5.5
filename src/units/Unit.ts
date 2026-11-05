@@ -2959,8 +2959,19 @@ export class Unit {
    * @param dv ノックバックの速度変化
    * @returns この攻撃で死亡したか
    */
-  takeDamage(amount: number, hitParticle: Particle, dv: Vector3, dt: number, attacker?: Unit): boolean {
+  takeDamage(amount: number, hitParticle: Particle, dv: Vector3, dt: number, attacker?: Unit, isRanged?: boolean): boolean {
     if (!this.alive) return false;
+
+    // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（飛翔体・射撃・砲撃・遠距離魔法を完全無効化）
+    if (this.type.id === 'hongon' && isRanged) {
+      if (this.context) {
+        this.context.combat.emitEffect({
+          kind: 'piano_note',
+          pos: hitParticle.pos.clone(),
+        });
+      }
+      return false;
+    }
 
     // からくり忍者の「変わり身の術」（被弾時にクールダウン中なければ無効化してワープ回避）
     if (

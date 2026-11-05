@@ -1324,6 +1324,14 @@ body {
   border: 1px solid rgba(105, 219, 124, 0.35);
 }
 
+.stat-pill.special {
+  color: #f06595;
+  background: rgba(240, 101, 149, 0.18);
+  border: 1px solid rgba(240, 101, 149, 0.45);
+  font-weight: 600;
+  box-shadow: 0 0 6px rgba(240, 101, 149, 0.25);
+}
+
 .unit-desc {
   font-size: 10px;
   line-height: 1.3;
