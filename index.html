@@ -83,8 +83,9 @@
 
       <div class="panel-section">
         <div class="section-label">ゲームモード</div>
-        <div class="mode-switch-group three-cols">
+        <div class="mode-switch-group">
           <button id="btn-mode-arcade" class="ctrl-btn active">🏆 アーケード</button>
+          <button id="btn-mode-challenge" class="ctrl-btn">🔥 チャレンジ</button>
           <button id="btn-mode-versus" class="ctrl-btn">👥 友人対戦</button>
           <button id="btn-mode-sandbox" class="ctrl-btn">🛠 サンドボックス</button>
         </div>
@@ -142,6 +143,15 @@
         </button>
       </div>
 
+      <!-- チャレンジモード用パネル -->
+      <div id="challenge-panel" class="panel-section hidden">
+        <div class="section-label">🔥 チャレンジ</div>
+        <div id="challenge-status" class="stage-briefing"></div>
+        <button id="btn-challenge-quit" type="button" class="ctrl-btn danger full" style="margin-top: 6px;">
+          🏳 中断してスコアを確定
+        </button>
+      </div>
+
       <!-- サンドボックス用プリセットパネル -->
       <div id="sandbox-panel" class="panel-section hidden">
         <div class="section-label">プリセット編成</div>
@@ -170,6 +180,7 @@
       <div id="result-title" class="result-title">赤軍の勝利！</div>
       <div id="result-sub" class="result-sub"></div>
       <div id="result-unlock" class="result-unlock hidden"></div>
+      <div id="result-challenge" class="result-challenge hidden"></div>
       <div class="result-actions">
         <button id="btn-retry" class="ctrl-btn">↺ 配置に戻る</button>
         <button id="btn-next-stage" class="start-btn hidden">▶ 次の面へ進む</button>

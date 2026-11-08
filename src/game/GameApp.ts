@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
 import { SoundManager } from '../audio/SoundManager';
 import type { Facility } from '../facilities/Facility';
+import type { Unit } from '../units/Unit';
 import {
   COMBAT_FACILITY_TYPE_LIST,
   FACILITY_TYPES,
@@ -33,6 +34,7 @@ import {
   ARCADE_STAGES,
   checkStageRuleViolation,
   computeStageStars,
+  getAllUnitIds,
   getStageZoneFacing,
   isInsideStageRedZone,
   isUnitUnlocked,
@@ -43,6 +45,19 @@ import {
   type ArcadeStage,
 } from './ArcadeStages';
 import { Battle, type BattleResult } from './Battle';
+import {
+  CHALLENGE_PLAYER_BUDGET,
+  CHALLENGE_TIME_LIMIT_SECONDS,
+  ChallengeRun,
+  computeSurvivalRatio,
+  createChallengeSeed,
+  generateEnemyLineup,
+  loadChallengeBest,
+  mergeChallengeBest,
+  saveChallengeBest,
+  type ChallengeBest,
+  type ChallengeEndReason,
+} from './ChallengeMode';
 import {
   VersusSession,
   getVersusPlacementFacing,
@@ -278,13 +293,14 @@ export const PRESETS: readonly PresetScenario[] = [
 ];
 
 export type GameMode = 'placement' | 'battle';
-export type PlayStyle = 'arcade' | 'sandbox' | 'versus';
+export type PlayStyle = 'arcade' | 'sandbox' | 'versus' | 'challenge';
 
 /**
  * ゲーム全体の進行管理と UI バインディング。
  * - アーケードモード: 全30面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
  * - 友人対戦モード: 2〜4人オフライン対戦、ランダム初期予算＋手動編集、ブラインド順番配置＆全員完了で戦闘開始
  * - サンドボックスモード: 地面クリックで両軍に自由配置（左半分=赤軍、右半分=青軍）
+ * - チャレンジモード: 自軍2000pt固定で、増え続けるランダムな敵に1敗するまで挑み続ける
  */
 export class GameApp {
   readonly battle = new Battle();
@@ -295,6 +311,13 @@ export class GameApp {
   currentStageIndex = 0;
   arcadeSave: ArcadeSaveData = loadArcadeSave();
   readonly versus = new VersusSession(2);
+  /** 進行中（または直前）のチャレンジのラン */
+  challenge = new ChallengeRun(0);
+  private challengeBest: ChallengeBest = loadChallengeBest();
+  /** NEW RECORD 判定に使う、ラン開始時点のベスト記録 */
+  private challengeBestAtRunStart: ChallengeBest = this.challengeBest;
+  /** 生存ボーナスの集計対象（戦闘開始時の自軍。召喚や分裂で増えた分は含めない） */
+  private challengeRoster: Array<Unit | Facility> = [];
 
   mode: GameMode = 'placement';
   selectedId: UnitTypeId | FacilityTypeId = 'clubber';
@@ -342,6 +365,9 @@ export class GameApp {
   private readonly elBannerText: HTMLElement;
   private readonly elBannerSub: HTMLElement;
   private readonly elBannerUnlock: HTMLElement | null;
+  private readonly elBannerChallenge: HTMLElement | null;
+  private readonly elRetryBtn: HTMLButtonElement | null;
+  private readonly elChallengeStatus: HTMLElement | null;
   private readonly elNextStageBtn: HTMLButtonElement | null;
   private readonly elCategoryTabs: HTMLElement | null;
   private readonly elUnitBar: HTMLElement;
@@ -408,6 +434,9 @@ export class GameApp {
     this.elBannerText = document.getElementById('result-title')!;
     this.elBannerSub = document.getElementById('result-sub')!;
     this.elBannerUnlock = document.getElementById('result-unlock');
+    this.elBannerChallenge = document.getElementById('result-challenge');
+    this.elRetryBtn = document.getElementById('btn-retry') as HTMLButtonElement | null;
+    this.elChallengeStatus = document.getElementById('challenge-status');
     this.elNextStageBtn = document.getElementById('btn-next-stage') as HTMLButtonElement | null;
     this.elCategoryTabs = document.getElementById('category-tabs');
     this.elUnitBar = document.getElementById('unit-bar')!;
@@ -491,6 +520,21 @@ export class GameApp {
     this.syncUnitDetailOverlay();
   }
 
+  /** 選択中のゲームモードに合わせて、モードボタンとサイドパネルの表示を切り替える */
+  private syncModePanels(): void {
+    const modes: ReadonlyArray<[PlayStyle, string, string]> = [
+      ['arcade', 'btn-mode-arcade', 'arcade-panel'],
+      ['versus', 'btn-mode-versus', 'versus-panel'],
+      ['sandbox', 'btn-mode-sandbox', 'sandbox-panel'],
+      ['challenge', 'btn-mode-challenge', 'challenge-panel'],
+    ];
+    for (const [style, buttonId, panelId] of modes) {
+      const isActive = this.playStyle === style;
+      document.getElementById(buttonId)?.classList.toggle('active', isActive);
+      document.getElementById(panelId)?.classList.toggle('hidden', !isActive);
+    }
+  }
+
   private buildUI(): void {
     // ユニット詳細説明オーバーレイの閉じるボタン
     this.elDetailCloseBtn?.addEventListener('click', () => {
@@ -549,45 +593,35 @@ export class GameApp {
       });
     }
 
-    // モード切替ボタン（アーケード / 友人対戦 / サンドボックス）
-    const btnArcade = document.getElementById('btn-mode-arcade');
-    const btnVersus = document.getElementById('btn-mode-versus');
-    const btnSandbox = document.getElementById('btn-mode-sandbox');
-    const arcadePanel = document.getElementById('arcade-panel');
-    const versusPanel = document.getElementById('versus-panel');
-    const sandboxPanel = document.getElementById('sandbox-panel');
-
-    const syncModePanels = () => {
-      const isArc = this.playStyle === 'arcade';
-      const isVs = this.playStyle === 'versus';
-      const isSb = this.playStyle === 'sandbox';
-      btnArcade?.classList.toggle('active', isArc);
-      btnVersus?.classList.toggle('active', isVs);
-      btnSandbox?.classList.toggle('active', isSb);
-      arcadePanel?.classList.toggle('hidden', !isArc);
-      versusPanel?.classList.toggle('hidden', !isVs);
-      sandboxPanel?.classList.toggle('hidden', !isSb);
-    };
-
-    btnArcade?.addEventListener('click', () => {
-      if (this.playStyle === 'arcade') return;
+    // モード切替ボタン（アーケード / 友人対戦 / サンドボックス / チャレンジ）
+    document.getElementById('btn-mode-arcade')?.addEventListener('click', () => {
+      if (this.playStyle === 'arcade' || this.blockLeavingChallenge()) return;
       this.playStyle = 'arcade';
-      syncModePanels();
+      this.syncModePanels();
       this.loadArcadeStage(this.currentStageIndex);
     });
 
-    btnVersus?.addEventListener('click', () => {
-      if (this.playStyle === 'versus') return;
+    document.getElementById('btn-mode-versus')?.addEventListener('click', () => {
+      if (this.playStyle === 'versus' || this.blockLeavingChallenge()) return;
       this.playStyle = 'versus';
-      syncModePanels();
+      this.syncModePanels();
       this.enterVersusMode(this.versus.playerCount, true);
     });
 
-    btnSandbox?.addEventListener('click', () => {
-      if (this.playStyle === 'sandbox') return;
+    document.getElementById('btn-mode-sandbox')?.addEventListener('click', () => {
+      if (this.playStyle === 'sandbox' || this.blockLeavingChallenge()) return;
       this.playStyle = 'sandbox';
-      syncModePanels();
+      this.syncModePanels();
       this.loadPreset(PRESETS[0]);
+    });
+
+    document.getElementById('btn-mode-challenge')?.addEventListener('click', () => {
+      if (this.playStyle === 'challenge') return;
+      this.enterChallengeMode();
+    });
+
+    document.getElementById('btn-challenge-quit')?.addEventListener('click', () => {
+      this.confirmQuitChallenge();
     });
 
     // 友人対戦モードの人数選択ボタン（サイドパネル＆上部HUD）
@@ -741,16 +775,27 @@ export class GameApp {
         } else {
           this.startBattle();
         }
+      } else if (this.playStyle === 'challenge') {
+        this.handleChallengeBattleAction(false);
       } else {
         this.returnToPlacement();
       }
     });
 
     document.getElementById('btn-retry')!.addEventListener('click', () => {
-      this.returnToPlacement();
+      if (this.playStyle === 'challenge') {
+        this.exitChallengeToTitle();
+      } else {
+        this.returnToPlacement();
+      }
     });
 
     this.elNextStageBtn?.addEventListener('click', () => {
+      if (this.playStyle === 'challenge') {
+        if (this.challenge.ended) this.enterChallengeMode();
+        else this.advanceChallengeRound();
+        return;
+      }
       if (this.playStyle === 'versus') {
         this.enterVersusMode(this.versus.playerCount, true);
         return;
@@ -762,8 +807,10 @@ export class GameApp {
 
     // 全消去ボタン（アーケードでは自軍のみ、友人対戦では現在手番プレイヤーの配置のみリセット）
     document.getElementById('btn-clear')!.addEventListener('click', () => {
+      // チャレンジはリトライ不可のため、戦闘中・決着後は編成を変更できない
+      if (this.playStyle === 'challenge' && this.mode !== 'placement') return;
       if (this.mode !== 'placement') this.returnToPlacement();
-      if (this.playStyle === 'arcade') {
+      if (this.isSoloPlayStyle()) {
         this.savedLineup = this.savedLineup.filter((u) => u.team === 1);
         for (const u of [...this.battle.units]) {
           if (u.team === 0) this.battle.removeUnit(u);
@@ -839,6 +886,8 @@ export class GameApp {
         if (this.mode === 'placement') {
           if (this.playStyle === 'versus') this.confirmVersusTurn();
           else this.startBattle();
+        } else if (this.playStyle === 'challenge') {
+          this.handleChallengeBattleAction(true);
         } else {
           this.returnToPlacement();
         }
@@ -890,15 +939,13 @@ export class GameApp {
     });
   }
 
-  private renderStageBriefing(): void {
-    const el = document.getElementById('stage-briefing');
-    if (!el) return;
-    const st = this.currentStage;
-
-    // 敵軍の構成をカウントしてキャラアイコン付きで表示
+  /** 敵軍の構成をカウントしてキャラアイコン付きのチップにする */
+  private renderEnemyChips(
+    enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId }>,
+  ): string {
     const enemyCounts = new Map<UnitTypeId, number>();
     const facilityCounts = new Map<FacilityTypeId, number>();
-    for (const e of st.enemies) {
+    for (const e of enemies) {
       if (e.facilityId) {
         facilityCounts.set(e.facilityId, (facilityCounts.get(e.facilityId) ?? 0) + 1);
       } else if (e.typeId) {
@@ -923,7 +970,15 @@ export class GameApp {
         </span>`;
       })
       .join('');
-    const enemyHtml = enemyUnitsHtml + enemyFacilitiesHtml;
+    return enemyUnitsHtml + enemyFacilitiesHtml;
+  }
+
+  private renderStageBriefing(): void {
+    const el = document.getElementById('stage-briefing');
+    if (!el) return;
+    const st = this.currentStage;
+
+    const enemyHtml = this.renderEnemyChips(st.enemies);
 
     const featuredHtml = st.featuredUnits
       .map((id) => {
@@ -1010,7 +1065,7 @@ export class GameApp {
         (ut) => this.selectedCategory === 'all' || ut.category === this.selectedCategory,
       );
       filtered.forEach((ut, idx) => {
-        const unlocked = !isArc || isUnitUnlocked(this.arcadeSave, ut.id);
+        const unlocked = !this.isSoloPlayStyle() || isUnitUnlocked(this.arcadeSave, ut.id);
         const ruleViolation = isArc ? checkStageRuleViolation(this.currentStage, ut.id, 0) : null;
         const isFeatured = featuredSet.has(ut.id);
         const btn = document.createElement('button');
@@ -1147,7 +1202,7 @@ export class GameApp {
   }
 
   selectPlaceable(id: UnitTypeId | FacilityTypeId): void {
-    if (this.playStyle === 'arcade' && !isFacilityTypeId(id) && !isUnitUnlocked(this.arcadeSave, id)) {
+    if (this.isSoloPlayStyle() && !isFacilityTypeId(id) && !isUnitUnlocked(this.arcadeSave, id)) {
       return;
     }
     this.selectedId = id;
@@ -1278,6 +1333,10 @@ export class GameApp {
           validZone && canAfford && unlocked && !ruleViolation,
           facing,
         );
+      } else if (this.playStyle === 'challenge') {
+        const canAfford = this.getCurrentRedCost() + this.getItemCost(this.selectedId) <= CHALLENGE_PLAYER_BUDGET;
+        const valid = isInsideVersusZone(2, 0, p.x, p.z) && canAfford;
+        this.view.updatePlacementGhost(this.selectedId, 0, p, valid, Math.PI / 2);
       } else if (this.playStyle === 'versus') {
         const team = this.versus.currentTurn;
         const validZone = isInsideVersusZone(this.versus.playerCount, team, p.x, p.z);
@@ -1349,6 +1408,8 @@ export class GameApp {
           }
           this.sound.playPlace();
           this.updateHUD();
+        } else if (this.playStyle === 'challenge') {
+          this.placeChallengeItem(p.x, p.z);
         } else if (this.playStyle === 'versus') {
           const team = this.versus.currentTurn;
           const pLabel = `${team + 1}P ${TEAM_NAMES[team]}`;
@@ -1408,7 +1469,7 @@ export class GameApp {
     let bestFac: Facility | null = null;
     let bestFacDist = 2.0;
     for (const f of this.battle.facilities) {
-      if (this.playStyle === 'arcade' && f.team !== 0) continue;
+      if (this.isSoloPlayStyle() && f.team !== 0) continue;
       if (this.playStyle === 'versus' && f.team !== activeTurnTeam) continue;
       const d = Math.hypot(f.pos.x - x, f.pos.z - z);
       if (d < bestFacDist) {
@@ -1437,8 +1498,8 @@ export class GameApp {
     let bestDist = 1.8;
     for (let i = 0; i < this.battle.units.length; i++) {
       const u = this.battle.units[i];
-      // アーケードモードでは敵軍（青軍）は削除不可、友人対戦では自分の手番チームのみ削除可
-      if (this.playStyle === 'arcade' && u.team !== 0) continue;
+      // アーケード・チャレンジでは敵軍（青軍）は削除不可、友人対戦では自分の手番チームのみ削除可
+      if (this.isSoloPlayStyle() && u.team !== 0) continue;
       if (this.playStyle === 'versus' && u.team !== activeTurnTeam) continue;
       const d = Math.hypot(u.pelvis.pos.x - x, u.pelvis.pos.z - z);
       if (d < bestDist) {
@@ -1460,6 +1521,251 @@ export class GameApp {
       if (this.playStyle === 'versus') this.syncVersusUI();
       this.updateHUD();
     }
+  }
+
+  /** プレイヤーが赤軍だけを操作し、解放済みの兵種だけを使うモードか */
+  private isSoloPlayStyle(): boolean {
+    return this.playStyle === 'arcade' || this.playStyle === 'challenge';
+  }
+
+  /** チャレンジの新しいランを開始する */
+  enterChallengeMode(): void {
+    this.playStyle = 'challenge';
+    this.challenge = new ChallengeRun(createChallengeSeed());
+    this.challengeBestAtRunStart = this.challengeBest;
+    if (!isUnitUnlocked(this.arcadeSave, this.selectedType)) {
+      this.selectedType = 'clubber';
+    }
+    this.syncModePanels();
+    this.loadChallengeRound();
+  }
+
+  /** 現在ラウンドの敵を生成し、前ラウンドの自軍編成を復元して配置フェーズに入る */
+  private loadChallengeRound(): void {
+    this.mode = 'placement';
+    this.battle.aiEnabled = false;
+    this.announcedResult = null;
+    this.elBanner.classList.add('hidden');
+    this.view.setPlacementGuidesVisible(true);
+    this.battle.clear();
+    this.view.clearDebris();
+
+    // 地形は標準固定（特殊地形・状態異常なし）
+    this.battle.world.obstacles = [];
+    this.battle.world.chasm = null;
+    this.battle.world.pits = [];
+    this.battle.world.slopes = [];
+    this.battle.world.arenaBounds = null;
+    this.battle.world.gravity.set(0, -9.81, 0);
+    this.battle.timeLimitSeconds = CHALLENGE_TIME_LIMIT_SECONDS;
+    this.battle.baseDamageMul = 1.0;
+    this.battle.baseSpeedMul = 1.0;
+    this.view.setStageTheme(undefined);
+    this.view.setVersusZones(getVersusZones(2), 0);
+
+    const run = this.challenge;
+    const unlocked = getAllUnitIds().filter((id) => isUnitUnlocked(this.arcadeSave, id));
+    const enemies = generateEnemyLineup(run.round, run.seed, unlocked);
+    this.savedLineup = [...enemies, ...run.playerLineup.map((r) => ({ ...r }))];
+    for (const item of this.savedLineup) {
+      if (item.facilityId) {
+        this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+      } else if (item.typeId) {
+        this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+      }
+    }
+
+    this.renderChallengePanel();
+    this.renderUnitCards();
+    this.updateUnitDetailOverlay(this.selectedId);
+    this.syncUnitDetailOverlay();
+    this.syncPhaseUI();
+    this.updateHUD();
+  }
+
+  private placeChallengeItem(x: number, z: number): void {
+    if (!isInsideVersusZone(2, 0, x, z)) {
+      this.flashPhaseWarning('⚠ 赤枠の配置可能エリア内をタップ／クリックしてください');
+      return;
+    }
+    const id = this.selectedId;
+    if (!isFacilityTypeId(id) && !isUnitUnlocked(this.arcadeSave, id)) {
+      this.flashPhaseWarning('🔒 この兵種はまだ解放されていません');
+      return;
+    }
+    const itemCost = this.getItemCost(id);
+    const used = this.getCurrentRedCost();
+    if (used + itemCost > CHALLENGE_PLAYER_BUDGET) {
+      this.flashPhaseWarning(`⚠ 予算オーバー！ (残り ${CHALLENGE_PLAYER_BUDGET - used} pt / 必要 ${itemCost} pt)`);
+      return;
+    }
+    const facing = Math.PI / 2;
+    if (isFacilityTypeId(id)) {
+      this.battle.spawnFacility(id, 0, x, z, facing);
+      this.savedLineup.push({ facilityId: id, team: 0, x, z, facing });
+    } else {
+      this.battle.spawnUnit(id, 0, x, z, facing);
+      this.savedLineup.push({ typeId: id, team: 0, x, z, facing });
+    }
+    this.sound.playPlace();
+    this.updateHUD();
+  }
+
+  private advanceChallengeRound(): void {
+    this.challenge.advanceRound();
+    this.loadChallengeRound();
+  }
+
+  /** 戦闘中・決着後の主ボタン。勝利後は次へ進み、戦闘中はボタン操作のときだけ中断を確認する */
+  private handleChallengeBattleAction(viaKeyboard: boolean): void {
+    if (this.challenge.ended) return;
+    if (this.announcedResult !== null) {
+      this.advanceChallengeRound();
+    } else if (!viaKeyboard) {
+      this.confirmQuitChallenge();
+    }
+  }
+
+  private confirmQuitChallenge(): void {
+    if (this.playStyle !== 'challenge' || this.challenge.ended) return;
+    if (window.confirm('チャレンジを中断しますか？\nゲームオーバーとなり、ここまでのスコアで確定します。')) {
+      this.finishChallengeRun('quit');
+    }
+  }
+
+  /** 進行中のランがあれば他モードへの移動を止める（中断を選ぶとスコア画面を表示する） */
+  private blockLeavingChallenge(): boolean {
+    if (this.playStyle !== 'challenge' || this.challenge.ended) return false;
+    this.confirmQuitChallenge();
+    return true;
+  }
+
+  private exitChallengeToTitle(): void {
+    this.loadArcadeStage(this.currentStageIndex);
+    this.syncModePanels();
+    this.sidePanelVisible = true;
+    this.syncSidePanelUI();
+  }
+
+  private handleChallengeBattleEnd(res: Exclude<BattleResult, null>): void {
+    if (res !== 0) {
+      const isTimeout =
+        this.battle.timeLimitSeconds !== null && this.battle.time >= this.battle.timeLimitSeconds;
+      this.finishChallengeRun(res === 'draw' ? 'draw' : isTimeout ? 'timeout' : 'defeat');
+      return;
+    }
+
+    const run = this.challenge;
+    const ratio = computeSurvivalRatio(this.challengeRoster.map((e) => ({ cost: e.type.cost, alive: e.alive })));
+    const score = run.recordWin(ratio);
+
+    // タブを閉じてもここまでの結果が残るよう、勝利のたびにベストを保存する
+    this.challengeBest = mergeChallengeBest(this.challengeBest, run.totalScore, run.reachedRound).best;
+    saveChallengeBest(this.challengeBest);
+
+    this.elBannerText.textContent = `ROUND ${score.round} クリア！`;
+    this.elBannerSub.textContent = `獲得 +${score.total.toLocaleString()} ｜ 累計スコア ${run.totalScore.toLocaleString()}`;
+    this.showChallengeBannerDetail(`
+      <div class="challenge-score-row"><span>基本点</span><b>${score.base.toLocaleString()}</b></div>
+      <div class="challenge-score-row"><span>資金差ボーナス</span><b>${score.budgetBonus.toLocaleString()}</b></div>
+      <div class="challenge-score-row"><span>生存ボーナス（${Math.round(ratio * 100)}%）</span><b>${score.survivalBonus.toLocaleString()}</b></div>
+    `);
+    this.elRetryBtn?.classList.add('hidden');
+    if (this.elNextStageBtn) {
+      this.elNextStageBtn.textContent = `▶ ROUND ${score.round + 1} へ進む`;
+      this.elNextStageBtn.classList.remove('hidden');
+    }
+    this.elBanner.classList.remove('hidden');
+    this.renderChallengePanel();
+    this.syncPhaseUI();
+  }
+
+  /** ランを終了し、スコア画面を表示する */
+  private finishChallengeRun(reason: ChallengeEndReason): void {
+    const run = this.challenge;
+    run.finish(reason);
+    // 配置フェーズ中の中断でも以後の操作を受け付けず、勝敗判定も再度走らせない
+    this.mode = 'battle';
+    this.announcedResult ??= 1;
+    this.view.setPlacementGuidesVisible(false);
+
+    const reasonText: Readonly<Record<ChallengeEndReason, string>> = {
+      defeat: '自軍が全滅しました',
+      draw: '同時全滅（引き分けは敗北扱い）',
+      timeout: '⏱ 制限時間切れ',
+      quit: '🏳 中断によりスコアを確定しました',
+    };
+    const isNewRecord =
+      run.clearedRounds > 0 &&
+      mergeChallengeBest(this.challengeBestAtRunStart, run.totalScore, run.reachedRound).isNewRecord;
+    const best = this.challengeBest;
+
+    this.elBannerText.textContent = 'GAME OVER';
+    this.elBannerSub.textContent = reasonText[reason];
+    this.showChallengeBannerDetail(`
+      ${isNewRecord ? '<div class="challenge-new-record">🏆 NEW RECORD</div>' : ''}
+      <div class="challenge-score-row total"><span>到達ラウンド</span><b>ROUND ${run.reachedRound}</b></div>
+      <div class="challenge-score-row total"><span>総合スコア</span><b>${run.totalScore.toLocaleString()}</b></div>
+      <div class="challenge-score-row"><span>基本点</span><b>${run.baseScore.toLocaleString()}</b></div>
+      <div class="challenge-score-row"><span>資金差ボーナス</span><b>${run.budgetBonus.toLocaleString()}</b></div>
+      <div class="challenge-score-row"><span>生存ボーナス</span><b>${run.survivalBonus.toLocaleString()}</b></div>
+      <div class="challenge-score-divider"></div>
+      <div class="challenge-score-row"><span>ベストスコア</span><b>${best.bestScore.toLocaleString()}</b></div>
+      <div class="challenge-score-row"><span>ベストラウンド</span><b>${best.bestRound > 0 ? `ROUND ${best.bestRound}` : '—'}</b></div>
+      <div class="challenge-score-row"><span>最後の資金差</span><b>自軍 ${CHALLENGE_PLAYER_BUDGET.toLocaleString()} vs 敵 ${run.enemyBudget.toLocaleString()}</b></div>
+    `);
+    if (this.elRetryBtn) {
+      this.elRetryBtn.textContent = '🏠 タイトルへ';
+      this.elRetryBtn.classList.remove('hidden');
+    }
+    if (this.elNextStageBtn) {
+      this.elNextStageBtn.textContent = '↻ もう一度';
+      this.elNextStageBtn.classList.remove('hidden');
+    }
+    this.elBanner.classList.remove('hidden');
+    this.renderChallengePanel();
+    this.syncPhaseUI();
+    this.syncUnitDetailOverlay();
+  }
+
+  private showChallengeBannerDetail(html: string): void {
+    if (!this.elBannerChallenge) return;
+    this.elBannerChallenge.innerHTML = html;
+    this.elBannerChallenge.classList.remove('hidden');
+  }
+
+  /** サイドパネルのチャレンジ状況を更新する */
+  private renderChallengePanel(): void {
+    if (!this.elChallengeStatus) return;
+    const run = this.challenge;
+    const best = this.challengeBest;
+    const enemies = this.savedLineup.filter((r) => r.team === 1);
+    this.elChallengeStatus.innerHTML = `
+      <div class="brief-title">ROUND ${run.round}</div>
+      <div class="brief-sub">自軍 ${CHALLENGE_PLAYER_BUDGET.toLocaleString()} pt vs 敵 ${run.enemyBudget.toLocaleString()} pt（×${run.budgetRatio.toFixed(1)}）</div>
+      <div class="brief-desc">現在スコア: <b>${run.totalScore.toLocaleString()}</b> ｜ クリア: ${run.clearedRounds} ラウンド</div>
+      <div class="brief-hint">1敗で終了。引き分けと${CHALLENGE_TIME_LIMIT_SECONDS}秒の時間切れも負けになります。勝つと編成は全員復活して次のラウンドへ引き継がれます。</div>
+      <div class="brief-badges">
+        <span class="brief-badge-label">敵軍編成:</span>
+        ${this.renderEnemyChips(enemies)}
+      </div>
+      <div class="brief-badges" style="margin-top:5px;">
+        <span class="reward-chip">🏆 ベスト ${best.bestScore.toLocaleString()} / ${best.bestRound > 0 ? `ROUND ${best.bestRound}` : '記録なし'}</span>
+        <span class="enemy-unit-chip" title="同じシードなら同じ敵が出現します">シード ${run.seed}</span>
+      </div>
+    `;
+    document.getElementById('btn-challenge-quit')?.classList.toggle('hidden', run.ended);
+  }
+
+  private formatChallengeBadge(): string {
+    const run = this.challenge;
+    const head = `🔥 <b>ROUND ${run.round}</b>`;
+    const score = `スコア <b>${run.totalScore.toLocaleString()}</b>`;
+    if (this.mode === 'placement') {
+      return `${head} ｜ 自軍 ${CHALLENGE_PLAYER_BUDGET.toLocaleString()} pt vs 敵 ${run.enemyBudget.toLocaleString()} pt（×${run.budgetRatio.toFixed(1)}） ｜ ${score}`;
+    }
+    const remain = Math.max(0, (this.battle.timeLimitSeconds ?? 0) - this.battle.time);
+    return `⚔ ${head} ｜ ⏱ 残り <b>${remain.toFixed(1)}s</b> ｜ ${score}`;
   }
 
   /** 友人対戦モード（2〜4人・ブラインド順番配置）を開始・リセットする */
@@ -1708,6 +2014,15 @@ export class GameApp {
         return;
       }
     }
+    if (this.playStyle === 'challenge') {
+      // 配置中も経過時間は進むため、制限時間は戦闘開始から数え直す
+      this.battle.time = 0;
+      this.challenge.commitLineup(this.savedLineup);
+      this.challengeRoster = [
+        ...this.battle.units.filter((u) => u.team === 0),
+        ...this.battle.facilities.filter((f) => f.team === 0),
+      ];
+    }
     this.mode = 'battle';
     this.battle.aiEnabled = true;
     this.announcedResult = null;
@@ -1725,6 +2040,8 @@ export class GameApp {
   }
 
   returnToPlacement(): void {
+    // チャレンジにリトライはない（Space / R キーもここで止まる）
+    if (this.playStyle === 'challenge') return;
     this.mode = 'placement';
     this.battle.aiEnabled = false;
     this.announcedResult = null;
@@ -1787,9 +2104,14 @@ export class GameApp {
   private syncPhaseUI(): void {
     const isVersusPlacement = this.playStyle === 'versus' && this.mode === 'placement';
     this.elVersusHudBar?.classList.toggle('hidden', !isVersusPlacement);
+    this.elStartBtn.disabled = false;
 
     if (this.mode === 'placement') {
-      if (this.playStyle === 'arcade') {
+      if (this.playStyle === 'challenge') {
+        this.elPhaseBadge.innerHTML = this.formatChallengeBadge();
+        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        this.elStartBtn.className = 'start-btn';
+      } else if (this.playStyle === 'arcade') {
         const st = this.currentStage;
         const used = this.getCurrentRedCost();
         this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(st, used);
@@ -1825,6 +2147,18 @@ export class GameApp {
       this.elStartBtn.textContent = '↺ 配置に戻る';
       this.elStartBtn.className = 'start-btn stop';
       this.elUnitBar.classList.add('disabled');
+      if (this.playStyle === 'challenge') {
+        this.elPhaseBadge.innerHTML = this.formatChallengeBadge();
+        if (this.challenge.ended) {
+          this.elStartBtn.textContent = 'GAME OVER';
+          this.elStartBtn.disabled = true;
+        } else if (this.announcedResult !== null) {
+          this.elStartBtn.textContent = '▶ 次のラウンドへ (Space)';
+          this.elStartBtn.className = 'start-btn';
+        } else {
+          this.elStartBtn.textContent = '🏳 ギブアップ';
+        }
+      }
     }
   }
 
@@ -1920,7 +2254,19 @@ export class GameApp {
 
     const r = statsFor(0);
     const b = statsFor(1);
-    if (this.playStyle === 'arcade') {
+    if (this.playStyle === 'challenge') {
+      this.elRedStats.innerHTML = `
+        <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${CHALLENGE_PLAYER_BUDGET}</span></div>
+        <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
+      `;
+      this.elBlueStats.innerHTML = `
+        <div class="team-title">🔵 敵軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
+        <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
+      `;
+      if (!this.elPhaseBadge.classList.contains('budget-over')) {
+        this.elPhaseBadge.innerHTML = this.formatChallengeBadge();
+      }
+    } else if (this.playStyle === 'arcade') {
       const budget = this.currentStage.budget;
       this.elRedStats.innerHTML = `
         <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${budget}</span></div>
@@ -1977,7 +2323,17 @@ export class GameApp {
   private handleBattleEnd(res: Exclude<BattleResult, null>): void {
     this.elBannerStars?.classList.add('hidden');
     this.elBannerUnlock?.classList.add('hidden');
+    this.elBannerChallenge?.classList.add('hidden');
     this.elNextStageBtn?.classList.add('hidden');
+    if (this.elRetryBtn) {
+      this.elRetryBtn.textContent = '↺ 配置に戻る';
+      this.elRetryBtn.classList.remove('hidden');
+    }
+
+    if (this.playStyle === 'challenge') {
+      this.handleChallengeBattleEnd(res);
+      return;
+    }
 
     if (this.playStyle === 'arcade') {
       const st = this.currentStage;

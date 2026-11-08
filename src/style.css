@@ -829,6 +829,8 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(92vw, 420px);
+  max-height: 92vh;
+  overflow-y: auto;
   padding: 22px 28px;
   border-radius: 14px;
   background: rgba(15, 20, 30, 0.94);
@@ -857,6 +859,43 @@ body {
   font-size: 13.5px;
   color: #dee2e6;
   margin-bottom: 12px;
+}
+
+.result-challenge {
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #dee2e6;
+}
+
+.challenge-new-record {
+  margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 900;
+  color: #ffd43b;
+}
+
+.challenge-score-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px;
+}
+
+.challenge-score-row.total {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.challenge-score-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.start-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .result-unlock {
