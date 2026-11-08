@@ -551,7 +551,6 @@ export class Unit {
             }
             const halfBand = chasm.bridgeHalfWidth * 0.72;
             const offsetZ = pz - bestCz;
-            const onChasmSpan = px > chasm.minX - 0.6 && px < chasm.maxX + 0.6;
             if (Math.abs(offsetZ) > halfBand) {
               // 橋の幅から外れているうちは、谷の縁には近づかず橋のたもとまで回り込む
               const bridgeZ = clamp(pz, bestCz - chasm.bridgeHalfWidth * 0.55, bestCz + chasm.bridgeHalfWidth * 0.55);
@@ -562,8 +561,8 @@ export class Unit {
               mx = bdx / bd;
               mz = bdz / bd;
               this.desiredFacing = Math.atan2(mx, mz);
-            } else if (onChasmSpan) {
-              // 橋の上では横に流れないよう、対岸へまっすぐ進みつつ橋の中央へ寄せる
+            } else {
+              // 橋の幅に入ったら横に流れないよう、対岸へまっすぐ進みつつ橋の中央へ寄せる
               const crossDir = targetPos.x >= px ? 1 : -1;
               const centerPull = clamp(-offsetZ * 0.45, -0.7, 0.7);
               const nl = Math.hypot(crossDir, centerPull);
