@@ -549,14 +549,26 @@ export class Unit {
                 bestCz = centers[i];
               }
             }
-            if (Math.abs(pz - bestCz) > chasm.bridgeHalfWidth * 0.72) {
+            const halfBand = chasm.bridgeHalfWidth * 0.72;
+            const offsetZ = pz - bestCz;
+            const onChasmSpan = px > chasm.minX - 0.6 && px < chasm.maxX + 0.6;
+            if (Math.abs(offsetZ) > halfBand) {
+              // 橋の幅から外れているうちは、谷の縁には近づかず橋のたもとまで回り込む
               const bridgeZ = clamp(pz, bestCz - chasm.bridgeHalfWidth * 0.55, bestCz + chasm.bridgeHalfWidth * 0.55);
-              const bridgeCenterX = (chasm.minX + chasm.maxX) * 0.5;
-              const bdx = bridgeCenterX - px;
+              const mouthX = px <= chasm.minX ? chasm.minX - 1.6 : px >= chasm.maxX ? chasm.maxX + 1.6 : px;
+              const bdx = mouthX - px;
               const bdz = bridgeZ - pz;
               const bd = Math.hypot(bdx, bdz) || 1;
               mx = bdx / bd;
               mz = bdz / bd;
+              this.desiredFacing = Math.atan2(mx, mz);
+            } else if (onChasmSpan) {
+              // 橋の上では横に流れないよう、対岸へまっすぐ進みつつ橋の中央へ寄せる
+              const crossDir = targetPos.x >= px ? 1 : -1;
+              const centerPull = clamp(-offsetZ * 0.45, -0.7, 0.7);
+              const nl = Math.hypot(crossDir, centerPull);
+              mx = crossDir / nl;
+              mz = centerPull / nl;
               this.desiredFacing = Math.atan2(mx, mz);
             }
           }

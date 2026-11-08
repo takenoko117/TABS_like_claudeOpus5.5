@@ -57,3 +57,41 @@ describe('戦闘の進行管理', () => {
     expect(battle.baseSpeedMul).toBe(1);
   });
 });
+
+describe('谷と橋のステージの移動', () => {
+  const chasm = { minX: -3.8, maxX: 3.8, bridgeHalfWidth: 3.2 };
+
+  it.each([
+    ['swordsman', -6.3],
+    ['swordsman', 6],
+    ['giant', -6.3],
+    ['clubber', 14],
+  ] as const)('橋の正面にいない %s (z=%d) も谷へ落ちずに橋へ進む', (id, z) => {
+    const battle = new Battle();
+    battle.configureStage({ chasm });
+    const unit = battle.spawnUnit(id, 0, -9, z);
+    battle.spawnUnit('decoy', 1, 14, 0);
+    battle.beginCombat();
+    advance(battle, 30);
+    expect(unit.alive).toBe(true);
+    expect(unit.pelvis.pos.y).toBeGreaterThan(0);
+    // おとりも前進してくるので、橋の途中で決着してもよい（谷の縁を越えていれば渡れている）
+    expect(unit.pelvis.pos.x).toBeGreaterThan(chasm.minX);
+  });
+
+  it('複数の橋があるときは近い橋を渡る', () => {
+    const battle = new Battle();
+    battle.configureStage({ chasm: { ...chasm, bridgeHalfWidth: 2, bridgeCentersZ: [-8, 8] } });
+    const unit = battle.spawnUnit('swordsman', 0, -9, 3);
+    // 動かない施設を目標にして、確実に橋を渡らせる
+    battle.spawnFacility('buff_totem', 1, 14, 0);
+    battle.beginCombat();
+    let minDistToBridge = Infinity;
+    for (let i = 0; i < 24 * 120; i++) {
+      battle.step(battle.fixedDt);
+      if (unit.pelvis.pos.x > chasm.minX) minDistToBridge = Math.min(minDistToBridge, Math.abs(unit.pelvis.pos.z - 8));
+    }
+    expect(unit.alive).toBe(true);
+    expect(minDistToBridge).toBeLessThan(2);
+  });
+});
