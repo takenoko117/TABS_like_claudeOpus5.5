@@ -7,6 +7,11 @@ if (!viewport) {
 
 const app = new GameApp(viewport);
 
+// 開発サーバーでのみ、動作確認用にコンソールからゲーム状態へ触れるようにする
+if (import.meta.env.DEV) {
+  (window as unknown as { __app: GameApp }).__app = app;
+}
+
 let lastTime = performance.now();
 function animate(now: number): void {
   const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));

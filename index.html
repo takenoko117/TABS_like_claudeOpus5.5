@@ -58,6 +58,7 @@
           <button id="btn-touch-erase" class="ctrl-btn" title="タップでユニットを削除するモードに切り替えます">
             🗑 削除
           </button>
+          <button id="btn-undo" class="ctrl-btn" title="直前の配置を取り消します (Ctrl+Z)">↶ 戻す</button>
           <button id="btn-clear" class="ctrl-btn danger" title="配置したユニットを全消去">全消去</button>
           <button id="btn-mute" class="ctrl-btn" title="効果音のON/OFF">🔊 SE</button>
           <button id="btn-toggle-hud" class="ctrl-btn" title="すべてのUIを非表示にして画面を広く使います (H)">
@@ -166,13 +167,17 @@
         <div class="section-label">視点・操作ヘルプ</div>
         <button id="btn-cam-reset" class="ctrl-btn full">🎥 視点リセット</button>
         <ul class="help-list">
-          <li><b>タップ / 左クリック:</b> ユニット配置（🗑削除ON時は削除）</li>
+          <li><b>タップ / 左クリック:</b> ユニット配置（ドラッグで連続配置、🗑削除ON時は削除）</li>
+          <li><b>Ctrl+Z / ↶戻す:</b> 直前の配置を取り消し</li>
           <li><b>1本指ドラッグ / 右ドラッグ:</b> カメラ回転、<b>ピンチ / ホイール:</b> ズーム</li>
           <li><b>2本指スワイプ / WASD / 矢印:</b> カメラ平行移動、<b>右クリック:</b> 削除</li>
           <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始、<b>Tab / H:</b> UI開閉</li>
         </ul>
       </div>
     </aside>
+
+    <!-- 短い通知 -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <!-- 勝敗リザルトバナー -->
     <div id="result-banner" class="result-banner hidden">

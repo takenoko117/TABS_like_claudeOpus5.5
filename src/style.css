@@ -1524,3 +1524,28 @@ body {
     display: none;
   }
 }
+
+/* 短い通知（編成の復元や取り消しなど） */
+.toast {
+  position: fixed;
+  top: 92px;
+  left: 50%;
+  z-index: 40;
+  max-width: min(92vw, 520px);
+  padding: 7px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(14, 18, 28, 0.9);
+  color: #f1f3f5;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -8px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

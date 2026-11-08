@@ -45,6 +45,7 @@ import {
   type ArcadeStage,
 } from './ArcadeStages';
 import { Battle, type BattleResult } from './Battle';
+import { loadStoredLineup, saveStoredLineup } from './LineupStore';
 import {
   CHALLENGE_PLAYER_BUDGET,
   CHALLENGE_TIME_LIMIT_SECONDS,
@@ -65,6 +66,15 @@ import {
   isInsideVersusZone,
   type PlayerCount,
 } from './VersusMode';
+
+/** 配置の可否と、置くときの陣営・向き */
+interface PlacementCheck {
+  team: Team;
+  facing?: number;
+  valid: boolean;
+  /** 置けない理由（プレイヤーに見せる文言） */
+  warning: string | null;
+}
 
 interface PlacedRecord {
   typeId?: UnitTypeId;
@@ -343,6 +353,13 @@ export class GameApp {
   private announcedResult: BattleResult = null;
   private pointerDownPos = { x: 0, y: 0, button: -1 };
   private warningTimer: ReturnType<typeof setTimeout> | null = null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 配置レコードと戦場の実体の対応（物理で位置がずれても確実に同じ個体を消すため） */
+  private placedEntities = new WeakMap<PlacedRecord, Unit | Facility>();
+  /** マウスドラッグによる連続配置の状態 */
+  private paintStroke: { lastX: number; lastZ: number } | null = null;
+  /** 全消去の取り消し用に控えた編成 */
+  private clearedBackup: PlacedRecord[] = [];
 
   // UI 要素
   private readonly elTopHud: HTMLElement | null;
@@ -811,31 +828,18 @@ export class GameApp {
       // チャレンジはリトライ不可のため、戦闘中・決着後は編成を変更できない
       if (this.playStyle === 'challenge' && this.mode !== 'placement') return;
       if (this.mode !== 'placement') this.returnToPlacement();
-      if (this.isSoloPlayStyle()) {
-        this.savedLineup = this.savedLineup.filter((u) => u.team === 1);
-        for (const u of [...this.battle.units]) {
-          if (u.team === 0) this.battle.removeUnit(u);
-        }
-        for (const f of [...this.battle.facilities]) {
-          if (f.team === 0) this.battle.removeFacility(f);
-        }
-      } else if (this.playStyle === 'versus') {
-        const curTeam = this.versus.currentTurn;
-        this.versus.clearCurrentTurnLineup();
-        for (const u of [...this.battle.units]) {
-          if (u.team === curTeam) this.battle.removeUnit(u);
-        }
-        for (const f of [...this.battle.facilities]) {
-          if (f.team === curTeam) this.battle.removeFacility(f);
-        }
-      } else {
-        this.savedLineup = [];
-        this.battle.clear();
-      }
+      const lineup = this.getActiveLineup();
+      const removed = lineup.filter((r) => this.isEditableRecord(r));
+      if (removed.length === 0) return;
+      for (const record of removed) this.removeRecord(record);
+      this.clearedBackup = removed;
+      this.showToast('🗑 全消去しました（↶ 戻す / Ctrl+Z で元に戻せます）');
       this.view.clearDebris();
       this.sound.playRemove();
-      this.updateHUD();
+      this.afterLineupEdited();
     });
+
+    document.getElementById('btn-undo')?.addEventListener('click', () => this.undoLastPlacement());
 
     // SE ミュート切り替えボタン
     const muteBtn = document.getElementById('btn-mute') as HTMLButtonElement | null;
@@ -892,6 +896,9 @@ export class GameApp {
         } else {
           this.returnToPlacement();
         }
+      } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        this.undoLastPlacement();
       } else if (e.code === 'KeyR') {
         if (this.mode !== 'placement') this.returnToPlacement();
       } else if (e.code === 'Tab') {
@@ -1311,43 +1318,13 @@ export class GameApp {
         return;
       }
       const p = this.view.screenToGround(e.clientX, e.clientY, groundHit);
+      if (this.paintStroke && p) this.continuePaintStroke(p.x, p.z);
       if (!p || !this.isInsideArena(p.x, p.z)) {
         this.view.updatePlacementGhost(this.selectedId, 0, null, false);
         return;
       }
-      if (this.playStyle === 'arcade') {
-        const validZone = isInsideStageRedZone(this.currentStage, p.x, p.z);
-        const itemCost = this.getItemCost(this.selectedId);
-        const canAfford = this.getCurrentRedCost() + itemCost <= this.currentStage.budget;
-        const unlocked = isFacilityTypeId(this.selectedId) || isUnitUnlocked(this.arcadeSave, this.selectedId);
-        const ruleViolation = checkStageRuleViolation(
-          this.currentStage,
-          this.selectedId,
-          this.getCurrentRedPlacedCount(),
-        );
-        const facing = getStageZoneFacing(this.currentStage, p.x, p.z);
-        this.view.updatePlacementGhost(
-          this.selectedId,
-          0,
-          p,
-          validZone && canAfford && unlocked && !ruleViolation,
-          facing,
-        );
-      } else if (this.playStyle === 'challenge') {
-        const canAfford = this.getCurrentRedCost() + this.getItemCost(this.selectedId) <= CHALLENGE_PLAYER_BUDGET;
-        const valid = isInsideVersusZone(2, 0, p.x, p.z) && canAfford;
-        this.view.updatePlacementGhost(this.selectedId, 0, p, valid, Math.PI / 2);
-      } else if (this.playStyle === 'versus') {
-        const team = this.versus.currentTurn;
-        const validZone = isInsideVersusZone(this.versus.playerCount, team, p.x, p.z);
-        const itemCost = this.getItemCost(this.selectedId);
-        const canAfford = this.getCurrentTeamCost(team) + itemCost <= this.versus.budget;
-        const facing = getVersusPlacementFacing(this.versus.playerCount, team, p.x, p.z);
-        this.view.updatePlacementGhost(this.selectedId, team, p, validZone && canAfford, facing);
-      } else {
-        const team: Team = p.x < 0 ? 0 : 1;
-        this.view.updatePlacementGhost(this.selectedId, team, p, Math.abs(p.x) > 1.2);
-      }
+      const check = this.checkPlacement(this.selectedId, p.x, p.z);
+      this.view.updatePlacementGhost(this.selectedId, check.team, p, check.valid, check.facing);
     });
 
     dom.addEventListener('pointerdown', (e) => {
@@ -1355,7 +1332,19 @@ export class GameApp {
       if (e.button === 2) {
         // 右ドラッグでカメラ回転もできるようにする
         this.view.startOrbitDrag(e.clientX, e.clientY);
+        return;
       }
+      // マウスは押した瞬間に配置し、そのままドラッグで連続配置する（タッチの1本指はカメラ回転なので離したときに配置）
+      if (e.button === 0 && e.pointerType !== 'touch' && !e.altKey && this.mode === 'placement' && !this.touchEraseMode) {
+        const p = this.view.screenToGround(e.clientX, e.clientY, groundHit);
+        if (p && this.placeAt(this.selectedId, p.x, p.z)) {
+          this.paintStroke = { lastX: p.x, lastZ: p.z };
+        }
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      this.paintStroke = null;
     });
 
     dom.addEventListener('pointerup', (e) => {
@@ -1372,155 +1361,253 @@ export class GameApp {
         return;
       }
 
-      if (e.button === 0 && !e.altKey) {
-        if (this.playStyle === 'arcade') {
-          const st = this.currentStage;
-          if (!isInsideStageRedZone(st, p.x, p.z)) {
-            this.flashPhaseWarning('⚠ 赤枠の配置可能エリア内をタップ／クリックしてください');
-            return;
-          }
-          if (!isFacilityTypeId(this.selectedId) && !isUnitUnlocked(this.arcadeSave, this.selectedId)) {
-            this.flashPhaseWarning('🔒 この兵種はまだ解放されていません');
-            return;
-          }
-          const ruleViolation = checkStageRuleViolation(
-            st,
-            this.selectedId,
-            this.getCurrentRedPlacedCount(),
-          );
-          if (ruleViolation) {
-            this.flashPhaseWarning(ruleViolation);
-            return;
-          }
-          const itemCost = this.getItemCost(this.selectedId);
-          const used = this.getCurrentRedCost();
-          if (used + itemCost > st.budget) {
-            this.flashPhaseWarning(`⚠ 予算オーバー！ (残り ${st.budget - used} pt / 必要 ${itemCost} pt)`);
-            return;
-          }
-          const facing = getStageZoneFacing(st, p.x, p.z);
-          if (isFacilityTypeId(this.selectedId)) {
-            this.battle.spawnFacility(this.selectedId, 0, p.x, p.z, facing);
-            this.savedLineup.push({ facilityId: this.selectedId, team: 0, x: p.x, z: p.z, facing });
-          } else {
-            this.battle.spawnUnit(this.selectedId, 0, p.x, p.z, facing);
-            this.savedLineup.push({ typeId: this.selectedId, team: 0, x: p.x, z: p.z, facing });
-          }
-          this.sound.playPlace();
-          this.updateHUD();
-        } else if (this.playStyle === 'challenge') {
-          this.placeChallengeItem(p.x, p.z);
-        } else if (this.playStyle === 'versus') {
-          const team = this.versus.currentTurn;
-          const pLabel = `${team + 1}P ${TEAM_NAMES[team]}`;
-          if (!isInsideVersusZone(this.versus.playerCount, team, p.x, p.z)) {
-            this.flashPhaseWarning(`⚠ ${pLabel}の配置枠内をタップ／クリックしてください`);
-            return;
-          }
-          const itemCost = this.getItemCost(this.selectedId);
-          const used = this.getCurrentTeamCost(team);
-          if (used + itemCost > this.versus.budget) {
-            this.flashPhaseWarning(
-              `⚠ 予算オーバー！ (残り ${Math.max(0, this.versus.budget - used)} pt / 必要 ${itemCost} pt)`,
-            );
-            return;
-          }
-          const facing = getVersusPlacementFacing(this.versus.playerCount, team, p.x, p.z);
-          const curLineup = this.versus.getCurrentLineup();
-          if (isFacilityTypeId(this.selectedId)) {
-            this.battle.spawnFacility(this.selectedId, team, p.x, p.z, facing);
-            curLineup.push({ facilityId: this.selectedId, team, x: p.x, z: p.z, facing });
-          } else {
-            this.battle.spawnUnit(this.selectedId, team, p.x, p.z, facing);
-            curLineup.push({ typeId: this.selectedId, team, x: p.x, z: p.z, facing });
-          }
-          this.sound.playPlace();
-          this.syncVersusUI();
-          this.updateHUD();
-        } else {
-          // サンドボックス: x < 0 なら赤軍、x > 0 なら青軍
-          if (!this.isInsideArena(p.x, p.z) || Math.abs(p.x) <= 1.2) return;
-          const team: Team = p.x < 0 ? 0 : 1;
-          const facing = team === 0 ? Math.PI / 2 : -Math.PI / 2;
-          if (isFacilityTypeId(this.selectedId)) {
-            this.battle.spawnFacility(this.selectedId, team, p.x, p.z, facing);
-            this.savedLineup.push({ facilityId: this.selectedId, team, x: p.x, z: p.z, facing });
-          } else {
-            this.battle.spawnUnit(this.selectedId, team, p.x, p.z, facing);
-            this.savedLineup.push({ typeId: this.selectedId, team, x: p.x, z: p.z, facing });
-          }
-          this.sound.playPlace();
-          this.updateHUD();
-        }
+      if (e.button === 0 && e.pointerType === 'touch') {
+        this.placeAt(this.selectedId, p.x, p.z);
       }
     });
+  }
+
+  /** ドラッグ中、前回の配置から十分離れたら次の 1 体を置く */
+  private continuePaintStroke(x: number, z: number): void {
+    const stroke = this.paintStroke;
+    if (!stroke) return;
+    if (Math.hypot(x - stroke.lastX, z - stroke.lastZ) < this.getPlacementSpacing(this.selectedId)) return;
+    // 予算切れなどで置けない間は警告を連発せず、置ける位置まで黙って待つ
+    if (this.placeAt(this.selectedId, x, z, true)) {
+      stroke.lastX = x;
+      stroke.lastZ = z;
+    }
+  }
+
+  /** ドラッグ連続配置の間隔（体格や施設の大きさに合わせて重ならない程度に空ける） */
+  private getPlacementSpacing(id: UnitTypeId | FacilityTypeId): number {
+    if (isFacilityTypeId(id)) return FACILITY_TYPES[id].radius * 2 + 0.4;
+    return Math.max(1.0, UNIT_TYPES[id].scale * 1.1);
   }
 
   private isInsideArena(x: number, z: number): boolean {
     return Math.abs(x) <= 22 && Math.abs(z) <= 16;
   }
 
-  private removeNearestUnitAt(x: number, z: number): void {
-    const activeTurnTeam = this.playStyle === 'versus' ? this.versus.currentTurn : 0;
-    const targetLineup =
-      this.playStyle === 'versus' ? this.versus.getCurrentLineup() : this.savedLineup;
+  /** 現在のモードで (x, z) に id を置けるかを判定する。ゴースト表示と実配置で共通 */
+  private checkPlacement(id: UnitTypeId | FacilityTypeId, x: number, z: number): PlacementCheck {
+    const unlocked = isFacilityTypeId(id) || isUnitUnlocked(this.arcadeSave, id);
+    const cost = this.getItemCost(id);
+    const fail = (team: Team, warning: string | null, facing?: number): PlacementCheck => ({
+      team,
+      facing,
+      valid: false,
+      warning,
+    });
+    const overBudgetMessage = (used: number, budget: number) =>
+      `⚠ 予算オーバー！ (残り ${Math.max(0, budget - used)} pt / 必要 ${cost} pt)`;
 
-    // 1. 施設を優先探索（クリック判定半径 2.0m）
-    let bestFac: Facility | null = null;
-    let bestFacDist = 2.0;
-    for (const f of this.battle.facilities) {
-      if (this.isSoloPlayStyle() && f.team !== 0) continue;
-      if (this.playStyle === 'versus' && f.team !== activeTurnTeam) continue;
-      const d = Math.hypot(f.pos.x - x, f.pos.z - z);
-      if (d < bestFacDist) {
-        bestFacDist = d;
-        bestFac = f;
+    if (this.playStyle === 'arcade') {
+      const st = this.currentStage;
+      const facing = getStageZoneFacing(st, x, z);
+      if (!isInsideStageRedZone(st, x, z)) {
+        return fail(0, '⚠ 赤枠の配置可能エリア内をタップ／クリックしてください', facing);
       }
+      if (!unlocked) return fail(0, '🔒 この兵種はまだ解放されていません', facing);
+      const ruleViolation = checkStageRuleViolation(st, id, this.getCurrentRedPlacedCount());
+      if (ruleViolation) return fail(0, ruleViolation, facing);
+      const used = this.getCurrentRedCost();
+      if (used + cost > st.budget) return fail(0, overBudgetMessage(used, st.budget), facing);
+      return { team: 0, facing, valid: true, warning: null };
     }
-    if (bestFac) {
-      const targetFac = bestFac;
-      const idx = targetLineup.findIndex(
-        (rec) =>
-          rec.facilityId === targetFac.type.id &&
-          rec.team === targetFac.team &&
-          Math.hypot(rec.x - targetFac.pos.x, rec.z - targetFac.pos.z) < 0.6,
-      );
-      if (idx >= 0) targetLineup.splice(idx, 1);
-      this.battle.removeFacility(targetFac);
-      this.sound.playRemove();
-      if (this.playStyle === 'versus') this.syncVersusUI();
-      this.updateHUD();
+
+    if (this.playStyle === 'challenge') {
+      const facing = Math.PI / 2;
+      if (!isInsideVersusZone(2, 0, x, z)) {
+        return fail(0, '⚠ 赤枠の配置可能エリア内をタップ／クリックしてください', facing);
+      }
+      if (!unlocked) return fail(0, '🔒 この兵種はまだ解放されていません', facing);
+      const used = this.getCurrentRedCost();
+      if (used + cost > CHALLENGE_PLAYER_BUDGET) {
+        return fail(0, overBudgetMessage(used, CHALLENGE_PLAYER_BUDGET), facing);
+      }
+      return { team: 0, facing, valid: true, warning: null };
+    }
+
+    if (this.playStyle === 'versus') {
+      const team = this.versus.currentTurn;
+      const facing = getVersusPlacementFacing(this.versus.playerCount, team, x, z);
+      if (!isInsideVersusZone(this.versus.playerCount, team, x, z)) {
+        return fail(team, `⚠ ${team + 1}P ${TEAM_NAMES[team]}の配置枠内をタップ／クリックしてください`, facing);
+      }
+      const used = this.getCurrentTeamCost(team);
+      if (used + cost > this.versus.budget) return fail(team, overBudgetMessage(used, this.versus.budget), facing);
+      return { team, facing, valid: true, warning: null };
+    }
+
+    // サンドボックス: x < 0 なら赤軍、x > 0 なら青軍
+    const team: Team = x < 0 ? 0 : 1;
+    const facing = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+    return { team, facing, valid: this.isInsideArena(x, z) && Math.abs(x) > 1.2, warning: null };
+  }
+
+  /** 配置を試みて、成功したかを返す（quiet なら失敗しても警告を出さない） */
+  private placeAt(id: UnitTypeId | FacilityTypeId, x: number, z: number, quiet = false): boolean {
+    const check = this.checkPlacement(id, x, z);
+    if (!check.valid) {
+      if (!quiet && check.warning) this.flashPhaseWarning(check.warning);
+      return false;
+    }
+    const record: PlacedRecord = isFacilityTypeId(id)
+      ? { facilityId: id, team: check.team, x, z, facing: check.facing }
+      : { typeId: id, team: check.team, x, z, facing: check.facing };
+    this.getActiveLineup().push(record);
+    this.spawnRecord(record);
+    this.clearedBackup = [];
+    this.sound.playPlace();
+    this.afterLineupEdited();
+    return true;
+  }
+
+  /** 配置レコードから実体を生成し、削除や取り消しのために対応付けを残す */
+  private spawnRecord(record: PlacedRecord): void {
+    let entity: Unit | Facility | null = null;
+    if (record.facilityId) {
+      entity = this.battle.spawnFacility(record.facilityId, record.team, record.x, record.z, record.facing);
+    } else if (record.typeId) {
+      entity = this.battle.spawnUnit(record.typeId, record.team, record.x, record.z, record.facing);
+    }
+    if (entity) this.placedEntities.set(record, entity);
+  }
+
+  private spawnRecords(records: readonly PlacedRecord[]): void {
+    for (const record of records) this.spawnRecord(record);
+  }
+
+  /** いま編集している編成（友人対戦は手番プレイヤーのもの） */
+  private getActiveLineup(): PlacedRecord[] {
+    return this.playStyle === 'versus' ? this.versus.getCurrentLineup() : this.savedLineup;
+  }
+
+  /** 編成を変更した後の共通処理（表示更新と自動保存） */
+  private afterLineupEdited(): void {
+    if (this.playStyle === 'versus') this.syncVersusUI();
+    this.persistPlayerLineup();
+    this.updateHUD();
+  }
+
+  /** 自動保存の保存先（保存しないモードは null） */
+  private getLineupStorageKey(): string | null {
+    if (this.playStyle === 'arcade') return `arcade:${this.currentStage.id}`;
+    if (this.playStyle === 'challenge') return 'challenge';
+    return null;
+  }
+
+  private persistPlayerLineup(): void {
+    const key = this.getLineupStorageKey();
+    if (key) saveStoredLineup(key, this.savedLineup.filter((r) => r.team === 0));
+  }
+
+  /** 保存済みの編成を、今のルールで置けるものだけ復元する */
+  private restorePlayerLineup(): void {
+    const key = this.getLineupStorageKey();
+    if (!key) return;
+    const stored = loadStoredLineup(key);
+    let restored = 0;
+    for (const p of stored) {
+      const id = p.facilityId ?? p.typeId;
+      if (!id || !this.checkPlacement(id, p.x, p.z).valid) continue;
+      const record: PlacedRecord = { ...p, team: 0 };
+      this.savedLineup.push(record);
+      this.spawnRecord(record);
+      restored++;
+    }
+    if (restored > 0) this.showToast(`💾 前回の編成を復元しました（${restored} 体）`);
+  }
+
+  /** 実体を戦場と編成の両方から取り除く */
+  private removeRecord(record: PlacedRecord): void {
+    const lineup = this.getActiveLineup();
+    const idx = lineup.indexOf(record);
+    if (idx >= 0) lineup.splice(idx, 1);
+    const entity = this.placedEntities.get(record);
+    if (entity) this.removeEntity(entity);
+  }
+
+  private removeEntity(entity: Unit | Facility): void {
+    if (this.battle.units.includes(entity as Unit)) this.battle.removeUnit(entity as Unit);
+    else this.battle.removeFacility(entity as Facility);
+  }
+
+  /** 直前の配置を取り消す。全消去の直後なら消した編成を元に戻す */
+  private undoLastPlacement(): void {
+    if (this.mode !== 'placement') return;
+    if (this.clearedBackup.length > 0) {
+      const backup = this.clearedBackup;
+      this.clearedBackup = [];
+      this.getActiveLineup().push(...backup);
+      this.spawnRecords(backup);
+      this.sound.playPlace();
+      this.afterLineupEdited();
+      this.showToast('↶ 全消去を取り消しました');
       return;
     }
+    const lineup = this.getActiveLineup();
+    // アーケード等の編成には敵の固定配置も入っているので、自分で置いたものだけを遡る
+    const record = [...lineup].reverse().find((r) => this.isEditableRecord(r));
+    if (!record) return;
+    this.removeRecord(record);
+    this.sound.playRemove();
+    this.afterLineupEdited();
+  }
 
-    // 2. ユニットの探索
-    let bestIdx = -1;
-    let bestDist = 1.8;
-    for (let i = 0; i < this.battle.units.length; i++) {
-      const u = this.battle.units[i];
-      // アーケード・チャレンジでは敵軍（青軍）は削除不可、友人対戦では自分の手番チームのみ削除可
-      if (this.isSoloPlayStyle() && u.team !== 0) continue;
-      if (this.playStyle === 'versus' && u.team !== activeTurnTeam) continue;
-      const d = Math.hypot(u.pelvis.pos.x - x, u.pelvis.pos.z - z);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
+  /** プレイヤーが消したり取り消したりできる配置か */
+  private isEditableRecord(record: PlacedRecord): boolean {
+    if (this.isSoloPlayStyle()) return record.team === 0;
+    if (this.playStyle === 'versus') return record.team === this.versus.currentTurn;
+    return true;
+  }
+
+  private removeNearestUnitAt(x: number, z: number): void {
+    const records = this.getActiveLineup().filter((r) => this.isEditableRecord(r));
+    const nearest = (
+      radius: number,
+      accept: (entity: Unit | Facility) => boolean,
+      posOf: (entity: Unit | Facility) => { x: number; z: number },
+    ): PlacedRecord | null => {
+      let best: PlacedRecord | null = null;
+      let bestDist = radius;
+      for (const record of records) {
+        const entity = this.placedEntities.get(record);
+        if (!entity || !accept(entity)) continue;
+        const pos = posOf(entity);
+        const d = Math.hypot(pos.x - x, pos.z - z);
+        if (d < bestDist) {
+          bestDist = d;
+          best = record;
+        }
       }
-    }
-    if (bestIdx >= 0) {
-      const target = this.battle.units[bestIdx];
-      const lineupIdx = targetLineup.findIndex(
-        (rec) =>
-          rec.typeId === target.type.id &&
-          rec.team === target.team &&
-          Math.hypot(rec.x - target.pelvis.pos.x, rec.z - target.pelvis.pos.z) < 0.6,
-      );
-      if (lineupIdx >= 0) targetLineup.splice(lineupIdx, 1);
-      this.battle.removeUnit(target);
-      this.sound.playRemove();
-      if (this.playStyle === 'versus') this.syncVersusUI();
-      this.updateHUD();
-    }
+      return best;
+    };
+
+    // 施設を優先し、無ければユニットを探す
+    const isFacility = (e: Unit | Facility) => this.battle.facilities.includes(e as Facility);
+    const target =
+      nearest(2.0, isFacility, (e) => (e as Facility).pos) ??
+      nearest(1.8, (e) => !isFacility(e), (e) => (e as Unit).pelvis.pos);
+    if (!target) return;
+    this.removeRecord(target);
+    this.clearedBackup = [];
+    this.sound.playRemove();
+    this.afterLineupEdited();
+  }
+
+  /** 画面上部に短い通知を出す */
+  private showToast(message: string): void {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('show');
+    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => {
+      this.toastTimer = null;
+      el.classList.remove('show');
+    }, 2200);
   }
 
   /** プレイヤーが赤軍だけを操作し、解放済みの兵種だけを使うモードか */
@@ -1557,47 +1644,16 @@ export class GameApp {
     const unlocked = getAllUnitIds().filter((id) => isUnitUnlocked(this.arcadeSave, id));
     const enemies = generateEnemyLineup(run.round, run.seed, unlocked);
     this.savedLineup = [...enemies, ...run.playerLineup.map((r) => ({ ...r }))];
-    for (const item of this.savedLineup) {
-      if (item.facilityId) {
-        this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-      } else if (item.typeId) {
-        this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
-      }
-    }
+    this.spawnRecords(this.savedLineup);
+    this.clearedBackup = [];
+    // ランの最初だけ前回の編成を呼び出す（以降のラウンドは引き継ぎ編成を使う）
+    if (run.round === 1 && run.playerLineup.length === 0) this.restorePlayerLineup();
 
     this.renderChallengePanel();
     this.renderUnitCards();
     this.updateUnitDetailOverlay(this.selectedId);
     this.syncUnitDetailOverlay();
     this.syncPhaseUI();
-    this.updateHUD();
-  }
-
-  private placeChallengeItem(x: number, z: number): void {
-    if (!isInsideVersusZone(2, 0, x, z)) {
-      this.flashPhaseWarning('⚠ 赤枠の配置可能エリア内をタップ／クリックしてください');
-      return;
-    }
-    const id = this.selectedId;
-    if (!isFacilityTypeId(id) && !isUnitUnlocked(this.arcadeSave, id)) {
-      this.flashPhaseWarning('🔒 この兵種はまだ解放されていません');
-      return;
-    }
-    const itemCost = this.getItemCost(id);
-    const used = this.getCurrentRedCost();
-    if (used + itemCost > CHALLENGE_PLAYER_BUDGET) {
-      this.flashPhaseWarning(`⚠ 予算オーバー！ (残り ${CHALLENGE_PLAYER_BUDGET - used} pt / 必要 ${itemCost} pt)`);
-      return;
-    }
-    const facing = Math.PI / 2;
-    if (isFacilityTypeId(id)) {
-      this.battle.spawnFacility(id, 0, x, z, facing);
-      this.savedLineup.push({ facilityId: id, team: 0, x, z, facing });
-    } else {
-      this.battle.spawnUnit(id, 0, x, z, facing);
-      this.savedLineup.push({ typeId: id, team: 0, x, z, facing });
-    }
-    this.sound.playPlace();
     this.updateHUD();
   }
 
@@ -1773,6 +1829,7 @@ export class GameApp {
 
     this.versus.setPlayerCount(playerCount, randomizeBudget);
     this.savedLineup = [];
+    this.clearedBackup = [];
     this.view.setVersusZones(getVersusZones(this.versus.playerCount), this.versus.currentTurn);
 
     this.renderUnitCards();
@@ -1839,18 +1896,13 @@ export class GameApp {
     }
 
     const { allReady, nextTeam } = this.versus.confirmCurrentTurn();
+    this.clearedBackup = [];
     if (!allReady) {
       // 今のプレイヤーの配置をブラインド（戦場から非表示化）し、次のプレイヤーの手番へ切り替え
       this.battle.clear();
       this.view.clearDebris();
       const nextLineup = this.versus.getTeamLineup(nextTeam);
-      for (const item of nextLineup) {
-        if (item.facilityId) {
-          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-        } else if (item.typeId) {
-          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
-        }
-      }
+      this.spawnRecords(nextLineup);
       this.view.setVersusZones(getVersusZones(this.versus.playerCount), nextTeam);
       this.sound.playPlace();
       this.syncVersusUI();
@@ -1861,13 +1913,7 @@ export class GameApp {
       this.battle.clear();
       this.view.clearDebris();
       this.savedLineup = this.versus.getAllActiveLineups();
-      for (const item of this.savedLineup) {
-        if (item.facilityId) {
-          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-        } else if (item.typeId) {
-          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
-        }
-      }
+      this.spawnRecords(this.savedLineup);
       this.syncVersusUI();
       this.startBattle();
     }
@@ -1916,13 +1962,9 @@ export class GameApp {
       z: e.z,
       facing: e.facing,
     }));
-    for (const u of this.savedLineup) {
-      if (u.facilityId) {
-        this.battle.spawnFacility(u.facilityId, u.team, u.x, u.z, u.facing);
-      } else if (u.typeId) {
-        this.battle.spawnUnit(u.typeId, u.team, u.x, u.z, u.facing);
-      }
-    }
+    this.spawnRecords(this.savedLineup);
+    this.clearedBackup = [];
+    this.restorePlayerLineup();
 
     this.renderArcadeStageButtons();
     this.renderStageBriefing();
@@ -1944,13 +1986,8 @@ export class GameApp {
     this.view.setStageTerrain(null, false);
     this.view.setStageTheme(undefined);
     this.savedLineup = preset.units.map((u) => ({ ...u }));
-    for (const item of this.savedLineup) {
-      if (item.facilityId) {
-        this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-      } else if (item.typeId) {
-        this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
-      }
-    }
+    this.clearedBackup = [];
+    this.spawnRecords(this.savedLineup);
     this.renderUnitCards();
     this.updateUnitDetailOverlay(this.selectedId);
     this.syncUnitDetailOverlay();
@@ -2020,23 +2057,11 @@ export class GameApp {
       // 友人対戦では配置された編成を保持しつつ1Pの手番に戻し、他プレイヤーの編成は再びブラインドする
       this.versus.reopenPlacementsKeepLineups();
       const firstLineup = this.versus.getTeamLineup(0);
-      for (const item of firstLineup) {
-        if (item.facilityId) {
-          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-        } else if (item.typeId) {
-          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
-        }
-      }
+      this.spawnRecords(firstLineup);
       this.view.setVersusZones(getVersusZones(this.versus.playerCount), 0);
       this.syncVersusUI();
     } else {
-      for (const item of this.savedLineup) {
-        if (item.facilityId) {
-          this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
-        } else if (item.typeId) {
-          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
-        }
-      }
+      this.spawnRecords(this.savedLineup);
     }
     this.syncPhaseUI();
     this.syncUnitDetailOverlay();
@@ -2071,6 +2096,7 @@ export class GameApp {
     const isVersusPlacement = this.playStyle === 'versus' && this.mode === 'placement';
     this.elVersusHudBar?.classList.toggle('hidden', !isVersusPlacement);
     this.elStartBtn.disabled = false;
+    document.getElementById('btn-undo')?.classList.toggle('hidden', this.mode !== 'placement');
 
     if (this.mode === 'placement') {
       if (this.playStyle === 'challenge') {
