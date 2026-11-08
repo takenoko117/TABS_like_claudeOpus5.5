@@ -31,7 +31,8 @@ import type { ProjectileKind } from '../combat/CombatSystem';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Particle } from '../physics/Particle';
 import {
-  buildDragonBody,
+  buildDragonBodyHalves,
+  buildDragonForeleg,
   buildDragonForeWing,
   buildDragonHead,
   buildDragonSegment,
@@ -215,16 +216,24 @@ function specTemplate(spec: DragonPartSpec): VoxelPartTemplate {
   return makeTemplate(spec.grid, spec.voxelSize, spec.pivot);
 }
 
-/** ドラゴンの首・尾の節と尾先（部位破壊対象外の装飾メッシュ）のジオメトリキャッシュ */
-const dragonExtraCache = new Map<Team, { segment: BufferGeometry; tailTip: BufferGeometry }>();
-function getDragonExtras(team: Team): { segment: BufferGeometry; tailTip: BufferGeometry } {
+/** ドラゴンの後半身・前脚・首と尾の節・尾先（部位破壊対象外の装飾メッシュ）のジオメトリ */
+interface DragonExtras {
+  rear: BufferGeometry;
+  /** [0] = -X 側用, [1] = +X 側用 */
+  forelegs: [BufferGeometry, BufferGeometry];
+  segment: BufferGeometry;
+  tailTip: BufferGeometry;
+}
+const dragonExtraCache = new Map<Team, DragonExtras>();
+function getDragonExtras(team: Team): DragonExtras {
   let e = dragonExtraCache.get(team);
   if (!e) {
-    const seg = buildDragonSegment(team);
-    const tip = buildDragonTailTip(team);
+    const geo = (spec: DragonPartSpec) => spec.grid.toGeometry(spec.voxelSize, spec.pivot);
     e = {
-      segment: seg.grid.toGeometry(seg.voxelSize, seg.pivot),
-      tailTip: tip.grid.toGeometry(tip.voxelSize, tip.pivot),
+      rear: geo(buildDragonBodyHalves(team).rear),
+      forelegs: [geo(buildDragonForeleg(team, -1)), geo(buildDragonForeleg(team, 1))],
+      segment: geo(buildDragonSegment(team)),
+      tailTip: geo(buildDragonTailTip(team)),
     };
     dragonExtraCache.set(team, e);
   }
@@ -964,7 +973,7 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
 
   // 西洋ドラゴン: 厚い胸郭・腹鱗・背棘列・前脚を備えた水平の胴体
   if (type.id === 'dragon') {
-    return specTemplate(buildDragonBody(team));
+    return specTemplate(buildDragonBodyHalves(team).front);
   }
 
   // デオキシス: V字トルソー・胸中央の光輝く紫「DNAクリスタルコア」・シアンエネルギーライン
@@ -2652,6 +2661,48 @@ const _hF = new Vector3();
 const _segX = new Vector3();
 const _segY = new Vector3();
 const _segZ = new Vector3();
+const _dW = new Vector3();
+const _fR = new Vector3();
+const _fU = new Vector3();
+const _fF = new Vector3();
+const _rR = new Vector3();
+const _rU = new Vector3();
+const _rF = new Vector3();
+const _tmpA = new Vector3();
+const _tmpB = new Vector3();
+const _tmpC = new Vector3();
+
+/**
+ * 直交基底 [srcR, srcU, srcF] を ヨー（srcU 軸）→ ピッチ（機首上げが正）→ ロール の順に回転し、out へ書き込む。
+ * src と out には別のベクトルを渡すこと。
+ */
+function rotateFrame(
+  outR: Vector3,
+  outU: Vector3,
+  outF: Vector3,
+  srcR: Vector3,
+  srcU: Vector3,
+  srcF: Vector3,
+  yaw: number,
+  pitch: number,
+  roll: number,
+): void {
+  outR.copy(srcR);
+  outU.copy(srcU);
+  outF.copy(srcF);
+  if (yaw !== 0) {
+    outR.applyAxisAngle(outU, yaw);
+    outF.applyAxisAngle(outU, yaw);
+  }
+  if (pitch !== 0) {
+    outU.applyAxisAngle(outR, -pitch);
+    outF.applyAxisAngle(outR, -pitch);
+  }
+  if (roll !== 0) {
+    outR.applyAxisAngle(outF, roll);
+    outU.applyAxisAngle(outF, roll);
+  }
+}
 
 /**
  * 首・尾の節を a→b に沿って配置する（+Y を a→b、+X を rightHint に揃える）。
@@ -3111,6 +3162,8 @@ export class VoxelCharacterVisual {
   private dragonNeck: Mesh[] = [];
   private dragonTail: Mesh[] = [];
   private dragonTailTip: Mesh | null = null;
+  private dragonRear: Mesh | null = null;
+  private dragonForelegs: Mesh[] = [];
   private readonly dragonPts: Vector3[] = [];
 
   // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的波打ちエフェクト
@@ -3213,9 +3266,16 @@ export class VoxelCharacterVisual {
       this.bowMesh = null;
     }
 
-    // 西洋ドラゴン: 首・尾の節メッシュを生成
+    // 西洋ドラゴン: 後半身・前脚・首・尾の節メッシュを生成
     if (unit.type.id === 'dragon') {
       const extras = getDragonExtras(unit.team);
+      this.dragonRear = makeMesh(extras.rear, this.material, s);
+      this.group.add(this.dragonRear);
+      for (const geom of extras.forelegs) {
+        const m = makeMesh(geom, this.material, s);
+        this.group.add(m);
+        this.dragonForelegs.push(m);
+      }
       for (let i = 0; i < DRAGON_RIG.neckSegments; i++) {
         const m = makeMesh(extras.segment, this.material, s);
         this.group.add(m);
@@ -3706,9 +3766,12 @@ export class VoxelCharacterVisual {
   }
 
   /**
-   * 西洋ドラゴン専用の配置処理。
-   * 物理骨格（直立の羽ばたき姿勢）はそのままに、胴体を水平に寝かせ、
-   * 首を S 字に持ち上げて頭を物理頭部へ、翼を物理の肘・手へ、尾と後脚を胴体座標系に配置する。
+   * 西洋ドラゴン専用の配置処理（ダイナミック版）。
+   * 物理骨格（直立の羽ばたき姿勢）はそのままに、見た目だけを胴体座標系で組み立てる。
+   *  - 胴体は腰で前半身・後半身の 2 パーツに分かれ、羽ばたきに合わせて上下に揺れながらうねる
+   *  - 翼は大きな振幅で打ち下ろし、翼端が遅れてしなり、打ち上げ時には翼をひねって畳む
+   *  - 頭は首振り・うなずき・傾げを重ね、ブレスの溜めでは仰け反る
+   *  - 前脚・後脚は左右交互にばたつかせ、尾は後半身からムチのようにうねる
    */
   private syncDragon(): void {
     const u = this.unit;
@@ -3717,42 +3780,85 @@ export class VoxelCharacterVisual {
     const pelvis = P[J.Pelvis].pos;
     const time = performance.now() * 0.001;
     const R = DRAGON_RIG;
-    const lively = u.alive ? 1 : 0.15;
+    const alive = u.alive;
+    const lively = alive ? 1 : 0.12;
+    const breathing = u.attackPhase === 'strike';
+    const charging = u.attackPhase === 'windup';
 
-    // 胴体基底（水平）
+    // 羽ばたき位相（物理の羽ばたきより少しゆっくり、その分ストロークを大きく）
+    const ph = u.walkPhase * 0.8;
+    const flap = alive ? Math.sin(ph) : -0.5;
+    const lag = alive ? Math.sin(ph - 0.75) : -0.5;
+    const stroke = alive ? Math.cos(ph) : 0; // > 0: 打ち上げ, < 0: 打ち下ろし
+    // 打ち下ろしで体が持ち上がる（揚力のうねり）
+    const heave = -Math.cos(ph - 0.45) * 0.075 * lively;
+
+    // 基準となる水平な胴体基底
     _dF.set(u.forward.x, 0, u.forward.z);
     if (_dF.lengthSq() < 1e-6) _dF.set(0, 0, 1);
     _dF.normalize();
     _dU.copy(UP);
     _dR.crossVectors(_dU, _dF).normalize();
-    const bodyPoint = (out: Vector3, x: number, y: number, z: number): Vector3 =>
-      out.copy(pelvis).addScaledVector(_dR, x * s).addScaledVector(_dU, y * s).addScaledVector(_dF, z * s);
-
-    const torso = this.parts.torso;
-    torso.mesh.visible = !torso.destroyed;
-    placeBasisPart(torso.mesh, pelvis, _dR, _dU, _dF);
 
     // 物理骨格の左右が胴体基底 _dR のどちら側にあるか（L/R 部位を正しい側へ配置するため）
     _hR.subVectors(P[J.ShoulderR].pos, P[J.ShoulderL].pos);
     _hR.y = 0;
     const rs = _hR.dot(_dR) >= 0 ? 1 : -1;
 
-    // 頭部: ブレスの首振り（肩のねじれ）に追従し、わずかに鼻先を下げて睨みつける
-    if (_hR.lengthSq() < 1e-6 || !u.alive) _hR.copy(_dR).multiplyScalar(rs);
+    // 腰（前後半身の関節）
+    _dW.copy(pelvis).addScaledVector(_dU, heave * s).addScaledVector(_dF, R.waistZ * s);
+
+    // 前半身: 羽ばたきに合わせたピッチ＋ゆったりした左右のうねり
+    const frontYaw = Math.sin(time * 1.3) * 0.09 * lively;
+    const frontPitch = (0.1 * stroke + (charging ? 0.12 : 0)) * lively;
+    const frontRoll = Math.sin(time * 1.1) * 0.06 * lively;
+    rotateFrame(_fR, _fU, _fF, _dR, _dU, _dF, frontYaw, frontPitch, frontRoll);
+    // 後半身: 前半身と逆位相に揺れて胴体全体が S 字にしなる
+    const rearYaw = -Math.sin(time * 1.3 - 0.7) * 0.14 * lively;
+    const rearPitch = -0.13 * Math.cos(ph - 0.6) * lively;
+    const rearRoll = -frontRoll * 0.7;
+    rotateFrame(_rR, _rU, _rF, _dR, _dU, _dF, rearYaw, rearPitch, rearRoll);
+
+    const frontPoint = (out: Vector3, x: number, y: number, z: number): Vector3 =>
+      out.copy(_dW).addScaledVector(_fR, x * s).addScaledVector(_fU, y * s).addScaledVector(_fF, (z - R.waistZ) * s);
+    const rearPoint = (out: Vector3, x: number, y: number, z: number): Vector3 =>
+      out.copy(_dW).addScaledVector(_rR, x * s).addScaledVector(_rU, y * s).addScaledVector(_rF, (z - R.waistZ) * s);
+
+    const torso = this.parts.torso;
+    const bodyVisible = !torso.destroyed;
+    torso.mesh.visible = bodyVisible;
+    placeBasisPart(torso.mesh, _dW, _fR, _fU, _fF);
+    if (this.dragonRear) {
+      this.dragonRear.visible = bodyVisible;
+      placeBasisPart(this.dragonRear, _dW, _rR, _rU, _rF);
+    }
+
+    // 頭部: ブレスの首振り（肩のねじれ）を基準に、首振り・うなずき・傾げを重ねる
+    if (_hR.lengthSq() < 1e-6 || !alive) _hR.copy(_dR).multiplyScalar(rs);
     _hR.normalize().multiplyScalar(rs);
     _hF.crossVectors(_hR, UP).normalize();
-    const pitch = 0.1;
-    _hU.copy(UP).multiplyScalar(Math.cos(pitch)).addScaledVector(_hF, Math.sin(pitch));
-    _hF.multiplyScalar(Math.cos(pitch)).addScaledVector(UP, -Math.sin(pitch));
+    _hU.copy(UP);
     _hR.crossVectors(_hU, _hF).normalize();
-    _dHead.copy(P[J.Head].pos).addScaledVector(_hF, 0.24 * s).addScaledVector(UP, -0.06 * s);
+    const sway = (breathing ? 0.3 : 1) * lively;
+    const headYaw = (Math.sin(time * 1.7) * 0.2 + Math.sin(time * 3.1) * 0.06) * sway;
+    const headPitch = -0.1 + Math.sin(time * 2.3) * 0.12 * sway - 0.08 * stroke * lively + (charging ? 0.35 : 0) - (breathing ? 0.12 : 0);
+    const headRoll = Math.sin(time * 1.4) * 0.1 * sway;
+    const headBaseR = _tmpA.copy(_hR);
+    const headBaseU = _tmpB.copy(_hU);
+    const headBaseF = _tmpC.copy(_hF);
+    rotateFrame(_hR, _hU, _hF, headBaseR, headBaseU, headBaseF, headYaw, headPitch, headRoll);
+    _dHead
+      .copy(P[J.Head].pos)
+      .addScaledVector(headBaseF, (0.24 + (charging ? -0.1 : 0) + (breathing ? 0.06 : 0)) * s)
+      .addScaledVector(UP, (-0.06 + heave * 0.6 + Math.sin(time * 2.3 + 0.4) * 0.04 * sway + (charging ? 0.08 : 0)) * s)
+      .addScaledVector(headBaseR, Math.sin(time * 1.7 - 0.5) * 0.07 * sway * s);
     const head = this.parts.head;
     head.mesh.visible = !head.destroyed;
     placeBasisPart(head.mesh, _dHead, _hR, _hU, _hF);
 
-    // 首: 付け根→制御点→頭の 2 次ベジェ曲線に沿って節を並べる
-    bodyPoint(_dA, R.neckBase[0], R.neckBase[1], R.neckBase[2]);
-    bodyPoint(_dB, R.neckCtrl[0], R.neckCtrl[1], R.neckCtrl[2]);
+    // 首: 付け根→（左右に揺れる）制御点→頭の 2 次ベジェ曲線に沿って節を並べる
+    frontPoint(_dA, R.neckBase[0], R.neckBase[1], R.neckBase[2]);
+    frontPoint(_dB, R.neckCtrl[0] - Math.sin(time * 1.7 - 0.9) * 0.06 * sway, R.neckCtrl[1], R.neckCtrl[2]);
     _dC.copy(_dHead).addScaledVector(_hF, -0.02 * s);
     const nN = this.dragonNeck.length;
     for (let i = 0; i <= nN; i++) {
@@ -3768,36 +3874,36 @@ export class VoxelCharacterVisual {
     }
     for (let i = 0; i < nN; i++) {
       const m = this.dragonNeck[i];
-      m.visible = !torso.destroyed;
-      placeDragonSegment(m, this.dragonPts[i], this.dragonPts[i + 1], _dR, s * (1.15 - 0.13 * i), 1.35);
+      m.visible = bodyVisible;
+      placeDragonSegment(m, this.dragonPts[i], this.dragonPts[i + 1], _fR, s * (1.15 - 0.13 * i), 1.35);
     }
 
-    // 尾: 付け根から後方へ垂れ下がり、左右・上下にうねる
+    // 尾: 後半身から生え、左右のうねり＋羽ばたきに遅れて伝わるムチのしなり
     const nT = this.dragonTail.length;
     for (let i = 0; i <= nT; i++) {
-      const lx = Math.sin(time * 2.3 - i * 0.6) * 0.022 * i * lively;
-      const ly = R.tailBase[1] - 0.045 * i + 0.0045 * i * i + Math.sin(time * 1.9 - i * 0.55) * 0.01 * i * lively;
+      const lx = (Math.sin(time * 2.6 - i * 0.7) * 0.034 + Math.sin(time * 4.3 - i * 0.9) * 0.008) * i * lively;
+      const whip = -Math.cos(ph - 0.5 - i * 0.38) * 0.016 * i * lively;
+      const ly = R.tailBase[1] - 0.045 * i + 0.0045 * i * i + Math.sin(time * 2.0 - i * 0.6) * 0.012 * i * lively + whip;
       const lz = R.tailBase[2] - 0.15 * i;
-      bodyPoint(this.dragonPts[i], lx, ly, lz);
+      rearPoint(this.dragonPts[i], lx, ly, lz);
     }
     for (let i = 0; i < nT; i++) {
       const m = this.dragonTail[i];
-      m.visible = !torso.destroyed;
-      placeDragonSegment(m, this.dragonPts[i + 1], this.dragonPts[i], _dR, s * (1.0 - 0.075 * i), 1.35);
+      m.visible = bodyVisible;
+      placeDragonSegment(m, this.dragonPts[i + 1], this.dragonPts[i], _rR, s * (1.0 - 0.075 * i), 1.35);
     }
     if (this.dragonTailTip) {
-      this.dragonTailTip.visible = !torso.destroyed;
-      placeDragonSegment(this.dragonTailTip, this.dragonPts[nT], this.dragonPts[nT - 1], _dR, s * 0.85, 0);
+      this.dragonTailTip.visible = bodyVisible;
+      placeDragonSegment(this.dragonTailTip, this.dragonPts[nT], this.dragonPts[nT - 1], _rR, s * 0.85, 0);
     }
 
-    // 翼: 物理の羽ばたき位相に同期して、胴体座標系で大きく広げた翼を打ち下ろす
-    //   上腕翼の仰角 a1、前腕翼の仰角 a2（翼端ほど大きく遅れてしなる）
-    const flap = u.alive ? Math.sin(u.walkPhase) : -0.4;
-    const lag = u.alive ? Math.sin(u.walkPhase - 0.6) : -0.4;
-    const a1 = 0.28 + 0.5 * flap;
-    const a2 = a1 + 0.08 + 0.38 * lag;
+    // 翼: 大きな振幅で打ち下ろし、翼端は遅れてしなる。打ち上げでは後方へ引きつつひねって空気を逃がす
+    const a1 = 0.2 + 0.85 * flap;
+    const a2 = a1 + 0.05 + 0.62 * lag;
     const upperLen = R.upperWingLength;
     const foreLen = R.foreWingLength;
+    const twist = 0.4 * stroke;
+    _tmpA.copy(_fF).multiplyScalar(Math.cos(twist)).addScaledVector(_fU, -Math.sin(twist));
     for (const side of [-1, 1] as const) {
       const upper = side < 0 ? this.parts.upperArmL : this.parts.upperArmR;
       const fore = side < 0 ? this.parts.forearmL : this.parts.forearmR;
@@ -3807,33 +3913,55 @@ export class VoxelCharacterVisual {
       const sz = R.shoulder[2];
       const ex = sx + upperLen * Math.cos(a1);
       const ey = sy + upperLen * Math.sin(a1);
-      const ez = sz - 0.06;
+      const ez = sz - 0.06 - 0.05 * stroke;
       const hx = ex + foreLen * Math.cos(a2);
       const hy = ey + foreLen * Math.sin(a2);
-      const hz = ez - 0.1;
-      bodyPoint(_dA, sx * lx, sy, sz);
-      bodyPoint(_dB, ex * lx, ey, ez);
-      bodyPoint(_dC, hx * lx, hy, hz);
+      const hz = ez - 0.1 - 0.14 * stroke;
+      frontPoint(_dA, sx * lx, sy, sz);
+      frontPoint(_dB, ex * lx, ey, ez);
+      frontPoint(_dC, hx * lx, hy, hz);
       upper.mesh.visible = !upper.destroyed;
-      placeDragonWingBone(upper.mesh, _dA, _dB, _dF, upperLen, s);
+      placeDragonWingBone(upper.mesh, _dA, _dB, _tmpA, upperLen, s);
       fore.mesh.visible = !fore.destroyed && !upper.destroyed;
-      placeDragonWingBone(fore.mesh, _dB, _dC, _dF, foreLen, s);
+      placeDragonWingBone(fore.mesh, _dB, _dC, _tmpA, foreLen, s);
     }
 
-    // 後脚: 飛行中は胴体の下に引き寄せ、ゆったりと揺らす
-    const sway = Math.sin(time * 1.6) * 0.03 * lively;
+    // 後脚: 左右交互に蹴り出すようにばたつかせる（骨の長さは一定のまま角度で動かす）
+    const thighLen = 0.21;
+    const shinLen = 0.24;
+    const kick = time * 6.5;
     for (const side of [-1, 1] as const) {
       const thigh = side < 0 ? this.parts.thighL : this.parts.thighR;
       const shin = side < 0 ? this.parts.shinL : this.parts.shinR;
-      const sw = sway * side;
       const lx = side * rs;
-      bodyPoint(_dA, R.hip[0] * lx, R.hip[1], R.hip[2]);
-      bodyPoint(_dB, R.knee[0] * lx, R.knee[1], R.knee[2] + sw);
-      bodyPoint(_dC, R.foot[0] * lx, R.foot[1], R.foot[2] + sw * 1.5);
+      const lt = kick + (side < 0 ? 0 : Math.PI);
+      const th1 = 0.67 + 0.38 * Math.sin(lt) * lively;
+      const th2 = -0.43 + 0.55 * Math.sin(lt - 1.0) * lively;
+      const kx = R.hip[0] + 0.03;
+      const ky = R.hip[1] - thighLen * Math.cos(th1);
+      const kz = R.hip[2] + thighLen * Math.sin(th1);
+      const fx = kx - 0.01;
+      const fy = ky - shinLen * Math.cos(th2);
+      const fz = kz + shinLen * Math.sin(th2);
+      rearPoint(_dA, R.hip[0] * lx, R.hip[1], R.hip[2]);
+      rearPoint(_dB, kx * lx, ky, kz);
+      rearPoint(_dC, fx * lx, fy, fz);
       thigh.mesh.visible = !thigh.destroyed;
-      placeDragonLegBone(thigh.mesh, _dA, _dB, _dF);
+      placeDragonLegBone(thigh.mesh, _dA, _dB, _rF);
       shin.mesh.visible = !shin.destroyed;
-      placeDragonLegBone(shin.mesh, _dB, _dC, _dF);
+      placeDragonLegBone(shin.mesh, _dB, _dC, _rF);
+    }
+
+    // 前脚: 胸の下で左右交互に掻くようにばたつかせる
+    for (let i = 0; i < this.dragonForelegs.length; i++) {
+      const m = this.dragonForelegs[i];
+      const xs = i === 0 ? -1 : 1; // テンプレートの外側方向
+      const lt = kick * 1.1 + (xs * rs < 0 ? 0.6 : 0.6 + Math.PI);
+      const swing = (0.15 + 0.5 * Math.sin(lt)) * lively;
+      frontPoint(_dA, R.foreleg[0] * xs, R.foreleg[1], R.foreleg[2]);
+      rotateFrame(_tmpA, _tmpB, _tmpC, _fR, _fU, _fF, 0, swing, 0);
+      m.visible = bodyVisible;
+      placeBasisPart(m, _dA, _tmpA, _tmpB, _tmpC);
     }
   }
 

@@ -30,6 +30,10 @@ export const DRAGON_RIG = {
   foot: [0.19, -0.42, -0.16] as const,
   /** 尾の付け根 */
   tailBase: [0, 0.01, -0.4] as const,
+  /** 胴体を前後 2 パーツに分ける腰の位置（z, 骨盤基準）。ボクセル境界に合わせる */
+  waistZ: -1 * 0.034,
+  /** 前脚の付け根 x は左右で符号反転 */
+  foreleg: [4.4 * 0.034, -2.6 * 0.034, 9.5 * 0.034] as const,
   /** 首・尾の 1 節テンプレートの長さ（ローカル単位） */
   segmentLength: 5 * 0.03,
   /** 翼テンプレートの骨の長さ（ローカル単位） */
@@ -435,15 +439,64 @@ export function buildDragonBody(team: Team): DragonPartSpec {
     S.tube([0, top - 1, z], [0, top + h, z - 2.2], 1.3 * pr + 0.4, 0.25, horn);
   }
 
-  // 胸の下に構えた前脚と鉤爪
+  // 前脚の付け根（前脚本体は別メッシュでばたつかせる）
   for (const sx of [-1, 1]) {
-    S.chain([mirror([4.4, -2.6, 9.5], sx), mirror([5.6, -6.2, 11.0], sx), mirror([5.0, -8.6, 12.6], sx)], [2.0, 1.5, 1.2], p.scale);
-    S.ellipsoid(mirror([5.0, -8.7, 13.0], sx), [1.6, 0.9, 1.4], p.scaleDark);
-    for (const dx of [-1.1, 0, 1.1]) {
-      S.tube([sx * 5.0 + dx, -8.8, 12.8], [sx * 5.0 + dx * 1.4, -9.4, 15.4], 0.75, 0.3, p.claw);
-    }
+    S.ellipsoid(mirror([4.4, -2.6, 9.5], sx), [2.2, 2.2, 2.4], p.scale);
   }
 
+  return S.spec(0.034);
+}
+
+/**
+ * 胴体を腰（ピボット）で前半身（胸）と後半身（腰・尻）の 2 パーツに分割する。
+ * 後半身には前半身の内部に隠れる「差し込み」部分を持たせ、腰を曲げても継ぎ目に隙間が出ないようにする。
+ */
+export function buildDragonBodyHalves(team: Team): { front: DragonPartSpec; rear: DragonPartSpec } {
+  const full = buildDragonBody(team);
+  const g = full.grid;
+  const [ox, oy, oz] = full.pivot;
+  const waistZ = DRAGON_RIG.waistZ / full.voxelSize; // 腰のボクセル境界（ピボット相対）
+  const front = new VoxelGrid(g.sx, g.sy, g.sz);
+  const rear = new VoxelGrid(g.sx, g.sy, g.sz);
+  for (let z = 0; z < g.sz; z++) {
+    const pz = z + 0.5 - oz;
+    for (let y = 0; y < g.sy; y++) {
+      for (let x = 0; x < g.sx; x++) {
+        const c = g.get(x, y, z);
+        if (c === 0) continue;
+        if (pz > waistZ) {
+          front.set(x, y, z, c);
+          // 内部ボクセル（6 近傍がすべて埋まっている）だけを後半身の差し込みとして複製
+          const interior =
+            g.get(x + 1, y, z) && g.get(x - 1, y, z) && g.get(x, y + 1, z) && g.get(x, y - 1, z) && g.get(x, y, z + 1) && g.get(x, y, z - 1);
+          if (pz < waistZ + 3 && interior) rear.set(x, y, z, c);
+        } else {
+          rear.set(x, y, z, c);
+          if (pz > waistZ - 3) {
+            const interior =
+              g.get(x + 1, y, z) && g.get(x - 1, y, z) && g.get(x, y + 1, z) && g.get(x, y - 1, z) && g.get(x, y, z + 1) && g.get(x, y, z - 1);
+            if (interior) front.set(x, y, z, c);
+          }
+        }
+      }
+    }
+  }
+  const pivot = [ox, oy, oz + waistZ] as const;
+  return {
+    front: { grid: front, voxelSize: full.voxelSize, pivot },
+    rear: { grid: rear, voxelSize: full.voxelSize, pivot },
+  };
+}
+
+/** 胸の下からばたつかせる前脚（付け根がピボット、+Y 上・+Z 前）。sx で左右を反転する */
+export function buildDragonForeleg(team: Team, sx: number): DragonPartSpec {
+  const p = dragonPalette(team);
+  const S = new Sculpt(9, 11, 10, 4.5, 9.5, 3.5);
+  S.chain([[0, 0, 0], mirror([1.2, -3.6, 1.5], sx), mirror([0.6, -6.0, 3.1], sx)], [2.0, 1.5, 1.2], p.scale);
+  S.ellipsoid(mirror([0.6, -6.1, 3.5], sx), [1.6, 0.9, 1.4], p.scaleDark);
+  for (const dx of [-1.1, 0, 1.1]) {
+    S.tube([sx * 0.6 + dx, -6.2, 3.3], [sx * 0.6 + dx * 1.4, -6.8, 5.9], 0.75, 0.3, p.claw);
+  }
   return S.spec(0.034);
 }
 
