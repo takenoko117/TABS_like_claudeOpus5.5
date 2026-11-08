@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>ぐにゃぐにゃバトル — ボクセル物理バトル</title>
+    <meta name="description" content="ふにゃふにゃのボクセル軍団を配置して戦わせるブラウザ物理バトル。全40面のアーケードやサバイバル、友人対戦を無料で遊べます。" />
+    <meta name="theme-color" content="#101622" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23e8590c'/%3E%3Crect x='10' y='5' width='12' height='10' fill='%23ffd43b'/%3E%3Crect x='8' y='16' width='16' height='11' fill='%23c92a2a'/%3E%3Crect x='13' y='8' width='2' height='3' fill='%23222'/%3E%3Crect x='18' y='8' width='2' height='3' fill='%23222'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -52,7 +55,11 @@
       </div>
 
       <div class="center-panel">
-        <div id="phase-badge" class="phase-badge placement">配置フェーズ</div>
+        <div class="phase-row">
+          <button id="btn-stage-prev" type="button" class="stage-nav-btn hidden" title="前の面へ" aria-label="前の面へ">◀</button>
+          <div id="phase-badge" class="phase-badge placement">配置フェーズ</div>
+          <button id="btn-stage-next" type="button" class="stage-nav-btn hidden" title="次の面へ" aria-label="次の面へ">▶</button>
+        </div>
 
         <!-- 友人対戦モード専用: 人数・ランダム予算＆手動編集バー -->
         <div id="versus-hud-bar" class="versus-hud-bar hidden">
@@ -205,6 +212,7 @@
           <li><b>戦闘中にユニットをクリック:</b> カメラで追跡、<b>P:</b> 一時停止、<b>F:</b> 早送り</li>
           <li><b>1本指ドラッグ / 右ドラッグ:</b> カメラ回転、<b>ピンチ / ホイール:</b> ズーム</li>
           <li><b>2本指スワイプ / WASD / 矢印:</b> カメラ平行移動、<b>右クリック:</b> 削除</li>
+          <li><b>Enter:</b> リザルトの次へ進む</li>
           <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始、<b>Tab / H:</b> UI開閉</li>
         </ul>
       </div>
@@ -227,6 +235,10 @@
           <option value="high">高</option>
           <option value="low">低（影なし）</option>
         </select>
+      </label>
+      <label class="settings-row">
+        <span>❤ HP バー</span>
+        <input id="setting-hpbars" type="checkbox" />
       </label>
       <button id="btn-reset-progress" type="button" class="ctrl-btn danger full">🗑 進行データを消去</button>
     </section>

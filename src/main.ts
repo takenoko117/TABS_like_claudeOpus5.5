@@ -5,7 +5,16 @@ if (!viewport) {
   throw new Error('#viewport が見つかりません');
 }
 
-const app = new GameApp(viewport);
+let app: GameApp;
+try {
+  app = new GameApp(viewport);
+} catch (error) {
+  // WebGL が使えない端末では真っ白のままにせず理由を伝える
+  console.error(error);
+  document.body.innerHTML =
+    '<p style="padding:24px;color:#fff;font:16px sans-serif">このブラウザでは 3D 描画（WebGL）を開始できませんでした。ハードウェアアクセラレーションを有効にするか、別のブラウザでお試しください。</p>';
+  throw error;
+}
 
 // 開発サーバーでのみ、動作確認用にコンソールからゲーム状態へ触れるようにする
 if (import.meta.env.DEV) {

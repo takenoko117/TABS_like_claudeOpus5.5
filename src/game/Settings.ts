@@ -7,12 +7,15 @@ export interface GameSettings {
   /** 効果音の音量（0〜1） */
   sfxVolume: number;
   quality: QualitySetting;
+  /** 傷ついたユニットの頭上に HP バーを出すか */
+  showHpBars: boolean;
 }
 
 export const DEFAULT_SETTINGS: Readonly<GameSettings> = {
   musicVolume: 0.5,
   sfxVolume: 0.55,
   quality: 'auto',
+  showHpBars: true,
 };
 
 const STORAGE_KEY = 'tabs_voxel_settings_v1';
@@ -37,6 +40,7 @@ export function parseSettings(raw: string | null): GameSettings {
       parsed.quality === 'high' || parsed.quality === 'low' || parsed.quality === 'auto'
         ? parsed.quality
         : DEFAULT_SETTINGS.quality,
+    showHpBars: typeof parsed.showHpBars === 'boolean' ? parsed.showHpBars : DEFAULT_SETTINGS.showHpBars,
   };
 }
 

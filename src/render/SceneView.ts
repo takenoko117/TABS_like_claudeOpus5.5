@@ -152,6 +152,12 @@ export class SceneView {
   private finisherFocus: { target: Vector3; distance: number } | null = null;
   private cameraBeforeFinisher: { target: Vector3; yaw: number; pitch: number; distance: number } | null = null;
   private cameraShake = 0;
+
+  // 傷ついたユニットの頭上に出す HP バー（InstancedMesh で一括描画）
+  showHpBars = true;
+  private readonly hpBarBack: InstancedMesh;
+  private readonly hpBarFill: InstancedMesh;
+  private readonly maxHpBars = 400;
   /** タイトル画面の背景デモ中、カメラをゆっくり回す */
   autoOrbit = false;
   private readonly cameraRestPos = new Vector3();
@@ -210,6 +216,26 @@ export class SceneView {
     this.fxMesh.count = 0;
     this.fxMesh.frustumCulled = false;
     this.scene.add(this.fxMesh);
+
+    const barGeo = new PlaneGeometry(1, 1);
+    this.hpBarBack = new InstancedMesh(
+      barGeo,
+      new MeshBasicMaterial({ color: 0x11151c, depthTest: false, transparent: true, opacity: 0.75 }),
+      this.maxHpBars,
+    );
+    this.hpBarFill = new InstancedMesh(
+      barGeo,
+      new MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true }),
+      this.maxHpBars,
+    );
+    for (const mesh of [this.hpBarBack, this.hpBarFill]) {
+      mesh.instanceMatrix.setUsage(35048);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    }
+    this.hpBarBack.renderOrder = 10;
+    this.hpBarFill.renderOrder = 11;
 
     this.setupInputListeners();
   }
@@ -2981,6 +3007,44 @@ export class SceneView {
     }
   }
 
+  /** 傷ついたユニットの頭上に HP バーを並べる（無傷の間は表示しない） */
+  private updateHpBars(battle: Battle): void {
+    let count = 0;
+    if (this.showHpBars) {
+      const camQuat = this.camera.quaternion;
+      _hpRight.set(1, 0, 0).applyQuaternion(camQuat);
+      for (const u of battle.units) {
+        if (count >= this.maxHpBars) break;
+        if (!u.alive || u.hp >= u.maxHp) continue;
+        const ratio = clamp01(u.hp / u.maxHp);
+        const width = Math.min(2.4, 0.55 + u.scale * 0.32);
+        const height = 0.09 + Math.min(0.07, u.scale * 0.02);
+
+        _hpPos.copy(u.chest.pos);
+        _hpPos.y += 0.72 * u.scale + 0.25;
+        _hpScale.set(width + 0.05, height + 0.05, 1);
+        _hpMatrix.compose(_hpPos, camQuat, _hpScale);
+        this.hpBarBack.setMatrixAt(count, _hpMatrix);
+
+        // バーは左端を固定して右から減らす
+        _hpPos.addScaledVector(_hpRight, -width * (1 - ratio) * 0.5);
+        _hpScale.set(Math.max(0.001, width * ratio), height, 1);
+        _hpMatrix.compose(_hpPos, camQuat, _hpScale);
+        this.hpBarFill.setMatrixAt(count, _hpMatrix);
+        _hpColor.setHex(TEAM_COLORS[u.team]?.shirt ?? 0xffffff);
+        this.hpBarFill.setColorAt(count, _hpColor);
+        count++;
+      }
+    }
+    this.hpBarBack.count = count;
+    this.hpBarFill.count = count;
+    if (count > 0) {
+      this.hpBarBack.instanceMatrix.needsUpdate = true;
+      this.hpBarFill.instanceMatrix.needsUpdate = true;
+      if (this.hpBarFill.instanceColor) this.hpBarFill.instanceColor.needsUpdate = true;
+    }
+  }
+
   /** 毎フレームの描画更新 */
   renderFrame(battle: Battle, realDt: number): void {
     this.updateCameraMovement(realDt);
@@ -2992,6 +3056,7 @@ export class SceneView {
     this.updateDroppedVoxels(realDt);
     this.updateKawariLogs(realDt);
     this.updateFxAndDynamicVisuals(battle, realDt);
+    this.updateHpBars(battle);
 
     if (this.cameraShake > 0.004) {
       // 揺れは描画の間だけ加え、カメラ本来の位置は動かさない
@@ -3008,6 +3073,12 @@ export class SceneView {
     }
   }
 }
+
+const _hpPos = new Vector3();
+const _hpRight = new Vector3();
+const _hpScale = new Vector3();
+const _hpMatrix = new Matrix4();
+const _hpColor = new Color();
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;

@@ -11,11 +11,12 @@ describe('設定データ', () => {
       musicVolume: 1,
       sfxVolume: 0,
       quality: DEFAULT_SETTINGS.quality,
+      showHpBars: DEFAULT_SETTINGS.showHpBars,
     });
   });
 
   it('正しい設定はそのまま読み込む', () => {
-    const settings = { musicVolume: 0.2, sfxVolume: 0.8, quality: 'low' };
+    const settings = { musicVolume: 0.2, sfxVolume: 0.8, quality: 'low', showHpBars: false };
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
   });
 });

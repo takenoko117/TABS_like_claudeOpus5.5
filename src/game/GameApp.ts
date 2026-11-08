@@ -915,6 +915,10 @@ export class GameApp {
 
     document.getElementById('btn-undo')?.addEventListener('click', () => this.undoLastPlacement());
 
+    // メニューを開かずに前後の面へ移動する
+    document.getElementById('btn-stage-prev')?.addEventListener('click', () => this.changeStageBy(-1));
+    document.getElementById('btn-stage-next')?.addEventListener('click', () => this.changeStageBy(1));
+
     this.bindSettingsPanel();
     document.getElementById('btn-coach-close')?.addEventListener('click', () => this.tutorial?.finish());
 
@@ -969,6 +973,12 @@ export class GameApp {
           this.handleChallengeBattleAction(true);
         } else {
           this.returnToPlacement();
+        }
+      } else if (e.code === 'Enter') {
+        // リザルトの「次へ」をキーボードでも押せるようにする
+        if (!this.elBanner.classList.contains('hidden') && !this.elNextStageBtn?.classList.contains('hidden')) {
+          e.preventDefault();
+          this.elNextStageBtn?.click();
         }
       } else if (e.code === 'KeyP') {
         this.setPaused(!this.paused);
@@ -1106,10 +1116,17 @@ export class GameApp {
     this.tutorialHighlight?.classList.add('coach-highlight');
   }
 
+  private changeStageBy(delta: number): void {
+    if (this.playStyle !== 'arcade' || this.mode !== 'placement') return;
+    const next = this.currentStageIndex + delta;
+    if (next >= 0 && next < ARCADE_STAGES.length) this.loadArcadeStage(next);
+  }
+
   private applySettings(): void {
     this.sound.setVolume(this.settings.sfxVolume);
     this.music.setVolume(this.settings.musicVolume);
     this.applyQualitySetting(this.settings.quality);
+    this.view.showHpBars = this.settings.showHpBars;
   }
 
   private applyQualitySetting(quality: QualitySetting): void {
@@ -1124,11 +1141,13 @@ export class GameApp {
     const music = document.getElementById('setting-music') as HTMLInputElement | null;
     const sfx = document.getElementById('setting-sfx') as HTMLInputElement | null;
     const quality = document.getElementById('setting-quality') as HTMLSelectElement | null;
-    if (!panel || !toggle || !music || !sfx || !quality) return;
+    const hpBars = document.getElementById('setting-hpbars') as HTMLInputElement | null;
+    if (!panel || !toggle || !music || !sfx || !quality || !hpBars) return;
 
     music.value = String(Math.round(this.settings.musicVolume * 100));
     sfx.value = String(Math.round(this.settings.sfxVolume * 100));
     quality.value = this.settings.quality;
+    hpBars.checked = this.settings.showHpBars;
 
     toggle.addEventListener('click', () => panel.classList.toggle('hidden'));
     document.getElementById('btn-settings-close')?.addEventListener('click', () => panel.classList.add('hidden'));
@@ -1147,6 +1166,11 @@ export class GameApp {
     quality.addEventListener('change', () => {
       this.settings.quality = quality.value as QualitySetting;
       this.applyQualitySetting(this.settings.quality);
+      saveSettings(this.settings);
+    });
+    hpBars.addEventListener('change', () => {
+      this.settings.showHpBars = hpBars.checked;
+      this.view.showHpBars = hpBars.checked;
       saveSettings(this.settings);
     });
     document.getElementById('btn-reset-progress')?.addEventListener('click', () => this.confirmResetProgress());
@@ -2419,6 +2443,9 @@ export class GameApp {
     document.getElementById('battle-speed-bar')?.classList.toggle('hidden', this.mode !== 'battle');
     // 戦闘中は配置できないので、兵種バーを畳んで戦場を広く見せる
     this.elBottomHud?.classList.toggle('in-battle', this.mode === 'battle');
+    const showStageNav = this.playStyle === 'arcade' && this.mode === 'placement';
+    document.getElementById('btn-stage-prev')?.classList.toggle('hidden', !showStageNav);
+    document.getElementById('btn-stage-next')?.classList.toggle('hidden', !showStageNav);
 
     if (this.mode === 'placement') {
       if (this.playStyle === 'challenge') {

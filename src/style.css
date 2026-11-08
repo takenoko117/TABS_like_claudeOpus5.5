@@ -2069,3 +2069,29 @@ body.on-title #btn-restore-hud {
     font-size: 20px;
   }
 }
+
+/* フェーズ表示と前後の面への移動ボタン */
+.phase-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  max-width: 100%;
+}
+
+.stage-nav-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: rgba(18, 24, 34, 0.85);
+  color: #ffd43b;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.stage-nav-btn:hover {
+  background: rgba(40, 50, 70, 0.95);
+}
