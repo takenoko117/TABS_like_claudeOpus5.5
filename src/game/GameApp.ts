@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
 import type { Facility } from '../facilities/Facility';
 import type { Unit } from '../units/Unit';
@@ -11,6 +12,14 @@ import {
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
 import { SceneView } from '../render/SceneView';
+import {
+  TutorialGuide,
+  buildTutorialSteps,
+  isTutorialDone,
+  markTutorialDone,
+  type TutorialEvent,
+  type TutorialStep,
+} from '../ui/TutorialGuide';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
 import {
   CATEGORY_ICONS,
@@ -45,6 +54,15 @@ import {
   type ArcadeStage,
 } from './ArcadeStages';
 import { Battle, type BattleResult } from './Battle';
+import {
+  AdaptiveQuality,
+  loadSettings,
+  PROGRESS_STORAGE_PREFIX,
+  saveSettings,
+  SETTINGS_STORAGE_KEY,
+  type GameSettings,
+  type QualitySetting,
+} from './Settings';
 import { summarizeTeamStats } from './BattleStats';
 import { loadStoredLineup, saveStoredLineup } from './LineupStore';
 import {
@@ -349,6 +367,11 @@ export class GameApp {
   readonly battle = new Battle();
   readonly view: SceneView;
   readonly sound = new SoundManager();
+  readonly music = new MusicPlayer();
+  private settings: GameSettings = loadSettings();
+  private readonly adaptiveQuality = new AdaptiveQuality();
+  /** 現在の描画品質（2 が最高） */
+  private qualityLevel: 0 | 1 | 2 = 2;
 
   playStyle: PlayStyle = 'arcade';
   currentStageIndex = 0;
@@ -361,6 +384,11 @@ export class GameApp {
   private challengeBestAtRunStart: ChallengeBest = this.challengeBest;
   /** 使用予算・生存率の集計対象（戦闘開始時の自軍。召喚や増殖で増えた分は含めない） */
   private playerRoster: Array<Unit | Facility> = [];
+
+  /** タイトル画面の背景で自動対戦を流している間 true（音を鳴らさない） */
+  private onTitleScreen = false;
+  private tutorial: TutorialGuide | null = null;
+  private tutorialHighlight: HTMLElement | null = null;
 
   mode: GameMode = 'placement';
   selectedId: UnitTypeId | FacilityTypeId = 'clubber';
@@ -392,6 +420,7 @@ export class GameApp {
   /** リザルト表示までの残り（実時間の秒数。0 なら予約なし） */
   private bannerRevealTimer = 0;
   private celebrateTimer = 0;
+  private titleDemoRestartTimer = 0;
   private finishSequenceActive = false;
   /** 最後に誰かが倒された位置（決着カメラの注視点） */
   private readonly lastKillPos = new Vector3();
@@ -453,17 +482,21 @@ export class GameApp {
     this.battle.onFacilityAdded = (f) => this.view.addFacilityVisual(f);
     this.battle.onFacilityRemoved = (f) => this.view.removeFacilityVisual(f);
     this.battle.onPlayFacilitySound = (k) => {
-      this.sound.playEffect({ kind: k } as any);
+      if (!this.onTitleScreen) this.sound.playEffect({ kind: k } as any);
     };
-    this.battle.combat.onShootArrow = () => this.sound.playBowShoot();
+    this.battle.combat.onShootArrow = () => {
+      if (!this.onTitleScreen) this.sound.playBowShoot();
+    };
     this.battle.combat.onEffect = (e) => {
       this.view.spawnCombatEffect(e);
+      if (this.onTitleScreen) return;
       this.sound.playEffect(e);
       const shake = SHAKE_BY_EFFECT[e.kind];
       if (shake !== undefined) this.view.addCameraShake(shake);
     };
     this.battle.combat.onHit = (e) => {
       const partBroken = this.view.spawnHitEffect(e);
+      if (this.onTitleScreen) return;
       const wKind = e.attacker.type.weapon?.kind;
       const heavy =
         e.attacker.type.id === 'giant' ||
@@ -521,14 +554,12 @@ export class GameApp {
     this.elToggleDetailBtn = document.getElementById('btn-toggle-detail') as HTMLButtonElement | null;
 
     // スマホ等の狭い画面では初期状態でゲームモードパネルを非表示にして戦場を見やすくする
-    if (window.innerWidth <= 820) {
-      this.sidePanelVisible = false;
-    }
-
     this.buildUI();
+    this.applySettings();
     this.syncSidePanelUI();
     this.bindCanvasInteraction();
-    this.loadArcadeStage(0);
+    this.bindTitleScreen();
+    this.showTitleScreen();
   }
 
   get currentStage(): ArcadeStage {
@@ -661,30 +692,24 @@ export class GameApp {
     }
 
     // モード切替ボタン（アーケード / 友人対戦 / サンドボックス / チャレンジ）
-    document.getElementById('btn-mode-arcade')?.addEventListener('click', () => {
-      if (this.playStyle === 'arcade' || this.blockLeavingChallenge()) return;
-      this.playStyle = 'arcade';
-      this.syncModePanels();
-      this.loadArcadeStage(this.currentStageIndex);
-    });
+    const modeButtons: ReadonlyArray<[string, PlayStyle]> = [
+      ['btn-mode-arcade', 'arcade'],
+      ['btn-mode-versus', 'versus'],
+      ['btn-mode-sandbox', 'sandbox'],
+      ['btn-mode-challenge', 'challenge'],
+    ];
+    for (const [id, style] of modeButtons) {
+      document.getElementById(id)?.addEventListener('click', () => {
+        if (this.playStyle === style) return;
+        // 進行中のチャレンジから離れるときは確認する（チャレンジへ入るときは不要）
+        if (style !== 'challenge' && this.blockLeavingChallenge()) return;
+        this.enterPlayStyle(style);
+      });
+    }
 
-    document.getElementById('btn-mode-versus')?.addEventListener('click', () => {
-      if (this.playStyle === 'versus' || this.blockLeavingChallenge()) return;
-      this.playStyle = 'versus';
-      this.syncModePanels();
-      this.enterVersusMode(this.versus.playerCount, true);
-    });
-
-    document.getElementById('btn-mode-sandbox')?.addEventListener('click', () => {
-      if (this.playStyle === 'sandbox' || this.blockLeavingChallenge()) return;
-      this.playStyle = 'sandbox';
-      this.syncModePanels();
-      this.loadPreset(PRESETS[0]);
-    });
-
-    document.getElementById('btn-mode-challenge')?.addEventListener('click', () => {
-      if (this.playStyle === 'challenge') return;
-      this.enterChallengeMode();
+    document.getElementById('btn-to-title')?.addEventListener('click', () => {
+      if (this.blockLeavingChallenge()) return;
+      this.showTitleScreen();
     });
 
     document.getElementById('btn-challenge-quit')?.addEventListener('click', () => {
@@ -890,14 +915,13 @@ export class GameApp {
 
     document.getElementById('btn-undo')?.addEventListener('click', () => this.undoLastPlacement());
 
-    // SE ミュート切り替えボタン
-    const muteBtn = document.getElementById('btn-mute') as HTMLButtonElement | null;
-    if (muteBtn) {
-      muteBtn.addEventListener('click', () => {
-        const muted = this.sound.toggleMute();
-        muteBtn.textContent = muted ? '🔇 SE: OFF' : '🔊 SE';
-      });
-    }
+    this.bindSettingsPanel();
+    document.getElementById('btn-coach-close')?.addEventListener('click', () => this.tutorial?.finish());
+
+    // ブラウザの制限で、音は最初の操作の後からしか鳴らせない
+    const unlockAudio = () => this.music.unlock();
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
 
     // カメラリセット
     document.getElementById('btn-cam-reset')!.addEventListener('click', () => {
@@ -922,7 +946,12 @@ export class GameApp {
 
     // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        this.onTitleScreen
+      ) {
         return;
       }
       if (e.code === 'Escape') {
@@ -963,6 +992,187 @@ export class GameApp {
         this.elUnitBar.querySelectorAll<HTMLElement>('.unit-card')[n]?.click();
       }
     });
+  }
+
+  /** 指定のゲームモードを開始する */
+  private enterPlayStyle(style: PlayStyle): void {
+    this.playStyle = style;
+    this.syncModePanels();
+    if (style === 'arcade') this.loadArcadeStage(this.currentStageIndex);
+    else if (style === 'versus') this.enterVersusMode(this.versus.playerCount, true);
+    else if (style === 'sandbox') this.loadPreset(PRESETS[0]);
+    else this.enterChallengeMode();
+  }
+
+  private bindTitleScreen(): void {
+    document.querySelectorAll<HTMLButtonElement>('#title-screen [data-mode]').forEach((button) => {
+      button.addEventListener('click', () => this.leaveTitleScreen(button.dataset.mode as PlayStyle));
+    });
+  }
+
+  /** タイトル画面を開き、背景で自動対戦を流す */
+  showTitleScreen(): void {
+    this.onTitleScreen = true;
+    this.paused = false;
+    this.timeScale = 1;
+    this.syncSpeedButtons();
+    this.setTutorialStep(null);
+    this.tutorial = null;
+    document.body.classList.add('on-title');
+    document.getElementById('title-screen')?.classList.remove('hidden');
+    this.renderTitleProgress();
+    this.view.resetCamera();
+    this.view.autoOrbit = true;
+    this.startTitleDemo();
+    this.music.setTrack('placement');
+  }
+
+  /** 背景デモの対戦を始める（決着したら別の編成で繰り返す） */
+  private startTitleDemo(): void {
+    const demos = [PRESETS[0], PRESETS[2], PRESETS[4], PRESETS[6]];
+    this.playStyle = 'sandbox';
+    this.loadPreset(demos[Math.floor(Math.random() * demos.length)]);
+    this.view.setPlacementGuidesVisible(false);
+    this.titleDemoRestartTimer = 0;
+    this.battle.beginCombat();
+  }
+
+  private updateTitleDemo(realDt: number): void {
+    if (this.battle.result() === null) return;
+    this.titleDemoRestartTimer += realDt;
+    if (this.titleDemoRestartTimer > 3) this.startTitleDemo();
+  }
+
+  private renderTitleProgress(): void {
+    const arcade = document.getElementById('title-arcade-progress');
+    if (arcade) {
+      const stars = Object.values(this.arcadeSave.clearedStars).reduce((sum, n) => sum + n, 0);
+      const cleared = Object.keys(this.arcadeSave.clearedStars).length;
+      arcade.textContent =
+        cleared > 0 ? `${cleared} / ${ARCADE_STAGES.length} 面クリア ・ ★${stars}` : `全${ARCADE_STAGES.length}面に挑戦`;
+    }
+    const challenge = document.getElementById('title-challenge-progress');
+    if (challenge) {
+      const best = this.challengeBest;
+      challenge.textContent = best.bestScore > 0 ? `ベスト ${best.bestScore.toLocaleString()} 点` : '1 敗で終了のサバイバル';
+    }
+  }
+
+  private leaveTitleScreen(style: PlayStyle): void {
+    this.onTitleScreen = false;
+    document.body.classList.remove('on-title');
+    document.getElementById('title-screen')?.classList.add('hidden');
+    this.view.autoOrbit = false;
+    this.view.resetCamera();
+    this.currentStageIndex = this.findNextStageIndex();
+
+    const firstRun = style === 'arcade' && !isTutorialDone();
+    // 初回は戦場に集中できるようパネルを閉じ、2 回目以降は十分広い画面なら開く
+    this.sidePanelVisible = !firstRun && window.innerWidth > 1100;
+    this.syncSidePanelUI();
+    this.enterPlayStyle(style);
+    if (firstRun) this.startTutorial();
+    this.sound.playPlace();
+  }
+
+  /** 未クリアで最も若い面（全クリア済みなら最終面） */
+  private findNextStageIndex(): number {
+    const idx = ARCADE_STAGES.findIndex((st) => !this.arcadeSave.clearedStars[st.stageNumber]);
+    return idx >= 0 ? idx : ARCADE_STAGES.length - 1;
+  }
+
+  private startTutorial(): void {
+    const isTouch = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    this.tutorial = new TutorialGuide(
+      buildTutorialSteps(isTouch),
+      (step) => this.setTutorialStep(step),
+      markTutorialDone,
+    );
+    this.tutorial.start();
+  }
+
+  private notifyTutorial(event: TutorialEvent): void {
+    this.tutorial?.notify(event);
+  }
+
+  /** 案内の吹き出しと、操作する場所の強調表示を更新する */
+  private setTutorialStep(step: TutorialStep | null): void {
+    const coach = document.getElementById('coach');
+    const text = document.getElementById('coach-text');
+    coach?.classList.toggle('hidden', step === null);
+    if (text && step) text.textContent = step.text;
+    this.tutorialHighlight?.classList.remove('coach-highlight');
+    this.tutorialHighlight = step?.highlightId ? document.getElementById(step.highlightId) : null;
+    this.tutorialHighlight?.classList.add('coach-highlight');
+  }
+
+  private applySettings(): void {
+    this.sound.setVolume(this.settings.sfxVolume);
+    this.music.setVolume(this.settings.musicVolume);
+    this.applyQualitySetting(this.settings.quality);
+  }
+
+  private applyQualitySetting(quality: QualitySetting): void {
+    this.qualityLevel = quality === 'low' ? 0 : 2;
+    this.view.setQualityLevel(this.qualityLevel);
+    this.adaptiveQuality.reset();
+  }
+
+  private bindSettingsPanel(): void {
+    const panel = document.getElementById('settings-panel');
+    const toggle = document.getElementById('btn-settings');
+    const music = document.getElementById('setting-music') as HTMLInputElement | null;
+    const sfx = document.getElementById('setting-sfx') as HTMLInputElement | null;
+    const quality = document.getElementById('setting-quality') as HTMLSelectElement | null;
+    if (!panel || !toggle || !music || !sfx || !quality) return;
+
+    music.value = String(Math.round(this.settings.musicVolume * 100));
+    sfx.value = String(Math.round(this.settings.sfxVolume * 100));
+    quality.value = this.settings.quality;
+
+    toggle.addEventListener('click', () => panel.classList.toggle('hidden'));
+    document.getElementById('btn-settings-close')?.addEventListener('click', () => panel.classList.add('hidden'));
+
+    music.addEventListener('input', () => {
+      this.settings.musicVolume = Number(music.value) / 100;
+      this.music.setVolume(this.settings.musicVolume);
+      saveSettings(this.settings);
+    });
+    sfx.addEventListener('input', () => {
+      this.settings.sfxVolume = Number(sfx.value) / 100;
+      this.sound.setVolume(this.settings.sfxVolume);
+      saveSettings(this.settings);
+    });
+    sfx.addEventListener('change', () => this.sound.playPlace());
+    quality.addEventListener('change', () => {
+      this.settings.quality = quality.value as QualitySetting;
+      this.applyQualitySetting(this.settings.quality);
+      saveSettings(this.settings);
+    });
+    document.getElementById('btn-reset-progress')?.addEventListener('click', () => this.confirmResetProgress());
+  }
+
+  /** ステージ進行・編成・チャレンジ記録を消す（音量などの設定は残す） */
+  private confirmResetProgress(): void {
+    if (!window.confirm('進行状況・保存した編成・チャレンジの記録をすべて消去します。\nこの操作は元に戻せません。よろしいですか？')) {
+      return;
+    }
+    try {
+      const keys = Object.keys(window.localStorage).filter(
+        (key) => key.startsWith(PROGRESS_STORAGE_PREFIX) && key !== SETTINGS_STORAGE_KEY,
+      );
+      for (const key of keys) window.localStorage.removeItem(key);
+    } catch {
+      // localStorage が使えない環境では再読み込みだけ行う
+    }
+    window.location.reload();
+  }
+
+  /** 現在の場面に合う BGM へ切り替える（決着後は勝敗の音を聞かせるため止める） */
+  private syncMusic(): void {
+    if (this.onTitleScreen) return;
+    if (this.mode === 'placement') this.music.setTrack('placement');
+    else this.music.setTrack(this.announcedResult === null ? 'battle' : null);
   }
 
   private applySpeedOption(index: number): void {
@@ -1566,6 +1776,7 @@ export class GameApp {
     // 説明を読み終えて置き始めたら、戦場を隠さないように閉じる
     if (this.unitDetailVisible) this.hideUnitDetailOverlay();
     this.afterLineupEdited();
+    this.notifyTutorial('placed');
     return true;
   }
 
@@ -1792,10 +2003,7 @@ export class GameApp {
   }
 
   private exitChallengeToTitle(): void {
-    this.loadArcadeStage(this.currentStageIndex);
-    this.syncModePanels();
-    this.sidePanelVisible = true;
-    this.syncSidePanelUI();
+    this.showTitleScreen();
   }
 
   private handleChallengeBattleEnd(res: Exclude<BattleResult, null>): void {
@@ -2137,12 +2345,13 @@ export class GameApp {
     this.announcedResult = null;
     this.hideResultBanner();
     this.view.setPlacementGuidesVisible(false);
-    // スマホ等の狭い画面では戦闘開始時に自動でモードパネルを閉じて戦場を見やすくする
-    if (window.innerWidth <= 820 && this.sidePanelVisible) {
+    // ノートPC以下の画面幅では戦闘開始時に自動でモードパネルを閉じて戦場を見やすくする
+    if (window.innerWidth <= 1500 && this.sidePanelVisible) {
       this.sidePanelVisible = false;
       this.syncSidePanelUI();
     }
-    this.sound.playBattleStart();
+    if (!this.onTitleScreen) this.sound.playBattleStart();
+    this.notifyTutorial('battle_started');
     if (this.playStyle === 'versus') this.syncVersusUI();
     this.syncPhaseUI();
     this.syncUnitDetailOverlay();
@@ -2199,6 +2408,7 @@ export class GameApp {
   }
 
   private syncPhaseUI(): void {
+    this.syncMusic();
     const isVersusPlacement = this.playStyle === 'versus' && this.mode === 'placement';
     this.elVersusHudBar?.classList.toggle('hidden', !isVersusPlacement);
     this.elStartBtn.disabled = false;
@@ -2404,11 +2614,18 @@ export class GameApp {
 
   /** 毎フレームの更新ループ */
   tick(realDt: number): void {
+    this.updateAdaptiveQuality(realDt);
     if (this.finishSlowMoTimer > 0) this.finishSlowMoTimer -= realDt;
     if (!this.paused) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
       this.battle.advance(realDt * scale);
+    }
+
+    if (this.onTitleScreen) {
+      this.updateTitleDemo(realDt);
+      this.view.renderFrame(this.battle, realDt);
+      return;
     }
 
     if (this.mode === 'battle') {
@@ -2420,6 +2637,7 @@ export class GameApp {
         else this.sound.playVictory();
         this.startFinishSequence();
         this.handleBattleEnd(res);
+        this.notifyTutorial('battle_ended');
       }
       this.updateFinishSequence(realDt);
     }
@@ -2428,9 +2646,19 @@ export class GameApp {
     this.view.renderFrame(this.battle, realDt);
   }
 
+  /** 戦闘中のフレームレートが足りなければ描画品質を一段下げる */
+  private updateAdaptiveQuality(realDt: number): void {
+    if (this.settings.quality !== 'auto' || this.qualityLevel === 0 || this.mode !== 'battle' || document.hidden) return;
+    if (this.adaptiveQuality.recordFrame(realDt)) {
+      this.qualityLevel = this.qualityLevel === 2 ? 1 : 0;
+      this.view.setQualityLevel(this.qualityLevel);
+    }
+  }
+
   /** 決着のスローモーションとカメラの寄りを始める */
   private startFinishSequence(): void {
     this.finishSequenceActive = true;
+    this.music.setTrack(null);
     this.finishSlowMoTimer = FINISH_SLOWMO_SECONDS;
     this.celebrateTimer = 0.25;
     const focus = this.hasLastKillPos ? this.lastKillPos : this.getWinnerCenter();

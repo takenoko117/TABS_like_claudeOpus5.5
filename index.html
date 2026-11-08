@@ -9,6 +9,36 @@
   <body>
     <div id="viewport"></div>
 
+    <!-- タイトル画面（背景では自動対戦が流れる） -->
+    <div id="title-screen" class="title-screen hidden">
+      <div class="title-inner">
+        <h1 class="title-logo">ぐにゃぐにゃ<span>バトル</span></h1>
+        <p class="title-tagline">ふにゃふにゃのボクセル軍団が大激突する物理バトル</p>
+        <div class="title-modes">
+          <button type="button" class="title-card primary" data-mode="arcade">
+            <span class="title-card-icon">🏆</span>
+            <b>アーケード</b>
+            <small id="title-arcade-progress"></small>
+          </button>
+          <button type="button" class="title-card" data-mode="challenge">
+            <span class="title-card-icon">🔥</span>
+            <b>チャレンジ</b>
+            <small id="title-challenge-progress"></small>
+          </button>
+          <button type="button" class="title-card" data-mode="versus">
+            <span class="title-card-icon">👥</span>
+            <b>友人対戦</b>
+            <small>2〜4 人でブラインド配置</small>
+          </button>
+          <button type="button" class="title-card" data-mode="sandbox">
+            <span class="title-card-icon">🛠</span>
+            <b>サンドボックス</b>
+            <small>全兵種を自由に実験</small>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 全UI非表示時の復帰ボタン -->
     <button id="btn-restore-hud" class="restore-hud-btn hidden" title="UIを再表示する">
       👁 UI表示
@@ -62,7 +92,7 @@
           </button>
           <button id="btn-undo" class="ctrl-btn" title="直前の配置を取り消します (Ctrl+Z)">↶ 戻す</button>
           <button id="btn-clear" class="ctrl-btn danger" title="配置したユニットを全消去">全消去</button>
-          <button id="btn-mute" class="ctrl-btn" title="効果音のON/OFF">🔊 SE</button>
+          <button id="btn-settings" class="ctrl-btn" title="音量と描画品質の設定">⚙ 設定</button>
           <button id="btn-toggle-hud" class="ctrl-btn" title="すべてのUIを非表示にして画面を広く使います (H)">
             👁 UI隠す
           </button>
@@ -79,6 +109,7 @@
     <aside id="side-panel" class="side-panel">
       <div class="side-panel-header">
         <span class="side-panel-title">🎮 ゲームモード・設定</span>
+        <button id="btn-to-title" class="panel-close-btn" title="タイトル画面へ戻ります">🏠 タイトル</button>
         <button id="btn-close-panel" class="panel-close-btn" title="このパネルを非表示にして戦場を広く表示します">
           ✕ パネルを隠す
         </button>
@@ -180,6 +211,31 @@
     </aside>
 
     <div id="pause-indicator" class="pause-indicator hidden">⏸ 一時停止中（P で再開）</div>
+
+    <!-- 音量・描画品質の設定 -->
+    <section id="settings-panel" class="settings-panel hidden" aria-label="設定">
+      <div class="settings-header">
+        <b>⚙ 設定</b>
+        <button id="btn-settings-close" class="panel-close-btn" aria-label="設定を閉じる">✕</button>
+      </div>
+      <label class="settings-row"><span>🎵 BGM</span><input id="setting-music" type="range" min="0" max="100" /></label>
+      <label class="settings-row"><span>🔊 効果音</span><input id="setting-sfx" type="range" min="0" max="100" /></label>
+      <label class="settings-row">
+        <span>🖥 描画品質</span>
+        <select id="setting-quality">
+          <option value="auto">自動</option>
+          <option value="high">高</option>
+          <option value="low">低（影なし）</option>
+        </select>
+      </label>
+      <button id="btn-reset-progress" type="button" class="ctrl-btn danger full">🗑 進行データを消去</button>
+    </section>
+
+    <!-- 初回プレイの案内 -->
+    <div id="coach" class="coach hidden" role="status" aria-live="polite">
+      <span id="coach-text"></span>
+      <button id="btn-coach-close" type="button" class="coach-close" aria-label="案内を閉じる">閉じる</button>
+    </div>
 
     <!-- 短い通知 -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

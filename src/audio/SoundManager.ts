@@ -57,6 +57,12 @@ export class SoundManager {
     }
   }
 
+  /** 効果音の音量（0〜1）を設定する。0 なら合成自体を止める */
+  setVolume(volume: number): void {
+    this.volume = volume;
+    this.setMuted(volume <= 0);
+  }
+
   toggleMute(): boolean {
     this.setMuted(!this.muted);
     return this.muted;

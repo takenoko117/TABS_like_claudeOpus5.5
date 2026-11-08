@@ -149,6 +149,8 @@ export class SceneView {
   private finisherFocus: { target: Vector3; distance: number } | null = null;
   private cameraBeforeFinisher: { target: Vector3; yaw: number; pitch: number; distance: number } | null = null;
   private cameraShake = 0;
+  /** タイトル画面の背景デモ中、カメラをゆっくり回す */
+  autoOrbit = false;
   private readonly cameraRestPos = new Vector3();
   private readonly shakeEnabled =
     typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -860,6 +862,14 @@ export class SceneView {
     this.camPitch = 0.58;
     this.camDistance = 24;
     this.updateCameraTransform();
+  }
+
+  /** 描画品質を切り替える（2: 高画質 / 1: 解像度を抑える / 0: さらに影も切る） */
+  setQualityLevel(level: 0 | 1 | 2): void {
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(level === 2 ? Math.min(dpr, 2) : level === 1 ? Math.min(dpr, 1.25) : Math.min(dpr, 1));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.dirLight.castShadow = level > 0;
   }
 
   /** 指定ユニットをカメラで追い続ける（null で解除） */
@@ -2845,6 +2855,10 @@ export class SceneView {
 
   /** 個体追跡・決着時の寄りを滑らかに反映する */
   private updateAutoCamera(dt: number): void {
+    if (this.autoOrbit) {
+      this.camYaw += dt * 0.09;
+      this.updateCameraTransform();
+    }
     if (this.followedUnit && !this.followedUnit.alive) this.followedUnit = null;
     const followed = this.followedUnit;
     if (followed) {

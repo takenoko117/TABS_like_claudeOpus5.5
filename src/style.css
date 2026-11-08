@@ -1667,3 +1667,240 @@ body {
 .bottom-hud.in-battle {
   display: none;
 }
+
+/* 設定パネル */
+.settings-panel {
+  position: fixed;
+  top: 96px;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: min(300px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(16, 22, 34, 0.96);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color: #f1f3f5;
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+.settings-panel.hidden {
+  display: none;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-row input[type='range'] {
+  width: 100%;
+  accent-color: #f59f00;
+}
+
+.settings-row select {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: #1c2433;
+  color: inherit;
+}
+
+/* タイトル画面 */
+body.on-title #top-hud,
+body.on-title #side-panel,
+body.on-title #bottom-hud,
+body.on-title #btn-restore-hud {
+  display: none;
+}
+
+.title-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  background: radial-gradient(ellipse at center, rgba(10, 14, 24, 0.25), rgba(10, 14, 24, 0.72));
+}
+
+.title-screen.hidden {
+  display: none;
+}
+
+.title-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(760px, 100%);
+}
+
+.title-logo {
+  margin: 0;
+  color: #ffd43b;
+  font-size: clamp(38px, 9vw, 76px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 4px 0 #b35900, 0 8px 18px rgba(0, 0, 0, 0.55);
+  animation: title-wobble 2.6s ease-in-out infinite;
+}
+
+.title-logo span {
+  color: #ff6b4a;
+  text-shadow: 0 4px 0 #8f1d0d, 0 8px 18px rgba(0, 0, 0, 0.55);
+}
+
+@keyframes title-wobble {
+  0%,
+  100% {
+    transform: rotate(-1.2deg) scale(1);
+  }
+  50% {
+    transform: rotate(1.2deg) scale(1.03, 0.98);
+  }
+}
+
+.title-tagline {
+  margin: 0 0 8px;
+  color: #f1f3f5;
+  font-size: clamp(13px, 2.4vw, 17px);
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.title-modes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.title-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 118px;
+  padding: 14px 8px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  background: rgba(16, 22, 34, 0.86);
+  color: #f1f3f5;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+}
+
+.title-card:hover,
+.title-card:focus-visible {
+  border-color: #ffd43b;
+  background: rgba(30, 38, 54, 0.95);
+  transform: translateY(-3px);
+}
+
+.title-card.primary {
+  border-color: #f59f00;
+  background: linear-gradient(160deg, rgba(232, 89, 12, 0.92), rgba(120, 44, 6, 0.92));
+}
+
+.title-card-icon {
+  font-size: 30px;
+}
+
+.title-card b {
+  font-size: 16px;
+}
+
+.title-card small {
+  color: #ced4da;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.title-card.primary small {
+  color: #ffe8cc;
+}
+
+@media (max-width: 640px) {
+  .title-modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .title-card {
+    min-height: 96px;
+    padding: 10px 6px;
+  }
+}
+
+/* 初回プレイの案内 */
+.coach {
+  position: fixed;
+  top: 104px;
+  left: 50%;
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: min(94vw, 640px);
+  padding: 9px 12px 9px 16px;
+  border: 2px solid #ffd43b;
+  border-radius: 10px;
+  background: rgba(16, 22, 34, 0.96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  transform: translateX(-50%);
+}
+
+.coach.hidden {
+  display: none;
+}
+
+.coach-close {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: #ced4da;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.coach-highlight {
+  outline: 3px solid #ffd43b;
+  outline-offset: 2px;
+  animation: coach-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes coach-pulse {
+  50% {
+    outline-color: rgba(255, 212, 59, 0.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-logo,
+  .coach-highlight {
+    animation: none;
+  }
+}
