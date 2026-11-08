@@ -471,6 +471,16 @@ export class Battle implements UnitContext, FacilityBattleContext {
     }
   }
 
+  /** 勝者を跳ねさせて喜ばせる（巨体や車両は地響きになってしまうので対象外） */
+  celebrate(team: Team): void {
+    for (const u of this.units) {
+      if (!u.alive || u.team !== team || u.scale > 1.6) continue;
+      if (u.type.id === 'buggy' || u.type.id === 'sezain') continue;
+      const jump = new Vector3(0, 3.4 + Math.random() * 1.6, 0);
+      for (const p of u.joints) p.addVelocity(jump, 1);
+    }
+  }
+
   aliveCount(team: Team): number {
     let n = 0;
     for (const u of this.units) if (u.alive && u.team === team) n++;

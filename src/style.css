@@ -1549,3 +1549,121 @@ body {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+
+/* 戦闘中の速度切り替え */
+.battle-speed-bar {
+  display: flex;
+  gap: 4px;
+}
+
+.battle-speed-bar .ctrl-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.battle-speed-bar.hidden {
+  display: none;
+}
+
+.pause-indicator {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 20;
+  padding: 10px 22px;
+  border-radius: 10px;
+  background: rgba(14, 18, 28, 0.82);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+/* リザルトの戦績 */
+.result-banner {
+  animation: result-pop 0.22s ease-out;
+}
+
+@keyframes result-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.94);
+  }
+}
+
+.result-stats {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  text-align: left;
+}
+
+.stats-mvp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.stats-mvp b {
+  color: #ffd43b;
+}
+
+.stats-mvp-label {
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: #f59f00;
+  color: #1a1a1a;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1.3fr) minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.stats-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-bar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.stats-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #f59f00, #ffd43b);
+}
+
+.stats-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result-banner {
+    animation: none;
+  }
+}
+
+/* 戦闘中は兵種バーを隠して戦場を広く見せる */
+.bottom-hud.in-battle {
+  display: none;
+}

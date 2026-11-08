@@ -144,6 +144,15 @@ export class SceneView {
   private hadMultiTouch = false;
   private readonly keys = new Set<string>();
 
+  // 観戦カメラ（個体の追跡・決着時の寄り・衝撃の揺れ）
+  private followedUnit: Unit | null = null;
+  private finisherFocus: { target: Vector3; distance: number } | null = null;
+  private cameraBeforeFinisher: { target: Vector3; yaw: number; pitch: number; distance: number } | null = null;
+  private cameraShake = 0;
+  private readonly cameraRestPos = new Vector3();
+  private readonly shakeEnabled =
+    typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
   // 地面とのレイキャスト
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -851,6 +860,50 @@ export class SceneView {
     this.camPitch = 0.58;
     this.camDistance = 24;
     this.updateCameraTransform();
+  }
+
+  /** 指定ユニットをカメラで追い続ける（null で解除） */
+  setFollowedUnit(unit: Unit | null): void {
+    this.followedUnit = unit;
+    if (unit) this.finisherFocus = null;
+  }
+
+  get isFollowingUnit(): boolean {
+    return this.followedUnit !== null;
+  }
+
+  /** 決着の瞬間にカメラを寄せる。配置に戻るときに元の視点へ戻せるよう控えておく */
+  playFinisherCamera(focus: Vector3): void {
+    this.followedUnit = null;
+    this.cameraBeforeFinisher = {
+      target: this.camTarget.clone(),
+      yaw: this.camYaw,
+      pitch: this.camPitch,
+      distance: this.camDistance,
+    };
+    this.finisherFocus = {
+      target: new Vector3(focus.x, Math.max(0.8, focus.y), focus.z),
+      distance: Math.min(this.camDistance, 14),
+    };
+  }
+
+  /** 決着演出の視点を取りやめ、演出前の視点へ戻す */
+  restoreCameraAfterFinisher(): void {
+    this.followedUnit = null;
+    this.finisherFocus = null;
+    const saved = this.cameraBeforeFinisher;
+    if (!saved) return;
+    this.cameraBeforeFinisher = null;
+    this.camTarget.copy(saved.target);
+    this.camYaw = saved.yaw;
+    this.camPitch = saved.pitch;
+    this.camDistance = saved.distance;
+    this.updateCameraTransform();
+  }
+
+  /** 大きな衝撃で画面を揺らす（既存の揺れより強いときだけ上書きする） */
+  addCameraShake(amount: number): void {
+    if (this.shakeEnabled) this.cameraShake = Math.max(this.cameraShake, Math.min(0.45, amount));
   }
 
   setPlacementGuidesVisible(visible: boolean): void {
@@ -2779,7 +2832,28 @@ export class SceneView {
     if (this.keys.has('KeyE')) this.camYaw -= 1.6 * dt;
 
     if (forward !== 0 || right !== 0 || this.keys.has('KeyQ') || this.keys.has('KeyE')) {
+      // プレイヤーが自分で動かしたら自動カメラはやめる
+      if (forward !== 0 || right !== 0) {
+        this.followedUnit = null;
+        this.finisherFocus = null;
+      }
       this.panCameraByOffsets(right * moveSpeed, forward * moveSpeed);
+      this.updateCameraTransform();
+    }
+    this.updateAutoCamera(dt);
+  }
+
+  /** 個体追跡・決着時の寄りを滑らかに反映する */
+  private updateAutoCamera(dt: number): void {
+    if (this.followedUnit && !this.followedUnit.alive) this.followedUnit = null;
+    const followed = this.followedUnit;
+    if (followed) {
+      this.camTarget.lerp(followed.chest.pos, 1 - Math.exp(-dt * 6));
+      this.updateCameraTransform();
+    } else if (this.finisherFocus) {
+      const k = 1 - Math.exp(-dt * 2.6);
+      this.camTarget.lerp(this.finisherFocus.target, k);
+      this.camDistance += (this.finisherFocus.distance - this.camDistance) * k;
       this.updateCameraTransform();
     }
   }
@@ -2885,7 +2959,20 @@ export class SceneView {
     this.updateDroppedVoxels(realDt);
     this.updateKawariLogs(realDt);
     this.updateFxAndDynamicVisuals(battle, realDt);
-    this.renderer.render(this.scene, this.camera);
+
+    if (this.cameraShake > 0.004) {
+      // 揺れは描画の間だけ加え、カメラ本来の位置は動かさない
+      this.cameraRestPos.copy(this.camera.position);
+      this.camera.position.x += (Math.random() - 0.5) * this.cameraShake;
+      this.camera.position.y += (Math.random() - 0.5) * this.cameraShake;
+      this.camera.position.z += (Math.random() - 0.5) * this.cameraShake;
+      this.renderer.render(this.scene, this.camera);
+      this.camera.position.copy(this.cameraRestPos);
+      this.cameraShake *= Math.exp(-realDt * 9);
+    } else {
+      this.cameraShake = 0;
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 }
 

@@ -45,6 +45,7 @@ import {
   type ArcadeStage,
 } from './ArcadeStages';
 import { Battle, type BattleResult } from './Battle';
+import { summarizeTeamStats } from './BattleStats';
 import { loadStoredLineup, saveStoredLineup } from './LineupStore';
 import {
   CHALLENGE_PLAYER_BUDGET,
@@ -302,6 +303,38 @@ export const PRESETS: readonly PresetScenario[] = [
   },
 ];
 
+/** 決着の瞬間のスロー演出（実時間の秒数と速度倍率） */
+const FINISH_SLOWMO_SECONDS = 1.3;
+const FINISH_SLOWMO_SCALE = 0.3;
+/** 決着からリザルトを表示するまでの実時間の秒数 */
+const FINISH_BANNER_DELAY_SECONDS = 1.5;
+/** 勝者が喜んで跳ねる間隔（実時間の秒数） */
+const CELEBRATE_INTERVAL_SECONDS = 0.8;
+/** 画面を揺らす大きな衝撃エフェクトと揺れの強さ */
+const SHAKE_BY_EFFECT: Readonly<Record<string, number>> = {
+  bomb_explosion: 0.12,
+  rocket_explosion: 0.16,
+  tank_explosion: 0.24,
+  eruption_explosion: 0.24,
+  robot_punch_impact: 0.26,
+  satellite_beam: 0.2,
+  ramiel_beam: 0.22,
+  sachiel_cross: 0.28,
+  sahaquiel_bomb: 0.3,
+  gravity_blast: 0.16,
+  facility_destroy: 0.16,
+  stage_meteor_impact: 0.42,
+};
+
+/** 速度ボタンの定義 */
+const SPEED_OPTIONS: ReadonlyArray<{ label: string; scale: number; pause?: boolean }> = [
+  { label: '⏸ 停止', scale: 0, pause: true },
+  { label: '🐢 0.25x', scale: 0.25 },
+  { label: '▶ 1x', scale: 1.0 },
+  { label: '⏩ 2x', scale: 2.0 },
+  { label: '⏭ 4x', scale: 4.0 },
+];
+
 export type GameMode = 'placement' | 'battle';
 export type PlayStyle = 'arcade' | 'sandbox' | 'versus' | 'challenge';
 
@@ -346,7 +379,7 @@ export class GameApp {
   hudHidden = false;
   unitBarCollapsed = false;
   touchEraseMode = false;
-  unitDetailVisible = true;
+  unitDetailVisible = false;
 
   /** 配置フェーズで置かれた編成（リトライ時に復元する） */
   private savedLineup: PlacedRecord[] = [];
@@ -354,6 +387,15 @@ export class GameApp {
   private pointerDownPos = { x: 0, y: 0, button: -1 };
   private warningTimer: ReturnType<typeof setTimeout> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 決着スローの残り（実時間の秒数） */
+  private finishSlowMoTimer = 0;
+  /** リザルト表示までの残り（実時間の秒数。0 なら予約なし） */
+  private bannerRevealTimer = 0;
+  private celebrateTimer = 0;
+  private finishSequenceActive = false;
+  /** 最後に誰かが倒された位置（決着カメラの注視点） */
+  private readonly lastKillPos = new Vector3();
+  private hasLastKillPos = false;
   /** 配置レコードと戦場の実体の対応（物理で位置がずれても確実に同じ個体を消すため） */
   private placedEntities = new WeakMap<PlacedRecord, Unit | Facility>();
   /** マウスドラッグによる連続配置の状態 */
@@ -417,6 +459,8 @@ export class GameApp {
     this.battle.combat.onEffect = (e) => {
       this.view.spawnCombatEffect(e);
       this.sound.playEffect(e);
+      const shake = SHAKE_BY_EFFECT[e.kind];
+      if (shake !== undefined) this.view.addCameraShake(shake);
     };
     this.battle.combat.onHit = (e) => {
       const partBroken = this.view.spawnHitEffect(e);
@@ -429,6 +473,11 @@ export class GameApp {
       const metallic =
         wKind === 'sword' || wKind === 'spear' || wKind === 'katana' || wKind === 'axe' || e.kind === 'slash';
       this.sound.playHit(heavy, metallic, partBroken || e.killed);
+      if (e.killed) {
+        this.lastKillPos.copy(e.point);
+        this.hasLastKillPos = true;
+      }
+      if (e.damage >= 45) this.view.addCameraShake(e.damage / 420);
     };
 
     this.elTopHud = document.getElementById('top-hud');
@@ -855,27 +904,21 @@ export class GameApp {
       this.view.resetCamera();
     });
 
-    // 速度変更ボタン
-    const speedContainer = document.getElementById('speed-buttons')!;
-    const speeds: ReadonlyArray<{ label: string; scale: number; pause?: boolean }> = [
-      { label: '⏸ 停止', scale: 0, pause: true },
-      { label: '🐢 0.25x', scale: 0.25 },
-      { label: '▶ 1x', scale: 1.0 },
-      { label: '⏩ 2x', scale: 2.0 },
-    ];
-    speeds.forEach((s) => {
-      const b = document.createElement('button');
-      b.className = 'ctrl-btn' + (!s.pause && s.scale === 1.0 ? ' active' : '');
-      b.textContent = s.label;
-      b.addEventListener('click', () => {
-        this.paused = Boolean(s.pause);
-        if (!s.pause) this.timeScale = s.scale;
-        this.elSpeedButtons.forEach((btn) => btn.classList.remove('active'));
-        b.classList.add('active');
+    // 速度変更ボタン（サイドパネルと、戦闘中の上部 HUD の 2 か所）
+    for (const containerId of ['speed-buttons', 'battle-speed-bar']) {
+      const container = document.getElementById(containerId);
+      if (!container) continue;
+      SPEED_OPTIONS.forEach((option, index) => {
+        const b = document.createElement('button');
+        b.className = 'ctrl-btn';
+        b.textContent = option.label;
+        b.addEventListener('click', () => this.applySpeedOption(index));
+        container.appendChild(b);
+        this.elSpeedButtons.push(b);
+        b.dataset.speedIndex = String(index);
       });
-      speedContainer.appendChild(b);
-      this.elSpeedButtons.push(b);
-    });
+    }
+    this.syncSpeedButtons();
 
     // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
@@ -883,7 +926,9 @@ export class GameApp {
         return;
       }
       if (e.code === 'Escape') {
-        if (this.unitDetailVisible) {
+        if (this.view.isFollowingUnit) {
+          this.view.setFollowedUnit(null);
+        } else if (this.unitDetailVisible) {
           this.hideUnitDetailOverlay();
         }
       } else if (e.code === 'Space') {
@@ -896,6 +941,10 @@ export class GameApp {
         } else {
           this.returnToPlacement();
         }
+      } else if (e.code === 'KeyP') {
+        this.setPaused(!this.paused);
+      } else if (e.code === 'KeyF') {
+        this.cycleFastForward();
       } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         this.undoLastPlacement();
@@ -914,6 +963,34 @@ export class GameApp {
         this.elUnitBar.querySelectorAll<HTMLElement>('.unit-card')[n]?.click();
       }
     });
+  }
+
+  private applySpeedOption(index: number): void {
+    const option = SPEED_OPTIONS[index];
+    if (!option) return;
+    this.paused = Boolean(option.pause);
+    if (!option.pause) this.timeScale = option.scale;
+    this.syncSpeedButtons();
+  }
+
+  private setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.syncSpeedButtons();
+  }
+
+  /** 1x → 2x → 4x → 1x の順に早送りを切り替える */
+  private cycleFastForward(): void {
+    this.paused = false;
+    this.timeScale = this.timeScale >= 4 ? 1 : this.timeScale >= 2 ? 4 : this.timeScale >= 1 ? 2 : 1;
+    this.syncSpeedButtons();
+  }
+
+  private syncSpeedButtons(): void {
+    for (const button of this.elSpeedButtons) {
+      const option = SPEED_OPTIONS[Number(button.dataset.speedIndex)];
+      button.classList.toggle('active', option.pause ? this.paused : !this.paused && option.scale === this.timeScale);
+    }
+    document.getElementById('pause-indicator')?.classList.toggle('hidden', !this.paused);
   }
 
   private renderArcadeStageButtons(): void {
@@ -1350,6 +1427,11 @@ export class GameApp {
     dom.addEventListener('pointerup', (e) => {
       if (e.pointerType === 'touch' && this.view.isMultiTouchInvolved()) return;
       const moved = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
+      if (moved <= 8 && this.mode === 'battle' && e.button === 0) {
+        const hit = this.view.screenToGround(e.clientX, e.clientY, groundHit);
+        if (hit) this.toggleFollowNearestUnit(hit.x, hit.z);
+        return;
+      }
       if (moved > 8 || this.mode !== 'placement') return;
 
       const p = this.view.screenToGround(e.clientX, e.clientY, groundHit);
@@ -1365,6 +1447,27 @@ export class GameApp {
         this.placeAt(this.selectedId, p.x, p.z);
       }
     });
+  }
+
+  /** 戦闘中にクリックした位置の近くのユニットをカメラで追う。何もない場所なら追跡をやめる */
+  private toggleFollowNearestUnit(x: number, z: number): void {
+    let best: Unit | null = null;
+    let bestDist = 3.0;
+    for (const u of this.battle.units) {
+      if (!u.alive) continue;
+      const d = Math.hypot(u.pelvis.pos.x - x, u.pelvis.pos.z - z) - u.scale * 0.5;
+      if (d < bestDist) {
+        bestDist = d;
+        best = u;
+      }
+    }
+    if (best) {
+      this.view.setFollowedUnit(best);
+      this.showToast(`🎥 ${best.type.name} を追跡中（何もない場所をクリックで解除）`);
+    } else if (this.view.isFollowingUnit) {
+      this.view.setFollowedUnit(null);
+      this.showToast('🎥 追跡を解除しました');
+    }
   }
 
   /** ドラッグ中、前回の配置から十分離れたら次の 1 体を置く */
@@ -1460,6 +1563,8 @@ export class GameApp {
     this.spawnRecord(record);
     this.clearedBackup = [];
     this.sound.playPlace();
+    // 説明を読み終えて置き始めたら、戦場を隠さないように閉じる
+    if (this.unitDetailVisible) this.hideUnitDetailOverlay();
     this.afterLineupEdited();
     return true;
   }
@@ -1632,7 +1737,7 @@ export class GameApp {
     this.mode = 'placement';
     this.battle.aiEnabled = false;
     this.announcedResult = null;
-    this.elBanner.classList.add('hidden');
+    this.hideResultBanner();
     this.view.setPlacementGuidesVisible(true);
     // 地形は標準固定（特殊地形・状態異常なし）
     this.battle.configureStage({ timeLimitSeconds: CHALLENGE_TIME_LIMIT_SECONDS });
@@ -1721,7 +1826,7 @@ export class GameApp {
       this.elNextStageBtn.textContent = `▶ ROUND ${score.round + 1} へ進む`;
       this.elNextStageBtn.classList.remove('hidden');
     }
-    this.elBanner.classList.remove('hidden');
+    this.scheduleResultBanner();
     this.renderChallengePanel();
     this.syncPhaseUI();
   }
@@ -1746,6 +1851,7 @@ export class GameApp {
       mergeChallengeBest(this.challengeBestAtRunStart, run.totalScore, run.reachedRound).isNewRecord;
     const best = this.challengeBest;
 
+    if (reason === 'quit') document.getElementById('result-stats')?.classList.add('hidden');
     this.elBannerText.textContent = 'GAME OVER';
     this.elBannerSub.textContent = reasonText[reason];
     this.showChallengeBannerDetail(`
@@ -1768,7 +1874,7 @@ export class GameApp {
       this.elNextStageBtn.textContent = '↻ もう一度';
       this.elNextStageBtn.classList.remove('hidden');
     }
-    this.elBanner.classList.remove('hidden');
+    this.scheduleResultBanner();
     this.renderChallengePanel();
     this.syncPhaseUI();
     this.syncUnitDetailOverlay();
@@ -1820,7 +1926,7 @@ export class GameApp {
     this.mode = 'placement';
     this.battle.aiEnabled = false;
     this.announcedResult = null;
-    this.elBanner.classList.add('hidden');
+    this.hideResultBanner();
     this.view.setPlacementGuidesVisible(true);
     // ワールドの地形・特殊ルールを標準状態にリセット
     this.battle.configureStage();
@@ -1933,7 +2039,7 @@ export class GameApp {
     this.mode = 'placement';
     this.battle.aiEnabled = false;
     this.announcedResult = null;
-    this.elBanner.classList.add('hidden');
+    this.hideResultBanner();
     this.view.setPlacementGuidesVisible(true);
     // ステージ固有地形・限定ルールを物理ワールドと描画ビューへ反映
     const rules = st.specialRules;
@@ -1979,7 +2085,7 @@ export class GameApp {
     this.mode = 'placement';
     this.battle.aiEnabled = false;
     this.announcedResult = null;
-    this.elBanner.classList.add('hidden');
+    this.hideResultBanner();
     this.view.setPlacementGuidesVisible(true);
     this.battle.configureStage();
     this.view.clearDebris();
@@ -2029,7 +2135,7 @@ export class GameApp {
     this.mode = 'battle';
     this.battle.beginCombat();
     this.announcedResult = null;
-    this.elBanner.classList.add('hidden');
+    this.hideResultBanner();
     this.view.setPlacementGuidesVisible(false);
     // スマホ等の狭い画面では戦闘開始時に自動でモードパネルを閉じて戦場を見やすくする
     if (window.innerWidth <= 820 && this.sidePanelVisible) {
@@ -2048,7 +2154,7 @@ export class GameApp {
     this.mode = 'placement';
     this.battle.aiEnabled = false;
     this.announcedResult = null;
-    this.elBanner.classList.add('hidden');
+    this.hideResultBanner();
     this.view.setPlacementGuidesVisible(true);
     this.battle.clear();
     this.view.clearDebris();
@@ -2097,6 +2203,9 @@ export class GameApp {
     this.elVersusHudBar?.classList.toggle('hidden', !isVersusPlacement);
     this.elStartBtn.disabled = false;
     document.getElementById('btn-undo')?.classList.toggle('hidden', this.mode !== 'placement');
+    document.getElementById('battle-speed-bar')?.classList.toggle('hidden', this.mode !== 'battle');
+    // 戦闘中は配置できないので、兵種バーを畳んで戦場を広く見せる
+    this.elBottomHud?.classList.toggle('in-battle', this.mode === 'battle');
 
     if (this.mode === 'placement') {
       if (this.playStyle === 'challenge') {
@@ -2295,8 +2404,11 @@ export class GameApp {
 
   /** 毎フレームの更新ループ */
   tick(realDt: number): void {
+    if (this.finishSlowMoTimer > 0) this.finishSlowMoTimer -= realDt;
     if (!this.paused) {
-      this.battle.advance(realDt * this.timeScale);
+      // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
+      const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
+      this.battle.advance(realDt * scale);
     }
 
     if (this.mode === 'battle') {
@@ -2306,12 +2418,108 @@ export class GameApp {
         // 友人対戦・サンドボックスは誰かの勝利なので、1 人用モードの負けだけ敗北音にする
         if (this.isSoloPlayStyle() && res !== 0) this.sound.playDefeat();
         else this.sound.playVictory();
+        this.startFinishSequence();
         this.handleBattleEnd(res);
       }
+      this.updateFinishSequence(realDt);
     }
 
     this.updateHUD();
     this.view.renderFrame(this.battle, realDt);
+  }
+
+  /** 決着のスローモーションとカメラの寄りを始める */
+  private startFinishSequence(): void {
+    this.finishSequenceActive = true;
+    this.finishSlowMoTimer = FINISH_SLOWMO_SECONDS;
+    this.celebrateTimer = 0.25;
+    const focus = this.hasLastKillPos ? this.lastKillPos : this.getWinnerCenter();
+    if (focus) this.view.playFinisherCamera(focus);
+  }
+
+  private getWinnerCenter(): Vector3 | null {
+    const alive = this.battle.units.filter((u) => u.alive);
+    if (alive.length === 0) return null;
+    const center = new Vector3();
+    for (const u of alive) center.add(u.pelvis.pos);
+    return center.divideScalar(alive.length);
+  }
+
+  /** 決着後の毎フレーム処理（勝者の歓声とリザルトの遅延表示） */
+  private updateFinishSequence(realDt: number): void {
+    if (this.announcedResult === null || !this.finishSequenceActive) return;
+
+    if (this.bannerRevealTimer > 0) {
+      this.bannerRevealTimer -= realDt;
+      if (this.bannerRevealTimer <= 0) {
+        this.bannerRevealTimer = 0;
+        this.elBanner.classList.remove('hidden');
+      }
+    }
+
+    if (typeof this.announcedResult === 'number') {
+      this.celebrateTimer -= realDt;
+      if (this.celebrateTimer <= 0) {
+        this.celebrateTimer = CELEBRATE_INTERVAL_SECONDS;
+        this.battle.celebrate(this.announcedResult);
+      }
+    }
+  }
+
+  private hideResultBanner(): void {
+    this.bannerRevealTimer = 0;
+    this.finishSlowMoTimer = 0;
+    this.finishSequenceActive = false;
+    this.hasLastKillPos = false;
+    this.elBanner.classList.add('hidden');
+    this.view.restoreCameraAfterFinisher();
+  }
+
+  /** 決着演出の最中ならその後に、そうでなければすぐにリザルトを表示する */
+  private scheduleResultBanner(): void {
+    if (this.finishSlowMoTimer > 0) {
+      this.bannerRevealTimer = FINISH_BANNER_DELAY_SECONDS;
+    } else {
+      this.elBanner.classList.remove('hidden');
+    }
+  }
+
+  /** リザルトに載せる戦績（MVP と兵種ごとの与ダメージ）を描画する */
+  private renderBattleStats(res: Exclude<BattleResult, null>): void {
+    const el = document.getElementById('result-stats');
+    if (!el) return;
+    // 1 人用モードは自軍、それ以外は勝者の戦績を見せる（引き分けは 1P／赤軍）
+    const team: Team = this.isSoloPlayStyle() || res === 'draw' ? 0 : res;
+    const stats = summarizeTeamStats(this.battle.units, team);
+    if (!stats.mvp) {
+      el.classList.add('hidden');
+      return;
+    }
+    const maxDamage = Math.max(1, stats.byType[0]?.damage ?? 1);
+    const rows = stats.byType
+      .slice(0, 4)
+      .map((row) => {
+        const unitType = UNIT_TYPES[row.typeId];
+        const width = Math.round((row.damage / maxDamage) * 100);
+        return `<div class="stats-row">
+          <span class="mini-unit-icon">${getUnitIconSvg(row.typeId)}</span>
+          <span class="stats-name">${unitType.name} ×${row.count}</span>
+          <span class="stats-bar"><span style="width:${width}%"></span></span>
+          <span class="stats-num">${Math.round(row.damage).toLocaleString()}</span>
+        </div>`;
+      })
+      .join('');
+    const mvp = stats.mvp;
+    el.innerHTML = `
+      <div class="stats-mvp">
+        <span class="stats-mvp-label">MVP</span>
+        <span class="mini-unit-icon">${getUnitIconSvg(mvp.type.id)}</span>
+        <b>${mvp.type.name}</b>
+        <span>与ダメージ ${Math.round(mvp.damageDealt).toLocaleString()} ／ 撃破 ${mvp.kills}</span>
+      </div>
+      ${rows}
+    `;
+    el.classList.remove('hidden');
   }
 
   private computePlayerSurvivalRatio(): number {
@@ -2327,6 +2535,8 @@ export class GameApp {
       this.elRetryBtn.textContent = '↺ 配置に戻る';
       this.elRetryBtn.classList.remove('hidden');
     }
+
+    this.renderBattleStats(res);
 
     if (this.playStyle === 'challenge') {
       this.handleChallengeBattleEnd(res);
@@ -2395,6 +2605,6 @@ export class GameApp {
       }
     }
 
-    this.elBanner.classList.remove('hidden');
+    this.scheduleResultBanner();
   }
 }

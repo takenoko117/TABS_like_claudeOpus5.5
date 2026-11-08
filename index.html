@@ -50,6 +50,8 @@
           </button>
         </div>
 
+        <div id="battle-speed-bar" class="battle-speed-bar hidden" aria-label="ゲーム速度"></div>
+
         <div class="main-actions">
           <button id="btn-toggle-panel" class="ctrl-btn mode-toggle-btn active" title="ゲームモード・ステージ選択パネルの表示/非表示 (Tab)">
             ☰ モードUI
@@ -169,12 +171,15 @@
         <ul class="help-list">
           <li><b>タップ / 左クリック:</b> ユニット配置（ドラッグで連続配置、🗑削除ON時は削除）</li>
           <li><b>Ctrl+Z / ↶戻す:</b> 直前の配置を取り消し</li>
+          <li><b>戦闘中にユニットをクリック:</b> カメラで追跡、<b>P:</b> 一時停止、<b>F:</b> 早送り</li>
           <li><b>1本指ドラッグ / 右ドラッグ:</b> カメラ回転、<b>ピンチ / ホイール:</b> ズーム</li>
           <li><b>2本指スワイプ / WASD / 矢印:</b> カメラ平行移動、<b>右クリック:</b> 削除</li>
           <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始、<b>Tab / H:</b> UI開閉</li>
         </ul>
       </div>
     </aside>
+
+    <div id="pause-indicator" class="pause-indicator hidden">⏸ 一時停止中（P で再開）</div>
 
     <!-- 短い通知 -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -185,6 +190,7 @@
       <div id="result-title" class="result-title">赤軍の勝利！</div>
       <div id="result-sub" class="result-sub"></div>
       <div id="result-unlock" class="result-unlock hidden"></div>
+      <div id="result-stats" class="result-stats hidden"></div>
       <div id="result-challenge" class="result-challenge hidden"></div>
       <div class="result-actions">
         <button id="btn-retry" class="ctrl-btn">↺ 配置に戻る</button>

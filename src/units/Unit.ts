@@ -113,6 +113,10 @@ export class Unit {
   speedMul = 1.0;
   /** 加護バフを受けているか（描画エフェクト用） */
   hasBuff = false;
+  /** 戦績: この個体が敵へ与えた合計ダメージ */
+  damageDealt = 0;
+  /** 戦績: この個体が倒した敵の数 */
+  kills = 0;
   /** 増殖ゲート通過後のクールダウン（秒） */
   gateCooldown = 0;
 
@@ -3022,6 +3026,8 @@ export class Unit {
       }
     }
     const finalDamage = amount * this.vulnerabilityMul;
+    const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
+    if (creditsAttacker) attacker.damageDealt += Math.min(finalDamage, Math.max(0, this.hp));
     this.hp -= finalDamage;
     this.hitFlash = 1;
     // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴン・大蛇・バギーは強靭でよろめきにくい）
@@ -3042,6 +3048,7 @@ export class Unit {
     _tmp.copy(dv).multiplyScalar(0.3);
     for (const p of this.joints) p.addVelocity(_tmp, dt);
     if (this.hp <= 0) {
+      if (creditsAttacker) attacker.kills++;
       this.die();
       return true;
     }

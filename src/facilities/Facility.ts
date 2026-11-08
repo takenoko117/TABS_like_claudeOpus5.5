@@ -161,10 +161,13 @@ export class Facility {
   /** ダメージを受ける。地形ブロックは無敵（破壊不可） */
   takeDamage(damage: number, attacker?: Unit): boolean {
     if (!this.alive || this.isTerrain) return false;
+    const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
+    if (creditsAttacker) attacker.damageDealt += Math.min(damage, this.hp);
     this.hp = Math.max(0, this.hp - damage);
     this.hitFlash = 1.0;
 
     if (this.hp <= 0) {
+      if (creditsAttacker) attacker.kills++;
       this.destroy();
       return true;
     }
