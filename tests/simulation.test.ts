@@ -119,14 +119,17 @@ describe('戦闘', () => {
 
   it('弓兵の矢が敵に命中する', () => {
     const battle = new Battle();
+    // 矢のばらつきで 1 体だと稀に全弾外れるため、複数の射手で検証する
+    battle.spawnUnit('archer', 0, -10, -2);
     battle.spawnUnit('archer', 0, -10, 0);
+    battle.spawnUnit('archer', 0, -10, 2);
     const target = battle.spawnUnit('giant', 1, 10, 0);
     let arrowHits = 0;
     battle.combat.onHit = (e) => {
       if (e.kind === 'arrow') arrowHits++;
     };
     battle.aiEnabled = true;
-    simulate(battle, 8);
+    simulate(battle, 8, () => arrowHits > 0);
     expect(arrowHits).toBeGreaterThan(0);
     expect(target.hp).toBeLessThan(target.maxHp);
   });

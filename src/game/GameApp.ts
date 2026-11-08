@@ -297,7 +297,7 @@ export type PlayStyle = 'arcade' | 'sandbox' | 'versus' | 'challenge';
 
 /**
  * ゲーム全体の進行管理と UI バインディング。
- * - アーケードモード: 全30面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
+ * - アーケードモード: 全40面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
  * - 友人対戦モード: 2〜4人オフライン対戦、ランダム初期予算＋手動編集、ブラインド順番配置＆全員完了で戦闘開始
  * - サンドボックスモード: 地面クリックで両軍に自由配置（左半分=赤軍、右半分=青軍）
  * - チャレンジモード: 自軍2000pt固定で、増え続けるランダムな敵に1敗するまで挑み続ける
@@ -316,8 +316,8 @@ export class GameApp {
   private challengeBest: ChallengeBest = loadChallengeBest();
   /** NEW RECORD 判定に使う、ラン開始時点のベスト記録 */
   private challengeBestAtRunStart: ChallengeBest = this.challengeBest;
-  /** 生存ボーナスの集計対象（戦闘開始時の自軍。召喚や分裂で増えた分は含めない） */
-  private challengeRoster: Array<Unit | Facility> = [];
+  /** 使用予算・生存率の集計対象（戦闘開始時の自軍。召喚や増殖で増えた分は含めない） */
+  private playerRoster: Array<Unit | Facility> = [];
 
   mode: GameMode = 'placement';
   selectedId: UnitTypeId | FacilityTypeId = 'clubber';
@@ -342,6 +342,7 @@ export class GameApp {
   private savedLineup: PlacedRecord[] = [];
   private announcedResult: BattleResult = null;
   private pointerDownPos = { x: 0, y: 0, button: -1 };
+  private warningTimer: ReturnType<typeof setTimeout> | null = null;
 
   // UI 要素
   private readonly elTopHud: HTMLElement | null;
@@ -901,13 +902,9 @@ export class GameApp {
         this.hudHidden = !this.hudHidden;
         this.syncHudVisibility();
       } else if (e.code.startsWith('Digit')) {
+        // カードのクリックと同じ経路にして、施設タブや未解放時の警告も同じ扱いにする
         const n = Number(e.code.replace('Digit', '')) - 1;
-        const filtered = UNIT_TYPE_LIST.filter(
-          (ut) => this.selectedCategory === 'all' || ut.category === this.selectedCategory,
-        );
-        if (n >= 0 && n < filtered.length) {
-          this.selectUnitType(filtered[n].id);
-        }
+        this.elUnitBar.querySelectorAll<HTMLElement>('.unit-card')[n]?.click();
       }
     });
   }
@@ -1295,7 +1292,10 @@ export class GameApp {
   private flashPhaseWarning(msg: string): void {
     this.elPhaseBadge.textContent = msg;
     this.elPhaseBadge.classList.add('budget-over');
-    setTimeout(() => {
+    // 連続で警告が出ても、最後の警告が短く消されないようにする
+    if (this.warningTimer !== null) clearTimeout(this.warningTimer);
+    this.warningTimer = setTimeout(() => {
+      this.warningTimer = null;
       this.elPhaseBadge.classList.remove('budget-over');
       if (this.mode === 'placement') this.syncPhaseUI();
     }, 1800);
@@ -1547,19 +1547,9 @@ export class GameApp {
     this.announcedResult = null;
     this.elBanner.classList.add('hidden');
     this.view.setPlacementGuidesVisible(true);
-    this.battle.clear();
-    this.view.clearDebris();
-
     // 地形は標準固定（特殊地形・状態異常なし）
-    this.battle.world.obstacles = [];
-    this.battle.world.chasm = null;
-    this.battle.world.pits = [];
-    this.battle.world.slopes = [];
-    this.battle.world.arenaBounds = null;
-    this.battle.world.gravity.set(0, -9.81, 0);
-    this.battle.timeLimitSeconds = CHALLENGE_TIME_LIMIT_SECONDS;
-    this.battle.baseDamageMul = 1.0;
-    this.battle.baseSpeedMul = 1.0;
+    this.battle.configureStage({ timeLimitSeconds: CHALLENGE_TIME_LIMIT_SECONDS });
+    this.view.clearDebris();
     this.view.setStageTheme(undefined);
     this.view.setVersusZones(getVersusZones(2), 0);
 
@@ -1656,7 +1646,7 @@ export class GameApp {
     }
 
     const run = this.challenge;
-    const ratio = computeSurvivalRatio(this.challengeRoster.map((e) => ({ cost: e.type.cost, alive: e.alive })));
+    const ratio = this.computePlayerSurvivalRatio();
     const score = run.recordWin(ratio);
 
     // タブを閉じてもここまでの結果が残るよう、勝利のたびにベストを保存する
@@ -1776,19 +1766,10 @@ export class GameApp {
     this.announcedResult = null;
     this.elBanner.classList.add('hidden');
     this.view.setPlacementGuidesVisible(true);
-    this.battle.clear();
-    this.view.clearDebris();
-
     // ワールドの地形・特殊ルールを標準状態にリセット
-    this.battle.world.obstacles = [];
-    this.battle.world.chasm = null;
-    this.battle.world.pits = [];
-    this.battle.world.slopes = [];
-    this.battle.world.arenaBounds = null;
-    this.battle.world.gravity.set(0, -9.81, 0);
-    this.battle.timeLimitSeconds = null;
-    this.battle.baseDamageMul = 1.0;
-    this.battle.baseSpeedMul = 1.0;
+    this.battle.configureStage();
+    this.view.clearDebris();
+    this.view.setStageTheme(undefined);
 
     this.versus.setPlayerCount(playerCount, randomizeBudget);
     this.savedLineup = [];
@@ -1908,23 +1889,20 @@ export class GameApp {
     this.announcedResult = null;
     this.elBanner.classList.add('hidden');
     this.view.setPlacementGuidesVisible(true);
-    this.battle.clear();
-    this.view.clearDebris();
-
     // ステージ固有地形・限定ルールを物理ワールドと描画ビューへ反映
-    this.battle.world.obstacles = st.terrain.obstacles ? [...st.terrain.obstacles] : [];
-    this.battle.world.chasm = st.terrain.chasm ? { ...st.terrain.chasm } : null;
-    this.battle.world.pits = st.terrain.pits ? [...st.terrain.pits] : [];
-    this.battle.world.slopes = [];
-    this.battle.world.arenaBounds = st.terrain.arenaBounds ? { ...st.terrain.arenaBounds } : null;
-
     const rules = st.specialRules;
-    const gScale = rules?.gravityScale ?? 1.0;
-    this.battle.world.gravity.set(0, -9.81 * gScale, 0);
-    this.battle.timeLimitSeconds = rules?.timeLimitSeconds ?? null;
-    this.battle.baseDamageMul = rules?.damageMultiplier ?? 1.0;
-    this.battle.baseSpeedMul = rules?.speedMultiplier ?? 1.0;
-    this.battle.hazardConfig = st.hazard ?? null;
+    this.battle.configureStage({
+      obstacles: st.terrain.obstacles,
+      chasm: st.terrain.chasm,
+      pits: st.terrain.pits,
+      arenaBounds: st.terrain.arenaBounds,
+      gravityScale: rules?.gravityScale,
+      timeLimitSeconds: rules?.timeLimitSeconds,
+      damageMultiplier: rules?.damageMultiplier,
+      speedMultiplier: rules?.speedMultiplier,
+      hazard: st.hazard,
+    });
+    this.view.clearDebris();
 
     this.view.setStageTerrain(st.terrain, true);
     this.view.setStageTheme(st.visualTheme);
@@ -1961,18 +1939,8 @@ export class GameApp {
     this.announcedResult = null;
     this.elBanner.classList.add('hidden');
     this.view.setPlacementGuidesVisible(true);
-    this.battle.clear();
+    this.battle.configureStage();
     this.view.clearDebris();
-    this.battle.world.obstacles = [];
-    this.battle.world.chasm = null;
-    this.battle.world.pits = [];
-    this.battle.world.slopes = [];
-    this.battle.world.arenaBounds = null;
-    this.battle.world.gravity.set(0, -9.81, 0);
-    this.battle.timeLimitSeconds = null;
-    this.battle.baseDamageMul = 1.0;
-    this.battle.baseSpeedMul = 1.0;
-    this.battle.hazardConfig = null;
     this.view.setStageTerrain(null, false);
     this.view.setStageTheme(undefined);
     this.savedLineup = preset.units.map((u) => ({ ...u }));
@@ -2015,16 +1983,14 @@ export class GameApp {
       }
     }
     if (this.playStyle === 'challenge') {
-      // 配置中も経過時間は進むため、制限時間は戦闘開始から数え直す
-      this.battle.time = 0;
       this.challenge.commitLineup(this.savedLineup);
-      this.challengeRoster = [
-        ...this.battle.units.filter((u) => u.team === 0),
-        ...this.battle.facilities.filter((f) => f.team === 0),
-      ];
     }
+    this.playerRoster = [
+      ...this.battle.units.filter((u) => u.team === 0),
+      ...this.battle.facilities.filter((f) => f.team === 0),
+    ];
     this.mode = 'battle';
-    this.battle.aiEnabled = true;
+    this.battle.beginCombat();
     this.announcedResult = null;
     this.elBanner.classList.add('hidden');
     this.view.setPlacementGuidesVisible(false);
@@ -2311,13 +2277,19 @@ export class GameApp {
       const res = this.battle.result();
       if (res !== null && this.announcedResult === null) {
         this.announcedResult = res;
-        this.sound.playVictory();
+        // 友人対戦・サンドボックスは誰かの勝利なので、1 人用モードの負けだけ敗北音にする
+        if (this.isSoloPlayStyle() && res !== 0) this.sound.playDefeat();
+        else this.sound.playVictory();
         this.handleBattleEnd(res);
       }
     }
 
     this.updateHUD();
     this.view.renderFrame(this.battle, realDt);
+  }
+
+  private computePlayerSurvivalRatio(): number {
+    return computeSurvivalRatio(this.playerRoster.map((e) => ({ cost: e.type.cost, alive: e.alive })));
   }
 
   private handleBattleEnd(res: Exclude<BattleResult, null>): void {
@@ -2339,16 +2311,8 @@ export class GameApp {
       const st = this.currentStage;
       if (res === 0) {
         // プレイヤー（赤軍）の勝利！
-        let usedCost = 0;
-        let survivingCost = 0;
-        for (const u of this.battle.units) {
-          if (u.team === 0 && u.splitGen === 0) {
-            const c = UNIT_TYPES[u.type.id].cost;
-            usedCost += c;
-            if (u.alive) survivingCost += c;
-          }
-        }
-        const survivingRatio = usedCost > 0 ? survivingCost / usedCost : 0;
+        const usedCost = this.playerRoster.reduce((sum, e) => sum + e.type.cost, 0);
+        const survivingRatio = this.computePlayerSurvivalRatio();
         const stars = computeStageStars(st, usedCost, survivingRatio);
         const newlyUnlocked = recordStageClear(this.arcadeSave, st, stars);
 

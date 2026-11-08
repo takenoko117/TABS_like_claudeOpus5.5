@@ -2,12 +2,25 @@ import { Vector3 } from 'three';
 import { CombatSystem, type CombatEffectEvent } from '../combat/CombatSystem';
 import { Facility, type FacilityBattleContext } from '../facilities/Facility';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
-import { PhysicsWorld } from '../physics/PhysicsWorld';
+import { PhysicsWorld, type ChasmSpec, type ObstacleCylinder, type PitSpec } from '../physics/PhysicsWorld';
 import { Unit, type UnitContext } from '../units/Unit';
 import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { StageHazardConfig } from './ArcadeStages';
 
 export type BattleResult = Team | 'draw' | null;
+
+/** 1 戦ぶんの舞台設定。省略した項目は標準（平地・ルールなし）になる */
+export interface BattleStageConfig {
+  obstacles?: readonly ObstacleCylinder[];
+  chasm?: ChasmSpec;
+  pits?: readonly PitSpec[];
+  arenaBounds?: { maxX: number; maxZ: number };
+  gravityScale?: number;
+  timeLimitSeconds?: number;
+  damageMultiplier?: number;
+  speedMultiplier?: number;
+  hazard?: StageHazardConfig;
+}
 
 /**
  * 戦場のロジック全体（描画に依存しない）。
@@ -150,14 +163,40 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.onFacilityRemoved?.(facility);
   }
 
+  /** 戦場のユニット・施設と進行状況を消す（地形や状態異常などの舞台設定は維持する） */
   clear(): void {
     for (const u of [...this.units]) this.removeUnit(u);
     for (const f of [...this.facilities]) this.removeFacility(f);
     this.world.clear();
     this.combat.clear();
+    this.resetProgress();
+  }
+
+  /** 戦場を空にして、新しい舞台設定を適用する */
+  configureStage(config: BattleStageConfig = {}): void {
+    this.aiEnabled = false;
+    this.clear();
+    this.world.obstacles = config.obstacles ? [...config.obstacles] : [];
+    this.world.chasm = config.chasm ? { ...config.chasm } : null;
+    this.world.pits = config.pits ? [...config.pits] : [];
+    this.world.slopes = [];
+    this.world.arenaBounds = config.arenaBounds ? { ...config.arenaBounds } : null;
+    this.world.gravity.set(0, -9.81 * (config.gravityScale ?? 1.0), 0);
+    this.timeLimitSeconds = config.timeLimitSeconds ?? null;
+    this.baseDamageMul = config.damageMultiplier ?? 1.0;
+    this.baseSpeedMul = config.speedMultiplier ?? 1.0;
+    this.hazardConfig = config.hazard ?? null;
+  }
+
+  /** 戦闘を開始する。配置中に進んだ時間は制限時間に含めない */
+  beginCombat(): void {
+    this.resetProgress();
+    this.aiEnabled = true;
+  }
+
+  private resetProgress(): void {
     this.time = 0;
     this.accumulator = 0;
-    this.hazardConfig = null;
     this.hazardTimer = 0;
     this.timeSlipPhase = 'fast';
   }

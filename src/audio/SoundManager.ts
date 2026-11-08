@@ -129,6 +129,28 @@ export class SoundManager {
   }
 
   /** 勝敗決定時のファンファーレ */
+  /** 敗北時の下降フレーズ */
+  playDefeat(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain) return;
+    const t = ctx.currentTime;
+    const notes = [392.0, 349.23, 311.13, 233.08]; // G4, F4, Eb4, Bb3
+    notes.forEach((f, i) => {
+      const start = t + i * 0.2;
+      const dur = i === notes.length - 1 ? 0.9 : 0.24;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, start);
+      gain.gain.setValueAtTime(0.13, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(start);
+      osc.stop(start + dur + 0.02);
+    });
+  }
+
   playVictory(): void {
     const ctx = this.ensureContext();
     if (!ctx || !this.masterGain) return;
