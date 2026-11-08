@@ -2412,7 +2412,10 @@ export class GameApp {
     const isVersusPlacement = this.playStyle === 'versus' && this.mode === 'placement';
     this.elVersusHudBar?.classList.toggle('hidden', !isVersusPlacement);
     this.elStartBtn.disabled = false;
-    document.getElementById('btn-undo')?.classList.toggle('hidden', this.mode !== 'placement');
+    // 配置を変更するボタンは配置フェーズだけ出す
+    for (const id of ['btn-undo', 'btn-touch-erase', 'btn-clear']) {
+      document.getElementById(id)?.classList.toggle('hidden', this.mode !== 'placement');
+    }
     document.getElementById('battle-speed-bar')?.classList.toggle('hidden', this.mode !== 'battle');
     // 戦闘中は配置できないので、兵種バーを畳んで戦場を広く見せる
     this.elBottomHud?.classList.toggle('in-battle', this.mode === 'battle');

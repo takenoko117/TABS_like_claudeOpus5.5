@@ -10,9 +10,11 @@ import {
   HemisphereLight,
   InstancedMesh,
   Matrix4,
+  Material,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshPhysicalMaterial,
   NearestFilter,
   PerspectiveCamera,
   Plane,
@@ -125,6 +127,7 @@ export class SceneView {
   private readonly terrainGroup = new Group();
   private ghostGroup: Group | null = null;
   private ghostKey = '';
+  private ghostShownValid = true;
 
   // カメラ制御（オービット＋WASD 平行移動＋スマホ用タッチ＆2本指スワイプ平行移動＆ピンチズーム）
   private readonly camTarget = new Vector3(0, 0.8, 0);
@@ -944,9 +947,25 @@ export class SceneView {
       }
       this.scene.add(this.ghostGroup);
       this.ghostKey = key;
+      this.ghostShownValid = true;
     }
     if (this.ghostGroup) {
-      this.ghostGroup.visible = valid;
+      // 置けない場所では赤く半透明にして、なぜ置けないかが分かるようにする
+      if (this.ghostShownValid !== valid) {
+        this.ghostShownValid = valid;
+        this.ghostGroup.traverse((obj) => {
+          if (!(obj instanceof Mesh)) return;
+          const mats: Material[] = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const mat of mats) {
+            if (!(mat instanceof MeshLambertMaterial || mat instanceof MeshPhysicalMaterial)) continue;
+            mat.userData.ghostColor ??= mat.color.getHex();
+            mat.userData.ghostOpacity ??= mat.opacity;
+            mat.color.set(valid ? (mat.userData.ghostColor as number) : 0xff4d4d);
+            mat.opacity = valid ? (mat.userData.ghostOpacity as number) : 0.38;
+          }
+        });
+      }
+      this.ghostGroup.visible = true;
       this.ghostGroup.position.copy(pos);
       this.ghostGroup.rotation.y =
         facing ?? (team === 0 ? Math.PI / 2 : team === 1 ? -Math.PI / 2 : team === 2 ? Math.PI : 0);
