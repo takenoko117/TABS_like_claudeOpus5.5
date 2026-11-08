@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Box3, Vector3 } from 'three';
 import { PhysicsWorld } from '../src/physics/PhysicsWorld';
 import { VoxelCharacterVisual } from '../src/render/VoxelModel';
@@ -86,6 +86,47 @@ describe('Dragon Voxel Model Quality & Structure', () => {
     // 前半身と後半身は別々の向きで揺れる（2 パーツ構成）
     expect(up.frontQ.angleTo(up.rearQ)).toBeGreaterThan(0.02);
 
+    visual.dispose();
+  });
+
+  it('ブレス時は首をぐいっと前へ突き出し、口先から火炎ジェットを噴射する', () => {
+    const world = new PhysicsWorld();
+    const unit = new Unit(world, UNIT_TYPES.dragon, 0, new Vector3(0, 0, 0), 0);
+    const visual = new VoxelCharacterVisual(unit);
+    const anyVisual = visual as any;
+    const fwd = unit.forward.clone().setY(0).normalize();
+    let now = 1000;
+    const spy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const advance = (frames: number) => {
+      for (let i = 0; i < frames; i++) {
+        now += 16;
+        visual.sync();
+      }
+      visual.group.updateMatrixWorld(true);
+    };
+    const headFwd = () => anyVisual.parts.head.mesh.getWorldPosition(new Vector3()).sub(unit.pelvis.pos).dot(fwd);
+
+    unit.attackPhase = 'none';
+    advance(60);
+    const idle = headFwd();
+
+    unit.attackPhase = 'strike';
+    visual.notifyDragonBreath(fwd.clone().setY(-0.4));
+    advance(30);
+    const lunged = headFwd();
+    expect(lunged - idle).toBeGreaterThan(0.7); // 0.7m 以上前へ突き出す
+    // 実戦では 0.1 秒ごとに 1 発吐くので、直前にもう 1 発通知してからジェットを確認する
+    visual.notifyDragonBreath(fwd.clone().setY(-0.4));
+    advance(2);
+    expect(anyVisual.dragonJet.every((m: { visible: boolean }) => m.visible)).toBe(true);
+    // 口先は頭より前方にあり、物理の発射点とのずれが記録されている
+    expect(visual.dragonMouth.clone().sub(unit.pelvis.pos).dot(fwd)).toBeGreaterThan(lunged);
+
+    // ブレスが途切れると火炎ジェットは消える
+    advance(30);
+    expect(anyVisual.dragonJet.some((m: { visible: boolean }) => m.visible)).toBe(false);
+
+    spy.mockRestore();
     visual.dispose();
   });
 

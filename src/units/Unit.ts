@@ -1600,7 +1600,7 @@ export class Unit {
           gravityScale: -0.02,
           life,
         });
-        ctx.combat.emitEffect({ kind: 'dragon_breath', from, dir });
+        ctx.combat.emitEffect({ kind: 'dragon_breath', from, dir, ownerId: this.id });
       }
     } else if (st === 'swoop' && t && t.alive && !this.grabbedUnit) {
       // ターゲットへ向かって高速ダイブ（骨盤高さは 2.25m 以上を維持）

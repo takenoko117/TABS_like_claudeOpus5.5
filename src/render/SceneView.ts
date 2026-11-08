@@ -1355,20 +1355,45 @@ export class SceneView {
         }
         break;
       }
-      case 'dragon_roar':
-      case 'dragon_breath': {
-        const count = e.kind === 'dragon_roar' ? 14 : 4;
-        for (let i = 0; i < count; i++) {
-          const p = e.kind === 'dragon_roar' ? e.pos.clone() : e.from.clone();
-          const vel =
-            e.kind === 'dragon_roar'
-              ? new Vector3((Math.random() - 0.5) * 5, 2 + Math.random() * 3, (Math.random() - 0.5) * 5)
-              : e.dir
-                  .clone()
-                  .multiplyScalar(8 + Math.random() * 5)
-                  .add(new Vector3((Math.random() - 0.5) * 2.5, Math.random() * 2, (Math.random() - 0.5) * 2.5));
+      case 'dragon_roar': {
+        for (let i = 0; i < 14; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 5, 2 + Math.random() * 3, (Math.random() - 0.5) * 5);
           const col = i % 3 === 0 ? 0xffe066 : i % 3 === 1 ? 0xff6b1a : 0x343a40;
-          this.pushFxParticle(p, vel, col, 0.15 + Math.random() * 0.08, 0.45 + Math.random() * 0.2, -2.5);
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.15 + Math.random() * 0.08, 0.45 + Math.random() * 0.2, -2.5);
+        }
+        break;
+      }
+      case 'dragon_breath': {
+        // 描画上の口先から噴き出す派手な火炎（白熱の芯・黄・橙・赤の炎、火の粉、黒煙）
+        const vis = e.ownerId !== undefined ? this.unitVisuals.get(e.ownerId) : undefined;
+        if (vis) vis.notifyDragonBreath(e.dir);
+        const origin = vis ? vis.dragonMouth : e.from;
+        for (let i = 0; i < 18; i++) {
+          const r = Math.random();
+          const isSmoke = r > 0.9;
+          const spread = 1.2 + Math.random() * 2.8;
+          const vel = e.dir
+            .clone()
+            .multiplyScalar((isSmoke ? 5 : 10) + Math.random() * 10)
+            .add(new Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.3) * spread, (Math.random() - 0.5) * spread));
+          const col = r < 0.18 ? 0xfff4c2 : r < 0.42 ? 0xffd43b : r < 0.7 ? 0xff922b : r < 0.9 ? 0xe8590c : 0x3b3b40;
+          const pos = origin.clone().add(new Vector3((Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15));
+          this.pushFxParticle(
+            pos,
+            vel,
+            col,
+            (isSmoke ? 0.3 : 0.16) + Math.random() * 0.18,
+            (isSmoke ? 0.8 : 0.35) + Math.random() * 0.3,
+            isSmoke ? -3.5 : -2.0,
+          );
+        }
+        // 四方へ弾ける火の粉
+        for (let i = 0; i < 5; i++) {
+          const vel = e.dir
+            .clone()
+            .multiplyScalar(6 + Math.random() * 6)
+            .add(new Vector3((Math.random() - 0.5) * 7, Math.random() * 5, (Math.random() - 0.5) * 7));
+          this.pushFxParticle(origin.clone(), vel, Math.random() < 0.5 ? 0xffe066 : 0xffffff, 0.06, 0.5 + Math.random() * 0.3, 9);
         }
         break;
       }
@@ -2413,7 +2438,36 @@ export class SceneView {
         mesh.geometry = targetGeo;
       }
       mesh.position.copy(a.pos);
-      if (a.projectileKind === 'shuriken') {
+      mesh.scale.setScalar(1);
+      if (a.projectileKind === 'flame') {
+        // 火炎弾: 描画上の口先から噴き出し、0.35 秒かけて物理の弾道へ合流しながら膨張・回転する
+        const age = Math.max(0, 0.9 - a.life);
+        if (a.state === 'flying') {
+          const vis = a.owner.type.id === 'dragon' ? this.unitVisuals.get(a.owner.id) : undefined;
+          if (vis) {
+            const fade = Math.max(0, 1 - age / 0.35);
+            mesh.position.addScaledVector(vis.dragonBreathOffset, fade * fade);
+          }
+          const grow = 0.75 + Math.min(age, 0.9) * 2.6;
+          mesh.scale.setScalar(grow);
+          mesh.rotation.set(age * 9 + i, age * 6.5, age * 4 + i * 0.7);
+          // 炎の尾: 火の粉と煙を撒き散らす
+          if (Math.random() < 0.55) {
+            const r = Math.random();
+            const vel = new Vector3((Math.random() - 0.5) * 1.6, 0.6 + Math.random() * 1.4, (Math.random() - 0.5) * 1.6);
+            this.pushFxParticle(
+              mesh.position.clone(),
+              vel,
+              r < 0.35 ? 0xffd43b : r < 0.75 ? 0xff6b1a : 0x495057,
+              0.1 + grow * 0.07,
+              0.25 + Math.random() * 0.2,
+              -1.5,
+            );
+          }
+        } else {
+          mesh.scale.setScalar(1.3);
+        }
+      } else if (a.projectileKind === 'shuriken') {
         mesh.rotation.set(0, a.spinAngle, 0);
       } else {
         _quat.setFromUnitVectors(UP, a.dir);

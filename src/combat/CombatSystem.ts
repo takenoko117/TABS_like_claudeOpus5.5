@@ -42,7 +42,7 @@ export type CombatEffectEvent =
   | { kind: 'eagle_cry'; pos: Vector3 }
   | { kind: 'eagle_drop_impact'; pos: Vector3 }
   | { kind: 'dragon_roar'; pos: Vector3 }
-  | { kind: 'dragon_breath'; from: Vector3; dir: Vector3 }
+  | { kind: 'dragon_breath'; from: Vector3; dir: Vector3; ownerId?: number }
   | { kind: 'slime_jump'; pos: Vector3; scale: number; team: Team }
   | { kind: 'slime_slam'; pos: Vector3; scale: number; team: Team }
   | { kind: 'slime_split'; pos: Vector3; scale: number; team: Team }

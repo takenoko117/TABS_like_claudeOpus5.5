@@ -1,8 +1,10 @@
 import {
+  AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   CircleGeometry,
   Color,
+  ConeGeometry,
   CylinderGeometry,
   DataTexture,
   DoubleSide,
@@ -2465,10 +2467,19 @@ export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeo
     g.set(3, 0, 3, 0x181820);
     geom = g.toGeometry(0.035, [3.5, 0.5, 3.5]);
   } else if (kind === 'flame') {
-    const g = new VoxelGrid(5, 5, 5);
-    g.fillBox(0, 0, 0, 4, 4, 4, 0xff5900);
-    g.fillBox(1, 1, 1, 3, 3, 3, 0xffd43b);
-    geom = g.toGeometry(0.055, [2.5, 2.5, 2.5]);
+    // ドラゴンの火炎弾: 白熱の芯→黄→橙→赤のギザギザな外炎へ層を重ねた火球
+    const g = new VoxelGrid(7, 7, 7);
+    for (let z = 0; z < 7; z++) {
+      for (let y = 0; y < 7; y++) {
+        for (let x = 0; x < 7; x++) {
+          const d = Math.hypot(x - 3, y - 3, z - 3);
+          if (d > 3.3) continue;
+          if (d > 2.6 && ((x * 7 + y * 13 + z * 5) & 3) === 0) continue; // 外炎の欠け
+          g.set(x, y, z, d < 1.2 ? 0xfff4c2 : d < 2.0 ? 0xffd43b : d < 2.7 ? 0xff922b : 0xe8590c);
+        }
+      }
+    }
+    geom = g.toGeometry(0.05, [3.5, 3.5, 3.5]);
   } else if (kind === 'bomb') {
     // 導火線付きの黒色火薬爆弾
     const g = new VoxelGrid(7, 8, 7);
@@ -3165,6 +3176,18 @@ export class VoxelCharacterVisual {
   private dragonRear: Mesh | null = null;
   private dragonForelegs: Mesh[] = [];
   private readonly dragonPts: Vector3[] = [];
+  /** ブレス時の火炎ジェット（外炎・内炎・白熱芯の 3 層コーン）と口元の発光球 */
+  private dragonJet: Mesh[] = [];
+  private dragonMouthGlow: Mesh | null = null;
+  /** 首の突き出し量（+1: ブレスで前へ突き出す, -1: 溜めで仰け反る） */
+  private dragonLunge = 0;
+  private dragonLastTime = -1;
+  private dragonBreathTimer = 0;
+  private readonly dragonBreathDir = new Vector3(0, 0, 1);
+  /** 描画上の口先（ワールド座標） */
+  readonly dragonMouth = new Vector3();
+  /** 物理上のブレス発射点から描画上の口先へのずれ（火炎弾の描画位置補正に使う） */
+  readonly dragonBreathOffset = new Vector3();
 
   // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的波打ちエフェクト
   private zeruelCoreMesh: Mesh | null = null;
@@ -3291,6 +3314,35 @@ export class VoxelCharacterVisual {
       for (let i = 0; i <= Math.max(DRAGON_RIG.neckSegments, DRAGON_RIG.tailSegments); i++) {
         this.dragonPts.push(new Vector3());
       }
+      // 火炎ジェット: 口先を頂点に +Y 方向へ広がるコーン（加算合成で発光させる）
+      const jetLayers = [
+        { r: 0.62, h: 3.6, color: 0xff4d0d, opacity: 0.42 },
+        { r: 0.38, h: 3.0, color: 0xffa31a, opacity: 0.6 },
+        { r: 0.17, h: 2.1, color: 0xfff1b8, opacity: 0.85 },
+      ];
+      for (const l of jetLayers) {
+        const geom = new ConeGeometry(l.r * (s / 2), l.h * (s / 2), 14, 1, true);
+        geom.rotateX(Math.PI);
+        geom.translate(0, (l.h * (s / 2)) / 2, 0);
+        const mat = new MeshBasicMaterial({
+          color: l.color,
+          transparent: true,
+          opacity: l.opacity,
+          blending: AdditiveBlending,
+          depthWrite: false,
+          side: DoubleSide,
+        });
+        const m = new Mesh(geom, mat);
+        m.visible = false;
+        this.group.add(m);
+        this.dragonJet.push(m);
+      }
+      this.dragonMouthGlow = new Mesh(
+        new SphereGeometry(0.3 * (s / 2), 16, 12),
+        new MeshBasicMaterial({ color: 0xffc94d, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false }),
+      );
+      this.dragonMouthGlow.visible = false;
+      this.group.add(this.dragonMouthGlow);
     }
 
     // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的異質パーツ群の初期化
@@ -3765,6 +3817,13 @@ export class VoxelCharacterVisual {
     this.updateMaterialStatus();
   }
 
+  /** ドラゴンが火炎ブレスを 1 発吐いたことを通知する（火炎ジェットの向き・表示時間を更新） */
+  notifyDragonBreath(dir: Vector3): void {
+    if (dir.lengthSq() < 1e-8) return;
+    this.dragonBreathDir.copy(dir).normalize();
+    this.dragonBreathTimer = 0.22;
+  }
+
   /**
    * 西洋ドラゴン専用の配置処理（ダイナミック版）。
    * 物理骨格（直立の羽ばたき姿勢）はそのままに、見た目だけを胴体座標系で組み立てる。
@@ -3782,8 +3841,17 @@ export class VoxelCharacterVisual {
     const R = DRAGON_RIG;
     const alive = u.alive;
     const lively = alive ? 1 : 0.12;
-    const breathing = u.attackPhase === 'strike';
-    const charging = u.attackPhase === 'windup';
+    const breathing = alive && u.attackPhase === 'strike';
+    const charging = alive && u.attackPhase === 'windup';
+    const dt = this.dragonLastTime < 0 ? 0 : Math.min(0.1, Math.max(0, time - this.dragonLastTime));
+    this.dragonLastTime = time;
+
+    // 首の突き出し: 溜めで仰け反り、ブレスで「ぐいーん」と一気に前へ突き出す
+    const lungeTarget = breathing ? 1 : charging ? -1 : 0;
+    const lungeRate = lungeTarget > this.dragonLunge ? 9 : 4;
+    this.dragonLunge += (lungeTarget - this.dragonLunge) * Math.min(1, dt * lungeRate);
+    const L = Math.max(0, this.dragonLunge); // 前へ突き出す量
+    const B = Math.max(0, -this.dragonLunge); // 仰け反る量
 
     // 羽ばたき位相（物理の羽ばたきより少しゆっくり、その分ストロークを大きく）
     const ph = u.walkPhase * 0.8;
@@ -3810,7 +3878,7 @@ export class VoxelCharacterVisual {
 
     // 前半身: 羽ばたきに合わせたピッチ＋ゆったりした左右のうねり
     const frontYaw = Math.sin(time * 1.3) * 0.09 * lively;
-    const frontPitch = (0.1 * stroke + (charging ? 0.12 : 0)) * lively;
+    const frontPitch = (0.1 * stroke + 0.16 * B - 0.14 * L) * lively;
     const frontRoll = Math.sin(time * 1.1) * 0.06 * lively;
     rotateFrame(_fR, _fU, _fF, _dR, _dU, _dF, frontYaw, frontPitch, frontRoll);
     // 後半身: 前半身と逆位相に揺れて胴体全体が S 字にしなる
@@ -3839,9 +3907,10 @@ export class VoxelCharacterVisual {
     _hF.crossVectors(_hR, UP).normalize();
     _hU.copy(UP);
     _hR.crossVectors(_hU, _hF).normalize();
-    const sway = (breathing ? 0.3 : 1) * lively;
-    const headYaw = (Math.sin(time * 1.7) * 0.2 + Math.sin(time * 3.1) * 0.06) * sway;
-    const headPitch = -0.1 + Math.sin(time * 2.3) * 0.12 * sway - 0.08 * stroke * lively + (charging ? 0.35 : 0) - (breathing ? 0.12 : 0);
+    const sway = (1 - 0.75 * L) * lively;
+    const tremble = L * Math.sin(time * 47) * 0.035; // 炎を吐く反動の小刻みな震え
+    const headYaw = (Math.sin(time * 1.7) * 0.2 + Math.sin(time * 3.1) * 0.06) * sway + tremble;
+    const headPitch = -0.1 + Math.sin(time * 2.3) * 0.12 * sway - 0.08 * stroke * lively + 0.42 * B - 0.22 * L + tremble;
     const headRoll = Math.sin(time * 1.4) * 0.1 * sway;
     const headBaseR = _tmpA.copy(_hR);
     const headBaseU = _tmpB.copy(_hU);
@@ -3849,16 +3918,30 @@ export class VoxelCharacterVisual {
     rotateFrame(_hR, _hU, _hF, headBaseR, headBaseU, headBaseF, headYaw, headPitch, headRoll);
     _dHead
       .copy(P[J.Head].pos)
-      .addScaledVector(headBaseF, (0.24 + (charging ? -0.1 : 0) + (breathing ? 0.06 : 0)) * s)
-      .addScaledVector(UP, (-0.06 + heave * 0.6 + Math.sin(time * 2.3 + 0.4) * 0.04 * sway + (charging ? 0.08 : 0)) * s)
+      .addScaledVector(headBaseF, (0.24 + 0.58 * L - 0.14 * B) * s)
+      .addScaledVector(UP, (-0.06 + heave * 0.6 + Math.sin(time * 2.3 + 0.4) * 0.04 * sway - 0.14 * L + 0.1 * B) * s)
       .addScaledVector(headBaseR, Math.sin(time * 1.7 - 0.5) * 0.07 * sway * s);
     const head = this.parts.head;
     head.mesh.visible = !head.destroyed;
     placeBasisPart(head.mesh, _dHead, _hR, _hU, _hF);
 
+    // 口先（顎の間）と、物理上のブレス発射点（Unit 側と同じ式）からのずれ
+    const hv = 0.019 * s; // 頭部テンプレートのボクセル寸法
+    this.dragonMouth.copy(_dHead).addScaledVector(_hF, 19.5 * hv).addScaledVector(_hU, 1.5 * hv);
+    this.dragonBreathOffset
+      .copy(this.dragonMouth)
+      .sub(P[J.Head].pos)
+      .addScaledVector(u.forward, -0.5 * s);
+
     // 首: 付け根→（左右に揺れる）制御点→頭の 2 次ベジェ曲線に沿って節を並べる
+    // 突き出し時は制御点も前へ引き出し、首をほぼ水平に伸ばしきる
     frontPoint(_dA, R.neckBase[0], R.neckBase[1], R.neckBase[2]);
-    frontPoint(_dB, R.neckCtrl[0] - Math.sin(time * 1.7 - 0.9) * 0.06 * sway, R.neckCtrl[1], R.neckCtrl[2]);
+    frontPoint(
+      _dB,
+      R.neckCtrl[0] - Math.sin(time * 1.7 - 0.9) * 0.06 * sway,
+      R.neckCtrl[1] - 0.1 * L + 0.04 * B,
+      R.neckCtrl[2] + 0.26 * L - 0.08 * B,
+    );
     _dC.copy(_dHead).addScaledVector(_hF, -0.02 * s);
     const nN = this.dragonNeck.length;
     for (let i = 0; i <= nN; i++) {
@@ -3962,6 +4045,36 @@ export class VoxelCharacterVisual {
       rotateFrame(_tmpA, _tmpB, _tmpC, _fR, _fU, _fF, 0, swing, 0);
       m.visible = bodyVisible;
       placeBasisPart(m, _dA, _tmpA, _tmpB, _tmpC);
+    }
+
+    // 火炎ジェット: ブレスを吐いている間、口先から揺らめく 3 層の炎の円錐を噴射する
+    this.dragonBreathTimer = Math.max(0, this.dragonBreathTimer - dt);
+    const jetOn = alive && !head.destroyed && breathing && this.dragonBreathTimer > 0;
+    _quat.setFromUnitVectors(UP, this.dragonBreathDir);
+    for (let i = 0; i < this.dragonJet.length; i++) {
+      const m = this.dragonJet[i];
+      m.visible = jetOn;
+      if (!jetOn) continue;
+      m.position.copy(this.dragonMouth);
+      m.quaternion.copy(_quat);
+      // 層ごとに位相の違うちらつき（長さ・太さ・回転）
+      const flick = Math.sin(time * (29 + i * 7) + i * 1.7) * 0.5 + Math.random() * 0.5;
+      const len = (0.75 + 0.35 * flick) * Math.min(1, L * 1.3 + 0.2);
+      const wid = 0.8 + 0.35 * Math.random();
+      m.scale.set(wid, len, wid);
+      m.rotateY(time * (6 + i * 3));
+    }
+    // 口元の発光: 溜めでは喉の奥で脈打ちながら膨らみ、ブレス中は激しく明滅する
+    if (this.dragonMouthGlow) {
+      const g = this.dragonMouthGlow;
+      const glowOn = alive && !head.destroyed && (jetOn || B > 0.05);
+      g.visible = glowOn;
+      if (glowOn) {
+        g.position.copy(this.dragonMouth).addScaledVector(_hF, -2 * hv);
+        const k = jetOn ? 1.15 + Math.random() * 0.45 : 0.35 + 0.55 * B + Math.sin(time * 18) * 0.12;
+        g.scale.setScalar(k);
+        (g.material as MeshBasicMaterial).color.setHex(jetOn ? 0xffd166 : 0xff7a1a);
+      }
     }
   }
 
@@ -5369,6 +5482,10 @@ export class VoxelCharacterVisual {
       }
     }
     this.material.dispose();
+    for (const m of [...this.dragonJet, ...(this.dragonMouthGlow ? [this.dragonMouthGlow] : [])]) {
+      m.geometry.dispose();
+      (m.material as MeshBasicMaterial).dispose();
+    }
     if (this.zeruelCoreMesh) {
       this.zeruelCoreMesh.geometry.dispose();
       (this.zeruelCoreMesh.material as MeshStandardMaterial).dispose();
