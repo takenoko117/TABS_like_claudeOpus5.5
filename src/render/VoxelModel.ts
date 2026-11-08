@@ -30,6 +30,18 @@ import {
 import type { ProjectileKind } from '../combat/CombatSystem';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Particle } from '../physics/Particle';
+import {
+  buildDragonBody,
+  buildDragonForeWing,
+  buildDragonHead,
+  buildDragonSegment,
+  buildDragonShin,
+  buildDragonTailTip,
+  buildDragonThigh,
+  buildDragonUpperWing,
+  DRAGON_RIG,
+  type DragonPartSpec,
+} from './DragonModel';
 import { J } from '../units/Skeleton';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, type Team, type UnitType, type UnitTypeId, type WeaponKind } from '../units/UnitTypes';
@@ -197,6 +209,26 @@ function makeTemplate(
     pivot,
     geometry: grid.toGeometry(voxelSize, pivot),
   };
+}
+
+function specTemplate(spec: DragonPartSpec): VoxelPartTemplate {
+  return makeTemplate(spec.grid, spec.voxelSize, spec.pivot);
+}
+
+/** ドラゴンの首・尾の節と尾先（部位破壊対象外の装飾メッシュ）のジオメトリキャッシュ */
+const dragonExtraCache = new Map<Team, { segment: BufferGeometry; tailTip: BufferGeometry }>();
+function getDragonExtras(team: Team): { segment: BufferGeometry; tailTip: BufferGeometry } {
+  let e = dragonExtraCache.get(team);
+  if (!e) {
+    const seg = buildDragonSegment(team);
+    const tip = buildDragonTailTip(team);
+    e = {
+      segment: seg.grid.toGeometry(seg.voxelSize, seg.pivot),
+      tailTip: tip.grid.toGeometry(tip.voxelSize, tip.pivot),
+    };
+    dragonExtraCache.set(team, e);
+  }
+  return e;
 }
 
 function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
@@ -451,26 +483,9 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.036, [4.5, 4.5, 4.5]);
   }
 
-  // 3. ドラゴンの頭部（2本角・顎・発光する口内・チームカラー）
+  // 3. 西洋ドラゴンの頭部（DragonModel で彫刻的に生成）
   if (type.id === 'dragon') {
-    const g = new VoxelGrid(11, 11, 12);
-    const dragonSkin = tc.shirt;
-    g.fillBox(2, 2, 2, 8, 7, 8, dragonSkin);
-    // 前に突き出た顎と口内の灼熱色
-    g.fillBox(3, 4, 8, 7, 6, 11, dragonSkin);
-    g.fillBox(3, 2, 8, 7, 2, 11, 0xe6a122);
-    g.fillBox(4, 3, 8, 6, 3, 10, 0xff7b1c);
-    // 後方へ伸びる2本の黄金角
-    g.fillBox(2, 7, 1, 3, 9, 4, 0xe6a122);
-    g.fillBox(7, 7, 1, 8, 9, 4, 0xe6a122);
-    g.fillBox(2, 9, 0, 3, 10, 2, 0xffd43b);
-    g.fillBox(7, 9, 0, 8, 10, 2, 0xffd43b);
-    // 黄色く光る竜の目
-    g.fillBox(2, 5, 7, 3, 6, 8, 0xffe042);
-    g.fillBox(7, 5, 7, 8, 6, 8, 0xffe042);
-    g.set(2, 5, 8, pupil);
-    g.set(8, 5, 8, pupil);
-    return makeTemplate(g, 0.038, [5.5, 4.5, 5]);
+    return specTemplate(buildDragonHead(team));
   }
 
   // 4. 暴走バギーの頭部（ルーフ・ロールケージ・イエロー大型フォグランプ）
@@ -946,6 +961,11 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
 function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   const look = type.look;
   const tc = TEAM_COLORS[team];
+
+  // 西洋ドラゴン: 厚い胸郭・腹鱗・背棘列・前脚を備えた水平の胴体
+  if (type.id === 'dragon') {
+    return specTemplate(buildDragonBody(team));
+  }
 
   // デオキシス: V字トルソー・胸中央の光輝く紫「DNAクリスタルコア」・シアンエネルギーライン
   if (type.id === 'deoxys') {
@@ -1764,10 +1784,6 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     // 背中の大型弾薬バックパック
     g.fillBox(1, 4, 0, 8, 10, 1, 0x343a40);
     g.fillBox(2, 6, 0, 7, 8, 0, 0xd4af37);
-  } else if (type.id === 'dragon') {
-    // 黄金の腹鱗と背びれ・尻尾の付け根
-    g.fillBox(2, 3, 6, 7, 10, 6, 0xe6a122);
-    g.fillBox(4, 1, 0, 5, 9, 1, 0xe6a122);
   } else if (type.id === 'samurai') {
     // 陣営カラーの羽織と左腰の黒鞘
     g.fillBox(0, 4, 1, 2, 11, 6, tc.shirt);
@@ -2248,11 +2264,11 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     thigh = buildLimbTemplate(6, 7, 6, 0xb7e4c7, type.look.skin, 0.38);
     shin = buildLimbTemplate(5, 7, 5, 0xb7e4c7, type.look.skin, 0.36);
   } else if (type.id === 'dragon') {
-    // ドラゴンのチームカラー翼と脚
-    upperArm = buildWingTemplate(tc.shirt, 0xe6a122, 0.35);
-    forearm = buildWingTemplate(0xe6a122, tc.shirt, 0.33);
-    thigh = buildLimbTemplate(4, 8, 4, tc.shirt, tc.shirt, 0.41);
-    shin = buildLimbTemplate(3, 8, 4, tc.shirt, tc.shirt, 0.4);
+    // 西洋ドラゴンの皮膜翼（上腕翼・指骨付き前腕翼）と鉤爪の後脚
+    upperArm = specTemplate(buildDragonUpperWing(team));
+    forearm = specTemplate(buildDragonForeWing(team));
+    thigh = specTemplate(buildDragonThigh(team));
+    shin = specTemplate(buildDragonShin(team));
   } else if (type.id === 'decoy') {
     // おとりの木と藁の手足
     upperArm = buildLimbTemplate(3, 7, 3, type.look.skin, 0x7f5539, 0.29);
@@ -2619,6 +2635,73 @@ const _basisMat = new Matrix4();
 function placeBasisPart(mesh: Mesh, origin: Vector3, right: Vector3, up: Vector3, fwd: Vector3): void {
   mesh.position.copy(origin);
   _basisMat.makeBasis(right, up, fwd);
+  mesh.quaternion.setFromRotationMatrix(_basisMat);
+}
+
+// 西洋ドラゴン配置用の作業ベクトル
+const _dR = new Vector3();
+const _dU = new Vector3();
+const _dF = new Vector3();
+const _dA = new Vector3();
+const _dB = new Vector3();
+const _dC = new Vector3();
+const _dHead = new Vector3();
+const _hR = new Vector3();
+const _hU = new Vector3();
+const _hF = new Vector3();
+const _segX = new Vector3();
+const _segY = new Vector3();
+const _segZ = new Vector3();
+
+/**
+ * 首・尾の節を a→b に沿って配置する（+Y を a→b、+X を rightHint に揃える）。
+ * overlap > 0 なら節の長さに合わせて Y 方向へ伸縮し、隣の節と重ねて継ぎ目を隠す。
+ */
+function placeDragonSegment(mesh: Mesh, a: Vector3, b: Vector3, rightHint: Vector3, radial: number, overlap: number): void {
+  _segY.subVectors(b, a);
+  const len = _segY.length();
+  if (len < 1e-5) return;
+  _segY.divideScalar(len);
+  _segX.copy(rightHint).addScaledVector(_segY, -rightHint.dot(_segY));
+  if (_segX.lengthSq() < 1e-6) _segX.set(1, 0, 0);
+  _segX.normalize();
+  _segZ.crossVectors(_segX, _segY);
+  mesh.position.copy(a);
+  _basisMat.makeBasis(_segX, _segY, _segZ);
+  mesh.quaternion.setFromRotationMatrix(_basisMat);
+  const sy = overlap > 0 ? (len * overlap) / DRAGON_RIG.segmentLength : radial;
+  mesh.scale.set(radial, sy, radial);
+}
+
+/** 翼の骨を a→b（+X）に合わせ、翼膜（-Z）が胴体の後方へ広がるよう配置する */
+function placeDragonWingBone(mesh: Mesh, a: Vector3, b: Vector3, fwdHint: Vector3, templateLen: number, s: number): void {
+  _segX.subVectors(b, a);
+  const len = _segX.length();
+  if (len < 1e-5) return;
+  _segX.divideScalar(len);
+  _segZ.copy(fwdHint).addScaledVector(_segX, -fwdHint.dot(_segX));
+  if (_segZ.lengthSq() < 1e-6) _segZ.copy(UP);
+  _segZ.normalize();
+  _segY.crossVectors(_segZ, _segX);
+  mesh.position.copy(a);
+  _basisMat.makeBasis(_segX, _segY, _segZ);
+  mesh.quaternion.setFromRotationMatrix(_basisMat);
+  const sx = Math.min(2.2 * s, Math.max(0.45 * s, len / templateLen));
+  mesh.scale.set(sx, s, s);
+}
+
+/** 後脚の骨を a→b（+Y）に合わせ、爪先（+Z）が前方を向くよう配置する */
+function placeDragonLegBone(mesh: Mesh, a: Vector3, b: Vector3, fwdHint: Vector3): void {
+  _segY.subVectors(b, a);
+  const len = _segY.length();
+  if (len < 1e-5) return;
+  _segY.divideScalar(len);
+  _segZ.copy(fwdHint).addScaledVector(_segY, -fwdHint.dot(_segY));
+  if (_segZ.lengthSq() < 1e-6) _segZ.set(0, 0, 1);
+  _segZ.normalize();
+  _segX.crossVectors(_segY, _segZ);
+  mesh.position.copy(a);
+  _basisMat.makeBasis(_segX, _segY, _segZ);
   mesh.quaternion.setFromRotationMatrix(_basisMat);
 }
 
@@ -3024,6 +3107,12 @@ export class VoxelCharacterVisual {
   private readonly weaponMesh: Mesh | null;
   private readonly bowMesh: Mesh | null;
 
+  // 西洋ドラゴン専用: S 字にしなる首・うねる尾（装飾メッシュ）
+  private dragonNeck: Mesh[] = [];
+  private dragonTail: Mesh[] = [];
+  private dragonTailTip: Mesh | null = null;
+  private readonly dragonPts: Vector3[] = [];
+
   // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的波打ちエフェクト
   private zeruelCoreMesh: Mesh | null = null;
   private zeruelCoreGlow: Mesh | null = null;
@@ -3122,6 +3211,26 @@ export class VoxelCharacterVisual {
       this.group.add(this.bowMesh);
     } else {
       this.bowMesh = null;
+    }
+
+    // 西洋ドラゴン: 首・尾の節メッシュを生成
+    if (unit.type.id === 'dragon') {
+      const extras = getDragonExtras(unit.team);
+      for (let i = 0; i < DRAGON_RIG.neckSegments; i++) {
+        const m = makeMesh(extras.segment, this.material, s);
+        this.group.add(m);
+        this.dragonNeck.push(m);
+      }
+      for (let i = 0; i < DRAGON_RIG.tailSegments; i++) {
+        const m = makeMesh(extras.segment, this.material, s);
+        this.group.add(m);
+        this.dragonTail.push(m);
+      }
+      this.dragonTailTip = makeMesh(extras.tailTip, this.material, s);
+      this.group.add(this.dragonTailTip);
+      for (let i = 0; i <= Math.max(DRAGON_RIG.neckSegments, DRAGON_RIG.tailSegments); i++) {
+        this.dragonPts.push(new Vector3());
+      }
     }
 
     // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的異質パーツ群の初期化
@@ -3490,6 +3599,11 @@ export class VoxelCharacterVisual {
       this.updateMaterialStatus();
       return;
     }
+    if (u.type.id === 'dragon') {
+      this.syncDragon();
+      this.updateMaterialStatus();
+      return;
+    }
     if (u.type.id === 'buggy') {
       this.syncBuggy();
       this.updateMaterialStatus();
@@ -3589,6 +3703,138 @@ export class VoxelCharacterVisual {
     }
 
     this.updateMaterialStatus();
+  }
+
+  /**
+   * 西洋ドラゴン専用の配置処理。
+   * 物理骨格（直立の羽ばたき姿勢）はそのままに、胴体を水平に寝かせ、
+   * 首を S 字に持ち上げて頭を物理頭部へ、翼を物理の肘・手へ、尾と後脚を胴体座標系に配置する。
+   */
+  private syncDragon(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const time = performance.now() * 0.001;
+    const R = DRAGON_RIG;
+    const lively = u.alive ? 1 : 0.15;
+
+    // 胴体基底（水平）
+    _dF.set(u.forward.x, 0, u.forward.z);
+    if (_dF.lengthSq() < 1e-6) _dF.set(0, 0, 1);
+    _dF.normalize();
+    _dU.copy(UP);
+    _dR.crossVectors(_dU, _dF).normalize();
+    const bodyPoint = (out: Vector3, x: number, y: number, z: number): Vector3 =>
+      out.copy(pelvis).addScaledVector(_dR, x * s).addScaledVector(_dU, y * s).addScaledVector(_dF, z * s);
+
+    const torso = this.parts.torso;
+    torso.mesh.visible = !torso.destroyed;
+    placeBasisPart(torso.mesh, pelvis, _dR, _dU, _dF);
+
+    // 物理骨格の左右が胴体基底 _dR のどちら側にあるか（L/R 部位を正しい側へ配置するため）
+    _hR.subVectors(P[J.ShoulderR].pos, P[J.ShoulderL].pos);
+    _hR.y = 0;
+    const rs = _hR.dot(_dR) >= 0 ? 1 : -1;
+
+    // 頭部: ブレスの首振り（肩のねじれ）に追従し、わずかに鼻先を下げて睨みつける
+    if (_hR.lengthSq() < 1e-6 || !u.alive) _hR.copy(_dR).multiplyScalar(rs);
+    _hR.normalize().multiplyScalar(rs);
+    _hF.crossVectors(_hR, UP).normalize();
+    const pitch = 0.1;
+    _hU.copy(UP).multiplyScalar(Math.cos(pitch)).addScaledVector(_hF, Math.sin(pitch));
+    _hF.multiplyScalar(Math.cos(pitch)).addScaledVector(UP, -Math.sin(pitch));
+    _hR.crossVectors(_hU, _hF).normalize();
+    _dHead.copy(P[J.Head].pos).addScaledVector(_hF, 0.24 * s).addScaledVector(UP, -0.06 * s);
+    const head = this.parts.head;
+    head.mesh.visible = !head.destroyed;
+    placeBasisPart(head.mesh, _dHead, _hR, _hU, _hF);
+
+    // 首: 付け根→制御点→頭の 2 次ベジェ曲線に沿って節を並べる
+    bodyPoint(_dA, R.neckBase[0], R.neckBase[1], R.neckBase[2]);
+    bodyPoint(_dB, R.neckCtrl[0], R.neckCtrl[1], R.neckCtrl[2]);
+    _dC.copy(_dHead).addScaledVector(_hF, -0.02 * s);
+    const nN = this.dragonNeck.length;
+    for (let i = 0; i <= nN; i++) {
+      const t = i / nN;
+      const a = (1 - t) * (1 - t);
+      const b = 2 * (1 - t) * t;
+      const c = t * t;
+      this.dragonPts[i].set(
+        _dA.x * a + _dB.x * b + _dC.x * c,
+        _dA.y * a + _dB.y * b + _dC.y * c,
+        _dA.z * a + _dB.z * b + _dC.z * c,
+      );
+    }
+    for (let i = 0; i < nN; i++) {
+      const m = this.dragonNeck[i];
+      m.visible = !torso.destroyed;
+      placeDragonSegment(m, this.dragonPts[i], this.dragonPts[i + 1], _dR, s * (1.15 - 0.13 * i), 1.35);
+    }
+
+    // 尾: 付け根から後方へ垂れ下がり、左右・上下にうねる
+    const nT = this.dragonTail.length;
+    for (let i = 0; i <= nT; i++) {
+      const lx = Math.sin(time * 2.3 - i * 0.6) * 0.022 * i * lively;
+      const ly = R.tailBase[1] - 0.045 * i + 0.0045 * i * i + Math.sin(time * 1.9 - i * 0.55) * 0.01 * i * lively;
+      const lz = R.tailBase[2] - 0.15 * i;
+      bodyPoint(this.dragonPts[i], lx, ly, lz);
+    }
+    for (let i = 0; i < nT; i++) {
+      const m = this.dragonTail[i];
+      m.visible = !torso.destroyed;
+      placeDragonSegment(m, this.dragonPts[i + 1], this.dragonPts[i], _dR, s * (1.0 - 0.075 * i), 1.35);
+    }
+    if (this.dragonTailTip) {
+      this.dragonTailTip.visible = !torso.destroyed;
+      placeDragonSegment(this.dragonTailTip, this.dragonPts[nT], this.dragonPts[nT - 1], _dR, s * 0.85, 0);
+    }
+
+    // 翼: 物理の羽ばたき位相に同期して、胴体座標系で大きく広げた翼を打ち下ろす
+    //   上腕翼の仰角 a1、前腕翼の仰角 a2（翼端ほど大きく遅れてしなる）
+    const flap = u.alive ? Math.sin(u.walkPhase) : -0.4;
+    const lag = u.alive ? Math.sin(u.walkPhase - 0.6) : -0.4;
+    const a1 = 0.28 + 0.5 * flap;
+    const a2 = a1 + 0.08 + 0.38 * lag;
+    const upperLen = R.upperWingLength;
+    const foreLen = R.foreWingLength;
+    for (const side of [-1, 1] as const) {
+      const upper = side < 0 ? this.parts.upperArmL : this.parts.upperArmR;
+      const fore = side < 0 ? this.parts.forearmL : this.parts.forearmR;
+      const lx = side * rs;
+      const sx = R.shoulder[0];
+      const sy = R.shoulder[1];
+      const sz = R.shoulder[2];
+      const ex = sx + upperLen * Math.cos(a1);
+      const ey = sy + upperLen * Math.sin(a1);
+      const ez = sz - 0.06;
+      const hx = ex + foreLen * Math.cos(a2);
+      const hy = ey + foreLen * Math.sin(a2);
+      const hz = ez - 0.1;
+      bodyPoint(_dA, sx * lx, sy, sz);
+      bodyPoint(_dB, ex * lx, ey, ez);
+      bodyPoint(_dC, hx * lx, hy, hz);
+      upper.mesh.visible = !upper.destroyed;
+      placeDragonWingBone(upper.mesh, _dA, _dB, _dF, upperLen, s);
+      fore.mesh.visible = !fore.destroyed && !upper.destroyed;
+      placeDragonWingBone(fore.mesh, _dB, _dC, _dF, foreLen, s);
+    }
+
+    // 後脚: 飛行中は胴体の下に引き寄せ、ゆったりと揺らす
+    const sway = Math.sin(time * 1.6) * 0.03 * lively;
+    for (const side of [-1, 1] as const) {
+      const thigh = side < 0 ? this.parts.thighL : this.parts.thighR;
+      const shin = side < 0 ? this.parts.shinL : this.parts.shinR;
+      const sw = sway * side;
+      const lx = side * rs;
+      bodyPoint(_dA, R.hip[0] * lx, R.hip[1], R.hip[2]);
+      bodyPoint(_dB, R.knee[0] * lx, R.knee[1], R.knee[2] + sw);
+      bodyPoint(_dC, R.foot[0] * lx, R.foot[1], R.foot[2] + sw * 1.5);
+      thigh.mesh.visible = !thigh.destroyed;
+      placeDragonLegBone(thigh.mesh, _dA, _dB, _dF);
+      shin.mesh.visible = !shin.destroyed;
+      placeDragonLegBone(shin.mesh, _dB, _dC, _dF);
+    }
   }
 
   /** 暴走バギー専用の4輪オフロードビークル配置処理 */

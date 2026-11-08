@@ -367,23 +367,34 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
 
     case 'dragon':
-      // ドラゴン: 2本の黄金角・気高き竜頭・火炎ブレス
+      // ドラゴン: 広げた皮膜翼・反り返る大角・S字の首・開いた顎から火炎ブレス
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
-        <!-- 2本の黄金の角 -->
-        <polygon points="8,11 4,2 13,8" fill="#ffd43b" stroke="#e6a122" stroke-width="1"/>
-        <polygon points="24,11 28,2 19,8" fill="#ffd43b" stroke="#e6a122" stroke-width="1"/>
-        <!-- ドラゴンの頭部と首（赤と青のツートン／中立竜カラー） -->
-        <rect x="8" y="21" width="16" height="12" fill="#5c2d91"/>
-        <rect x="7" y="8" width="18" height="15" rx="2" fill="#7048e8"/>
-        <!-- 額の黄金鱗 -->
-        <polygon points="16,8 20,8 18,13" fill="#ffd43b"/>
-        <!-- 黄色く光る竜の目 -->
-        <polygon points="9,13 14,14 9,16" fill="#ffe042"/>
-        <polygon points="23,13 18,14 23,16" fill="#ffe042"/>
-        <!-- 顎と火炎ブレス -->
-        <rect x="10" y="18" width="12" height="5" fill="#e6a122"/>
-        <circle cx="29" cy="24" r="5.5" fill="#ff6b35"/>
-        <circle cx="28" cy="24" r="3.2" fill="#ffe066"/>
+        <!-- 背後に広げた皮膜翼（指骨とスカラップ状の翼膜） -->
+        <polygon points="17,20 33,4 34,12 30,13 32,19 26,19 27,25" fill="#5c1a14" stroke="#2b0d0a" stroke-width="0.8"/>
+        <line x1="17" y1="20" x2="33" y2="4" stroke="#8a2a1f" stroke-width="1.4"/>
+        <line x1="24" y1="13" x2="30" y2="13" stroke="#8a2a1f" stroke-width="0.8"/>
+        <line x1="24" y1="13" x2="26" y2="19" stroke="#8a2a1f" stroke-width="0.8"/>
+        <!-- 胴体と腹鱗 -->
+        <ellipse cx="18" cy="27" rx="9" ry="5.5" fill="#b8281f"/>
+        <path d="M11,29 Q18,34 25,29" fill="none" stroke="#e9cf98" stroke-width="2.4"/>
+        <!-- S字の首（前面の腹鱗） -->
+        <path d="M13,26 Q9,19 12,12" fill="none" stroke="#b8281f" stroke-width="6" stroke-linecap="round"/>
+        <path d="M10.5,25 Q7,19 9.8,13" fill="none" stroke="#e9cf98" stroke-width="2" stroke-linecap="round"/>
+        <!-- 後方へ反り返る大角 -->
+        <path d="M13,8 Q17,4 18,0.8" fill="none" stroke="#f1e7cf" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M11,8 Q13,3 12.5,0.8" fill="none" stroke="#bfae8a" stroke-width="1.8" stroke-linecap="round"/>
+        <!-- 頭部（長い鼻面と開いた顎） -->
+        <polygon points="9,7 15,7 15,11 4,12 2.5,10.5 7,8" fill="#c8372d" stroke="#5c1a14" stroke-width="0.6"/>
+        <polygon points="6,13.5 14,12 14,14.5 8,15.5" fill="#b8281f" stroke="#5c1a14" stroke-width="0.6"/>
+        <polygon points="4,12 14,11.2 14,12.2 6,13.5" fill="#5c0b0b"/>
+        <!-- 牙と黄金の瞳 -->
+        <polygon points="5,12 5.8,13.3 6.4,11.9" fill="#fbf7ea"/>
+        <polygon points="8,11.7 8.7,13 9.3,11.6" fill="#fbf7ea"/>
+        <rect x="10.4" y="8.3" width="2" height="1.4" fill="#ffd43b"/>
+        <rect x="11.2" y="8.3" width="0.6" height="1.4" fill="#140a00"/>
+        <!-- 火炎ブレス -->
+        <circle cx="2.2" cy="15.5" r="2.4" fill="#ff7a18" opacity="0.9"/>
+        <circle cx="2.4" cy="15.2" r="1.2" fill="#ffd166"/>
       </svg>`;
 
     case 'slime':
