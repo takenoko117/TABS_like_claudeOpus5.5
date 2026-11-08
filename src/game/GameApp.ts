@@ -605,7 +605,7 @@ export class GameApp {
     this.elSidePanel?.classList.toggle('panel-hidden', !this.sidePanelVisible);
     if (this.elTogglePanelBtn) {
       this.elTogglePanelBtn.classList.toggle('active', this.sidePanelVisible);
-      this.elTogglePanelBtn.textContent = this.sidePanelVisible ? '☰ モードUI: ON' : '☰ モードUI: OFF';
+      this.elTogglePanelBtn.textContent = '☰ メニュー';
     }
   }
 
@@ -944,7 +944,7 @@ export class GameApp {
     }
     this.syncSpeedButtons();
 
-    // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: モードUI開閉、H: 全UI開閉、Esc: 詳細閉じる）
+    // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: メニュー開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
       if (
         e.target instanceof HTMLInputElement ||
@@ -1399,7 +1399,7 @@ export class GameApp {
         `;
         btn.addEventListener('click', () => {
           if (!unlocked) {
-            this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ モードUI」内の「🔓全解放」）で使用可能になります`);
+            this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ メニュー」内の「🔓全解放」）で使用可能になります`);
             return;
           }
           if (ruleViolation) {

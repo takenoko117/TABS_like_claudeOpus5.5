@@ -1763,6 +1763,7 @@ body.on-title #btn-restore-hud {
 }
 
 .title-logo span {
+  display: inline-block;
   color: #ff6b4a;
   text-shadow: 0 4px 0 #8f1d0d, 0 8px 18px rgba(0, 0, 0, 0.55);
 }
@@ -1902,5 +1903,169 @@ body.on-title #btn-restore-hud {
   .title-logo,
   .coach-highlight {
     animation: none;
+  }
+}
+
+/* スマホ縦持ち: 2 段になる上部 HUD の下に通知類を出す */
+@media (max-width: 820px) {
+  .phase-badge {
+    display: block;
+    max-width: 100%;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .phase-badge svg {
+    vertical-align: -2px;
+  }
+
+  .toast,
+  .coach,
+  .settings-panel {
+    top: 166px;
+  }
+
+  .coach {
+    width: calc(100vw - 16px);
+    font-size: 12.5px;
+  }
+}
+
+/* スマホ横持ち: 縦の余白が少ないので HUD を 1 段にまとめて戦場を確保する */
+@media (max-height: 480px) {
+  .top-hud {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .team-panels-col {
+    flex: 0 0 auto;
+  }
+
+  .team-panel {
+    flex: none;
+    min-width: 104px;
+    padding: 3px 6px;
+  }
+
+  .center-panel {
+    flex: 1 1 auto;
+    order: 0;
+    width: auto;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .phase-badge {
+    display: block;
+    overflow: hidden;
+    max-width: 100%;
+    padding: 1px 8px;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .main-actions {
+    flex-wrap: nowrap;
+    gap: 3px;
+  }
+
+  .start-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .ctrl-btn {
+    padding: 3px 5px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  #btn-toggle-hud {
+    display: none;
+  }
+
+  .side-panel {
+    top: 54px;
+    max-height: calc(100vh - 62px);
+  }
+
+  .bottom-hud {
+    bottom: 2px;
+    gap: 2px;
+  }
+
+  .unit-detail-overlay {
+    max-height: 66px;
+    padding: 4px 8px;
+  }
+
+  .unit-detail-avatar,
+  .unit-detail-featured-note {
+    display: none;
+  }
+
+  .cat-tab {
+    padding: 2px 6px;
+    font-size: 9.5px;
+  }
+
+  .unit-bar {
+    gap: 4px;
+    padding: 3px;
+  }
+
+  .unit-card {
+    width: 128px;
+    padding: 3px;
+  }
+
+  .unit-badges-line {
+    display: none;
+  }
+
+  .unit-avatar {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+  }
+
+  .unit-portrait-svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .toast,
+  .coach,
+  .settings-panel {
+    top: 60px;
+  }
+
+  .title-logo {
+    font-size: 34px;
+  }
+
+  .title-tagline {
+    margin-bottom: 2px;
+  }
+
+  .title-inner {
+    gap: 6px;
+  }
+
+  .title-modes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .title-card {
+    min-height: 0;
+    padding: 6px 4px;
+  }
+
+  .title-card-icon {
+    font-size: 20px;
   }
 }
