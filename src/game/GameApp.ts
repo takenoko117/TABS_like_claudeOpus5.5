@@ -2793,10 +2793,11 @@ export class GameApp {
       .map((o, i) =>
         o.unitChoices
           ? `
-        <div class="rogue-card rarity-${o.rarity}">
+        <div class="rogue-card rogue-card-choices rarity-${o.rarity}" data-action="reward-unit-hint">
           <div class="rogue-card-rarity">${RARITY_LABELS[o.rarity]}</div>
           <div class="rogue-card-title">${o.title}</div>
           <div class="rogue-card-desc">${o.description}</div>
+          <div class="rogue-choice-prompt">▼ 加える兵種をクリックして決定</div>
           ${o.unitChoices
             .map(
               (id, k) => `
@@ -3005,6 +3006,12 @@ export class GameApp {
           if (opt) this.chooseRogueReward(opt);
           break;
         }
+        case 'reward-unit-hint':
+          // カード本体が押されたら、押すべき候補を光らせて案内する（連続で押しても毎回再生する）
+          target.classList.remove('nudge');
+          void target.offsetWidth;
+          target.classList.add('nudge');
+          break;
         case 'reward-unit': {
           const opt = run?.pendingRewards?.[index];
           const unitId = opt?.unitChoices?.[Number(target.dataset.choice)];

@@ -2257,7 +2257,7 @@ body.on-title #btn-restore-hud {
   transition: transform 0.12s, border-color 0.12s;
 }
 
-.rogue-card:hover:not(:disabled) {
+.rogue-card:not(.rogue-card-choices):hover:not(:disabled) {
   transform: translateY(-2px);
   border-color: #ffd43b;
 }
@@ -2358,6 +2358,28 @@ body.on-title #btn-restore-hud {
   border-color: rgba(255, 255, 255, 0.16);
 }
 
+/* 候補を選ぶカードは本体を押しても決定しないので、押せる見た目にしない */
+.rogue-card.rogue-card-choices {
+  cursor: default;
+}
+
+.rogue-choice-prompt {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffd43b;
+}
+
+.rogue-card-choices.nudge .rogue-unit-choice {
+  animation: rogue-choice-nudge 0.35s ease 2;
+}
+
+@keyframes rogue-choice-nudge {
+  50% {
+    border-color: #ffd43b;
+    background: rgba(255, 212, 59, 0.35);
+  }
+}
+
 .rogue-unit-choice {
   display: flex;
   align-items: center;
@@ -2365,16 +2387,19 @@ body.on-title #btn-restore-hud {
   width: 100%;
   padding: 4px 6px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 212, 59, 0.55);
+  background: rgba(255, 212, 59, 0.1);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s, background 0.12s;
 }
 
 .rogue-unit-choice:hover {
+  transform: translateY(-1px);
   border-color: #ffd43b;
+  background: rgba(255, 212, 59, 0.24);
 }
 
 .rogue-unit-choice .unit-portrait-svg {
