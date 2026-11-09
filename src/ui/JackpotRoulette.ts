@@ -102,7 +102,7 @@ export class JackpotRoulette {
     this.heartbeatAcc = 0;
     this.countShown = -1;
     this.maxRarity = Math.max(...opts.rewards.map((r) => r.rarity));
-    this.budgetTotal = opts.rewards.reduce((sum, r) => sum + (r.effect.kind === 'budget' ? r.effect.amount : 0), 0);
+    this.budgetTotal = opts.rewards.reduce((sum, r) => sum + (r.effect.kind === 'gold' ? r.effect.amount : 0), 0);
     this.introEnd = INTRO_BASE + INTRO_PER_TIER * opts.tier;
     this.spinStart = this.introEnd + OPEN_SHOW;
     this.buildDom(opts);
@@ -365,7 +365,7 @@ export class JackpotRoulette {
     const shown = Math.round(this.budgetTotal * clamp01((this.t - this.resultAt) / 0.8));
     if (shown === this.countShown) return;
     this.countShown = shown;
-    this.titleEl.dataset.count = `+${shown}pt`;
+    this.titleEl.dataset.count = `+${shown}G`;
     if (shown < this.budgetTotal) opts.sound.playJackpotCoin();
   }
 

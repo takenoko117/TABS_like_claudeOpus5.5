@@ -49,6 +49,11 @@ import {
   ROGUE_MAX_LIVES,
   RogueliteRules,
   RogueliteRun,
+  ROGUE_SKIP_GOLD,
+  ROGUE_START_GOLD,
+  getRogueWinBonus,
+  getUnitSellPrice,
+  unitRarity,
   TAG_IDS,
   TAG_INFO,
   UNIT_TAGS,
@@ -802,6 +807,7 @@ export class GameApp {
       this.confirmQuitChallenge();
     });
 
+    document.getElementById('btn-rogue-shop')?.addEventListener('click', () => this.showRogueShop());
     document.getElementById('btn-rogue-quit')?.addEventListener('click', () => {
       this.confirmQuitRogue();
     });
@@ -1524,7 +1530,8 @@ export class GameApp {
           'unit-card' +
           (ut.id === this.selectedId ? ' active' : '') +
           (isFeatured ? ' featured' : '') +
-          (!unlocked || ruleViolation ? ' locked' : '');
+          (!unlocked || ruleViolation ? ' locked' : '') +
+          (this.playStyle === 'roguelite' && this.rogueUnitsLeft(ut.id) <= 0 ? ' exhausted' : '');
         btn.dataset.type = ut.id;
         btn.title = `${ut.name} - ${ut.description}（クリックで詳細表示）`;
         const keyLabel = idx < 9 ? `${idx + 1}` : '';
@@ -1550,8 +1557,12 @@ export class GameApp {
               </div>
               <div class="unit-name">${ut.name}</div>
               <div class="unit-stats-row">
-                <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${ut.cost}</span></span>
-                <span class="stat-pill hp" title="最大HP">${HP_ICON_SVG}<span>${ut.hp}</span></span>
+                ${
+                  this.playStyle === 'roguelite'
+                    ? `<span class="stat-pill owned" title="所持数／あと置ける数">所持${this.rogue?.ownedCount(ut.id) ?? 0} ／ あと${this.rogueUnitsLeft(ut.id)}</span>`
+                    : `<span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${ut.cost}</span></span>`
+                }
+                ${this.playStyle === 'roguelite' ? '' : `<span class="stat-pill hp" title="最大HP">${HP_ICON_SVG}<span>${ut.hp}</span></span>`}
               </div>
             </div>
           </div>
@@ -1671,6 +1682,12 @@ export class GameApp {
         this.elUnitBar.appendChild(btn);
       });
     }
+  }
+
+  /** ローグライトで、この兵種をあと何体置けるか */
+  private rogueUnitsLeft(id: UnitTypeId): number {
+    const owned = this.rogue?.ownedCount(id) ?? 0;
+    return Math.max(0, owned - RogueliteRun.placedCount(this.savedLineup, id));
   }
 
   /** 現在のモードでこの兵種を配置できるか（解放状況・ローグライトの所持兵種） */
@@ -2463,7 +2480,7 @@ export class GameApp {
     const cards = ROGUE_STARTERS.map((st, i) => {
       const unlocked = isStarterUnlocked(st, meta);
       const units = st.units
-        .map((id) => `<span class="rogue-unit-chip">${getUnitIconSvg(id)}<span>${UNIT_TYPES[id].name}</span></span>`)
+        .map(([id, n]) => `<span class="rogue-unit-chip">${getUnitIconSvg(id)}<span>${UNIT_TYPES[id].name} ×${n}</span></span>`)
         .join('');
       return `
         <button type="button" class="rogue-card${unlocked ? '' : ' locked'}" data-action="starter" data-index="${i}" ${unlocked ? '' : 'disabled'}>
@@ -2475,7 +2492,7 @@ export class GameApp {
     }).join('');
     this.showRogueModal(`
       <div class="rogue-modal-title">🎲 ローグライト — スターター部隊を選ぶ</div>
-      <div class="rogue-modal-sub">予算800pt・ライフ3で出撃し、勝つたびに3択の報酬で軍を育てて全${ROGUE_FINAL_ROUND}ラウンドの突破を目指します。</div>
+      <div class="rogue-modal-sub">ゴールド${ROGUE_START_GOLD}G・ライフ3で出撃。置けるのは持っている数まで。ショップで兵を買い揃え、全${ROGUE_FINAL_ROUND}ラウンドの突破を目指します。</div>
       <div class="rogue-card-row">${cards}</div>
       <div class="rogue-modal-foot">ベスト: ${meta.bestScore.toLocaleString()}点 ／ 最高 ROUND ${meta.bestRound || '—'} ／ クリア ${meta.clears}回</div>
     `);
@@ -2483,16 +2500,16 @@ export class GameApp {
 
   private startRogueRun(starter: RogueStarter): void {
     this.rogue = new RogueliteRun(createChallengeSeed(), starter);
-    this.selectedId = starter.units[0];
+    this.selectedId = starter.units[0][0];
     this.hideRogueModal();
     saveRogueRun(this.rogue);
     // 新規ランは残機ハートを満タンで即時表示する
     this.view.syncRogueHearts(this.rogue.lives, ROGUE_MAX_LIVES, true);
-    this.loadRogueRound();
+    this.loadRogueRound(true);
   }
 
-  /** 現在ラウンドの敵を生成し、前ラウンドの自軍配置を復元して配置フェーズに入る */
-  private loadRogueRound(): void {
+  /** 現在ラウンドの敵を生成し、前ラウンドの自軍配置を復元して配置フェーズに入る（openShop なら続けてショップを開く） */
+  private loadRogueRound(openShop = false): void {
     const run = this.rogue;
     if (!run) return;
     this.mode = 'placement';
@@ -2510,13 +2527,10 @@ export class GameApp {
 
     // 前のラウンドの配置のうち、今も使える兵種・レリックだけを戻す（門は今のサイズで置き直す）
     const placed: PlacedRecord[] = [];
-    let cost = 0;
     let relics = 0;
     for (const r of run.placement) {
       if (r.typeId) {
-        const c = UNIT_TYPES[r.typeId].cost;
-        if (!run.ownsUnit(r.typeId) || cost + c > run.budget) continue;
-        cost += c;
+        if (RogueliteRun.placedCount(placed, r.typeId) >= run.ownedCount(r.typeId)) continue;
         placed.push({ ...r });
       } else if (r.facilityId) {
         if (!run.ownsRelic(r.facilityId) || relics >= run.facilitySlots) continue;
@@ -2540,6 +2554,7 @@ export class GameApp {
     this.syncUnitDetailOverlay();
     this.syncPhaseUI();
     this.updateHUD();
+    if (openShop) this.showRogueShop();
   }
 
   /** ローグライトで、選んだ兵種・レリックを今置けるか（置けなければ理由を返す） */
@@ -2554,9 +2569,9 @@ export class GameApp {
       return null;
     }
     if (!run.ownsUnit(id)) return '🔒 この兵種はまだ手に入れていません';
-    const used = RogueliteRun.placementCost(this.savedLineup);
-    const c = UNIT_TYPES[id].cost;
-    if (used + c > run.budget) return `⚠ 予算オーバー！ (残り ${run.budget - used} pt / 必要 ${c} pt)`;
+    if (this.rogueUnitsLeft(id) <= 0) {
+      return `⚠ ${UNIT_TYPES[id].name}は所持数（${run.ownedCount(id)}体）まで置けます。🛒 ショップで買い増せます`;
+    }
     return null;
   }
 
@@ -2586,7 +2601,7 @@ export class GameApp {
     }
     if (this.announcedResult !== null) {
       run.advanceRound();
-      this.loadRogueRound();
+      this.loadRogueRound(true);
     }
   }
 
@@ -2692,7 +2707,7 @@ export class GameApp {
         return;
       }
       this.elBannerText.textContent = `ROUND ${round} 突破！`;
-      this.elBannerSub.textContent = `獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()}${round === 5 || round === 10 ? ' ｜ ❤ ライフ回復' : ''}`;
+      this.elBannerSub.textContent = `獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G${round === 5 || round === 10 ? ' ｜ ❤ ライフ回復' : ''}`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
@@ -2701,7 +2716,7 @@ export class GameApp {
       }
     } else {
       const round = run.round;
-      run.recordLoss(stats.total, stats.maxHit);
+      const consolation = run.recordLoss(stats.total, stats.maxHit);
       saveRogueRun(run);
       // ラン終了（ライフ消尽）時も、最後のハートが割れるアニメーションを見せるためここで同期する
       this.view.syncRogueHearts(run.lives, ROGUE_MAX_LIVES);
@@ -2710,11 +2725,11 @@ export class GameApp {
         return;
       }
       this.elBannerText.textContent = `ROUND ${round} 敗北…`;
-      this.elBannerSub.textContent = `ライフ -1（残り ${'❤'.repeat(run.lives)}）｜ 残念賞 予算+100pt`;
+      this.elBannerSub.textContent = `ライフ -1（残り ${'❤'.repeat(run.lives)}）｜ 💰 残念賞 +${consolation}G${run.lossStreak >= 2 ? `（${run.lossStreak}連敗）` : ''}`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
-        this.elNextStageBtn.textContent = `▶ ROUND ${round + 1} へ (Space)`;
+        this.elNextStageBtn.textContent = run.comebackPending ? '🛟 起死回生の3択へ (Space)' : `▶ ROUND ${round + 1} へ (Space)`;
         this.elNextStageBtn.classList.remove('hidden');
       }
     }
@@ -2775,7 +2790,24 @@ export class GameApp {
     const run = this.rogue;
     if (!run?.pendingRewards) return;
     const cards = run.pendingRewards
-      .map((o, i) => `
+      .map((o, i) =>
+        o.unitChoices
+          ? `
+        <div class="rogue-card rarity-${o.rarity}">
+          <div class="rogue-card-rarity">${RARITY_LABELS[o.rarity]}</div>
+          <div class="rogue-card-title">${o.title}</div>
+          <div class="rogue-card-desc">${o.description}</div>
+          ${o.unitChoices
+            .map(
+              (id, k) => `
+            <button type="button" class="rogue-unit-choice" data-action="reward-unit" data-index="${i}" data-choice="${k}">
+              ${getUnitIconSvg(id)}
+              <span><b>${UNIT_TYPES[id].name}</b><small>${UNIT_TYPES[id].cost}G ／ ${UNIT_TAGS[id].map((t) => `${TAG_INFO[t].icon}${TAG_INFO[t].name}`).join(' ')}</small></span>
+            </button>`,
+            )
+            .join('')}
+        </div>`
+          : `
         <button type="button" class="rogue-card rarity-${o.rarity}" data-action="reward" data-index="${i}">
           <div class="rogue-card-rarity">${RARITY_LABELS[o.rarity]}</div>
           ${o.unitId ? `<div class="rogue-card-icon">${getUnitIconSvg(o.unitId)}</div>` : ''}
@@ -2783,15 +2815,19 @@ export class GameApp {
           ${o.kind === 'gate_upgrade' && o.relicIndex !== undefined ? `<div class="rogue-card-icon">${getFacilityIconSvg(run.relics[o.relicIndex].id)}</div>` : ''}
           <div class="rogue-card-title">${o.title}</div>
           <div class="rogue-card-desc">${o.description}</div>
-        </button>`)
+        </button>`,
+      )
       .join('');
+    const title = run.comebackPending
+      ? `🛟 起死回生の3択 — ${run.lossStreak}連敗からの立て直し`
+      : `🎁 報酬を1つ選ぶ — ROUND ${run.round} 突破`;
     this.showRogueModal(`
-      <div class="rogue-modal-title">🎁 報酬を1つ選ぶ — ROUND ${run.round} 突破</div>
-      <div class="rogue-modal-sub">予算 ${run.budget}pt ／ ライフ ${'❤'.repeat(run.lives)}${'♡'.repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ／ 施設スロット ${run.facilitySlots}</div>
+      <div class="rogue-modal-title">${title}</div>
+      <div class="rogue-modal-sub">💰 ${run.gold}G ／ ライフ ${'❤'.repeat(run.lives)}${'♡'.repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ／ 施設スロット ${run.facilitySlots}</div>
       <div class="rogue-card-row">${cards}</div>
       <div class="rogue-modal-actions">
         <button type="button" class="ctrl-btn" data-action="reroll" ${run.rerollsLeft > 0 ? '' : 'disabled'}>🔄 引き直す（残り${run.rerollsLeft}回）</button>
-        <button type="button" class="ctrl-btn" data-action="skip">⏭ スキップして予算+100pt</button>
+        <button type="button" class="ctrl-btn" data-action="skip">⏭ スキップして +${ROGUE_SKIP_GOLD}G</button>
       </div>
     `);
   }
@@ -2800,11 +2836,94 @@ export class GameApp {
     const run = this.rogue;
     if (!run?.pendingRewards) return;
     run.chooseReward(option);
-    if (option?.unitId) this.selectedId = option.unitId;
+    if (option?.kind === 'free_unit' && option.unitId) this.selectedId = option.unitId;
     run.advanceRound();
     saveRogueRun(run);
     this.sound.playPlace();
-    this.loadRogueRound();
+    this.loadRogueRound(true);
+  }
+
+  /** ショップ画面を開く（配置フェーズのみ）。開いているときは内容を更新する */
+  private showRogueShop(): void {
+    const run = this.rogue;
+    if (!run || run.ended || this.mode !== 'placement') return;
+    const scrollTop = this.elRogueModal?.querySelector('.rogue-modal-inner')?.scrollTop ?? 0;
+    const slots = run.shop
+      .map((id, i) => {
+        if (!id) return '<div class="rogue-card shop-slot sold"><div class="rogue-card-title">売り切れ</div></div>';
+        const price = run.priceOf(id);
+        const tags = UNIT_TAGS[id].map((t) => `<span class="tag-chip">${TAG_INFO[t].icon}${TAG_INFO[t].name}</span>`).join('');
+        return `
+          <button type="button" class="rogue-card shop-slot rarity-${unitRarity(id)}" data-action="shop-buy" data-index="${i}" ${run.gold >= price ? '' : 'disabled'}>
+            <div class="rogue-card-icon">${getUnitIconSvg(id)}</div>
+            <div class="rogue-card-title">${UNIT_TYPES[id].name}</div>
+            <div class="unit-tags">${tags}</div>
+            <div class="rogue-card-desc">所持 ${run.ownedCount(id)} 体</div>
+            <div class="rogue-card-foot">💰 ${price}G</div>
+          </button>`;
+      })
+      .join('');
+    const sellRows = run.ownedUnits
+      .map((id) => {
+        const lastPlaced = this.rogueUnitsLeft(id) <= 0;
+        return `
+          <div class="rogue-sell-row">
+            <span class="rogue-unit-chip">${getUnitIconSvg(id)}<span>${UNIT_TYPES[id].name} ×${run.ownedCount(id)}</span></span>
+            <button type="button" class="ctrl-btn" data-action="shop-sell" data-unit="${id}" ${lastPlaced ? 'title="配置中の1体が戦場から外れます"' : ''}>売却 +${getUnitSellPrice(id)}G</button>
+          </div>`;
+      })
+      .join('');
+    const kind = run.roundKind === 'boss' ? '👑 ボス' : run.roundKind === 'elite' ? '⚔ エリート' : '';
+    this.showRogueModal(`
+      <div class="rogue-modal-title">🛒 ショップ — ROUND ${run.round} / ${ROGUE_FINAL_ROUND} ${kind}</div>
+      <div class="rogue-modal-sub">所持 <b class="rogue-gold">💰 ${run.gold}G</b> ／ 同じ兵種を持つほど次の1体は高くなります ／ 敵 ${run.enemyBudget.toLocaleString()} pt</div>
+      <div class="rogue-shop-row">${slots}</div>
+      <div class="rogue-modal-actions">
+        <button type="button" class="ctrl-btn" data-action="shop-reroll" ${run.gold >= run.shopRerollPrice ? '' : 'disabled'}>🔄 リロール（${run.shopRerollPrice}G）</button>
+        <button type="button" class="ctrl-btn" data-action="shop-ticket" ${run.rerollsLeft > 0 ? '' : 'disabled'}>🎟️ 券で引き直す（残り${run.rerollsLeft}枚）</button>
+        <button type="button" class="start-btn" data-action="shop-close">✅ 配置へ</button>
+      </div>
+      <div class="rogue-sell-title">売却（基本価格の70%）</div>
+      <div class="rogue-sell-list">${sellRows || '<div class="brief-hint">所持している兵種がありません</div>'}</div>
+    `);
+    this.elRogueModal?.querySelector('.rogue-modal-inner')?.scrollTo({ top: scrollTop });
+  }
+
+  private buyRogueSlot(index: number): void {
+    const run = this.rogue;
+    if (!run || this.mode !== 'placement') return;
+    const id = run.shop[index];
+    if (!id || !run.buyShopSlot(index)) return;
+    if (!isFacilityTypeId(this.selectedId) && !this.isUnitAvailable(this.selectedType)) this.selectedId = id;
+    this.sound.playPlace();
+    this.afterRogueShopChanged();
+  }
+
+  /** 1体売却する。所持数を超える配置が残るなら、最後に置いた1体を戦場から外す */
+  private sellRogueUnit(id: UnitTypeId): void {
+    const run = this.rogue;
+    if (!run || this.mode !== 'placement' || run.sellUnit(id) <= 0) return;
+    if (RogueliteRun.placedCount(this.savedLineup, id) > run.ownedCount(id)) {
+      const record = [...this.savedLineup].reverse().find((r) => r.team === 0 && r.typeId === id);
+      if (record) this.removeRecord(record);
+    }
+    // 全消去の取り消しで売却済みの兵が戻らないようにする
+    this.clearedBackup = [];
+    if (!isFacilityTypeId(this.selectedId) && !this.isUnitAvailable(this.selectedType)) {
+      this.selectedId = run.ownedUnits[0] ?? 'clubber';
+    }
+    this.sound.playRemove();
+    this.afterRogueShopChanged();
+  }
+
+  /** ショップの操作後の共通処理（保存と表示更新） */
+  private afterRogueShopChanged(): void {
+    saveRogueRun(this.rogue);
+    this.renderRoguePanel();
+    this.afterLineupEdited();
+    this.updateUnitDetailOverlay(this.selectedId);
+    this.syncUnitDetailOverlay();
+    this.showRogueShop();
   }
 
   private confirmQuitRogue(): void {
@@ -2842,7 +2961,7 @@ export class GameApp {
     this.elBannerText.textContent = reason === 'clear' ? 'RUN CLEAR!' : 'GAME OVER';
     this.elBannerSub.textContent = reasonText[reason];
     const relics = run.relics.map((r) => relicDisplayName(r)).join('・');
-    const units = run.ownedUnits.map((id) => UNIT_TYPES[id].name).join('・');
+    const units = run.ownedUnits.map((id) => `${UNIT_TYPES[id].name}×${run.ownedCount(id)}`).join('・');
     this.showChallengeBannerDetail(`
       ${isNewRecord ? '<div class="challenge-new-record">🏆 NEW RECORD</div>' : ''}
       <div class="challenge-score-row total"><span>到達</span><b>ROUND ${run.endReason === 'clear' ? ROGUE_FINAL_ROUND : run.round}</b></div>
@@ -2876,6 +2995,7 @@ export class GameApp {
       const target = (ev.target as HTMLElement).closest<HTMLElement>('[data-action]');
       if (!target || (target as HTMLButtonElement).disabled) return;
       const index = Number(target.dataset.index);
+      const run = this.rogue;
       switch (target.dataset.action) {
         case 'starter':
           this.startRogueRun(ROGUE_STARTERS[index]);
@@ -2885,6 +3005,27 @@ export class GameApp {
           if (opt) this.chooseRogueReward(opt);
           break;
         }
+        case 'reward-unit': {
+          const opt = run?.pendingRewards?.[index];
+          const unitId = opt?.unitChoices?.[Number(target.dataset.choice)];
+          if (opt && unitId) this.chooseRogueReward({ ...opt, unitId });
+          break;
+        }
+        case 'shop-buy':
+          this.buyRogueSlot(index);
+          break;
+        case 'shop-sell':
+          this.sellRogueUnit(target.dataset.unit as UnitTypeId);
+          break;
+        case 'shop-reroll':
+          if (run?.rerollShop()) this.afterRogueShopChanged();
+          break;
+        case 'shop-ticket':
+          if (run?.rerollShopWithTicket()) this.afterRogueShopChanged();
+          break;
+        case 'shop-close':
+          this.hideRogueModal();
+          break;
         case 'reroll':
           if (this.rogue?.reroll()) {
             saveRogueRun(this.rogue);
@@ -2900,6 +3041,10 @@ export class GameApp {
 
   private hideRogueModal(): void {
     this.elRogueModal?.classList.add('hidden');
+  }
+
+  private isRogueModalOpen(): boolean {
+    return Boolean(this.elRogueModal && !this.elRogueModal.classList.contains('hidden'));
   }
 
   /** 配置中の自軍のタグの数 */
@@ -2947,14 +3092,14 @@ export class GameApp {
     const kind = run.roundKind === 'boss' ? '👑 ボス' : run.roundKind === 'elite' ? '⚔ エリート' : '';
     this.elRoguePanel.innerHTML = `
       <div class="brief-title">ROUND ${run.round} / ${ROGUE_FINAL_ROUND} ${kind}</div>
-      <div class="brief-sub">❤ ${'❤'.repeat(run.lives)}${'♡'.repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ｜ 予算 ${run.budget}pt ｜ 敵 ${run.enemyBudget.toLocaleString()}pt ｜ スコア ${run.score.toLocaleString()}</div>
+      <div class="brief-sub">❤ ${'❤'.repeat(run.lives)}${'♡'.repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ｜ 💰 ${run.gold}G ｜ 敵 ${run.enemyBudget.toLocaleString()}pt ｜ スコア ${run.score.toLocaleString()}</div>
       <div class="brief-badges"><span class="brief-badge-label">陣地レリック（スロット ${RogueliteRun.placedRelicCount(this.savedLineup)}/${run.facilitySlots}）:</span>${relics}</div>
       <div class="tag-panel">${tagRows || '<div class="brief-hint">兵種を置くとタグのシナジーが表示されます</div>'}</div>
       <div class="brief-badges">
         <span class="brief-badge-label">敵軍編成:</span>
         ${this.renderEnemyChips(enemies)}
       </div>
-      <div class="brief-hint">負けるとライフ-1。時間切れは生き残った合計コストで判定します。ラウンド5・10はエリート、${ROGUE_FINAL_ROUND}はボスです。</div>
+      <div class="brief-hint">置けるのは所持数まで。倒れても所持数は減りません。負けるとライフ-1で残念賞、2連敗で起死回生の3択。時間切れは生き残った合計コストで判定します。ラウンド5・10はエリート、${ROGUE_FINAL_ROUND}はボスです。</div>
     `;
     this.rogueTagKey = this.computeRogueTagKey();
   }
@@ -2972,9 +3117,8 @@ export class GameApp {
     if (!run) return '🎲 ローグライト ｜ スターター部隊を選んでください';
     const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}</b> ${'❤'.repeat(run.lives)}`;
     if (this.mode === 'placement') {
-      const used = RogueliteRun.placementCost(this.savedLineup);
-      const remain = Math.max(0, run.budget - used);
-      return `${head} ｜ 予算 ${COST_ICON_SVG} 残り <b>${remain}</b> / ${run.budget} pt ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
+      const placed = RogueliteRun.placedUnitCount(this.savedLineup);
+      return `${head} ｜ ゴールド ${COST_ICON_SVG} <b>${run.gold}</b> G ｜ 配置 <b>${placed}</b> / ${run.totalOwned} 体 ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
     }
     const remain = Math.max(0, (this.battle.timeLimitSeconds ?? 0) - this.battle.time);
     return `⚔ ${head} ｜ ⏱ 残り <b>${remain.toFixed(1)}s</b> ｜ 与ダメージ <b>${formatDamage(this.battleStats.total)}</b>`;
@@ -3165,6 +3309,8 @@ export class GameApp {
   }
 
   startBattle(): void {
+    // ショップなどの画面を開いている間は開戦しない（Space の誤爆防止）
+    if (this.playStyle === 'roguelite' && this.isRogueModalOpen()) return;
     if (this.playStyle === 'versus') {
       let activeTeams = 0;
       for (let i = 0; i < this.versus.playerCount; i++) {
@@ -3295,6 +3441,9 @@ export class GameApp {
     document.getElementById('battle-speed-bar')?.classList.toggle('hidden', this.mode !== 'battle');
     // 戦闘中は配置できないので、兵種バーを畳んで戦場を広く見せる
     this.elBottomHud?.classList.toggle('in-battle', this.mode === 'battle');
+    document
+      .getElementById('btn-rogue-shop')
+      ?.classList.toggle('hidden', !(this.playStyle === 'roguelite' && this.mode === 'placement' && this.rogue));
     const showStageNav = this.playStyle === 'arcade' && this.mode === 'placement';
     document.getElementById('btn-stage-prev')?.classList.toggle('hidden', !showStageNav);
     document.getElementById('btn-stage-next')?.classList.toggle('hidden', !showStageNav);
@@ -3351,7 +3500,11 @@ export class GameApp {
           this.elStartBtn.textContent = this.rogue?.endReason === 'clear' ? 'RUN CLEAR' : 'GAME OVER';
           this.elStartBtn.disabled = true;
         } else if (this.announcedResult !== null) {
-          this.elStartBtn.textContent = this.rogue.pendingRewards ? '🎁 報酬を選ぶ (Space)' : '▶ 次のラウンドへ (Space)';
+          this.elStartBtn.textContent = this.rogue.comebackPending
+            ? '🛟 起死回生の3択へ (Space)'
+            : this.rogue.pendingRewards
+              ? '🎁 報酬を選ぶ (Space)'
+              : '▶ 次のラウンドへ (Space)';
           this.elStartBtn.className = 'start-btn';
         } else {
           this.elStartBtn.textContent = '🏳 ランを終了';
@@ -3465,10 +3618,9 @@ export class GameApp {
     const r = statsFor(0);
     const b = statsFor(1);
     if (this.playStyle === 'roguelite') {
-      const budget = this.rogue?.budget ?? 0;
-      const used = RogueliteRun.placementCost(this.savedLineup);
+      const gold = this.rogue?.gold ?? 0;
       this.elRedStats.innerHTML = `
-        <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${used}/${budget}</span></div>
+        <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${gold}G</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
       `;
       this.elBlueStats.innerHTML = `

@@ -10,18 +10,29 @@ import {
 } from '../src/facilities/FacilityTypes';
 import {
   ROGUE_FINAL_ROUND,
-  ROGUE_MAX_OWNED_UNITS,
+  ROGUE_MAX_LIVES,
+  ROGUE_SHOP_SLOTS,
+  ROGUE_SKIP_GOLD,
   ROGUE_STARTERS,
-  ROGUE_START_BUDGET,
+  ROGUE_START_GOLD,
   ROGUE_START_LIVES,
   RogueliteRules,
   RogueliteRun,
   UNIT_TAGS,
   applyReward,
   countTags,
+  generateComebackOptions,
   generateRewardOptions,
+  generateShopSlots,
   generateRogueEnemyLineup,
+  getRogueConsolationGold,
   getRogueEnemyBudget,
+  getRogueRoundIncome,
+  getRogueWinBonus,
+  getShopRerollPrice,
+  getShopWeight,
+  getUnitPrice,
+  getUnitSellPrice,
   getTagTier,
   isStarterUnlocked,
   mergeRogueMeta,
@@ -312,9 +323,13 @@ describe('ローグライト: ランの進行', () => {
 
   it('スターターの兵種とレリックでランが始まる', () => {
     const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
-    expect(run.budget).toBe(ROGUE_START_BUDGET);
+    expect(run.gold).toBe(ROGUE_START_GOLD);
     expect(run.lives).toBe(ROGUE_START_LIVES);
-    expect(run.ownedUnits).toEqual([...ROGUE_STARTERS[0].units]);
+    for (const [id, count] of ROGUE_STARTERS[0].units) {
+      expect(run.ownedCount(id)).toBe(count);
+      expect(run.inPool(id)).toBe(true);
+    }
+    expect(run.pool.length).toBe(ROGUE_STARTERS[0].units.length);
     expect(run.relics).toEqual([{ id: ROGUE_STARTERS[0].relic, level: 0 }]);
   });
 
@@ -326,7 +341,11 @@ describe('ローグライト: ランの進行', () => {
     expect(a.length).toBe(3);
     expect(new Set(a.map((o) => o.kind)).size).toBe(3);
     for (const o of a) {
-      if (o.kind === 'unit') expect(run.ownsUnit(o.unitId!)).toBe(false);
+      if (o.kind === 'unit') {
+        expect(o.unitChoices!.length).toBe(3);
+        expect(new Set(o.unitChoices).size).toBe(3);
+        for (const id of o.unitChoices!) expect(run.inPool(id)).toBe(false);
+      }
       if (o.kind === 'relic') expect(run.ownsRelic(o.relicId!)).toBe(false);
     }
   });
@@ -340,9 +359,9 @@ describe('ローグライト: ランの進行', () => {
     }
   });
 
-  it('兵種が上限の8種なら兵種カードは出ない', () => {
+  it('全兵種がプールに入っていると兵種カードは出ない', () => {
     const run = new RogueliteRun(3);
-    run.ownedUnits = UNIT_TYPE_LIST.slice(0, ROGUE_MAX_OWNED_UNITS).map((u) => u.id);
+    run.pool = UNIT_TYPE_LIST.map((u) => u.id);
     for (let i = 0; i < 20; i++) {
       expect(generateRewardOptions(run, createSeededRng(i)).some((o) => o.kind === 'unit')).toBe(false);
     }
@@ -394,7 +413,9 @@ describe('ローグライト: ランの進行', () => {
   it('ランの状態を保存して復元できる', () => {
     const run = new RogueliteRun(123, ROGUE_STARTERS[2]);
     run.recordWin(0.5, 100, 50);
-    run.budget += 300;
+    run.gold += 300;
+    run.buyShopSlot(0);
+    run.lossStreak = 1;
     const copy = RogueliteRun.fromState(JSON.parse(JSON.stringify(run.toState())));
     expect(copy.toState()).toEqual(run.toState());
   });
@@ -410,6 +431,206 @@ describe('ローグライト: ランの進行', () => {
     expect(next.bestRound).toBe(ROGUE_FINAL_ROUND);
     expect(isStarterUnlocked(ROGUE_STARTERS[3], next)).toBe(true);
     expect(isStarterUnlocked(ROGUE_STARTERS[4], next)).toBe(true);
+  });
+});
+
+describe('ローグライト: 所持数とゴールド', () => {
+  it('価格は所持数×0.75で上がる（100Gなら100→175→250→325）', () => {
+    expect([0, 1, 2, 3].map((n) => getUnitPrice('swordsman', n))).toEqual([100, 175, 250, 325]);
+  });
+
+  it('価格は5G刻みで、売却では必ず損をする', () => {
+    for (const ut of UNIT_TYPE_LIST) {
+      for (let n = 0; n < 8; n++) expect(getUnitPrice(ut.id, n) % 5).toBe(0);
+      expect(getUnitSellPrice(ut.id)).toBeLessThan(getUnitPrice(ut.id, 0));
+    }
+    expect(getUnitSellPrice('swordsman')).toBe(70);
+  });
+
+  it('買うと所持数が増えて枠が売り切れになり、次の価格が上がる', () => {
+    const run = new RogueliteRun(5);
+    run.gold = 100000;
+    const id = run.shop[0]!;
+    const count = run.ownedCount(id);
+    const price = run.priceOf(id);
+    expect(run.buyShopSlot(0)).toBe(true);
+    expect(run.gold).toBe(100000 - price);
+    expect(run.ownedCount(id)).toBe(count + 1);
+    expect(run.shop[0]).toBeNull();
+    expect(run.priceOf(id)).toBeGreaterThan(price);
+    expect(run.buyShopSlot(0)).toBe(false);
+  });
+
+  it('ゴールドが足りなければ買えない', () => {
+    const run = new RogueliteRun(5);
+    run.gold = 0;
+    const id = run.shop[0]!;
+    const count = run.ownedCount(id);
+    expect(run.buyShopSlot(0)).toBe(false);
+    expect(run.ownedCount(id)).toBe(count);
+    expect(run.shop[0]).toBe(id);
+  });
+
+  it('売却で所持数が1減り、基本価格の70%が戻る。0体は売れない', () => {
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    run.gold = 0;
+    expect(run.sellUnit('swordsman')).toBe(70);
+    expect(run.gold).toBe(70);
+    expect(run.ownedCount('swordsman')).toBe(1);
+    run.sellUnit('swordsman');
+    expect(run.ownsUnit('swordsman')).toBe(false);
+    expect(run.inPool('swordsman')).toBe(true);
+    expect(run.sellUnit('swordsman')).toBe(0);
+    expect(run.gold).toBe(140);
+  });
+
+  it('戦闘の勝敗で所持数は減らない', () => {
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    const before = run.totalOwned;
+    run.recordLoss(0, 0);
+    run.advanceRound();
+    expect(run.totalOwned).toBe(before);
+  });
+
+  it('勝利ボーナスとラウンド収入を受け取る', () => {
+    const run = new RogueliteRun(5);
+    const gold = run.gold;
+    run.recordWin(1, 0, 0);
+    expect(run.gold).toBe(gold + getRogueWinBonus(1));
+    run.chooseReward(null);
+    expect(run.gold).toBe(gold + getRogueWinBonus(1) + ROGUE_SKIP_GOLD);
+    run.advanceRound();
+    expect(run.gold).toBe(gold + getRogueWinBonus(1) + ROGUE_SKIP_GOLD + getRogueRoundIncome(2));
+  });
+});
+
+describe('ローグライト: ショップ', () => {
+  it('枠数は5で、プールの兵種だけが並び、同じ兵種の重複もありうる', () => {
+    const shop = generateShopSlots(['clubber'], 1, createSeededRng(1));
+    expect(shop).toEqual(Array(ROGUE_SHOP_SLOTS).fill('clubber'));
+    const run = new RogueliteRun(9);
+    expect(run.shop.length).toBe(ROGUE_SHOP_SLOTS);
+    for (const id of run.shop) expect(run.inPool(id!)).toBe(true);
+  });
+
+  it('序盤は低価格帯、後半は高価格帯の重みが大きい', () => {
+    expect(getShopWeight('clubber', 1)).toBeGreaterThan(getShopWeight('dragon', 1));
+    expect(getShopWeight('dragon', 15)).toBeGreaterThan(getShopWeight('clubber', 15));
+  });
+
+  it('枠はラウンド切り替えでのみ再抽選され、買った枠も戻る', () => {
+    const run = new RogueliteRun(9);
+    run.gold = 100000;
+    run.buyShopSlot(1);
+    const during = [...run.shop];
+    run.recordLoss(0, 0);
+    expect(run.shop).toEqual(during);
+    run.advanceRound();
+    expect(run.shop.every((id) => id !== null)).toBe(true);
+  });
+
+  it('リロールはゴールドを払い、同じラウンドで値上がりし、次のラウンドで元に戻る', () => {
+    const run = new RogueliteRun(9);
+    run.pool = UNIT_TYPE_LIST.map((u) => u.id);
+    run.gold = 1000;
+    const first = [...run.shop];
+    expect(run.shopRerollPrice).toBe(getShopRerollPrice(0));
+    expect(run.rerollShop()).toBe(true);
+    expect(run.gold).toBe(1000 - getShopRerollPrice(0));
+    expect(run.shop).not.toEqual(first);
+    expect(run.shopRerollPrice).toBeGreaterThan(getShopRerollPrice(0));
+    run.advanceRound();
+    expect(run.shopRerollPrice).toBe(getShopRerollPrice(0));
+    run.gold = 0;
+    expect(run.rerollShop()).toBe(false);
+  });
+
+  it('引き直し券ならゴールドを使わず、券が尽きると使えない', () => {
+    const run = new RogueliteRun(9);
+    const gold = run.gold;
+    const tickets = run.rerollsLeft;
+    expect(run.rerollShopWithTicket()).toBe(true);
+    expect(run.gold).toBe(gold);
+    expect(run.rerollsLeft).toBe(tickets - 1);
+    run.rerollsLeft = 0;
+    expect(run.rerollShopWithTicket()).toBe(false);
+  });
+
+  it('プール追加の報酬は選んだ兵種をプールに入れ、所持数は増やさない', () => {
+    const run = new RogueliteRun(9, ROGUE_STARTERS[0]);
+    applyReward(run, { kind: 'unit', rarity: 'common', title: '', description: '', unitId: 'dragon', unitChoices: ['dragon'] });
+    expect(run.inPool('dragon')).toBe(true);
+    expect(run.ownedCount('dragon')).toBe(0);
+  });
+});
+
+describe('ローグライト: 敗北時の打破策', () => {
+  it('残念賞は連敗で増える', () => {
+    expect([1, 2, 3, 4].map(getRogueConsolationGold)).toEqual([100, 200, 350, 350]);
+  });
+
+  it('負けると残念賞を受け取り、勝つと連敗がリセットされる', () => {
+    const run = new RogueliteRun(5);
+    const gold = run.gold;
+    expect(run.recordLoss(0, 0)).toBe(100);
+    expect(run.gold).toBe(gold + 100);
+    expect(run.lossStreak).toBe(1);
+    run.recordWin(1, 0, 0);
+    expect(run.lossStreak).toBe(0);
+    run.chooseReward(null);
+    expect(run.recordLoss(0, 0)).toBe(100);
+  });
+
+  it('2連敗の直後は起死回生の3択になり、選ぶと次のラウンドは通常に戻る', () => {
+    const run = new RogueliteRun(5);
+    run.recordLoss(0, 0);
+    expect(run.pendingRewards).toBeNull();
+    run.advanceRound();
+    expect(run.recordLoss(0, 0)).toBe(200);
+    expect(run.comebackPending).toBe(true);
+    expect(run.pendingRewards?.length).toBe(3);
+    run.chooseReward(run.pendingRewards![0]);
+    expect(run.comebackPending).toBe(false);
+  });
+
+  it('起死回生の引き直しも起死回生の候補から出る', () => {
+    const run = new RogueliteRun(5);
+    run.recordLoss(0, 0);
+    run.recordLoss(0, 0);
+    expect(run.reroll()).toBe(true);
+    expect(run.comebackPending).toBe(true);
+    for (const o of run.pendingRewards!) expect(['free_unit', 'gold', 'life', 'relic']).toContain(o.kind);
+  });
+
+  it('ライフが尽きる敗北では起死回生も残念賞も出ない', () => {
+    const run = new RogueliteRun(5);
+    run.lives = 2;
+    run.recordLoss(0, 0);
+    expect(run.recordLoss(0, 0)).toBe(0);
+    expect(run.ended).toBe(true);
+    expect(run.pendingRewards).toBeNull();
+  });
+
+  it('起死回生の無料ユニットは所持数を増やして未解放ならプールにも加える', () => {
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    run.round = 8;
+    run.lives = 1;
+    const seen = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      for (const o of generateComebackOptions(run, createSeededRng(i))) seen.add(o.kind);
+    }
+    expect([...seen].sort()).toEqual(['free_unit', 'gold', 'life', 'relic']);
+    applyReward(run, { kind: 'free_unit', rarity: 'rare', title: '', description: '', unitId: 'samurai' });
+    expect(run.ownedCount('samurai')).toBe(1);
+    expect(run.inPool('samurai')).toBe(true);
+  });
+
+  it('ライフが満タンなら起死回生にライフは出ない', () => {
+    const run = new RogueliteRun(5);
+    run.lives = ROGUE_MAX_LIVES;
+    for (let i = 0; i < 40; i++) {
+      expect(generateComebackOptions(run, createSeededRng(i)).some((o) => o.kind === 'life')).toBe(false);
+    }
   });
 });
 

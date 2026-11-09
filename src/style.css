@@ -2330,6 +2330,102 @@ body.on-title #btn-restore-hud {
   height: 22px;
 }
 
+.rogue-gold {
+  color: #ffd43b;
+  font-size: 15px;
+}
+
+.rogue-shop-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+}
+
+.rogue-card.shop-slot {
+  min-height: 150px;
+}
+
+.rogue-card.shop-slot.sold {
+  align-items: center;
+  justify-content: center;
+  opacity: 0.4;
+  cursor: default;
+  border-style: dashed;
+}
+
+.rogue-card.shop-slot.sold:hover {
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.rogue-unit-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rogue-unit-choice:hover {
+  border-color: #ffd43b;
+}
+
+.rogue-unit-choice .unit-portrait-svg {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.rogue-unit-choice span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.rogue-unit-choice small {
+  font-size: 10.5px;
+  color: #adb5bd;
+}
+
+.rogue-sell-title {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #adb5bd;
+}
+
+.rogue-sell-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 6px;
+}
+
+.rogue-sell-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.stat-pill.owned {
+  color: #ffd43b;
+  background: rgba(255, 212, 59, 0.15);
+  border: 1px solid rgba(255, 212, 59, 0.35);
+  white-space: nowrap;
+}
+
+.unit-card.exhausted {
+  opacity: 0.55;
+}
+
 .rogue-modal-actions {
   display: flex;
   flex-wrap: wrap;

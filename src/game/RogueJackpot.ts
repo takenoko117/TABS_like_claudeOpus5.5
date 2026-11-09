@@ -42,7 +42,7 @@ const MAX_CLONES_PER_REWARD = 16;
 const MAX_SMITE_EFFECTS = 24;
 
 export type JackpotEffect =
-  | { kind: 'budget'; amount: number }
+  | { kind: 'gold'; amount: number }
   | { kind: 'score'; amount: number }
   | { kind: 'reroll' }
   | { kind: 'life' }
@@ -63,21 +63,21 @@ export interface JackpotReward {
 }
 
 export const JACKPOT_REWARDS: readonly JackpotReward[] = [
-  { id: 'budget_s', name: '小判', detail: '予算 +30pt', icon: '🪙', rarity: 0, scope: 'run', effect: { kind: 'budget', amount: 30 } },
+  { id: 'budget_s', name: '小判', detail: 'ゴールド +30G', icon: '🪙', rarity: 0, scope: 'run', effect: { kind: 'gold', amount: 30 } },
   { id: 'score_s', name: '勝ち星', detail: 'スコア +300', icon: '⭐', rarity: 0, scope: 'run', effect: { kind: 'score', amount: 300 } },
   { id: 'heal_s', name: '応急手当', detail: '全軍 HP 30%回復', icon: '🩹', rarity: 0, scope: 'battle', effect: { kind: 'heal', ratio: 0.3 } },
   { id: 'atk_s', name: '闘志', detail: '全軍 攻撃 +25%', icon: '⚔️', rarity: 0, scope: 'battle', effect: { kind: 'buff', damage: 1.25 } },
   { id: 'spd_s', name: '追い風', detail: '全軍 速度 +25%', icon: '💨', rarity: 0, scope: 'battle', effect: { kind: 'buff', speed: 1.25 } },
   { id: 'guard_s', name: '鉄壁', detail: '全軍 被ダメ -20%', icon: '🛡️', rarity: 0, scope: 'battle', effect: { kind: 'buff', guard: 0.8 } },
-  { id: 'budget_m', name: '千両箱', detail: '予算 +60pt', icon: '💰', rarity: 1, scope: 'run', effect: { kind: 'budget', amount: 60 } },
-  { id: 'reroll', name: '引き直し券', detail: '報酬の引き直し +1', icon: '🎟️', rarity: 1, scope: 'run', effect: { kind: 'reroll' } },
+  { id: 'budget_m', name: '千両箱', detail: 'ゴールド +60G', icon: '💰', rarity: 1, scope: 'run', effect: { kind: 'gold', amount: 60 } },
+  { id: 'reroll', name: '引き直し券', detail: '報酬・ショップの引き直し +1', icon: '🎟️', rarity: 1, scope: 'run', effect: { kind: 'reroll' } },
   { id: 'heal_l', name: '大回復', detail: '全軍 HP 全快', icon: '💖', rarity: 1, scope: 'battle', effect: { kind: 'heal', ratio: 1 } },
   { id: 'reinforce', name: '援軍', detail: '味方3体を複製', icon: '👥', rarity: 1, scope: 'battle', effect: { kind: 'clone', count: 3 } },
   { id: 'smite', name: '天罰', detail: '敵全体に雷撃', icon: '⚡', rarity: 1, scope: 'battle', effect: { kind: 'smite', ratio: 0.25, cap: 300 } },
-  { id: 'budget_l', name: '黄金の山', detail: '予算 +120pt', icon: '🏆', rarity: 2, scope: 'run', effect: { kind: 'budget', amount: 120 } },
+  { id: 'budget_l', name: '黄金の山', detail: 'ゴールド +120G', icon: '🏆', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 120 } },
   { id: 'life', name: '命の欠片', detail: 'ライフ +1', icon: '❤️', rarity: 2, scope: 'run', effect: { kind: 'life' } },
   { id: 'overdrive', name: 'オーバードライブ', detail: '攻撃 +50% 速度 +30%', icon: '🔥', rarity: 2, scope: 'battle', effect: { kind: 'buff', damage: 1.5, speed: 1.3 } },
-  { id: 'budget_xl', name: '大財宝', detail: '予算 +250pt', icon: '👑', rarity: 3, scope: 'run', effect: { kind: 'budget', amount: 250 } },
+  { id: 'budget_xl', name: '大財宝', detail: 'ゴールド +250G', icon: '👑', rarity: 3, scope: 'run', effect: { kind: 'gold', amount: 250 } },
   { id: 'army', name: '全軍複製', detail: '味方を最大16体複製', icon: '🌟', rarity: 3, scope: 'battle', effect: { kind: 'clone', count: MAX_CLONES_PER_REWARD } },
   { id: 'judgement', name: '神の裁き', detail: '敵全体に大雷撃', icon: '🌩️', rarity: 3, scope: 'battle', effect: { kind: 'smite', ratio: 0.6, cap: 900 } },
 ];
@@ -170,8 +170,8 @@ export function applyJackpotReward(
   const allies = battle.units.filter((u) => u.alive && u.team === 0);
   const effect = reward.effect;
   switch (effect.kind) {
-    case 'budget':
-      run.budget += effect.amount;
+    case 'gold':
+      run.gold += effect.amount;
       break;
     case 'score':
       run.score += effect.amount;

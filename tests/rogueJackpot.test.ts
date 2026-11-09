@@ -134,18 +134,25 @@ describe('ボーナス: 効果', () => {
     return { battle, ally, enemy, run: new RogueliteRun(1) };
   };
 
-  it('予算・ライフ・引き直しはランに残る', () => {
+  it('ゴールド・ライフ・引き直しはランに残る', () => {
     const { battle, run } = setup();
-    const budget = run.budget;
+    const gold = run.gold;
     const rerolls = run.rerollsLeft;
     run.lives = ROGUE_MAX_LIVES - 1;
     applyJackpotReward(reward('budget_xl'), battle, run);
     applyJackpotReward(reward('reroll'), battle, run);
     applyJackpotReward(reward('life'), battle, run);
     applyJackpotReward(reward('life'), battle, run);
-    expect(run.budget).toBe(budget + 250);
+    expect(run.gold).toBe(gold + 250);
     expect(run.rerollsLeft).toBe(rerolls + 1);
     expect(run.lives).toBe(ROGUE_MAX_LIVES);
+  });
+
+  it('予算系の報酬はすべてゴールドに置き換わっている', () => {
+    for (const id of ['budget_s', 'budget_m', 'budget_l', 'budget_xl']) {
+      expect(reward(id).effect.kind).toBe('gold');
+      expect(reward(id).detail).toContain('ゴールド');
+    }
   });
 
   it('強化と回復は味方だけに効く', () => {
