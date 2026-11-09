@@ -7,6 +7,7 @@ import {
   GATE_HP_BY_LEVEL,
   MAX_GATE_LEVEL,
   getGateOpeningWidth,
+  getMarchGateOpeningWidth,
   isGateTypeId,
   type FacilityType,
   type FacilityTypeId,
@@ -26,10 +27,12 @@ export interface UnitTransform {
 export interface FacilitySpawnOptions {
   /** 門のサイズ段階（0=小門〜3=凱旋門） */
   gateLevel?: number;
+  /** 指定すると進軍門になる。開戦時にこの X 座標から配置位置まで門が滑る */
+  marchFromX?: number;
 }
 
-/** 大門以上の増殖ゲートで複製できる巨体（体格1.9以上）の1ラウンドあたりの上限 */
-export const MAX_BIG_CLONES_PER_GATE = 3;
+/** 進軍門が配置位置まで滑る時間（秒） */
+export const GATE_MARCH_DURATION = 1.4;
 /** 巨大化の門で到達できる体格の上限 */
 const MAX_GIANT_GATE_SCALE = 3.0;
 /** 縮小の門で縮められる体格の下限 */
@@ -89,8 +92,12 @@ export class Facility {
 
   /** 門のサイズ段階（門以外は 0） */
   readonly gateLevel: number;
-  /** 大門以上の増殖ゲートで複製した巨体の数 */
-  private bigClones = 0;
+  /** 進軍門の出発位置の X 座標（進軍門でなければ null） */
+  readonly marchFromX: number | null;
+  /** 進軍門の配置位置の X 座標 */
+  readonly marchHomeX: number;
+  private marchPhase: 'ready' | 'sweeping' | 'done' = 'ready';
+  private marchElapsed = 0;
 
   constructor(
     typeId: FacilityTypeId,
@@ -107,6 +114,8 @@ export class Facility {
     this.gateLevel = this.isGate
       ? Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(opts?.gateLevel ?? 0)))
       : 0;
+    this.marchFromX = this.isGate ? (opts?.marchFromX ?? null) : null;
+    this.marchHomeX = x;
     this.hp = this.isGate ? GATE_HP_BY_LEVEL[this.gateLevel] : this.type.hp;
     this.maxHp = this.hp;
 
@@ -126,8 +135,45 @@ export class Facility {
   }
 
   get radius(): number {
+    // 進軍門は開口が広いので、被弾や間合いは門の中央付近だけで判定する
+    if (this.isMarchGate) return this.type.radius;
     // 大きい門ほど占有範囲（クリック判定・配置の重なり）が広がる
     return this.isGate ? Math.max(this.type.radius, this.gateOpening / 2 + 0.5) : this.type.radius;
+  }
+
+  /** 開戦時に自軍の上を滑って効果を与える進軍門か */
+  get isMarchGate(): boolean {
+    return this.marchFromX !== null;
+  }
+
+  /** 進軍門の帯をまだ表示するか（滑り終わるまで） */
+  get marchLaneVisible(): boolean {
+    return this.isMarchGate && this.alive && this.marchPhase !== 'done';
+  }
+
+  /** 進軍門の帯の後端の X 座標（滑っている間は門の現在位置） */
+  get marchLaneStartX(): number {
+    return this.marchPhase === 'sweeping' ? this.pos.x : (this.marchFromX ?? this.pos.x);
+  }
+
+  /** 進軍門を出発位置へ移し、滑り始める */
+  startMarch(): void {
+    if (this.marchFromX === null || this.marchPhase !== 'ready') return;
+    this.marchPhase = 'sweeping';
+    this.marchElapsed = 0;
+    this.pos.x = this.marchFromX;
+  }
+
+  /** 進軍門を進め、帯の中の味方に効果を与える。まだ滑っている間は true を返す */
+  updateMarch(dt: number, ctx: FacilityBattleContext): boolean {
+    if (this.marchFromX === null || this.marchPhase !== 'sweeping') return false;
+    this.marchElapsed += dt;
+    const t = Math.min(1, this.marchElapsed / GATE_MARCH_DURATION);
+    this.pos.x = this.marchFromX + (this.marchHomeX - this.marchFromX) * t;
+    this.updateGate(ctx, true);
+    if (t < 1) return true;
+    this.marchPhase = 'done';
+    return false;
   }
 
   /** 通過したユニットに効果を与える門か */
@@ -137,7 +183,7 @@ export class Facility {
 
   /** 門の開口幅（m） */
   get gateOpening(): number {
-    return getGateOpeningWidth(this.gateLevel);
+    return this.isMarchGate ? getMarchGateOpeningWidth(this.gateLevel) : getGateOpeningWidth(this.gateLevel);
   }
 
   /** 門の柱の半径（m） */
@@ -156,7 +202,9 @@ export class Facility {
 
   /** 施設・地形ブロックの種類に応じた物理コライダーの生成 */
   private setupObstacles(): void {
-    if (this.isGate) {
+    if (this.isMarchGate) {
+      // 進軍門は味方の上を滑るので当たり判定を持たない
+    } else if (this.isGate) {
       // 門は左右に2本の支柱コライダーを開口の外側に配置し、中央は通過可能にする
       const poleRadius = this.gatePoleRadius;
       const halfSpan = this.gateOpening / 2 + poleRadius;
@@ -331,22 +379,24 @@ export class Facility {
   /**
    * 門: 開口を通過した味方ユニットを検知し、門の種類に応じた効果を与える。
    * 同じ門は1体につき1回だけ効く（複製体・作り直した個体も通過済みを引き継ぐ）。
+   * sweeping は進軍門が滑っている最中で、帯に体が触れていれば効き、他の門のクールダウンも無視する。
    */
-  private updateGate(ctx: FacilityBattleContext): void {
+  private updateGate(ctx: FacilityBattleContext, sweeping = false): void {
     const halfWidth = this.gateOpening / 2;
     const detectDepth = 0.7;
     const transforms: Array<[Unit, UnitTransform]> = [];
 
     for (const u of ctx.units) {
       if (!u.alive || u.team !== this.team) continue;
-      if (u.gateCooldown > 0 || u.gatesPassed.has(this.id)) continue;
+      if ((!sweeping && u.gateCooldown > 0) || u.gatesPassed.has(this.id)) continue;
 
       // ユニットの位置をゲートのローカル座標系に投影
       const dx = u.pelvis.pos.x - this.pos.x;
       const dz = u.pelvis.pos.z - this.pos.z;
       const localRight = dx * this.rightDir.x + dz * this.rightDir.z;
       const localForward = dx * this.forward.x + dz * this.forward.z;
-      if (Math.abs(localRight) > halfWidth || Math.abs(localForward) > detectDepth) continue;
+      const widthLimit = sweeping ? halfWidth + u.bodyRadius : halfWidth;
+      if (Math.abs(localRight) > widthLimit || Math.abs(localForward) > detectDepth) continue;
 
       // 通過判定成立
       u.gatesPassed.add(this.id);
@@ -354,7 +404,7 @@ export class Facility {
 
       switch (this.type.id) {
         case 'multiplier_gate':
-          this.multiplyUnit(u, localRight, ctx);
+          this.multiplyUnit(u, localRight, ctx, sweeping);
           break;
         case 'giant_gate':
           if (u.scale < MAX_GIANT_GATE_SCALE) {
@@ -406,17 +456,16 @@ export class Facility {
     }
   }
 
-  /** 増殖ゲート: ユニットを複製する（大門以上の巨体の複製は回数制限あり） */
-  private multiplyUnit(u: Unit, localRight: number, ctx: FacilityBattleContext): void {
-    const isBig = u.scale >= 1.9;
-    if (isBig && this.bigClones >= MAX_BIG_CLONES_PER_GATE) return;
-    if (isBig) this.bigClones++;
-
-    // クローンユニットをゲートの前方少し横（空いている側）にスポーン
+  /** 増殖ゲート: ユニットを複製する */
+  private multiplyUnit(u: Unit, localRight: number, ctx: FacilityBattleContext, sweeping: boolean): void {
+    // クローンユニットをゲートの前方少し横（空いている側）にスポーン。
+    // 進軍中はまだ隊列を組んでいるので、門の前ではなく本体のすぐ横に出す
     const side = Math.max(0.75, u.scale * 0.6);
     const cloneOffsetRight = localRight >= 0 ? -side : side;
-    const cloneX = this.pos.x + this.forward.x * (1.45 + u.scale * 0.3) + this.rightDir.x * cloneOffsetRight;
-    const cloneZ = this.pos.z + this.forward.z * (1.45 + u.scale * 0.3) + this.rightDir.z * cloneOffsetRight;
+    const baseX = sweeping ? u.pelvis.pos.x : this.pos.x + this.forward.x * (1.45 + u.scale * 0.3);
+    const baseZ = sweeping ? u.pelvis.pos.z : this.pos.z + this.forward.z * (1.45 + u.scale * 0.3);
+    const cloneX = baseX + this.rightDir.x * cloneOffsetRight;
+    const cloneZ = baseZ + this.rightDir.z * cloneOffsetRight;
     const clone = ctx.spawnCloneUnit(u, cloneX, cloneZ);
     clone.gateCooldown = 4.0;
     u.gateCooldown = 4.0;

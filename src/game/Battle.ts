@@ -53,6 +53,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   /** 1 フレームで実行する最大ステップ数（処理落ち時のスパイラル防止） */
   maxStepsPerFrame = 12;
   aiEnabled = false;
+  /** 開戦前に進軍門が滑っている最中か */
+  gateMarching = false;
   /** 経過シミュレーション時間（秒） */
   time = 0;
   /** ステージ限定ルール: 制限時間（秒。null なら無制限） */
@@ -192,6 +194,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     // 元の個体は物理ワールドと描画から取り除き、同じ場所に新しい個体を入れる
     const idx = this.units.indexOf(unit);
     unit.alive = false;
+    unit.replacedBy = next;
     this.removeUnit(unit);
     if (idx >= 0) this.units.splice(Math.min(idx, this.units.length), 0, next);
     else this.units.push(next);
@@ -292,10 +295,29 @@ export class Battle implements UnitContext, FacilityBattleContext {
   /** 戦闘を開始する。配置中に進んだ時間は制限時間に含めない */
   beginCombat(): void {
     this.resetProgress();
+    // 進軍門があれば、門が滑り終わるまで全軍を待機させる
+    for (const f of this.facilities) {
+      if (!f.alive || !f.isMarchGate) continue;
+      f.startMarch();
+      this.gateMarching = true;
+    }
+    this.aiEnabled = !this.gateMarching;
+  }
+
+  /** 進軍門を進める。すべて滑り終えたら戦闘を始める（待機中の時間は制限時間に含めない） */
+  private updateGateMarch(dt: number): void {
+    let active = false;
+    for (const f of this.facilities) {
+      if (f.updateMarch(dt, this)) active = true;
+    }
+    if (active) return;
+    this.gateMarching = false;
+    this.time = 0;
     this.aiEnabled = true;
   }
 
   private resetProgress(): void {
+    this.gateMarching = false;
     this.time = 0;
     this.accumulator = 0;
     this.hazardTimer = 0;
@@ -374,6 +396,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   }
 
   step(dt: number): void {
+    if (this.gateMarching) this.updateGateMarch(dt);
+
     // ステップ開始時に各ユニットのバフ状態をリセット（ステージ限定のベース倍率を反映）
     for (const u of this.units) {
       u.damageMul = this.baseDamageMul * u.permDamageMul;

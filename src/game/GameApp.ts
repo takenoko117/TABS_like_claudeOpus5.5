@@ -1,6 +1,15 @@
 import { Vector3 } from 'three';
 import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
+import { JackpotRoulette } from '../ui/JackpotRoulette';
+import {
+  JACKPOT_MAX_DROPS,
+  JackpotDropTracker,
+  applyJackpotReward,
+  rollJackpot,
+  type ChestTier,
+  type JackpotReward,
+} from './RogueJackpot';
 import type { Facility } from '../facilities/Facility';
 import type { Unit } from '../units/Unit';
 import {
@@ -10,6 +19,7 @@ import {
   TERRAIN_BLOCK_TYPE_LIST,
   GATE_SIZE_NAMES,
   isFacilityTypeId,
+  getMarchGateOpeningWidth,
   isGateTypeId,
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
@@ -401,6 +411,16 @@ export type PlayStyle = 'arcade' | 'sandbox' | 'versus' | 'challenge' | 'rogueli
 
 const DAMAGE_MODE_STORAGE_KEY = 'tabs_voxel_damage_numbers_v1';
 
+/** ローグライトの進軍門が開戦時に滑り始める X 座標（自軍の配置エリアの後端） */
+const ROGUE_GATE_MARCH_FROM_X = getVersusZones(2)[0].minX;
+
+/** 編成の個体が生きているか（巨大化・縮小の門で作り直された個体は後継の生死で見る） */
+function isRosterAlive(entity: Unit | Facility): boolean {
+  let current = entity;
+  while ('replacedBy' in current && current.replacedBy) current = current.replacedBy;
+  return current.alive;
+}
+
 /**
  * ゲーム全体の進行管理と UI バインディング。
  * - アーケードモード: 全40面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
@@ -442,6 +462,11 @@ export class GameApp {
   readonly battleStats = new DamageStats(0);
   readonly rogueRules = new RogueliteRules(this.battleStats);
   private rogueRoster: Array<Unit | Facility> = [];
+  /** 敵の撃破で出るボーナスのルーレット */
+  private readonly jackpot = new JackpotRoulette();
+  private jackpotTracker = new JackpotDropTracker(0);
+  private jackpotQueue: Array<{ tier: ChestTier; origin: { x: number; y: number } }> = [];
+  private jackpotRewards: JackpotReward[] = [];
   private readonly elRoguePanel: HTMLElement | null;
   private readonly elRogueModal: HTMLElement | null;
   private rogueTagKey = '';
@@ -558,7 +583,10 @@ export class GameApp {
     this.battle.combat.damageListeners.push((e) => {
       this.damageOverlay.onDamage(e);
       if (this.mode === 'battle') this.battleStats.record(e);
-      if (this.playStyle === 'roguelite') this.rogueRules.onDamage(e);
+      if (this.playStyle === 'roguelite') {
+        this.rogueRules.onDamage(e);
+        if (e.killed && e.victim.team !== 0) this.onRogueEnemyKilled(e.victim, e.pos);
+      }
     });
     this.battle.combat.onHit = (e) => {
       const partBroken = this.view.spawnHitEffect(e);
@@ -1055,6 +1083,12 @@ export class GameApp {
 
     // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: メニュー開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
+      // ボーナス演出中は戦闘の操作を受け付けず、決定キーでスキップだけできる
+      if (this.jackpot.active) {
+        e.preventDefault();
+        if (e.code === 'Space' || e.code === 'Enter') this.jackpot.skip();
+        return;
+      }
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
@@ -1604,7 +1638,7 @@ export class GameApp {
         const statsHtml = rogue
           ? `
             <span class="stat-pill cost" title="陣地レリックは無料で置ける">${COST_ICON_SVG}<span>無料</span></span>
-            ${isGateTypeId(fac.id) ? `<span class="stat-pill hp" title="門のサイズ"><span>${GATE_SIZE_NAMES[relicLevel]}</span></span>` : ''}
+            ${isGateTypeId(fac.id) ? `<span class="stat-pill hp" title="${GATE_SIZE_NAMES[relicLevel]}: 開戦時に通過する帯の幅"><span>幅${getMarchGateOpeningWidth(relicLevel)}m</span></span>` : ''}
             ${relicPlaced ? '<span class="stat-pill placed">✓済</span>' : ''}
           `
           : isTerrain
@@ -1779,7 +1813,11 @@ export class GameApp {
         return;
       }
       const check = this.checkPlacement(this.selectedId, p.x, p.z);
-      this.view.updatePlacementGhost(this.selectedId, check.team, p, check.valid, check.facing);
+      const gateLane =
+        this.playStyle === 'roguelite' && this.rogue && isFacilityTypeId(this.selectedId) && isGateTypeId(this.selectedId)
+          ? { fromX: ROGUE_GATE_MARCH_FROM_X, width: getMarchGateOpeningWidth(this.rogue.relicLevel(this.selectedId)) }
+          : undefined;
+      this.view.updatePlacementGhost(this.selectedId, check.team, p, check.valid, check.facing, gateLane);
     });
 
     dom.addEventListener('pointerdown', (e) => {
@@ -1973,6 +2011,8 @@ export class GameApp {
     if (record.facilityId) {
       entity = this.battle.spawnFacility(record.facilityId, record.team, record.x, record.z, record.facing, {
         gateLevel: record.gateLevel,
+        // ローグライトの自軍の門は、開戦時に配置エリアの後端から滑る進軍門になる
+        marchFromX: this.playStyle === 'roguelite' && record.team === 0 ? ROGUE_GATE_MARCH_FROM_X : undefined,
       });
     } else if (record.typeId) {
       const unit =
@@ -2573,15 +2613,70 @@ export class GameApp {
     return aliveCost(0) > aliveCost(1);
   }
 
+  private resetJackpot(): void {
+    this.jackpotQueue = [];
+    this.jackpotRewards = [];
+    this.jackpot.clearChips();
+  }
+
+  /** 敵の撃破で宝箱が出るかを決め、出たら次のフレームで演出を始める */
+  private onRogueEnemyKilled(victim: Unit, pos: Vector3): void {
+    if (this.mode !== 'battle' || this.onTitleScreen || !this.rogue) return;
+    const tier = this.jackpotTracker.onKill(this.battle.time, { cost: victim.type.cost, isBoss: victim.isBoss }, this.rogue.enemyBudget);
+    if (tier === null) return;
+    const ndc = pos.clone().project(this.view.camera);
+    this.jackpotQueue.push({
+      tier,
+      origin: { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight },
+    });
+  }
+
+  /** ボーナス演出を進める。待っている宝箱があれば戦闘を止めて開ける */
+  private updateJackpot(realDt: number): void {
+    if (this.jackpot.active) {
+      this.jackpot.update(realDt);
+      return;
+    }
+    const next = this.jackpotQueue.shift();
+    const run = this.rogue;
+    if (!next || !run) return;
+    const rewards = rollJackpot(next.tier, {
+      rng: Math.random,
+      canGainLife: run.lives < ROGUE_MAX_LIVES,
+      battleActive: this.battle.aliveCount(0) > 0 && this.battle.aliveCount(1) > 0,
+    });
+    this.view.addCameraShake(0.3);
+    this.jackpot.play({
+      tier: next.tier,
+      rewards,
+      origin: next.origin,
+      sound: this.sound,
+      onFinished: () => this.applyJackpotRewards(rewards),
+    });
+  }
+
+  private applyJackpotRewards(rewards: readonly JackpotReward[]): void {
+    const run = this.rogue;
+    if (!run) return;
+    for (const reward of rewards) {
+      applyJackpotReward(reward, this.battle, run);
+      this.jackpotRewards.push(reward);
+      this.jackpot.addChip(reward);
+    }
+    this.view.addCameraShake(0.25);
+    this.renderRoguePanel();
+  }
+
   private handleRogueBattleEnd(res: Exclude<BattleResult, null>): void {
     const run = this.rogue;
     if (!run) return;
     const won = this.resolveRogueWin(res);
     const stats = this.battleStats;
-    const report = this.renderBattleReport();
+    const report = this.renderBattleReport() + this.renderJackpotReport();
+    this.jackpot.clearChips();
 
     if (won) {
-      const ratio = computeSurvivalRatio(this.rogueRoster.map((e) => ({ cost: e.type.cost, alive: e.alive })));
+      const ratio = computeSurvivalRatio(this.rogueRoster.map((e) => ({ cost: e.type.cost, alive: isRosterAlive(e) })));
       const round = run.round;
       const gained = run.recordWin(ratio, stats.total, stats.maxHit);
       saveRogueRun(run);
@@ -2632,6 +2727,13 @@ export class GameApp {
       <div class="challenge-score-row"><span>撃破数</span><b>${st.kills}</b></div>
       ${sources}
     `;
+  }
+
+  /** この戦闘で宝箱から得た報酬の一覧 */
+  private renderJackpotReport(): string {
+    if (this.jackpotRewards.length === 0) return '';
+    const items = this.jackpotRewards.map((r) => `${r.icon} ${r.detail}`).join('<br>');
+    return `<div class="challenge-score-row"><span>🎰 ボーナス ${this.jackpotRewards.length}個</span><b>${items}</b></div>`;
   }
 
   /** ラウンドごとの与ダメージの成長曲線（SVG） */
@@ -3082,6 +3184,8 @@ export class GameApp {
       ];
       this.battle.rules = this.rogueRules;
       this.rogueRules.start(this.battle);
+      this.resetJackpot();
+      this.jackpotTracker = new JackpotDropTracker(JACKPOT_MAX_DROPS[this.rogue.roundKind]);
     }
     this.battleStats.reset();
     this.damageOverlay.clear();
@@ -3408,7 +3512,8 @@ export class GameApp {
   tick(realDt: number): void {
     this.updateAdaptiveQuality(realDt);
     if (this.finishSlowMoTimer > 0) this.finishSlowMoTimer -= realDt;
-    if (!this.paused) {
+    if (this.mode === 'battle' && this.playStyle === 'roguelite') this.updateJackpot(realDt);
+    if (!this.paused && !this.jackpot.active) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
       this.battle.advance(realDt * scale);
@@ -3422,7 +3527,8 @@ export class GameApp {
 
     if (this.mode === 'battle') {
       const res = this.battle.result();
-      if (res !== null && this.announcedResult === null) {
+      // 決着の一撃で宝箱が出たら、開け終わってから結果へ進む
+      if (res !== null && this.announcedResult === null && !this.jackpot.active && this.jackpotQueue.length === 0) {
         this.announcedResult = res;
         // 友人対戦・サンドボックスは誰かの勝利なので、1 人用モードの負けだけ敗北音にする
         if (this.isSoloPlayStyle() && res !== 0) this.sound.playDefeat();
@@ -3551,7 +3657,7 @@ export class GameApp {
   }
 
   private computePlayerSurvivalRatio(): number {
-    return computeSurvivalRatio(this.playerRoster.map((e) => ({ cost: e.type.cost, alive: e.alive })));
+    return computeSurvivalRatio(this.playerRoster.map((e) => ({ cost: e.type.cost, alive: isRosterAlive(e) })));
   }
 
   private handleBattleEnd(res: Exclude<BattleResult, null>): void {

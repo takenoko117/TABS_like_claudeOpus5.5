@@ -96,7 +96,7 @@ export const FACILITY_TYPES: Readonly<Record<FacilityTypeId, FacilityType>> = {
   shrink_gate: {
     id: 'shrink_gate',
     name: '縮小の門',
-    description: '通過した味方を0.6倍に縮め、移動速度を50%上げて「機動」タグを与える門。小さくなると弾に当たりにくく、狭い門も通れる。',
+    description: '通過した味方を0.6倍に縮め、移動速度を50%上げて「機動」タグを与える門。小さくなると弾に当たりにくい。',
     cost: 150,
     hp: 300,
     radius: 1.3,
@@ -193,6 +193,15 @@ export const MAX_GATE_LEVEL = GATE_OPENING_WIDTHS.length - 1;
 
 export function isGateTypeId(id: FacilityTypeId): boolean {
   return GATE_TYPE_IDS.includes(id);
+}
+
+/** 進軍門（ローグライトの門）のサイズ段階ごとの帯の幅（m） */
+export const MARCH_GATE_OPENING_WIDTHS: readonly number[] = [4, 6, 9, 13];
+
+/** 進軍門の帯の幅（m）を返す */
+export function getMarchGateOpeningWidth(level: number): number {
+  const i = Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(level)));
+  return MARCH_GATE_OPENING_WIDTHS[i];
 }
 
 /** 門の開口幅（m）を返す */

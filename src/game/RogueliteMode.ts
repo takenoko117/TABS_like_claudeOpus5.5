@@ -1027,7 +1027,7 @@ function pickRelicReward(run: RogueliteRun, rng: () => number): RewardOption | n
     rarity: pick.rarity,
     relicId: pick.id,
     title: `陣地レリック: ${ft.name}`,
-    description: ft.description,
+    description: isGateTypeId(pick.id) ? `${ft.description} 開戦時に後方から置いた位置まで滑り、帯の中の味方全員に効く。` : ft.description,
   };
 }
 
@@ -1048,7 +1048,7 @@ function pickGateUpgrade(run: RogueliteRun): RewardOption | null {
     rarity,
     relicIndex: target.i,
     title: `門の拡張: ${name}`,
-    description: `${GATE_SIZE_NAMES[target.r.level]} → ${GATE_SIZE_NAMES[next]}。大きい兵種も通れるようになり、耐久力も上がる`,
+    description: `${GATE_SIZE_NAMES[target.r.level]} → ${GATE_SIZE_NAMES[next]}。帯が広がってより多くの兵に効くようになり、耐久力も上がる`,
   };
 }
 

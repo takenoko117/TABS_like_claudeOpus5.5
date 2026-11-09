@@ -37,6 +37,7 @@ import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import {
   createFacilityGhost,
+  GATE_TINTS,
   createFacilityMesh,
   createPreviewGhost,
   getFacilityVoxelSeeds,
@@ -92,6 +93,8 @@ interface FacilityVisual {
   mesh: Mesh;
   hpBarFill: Mesh;
   hpBarGroup: Group;
+  /** 進軍門の帯 */
+  marchLane?: Mesh;
   lastHp: number;
 }
 
@@ -126,6 +129,8 @@ export class SceneView {
   private readonly dividerGroup = new Group();
   private readonly terrainGroup = new Group();
   private ghostGroup: Group | null = null;
+  private ghostLane: Mesh | null = null;
+  private ghostLaneType: FacilityTypeId | null = null;
   private ghostKey = '';
   private ghostShownValid = true;
 
@@ -950,6 +955,9 @@ export class SceneView {
     if (!visible && this.ghostGroup) {
       this.ghostGroup.visible = false;
     }
+    if (!visible && this.ghostLane) {
+      this.ghostLane.visible = false;
+    }
   }
 
   updatePlacementGhost(
@@ -958,11 +966,14 @@ export class SceneView {
     pos: Vector3 | null,
     valid: boolean,
     facing?: number,
+    gateLane?: { fromX: number; width: number },
   ): void {
     if (!typeId || !pos) {
       if (this.ghostGroup) this.ghostGroup.visible = false;
+      if (this.ghostLane) this.ghostLane.visible = false;
       return;
     }
+    this.updateGhostLane(typeId, pos, gateLane);
     const key = `${typeId}:${team}`;
     if (this.ghostKey !== key) {
       if (this.ghostGroup) this.scene.remove(this.ghostGroup);
@@ -995,7 +1006,33 @@ export class SceneView {
       this.ghostGroup.position.copy(pos);
       this.ghostGroup.rotation.y =
         facing ?? (team === 0 ? Math.PI / 2 : team === 1 ? -Math.PI / 2 : team === 2 ? Math.PI : 0);
+      this.ghostGroup.scale.x = gateLane ? gateLane.width / getGateOpeningWidth(0) : 1;
     }
+  }
+
+  /** 進軍門を置こうとしているときだけ、置いた場合の帯を表示する */
+  private updateGhostLane(
+    typeId: UnitTypeId | FacilityTypeId,
+    pos: Vector3,
+    gateLane: { fromX: number; width: number } | undefined,
+  ): void {
+    if (!gateLane || !isFacilityTypeId(typeId)) {
+      if (this.ghostLane) this.ghostLane.visible = false;
+      return;
+    }
+    if (this.ghostLaneType !== typeId) {
+      if (this.ghostLane) {
+        this.scene.remove(this.ghostLane);
+        this.ghostLane.geometry.dispose();
+        (this.ghostLane.material as Material).dispose();
+      }
+      this.ghostLane = this.createGateLaneMesh(typeId);
+      this.ghostLaneType = typeId;
+      this.scene.add(this.ghostLane);
+    }
+    if (!this.ghostLane) return;
+    this.ghostLane.visible = true;
+    this.placeGateLane(this.ghostLane, gateLane.fromX, pos.x, pos.z, gateLane.width);
   }
 
   // ---------------------------------------------------------------
@@ -1028,10 +1065,14 @@ export class SceneView {
 
     // 門はサイズ段階に合わせて横幅と高さを広げる（小門の見た目が基準）
     let heightScale = 1;
-    if (facility.isGate && facility.gateLevel > 0) {
+    if (facility.isGate && (facility.gateLevel > 0 || facility.isMarchGate)) {
       heightScale = 1 + 0.18 * facility.gateLevel;
       mesh.scale.set(facility.gateOpening / getGateOpeningWidth(0), heightScale, 1 + 0.25 * facility.gateLevel);
     }
+
+    // 進軍門は、開戦時に通過する帯を地面に示す
+    const marchLane = facility.isMarchGate ? this.createGateLaneMesh(facility.type.id) : undefined;
+    if (marchLane) this.scene.add(marchLane);
 
     // 頭上HPバーの構築
     const hpBarGroup = new Group();
@@ -1057,7 +1098,24 @@ export class SceneView {
       hpBarFill: fillMesh,
       hpBarGroup,
       lastHp: facility.hp,
+      marchLane,
     });
+  }
+
+  /** 進軍門の帯の板を作る（大きさと位置は placeGateLane で決める） */
+  private createGateLaneMesh(typeId: FacilityTypeId): Mesh {
+    const lane = new Mesh(
+      new PlaneGeometry(1, 1),
+      new MeshBasicMaterial({ color: GATE_TINTS[typeId] ?? 0x66ccff, transparent: true, opacity: 0.26, depthWrite: false }),
+    );
+    lane.rotation.x = -Math.PI / 2;
+    return lane;
+  }
+
+  /** 帯の板を X 方向 fromX〜toX、Z 方向は z を中心に幅 width で地面に敷く */
+  private placeGateLane(lane: Mesh, fromX: number, toX: number, z: number, width: number): void {
+    lane.position.set((fromX + toX) / 2, 0.06, z);
+    lane.scale.set(Math.max(0.01, Math.abs(toX - fromX)), width, 1);
   }
 
   /** 施設ビジュアルを削除する */
@@ -1065,6 +1123,11 @@ export class SceneView {
     const vis = this.facilityVisuals.get(facility.id);
     if (!vis) return;
     this.scene.remove(vis.group);
+    if (vis.marchLane) {
+      this.scene.remove(vis.marchLane);
+      vis.marchLane.geometry.dispose();
+      (vis.marchLane.material as Material).dispose();
+    }
     vis.mesh.geometry.dispose();
     if (vis.mesh.material instanceof MeshLambertMaterial) {
       vis.mesh.material.dispose();
@@ -1078,6 +1141,13 @@ export class SceneView {
     for (const [id, vis] of this.facilityVisuals) {
       const fac = vis.facility;
       vis.group.position.copy(fac.pos);
+
+      if (vis.marchLane) {
+        vis.marchLane.visible = fac.marchLaneVisible;
+        if (fac.marchLaneVisible) {
+          this.placeGateLane(vis.marchLane, fac.marchLaneStartX, fac.marchHomeX, fac.pos.z, fac.gateOpening);
+        }
+      }
 
       // キャノン砲塔の場合、砲身の向きを反映
       if (fac.type.id === 'cannon_tower' && fac.cannonAngle !== 0) {

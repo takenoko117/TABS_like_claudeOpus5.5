@@ -4,6 +4,7 @@ import { Battle } from '../src/game/Battle';
 import { DamageStats } from '../src/game/DamageStats';
 import {
   GATE_OPENING_WIDTHS,
+  MARCH_GATE_OPENING_WIDTHS,
   MAX_GATE_LEVEL,
   getGateOpeningWidth,
 } from '../src/facilities/FacilityTypes';
@@ -205,6 +206,81 @@ describe('ローグライト: 門のサイズと効果', () => {
     simulate(battle, 1.2);
     expect(u.elementInfusion).toBe('fire');
     expect(u.grantedTags).toContain('fire');
+  });
+});
+
+describe('ローグライト: 進軍門', () => {
+  const MARCH = { marchFromX: -22 };
+  const stepUntilCombat = (battle: Battle) => {
+    battle.beginCombat();
+    let guard = 0;
+    while (battle.gateMarching && guard++ < 1000) battle.step(battle.fixedDt);
+  };
+
+  it('開戦時に帯の中の止まった遠距離兵にも効き、帯の外と門より前には効かない', () => {
+    const battle = new Battle();
+    const gate = battle.spawnFacility('fire_gate', 0, -5, 0, Math.PI / 2, MARCH);
+    const inLane = battle.spawnUnit('sniper', 0, -18, 1, Math.PI / 2);
+    const outside = battle.spawnUnit('sniper', 0, -18, 8, Math.PI / 2);
+    const ahead = battle.spawnUnit('archer', 0, -2, 0, Math.PI / 2);
+    battle.spawnUnit('clubber', 1, 20, 0);
+    stepUntilCombat(battle);
+    expect(inLane.elementInfusion).toBe('fire');
+    expect(outside.elementInfusion).toBeNull();
+    expect(ahead.elementInfusion).toBeNull();
+    expect(gate.pos.x).toBeCloseTo(-5);
+  });
+
+  it('滑っている間は全軍が待機し、終わると制限時間0から戦闘が始まる', () => {
+    const battle = new Battle();
+    battle.spawnFacility('fire_gate', 0, -5, 0, Math.PI / 2, MARCH);
+    battle.spawnUnit('clubber', 0, -10, 0, Math.PI / 2);
+    battle.spawnUnit('clubber', 1, 20, 0);
+    battle.beginCombat();
+    expect(battle.gateMarching).toBe(true);
+    expect(battle.aiEnabled).toBe(false);
+    let guard = 0;
+    while (battle.gateMarching && guard++ < 1000) battle.step(battle.fixedDt);
+    expect(battle.aiEnabled).toBe(true);
+    expect(battle.time).toBeLessThanOrEqual(battle.fixedDt);
+  });
+
+  it('増殖ゲートは巨体も帯の中の全員を上限なしで1回ずつ複製する', () => {
+    const battle = new Battle();
+    battle.spawnFacility('multiplier_gate', 0, -2, 0, Math.PI / 2, { ...MARCH, gateLevel: 3 });
+    for (let i = 0; i < 5; i++) battle.spawnUnit('giant', 0, -18 + i * 3, -4 + i * 2, Math.PI / 2);
+    battle.spawnUnit('clubber', 1, 20, 0);
+    stepUntilCombat(battle);
+    simulate(battle, 1);
+    expect(battle.units.filter((u) => u.team === 0 && u.type.id === 'giant').length).toBe(10);
+  });
+
+  it('滑り終えた門は残り、後から来た味方にも効く', () => {
+    const battle = new Battle();
+    battle.spawnFacility('fire_gate', 0, -5, 0, Math.PI / 2, MARCH);
+    battle.spawnUnit('clubber', 1, 20, 0);
+    stepUntilCombat(battle);
+    const late = battle.spawnUnit('clubber', 0, -5.3, 0, Math.PI / 2);
+    simulate(battle, 1);
+    expect(late.elementInfusion).toBe('fire');
+  });
+
+  it('進軍門には柱の当たり判定がなく、帯の幅はサイズ段階で広がる', () => {
+    for (let level = 0; level <= MAX_GATE_LEVEL; level++) {
+      const gate = new Battle().spawnFacility('fire_gate', 0, -5, 0, Math.PI / 2, { ...MARCH, gateLevel: level });
+      expect(gate.obstacles.length).toBe(0);
+      expect(gate.gateOpening).toBe(MARCH_GATE_OPENING_WIDTHS[level]);
+    }
+  });
+
+  it('巨大化で作り直された個体は後継をたどれる', () => {
+    const battle = new Battle();
+    battle.spawnFacility('giant_gate', 0, -5, 0, Math.PI / 2, MARCH);
+    const original = battle.spawnUnit('clubber', 0, -10, 0, Math.PI / 2);
+    battle.spawnUnit('clubber', 1, 20, 0);
+    stepUntilCombat(battle);
+    expect(original.alive).toBe(false);
+    expect(original.replacedBy?.alive).toBe(true);
   });
 });
 

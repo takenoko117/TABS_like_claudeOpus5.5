@@ -178,6 +178,113 @@ export class SoundManager {
     });
   }
 
+  /** 短い音を1つ鳴らす（ボーナス演出用） */
+  private jackpotTone(
+    ctx: AudioContext,
+    freq: number,
+    start: number,
+    dur: number,
+    type: OscillatorType,
+    volume: number,
+    endFreq?: number,
+  ): void {
+    if (!this.masterGain) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+    if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, start + dur);
+    gain.gain.setValueAtTime(volume, start);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  }
+
+  /** 宝箱が現れたときの上昇音 */
+  playJackpotAppear(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 220, t, 0.55, 'sawtooth', 0.16, 1760);
+    this.jackpotTone(ctx, 880, t + 0.42, 0.3, 'triangle', 0.22);
+    this.jackpotTone(ctx, 1320, t + 0.5, 0.35, 'triangle', 0.2);
+  }
+
+  /** 宝箱の格が上がったときの音 */
+  playJackpotUpgrade(tier: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const base = tier >= 2 ? 784 : 587.33;
+    [1, 1.25, 1.5, 2].forEach((m, i) => this.jackpotTone(ctx, base * m, t + i * 0.055, 0.24, 'square', 0.13));
+  }
+
+  /** 宝箱が開いたときの和音 */
+  playJackpotOpen(tier: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 90, t, 0.4, 'sine', 0.4, 45);
+    [523.25, 659.25, 783.99, 1046.5].forEach((f) => this.jackpotTone(ctx, f * (1 + tier * 0.12), t, 0.6, 'triangle', 0.12));
+  }
+
+  /** リールが1コマ進む音。progress（0〜1）が進むほど音程が上がる */
+  playJackpotTick(progress: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.throttle('jk_tick', 34)) return;
+    this.jackpotTone(ctx, 520 + progress * 1100, ctx.currentTime, 0.04, 'square', 0.09);
+  }
+
+  /** リールが止まった音（レア度が高いほど豪華） */
+  playJackpotReelStop(rarity: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 150, t, 0.14, 'square', 0.3, 70);
+    const notes = [659.25, 830.61, 987.77, 1318.51, 1661.22, 1975.53];
+    for (let i = 0; i < rarity * 2; i++) this.jackpotTone(ctx, notes[i], t + 0.04 + i * 0.05, 0.28, 'triangle', 0.18);
+  }
+
+  /** リーチ中の鼓動 */
+  playJackpotHeartbeat(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 70, t, 0.16, 'sine', 0.55, 42);
+    this.jackpotTone(ctx, 62, t + 0.15, 0.14, 'sine', 0.4, 40);
+  }
+
+  /** 結果のファンファーレ（レア度が高いほど長い） */
+  playJackpotFanfare(rarity: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const scale = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98, 2093, 2637.02, 3135.96];
+    const count = 3 + rarity * 2;
+    for (let i = 0; i < count; i++) {
+      const dur = i === count - 1 ? 0.9 : 0.16;
+      this.jackpotTone(ctx, scale[i], t + i * 0.085, dur, 'square', 0.1);
+      this.jackpotTone(ctx, scale[i] * 1.005, t + i * 0.085, dur, 'triangle', 0.16);
+    }
+    if (rarity >= 3) {
+      // レジェンドは最後に厚い和音を重ねる
+      const end = t + count * 0.085;
+      [1046.5, 1318.51, 1567.98, 2093].forEach((f) => this.jackpotTone(ctx, f, end, 1.6, 'sawtooth', 0.07));
+      this.jackpotTone(ctx, 65, end, 1.2, 'sine', 0.5, 40);
+    }
+  }
+
+  /** 金貨が数えられる音 */
+  playJackpotCoin(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.throttle('jk_coin', 60)) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 1975.53, t, 0.06, 'square', 0.07);
+    this.jackpotTone(ctx, 2637.02, t + 0.04, 0.14, 'square', 0.07);
+  }
+
   /** 弓の発射音（弦の弾き＋風切り） */
   playBowShoot(): void {
     const ctx = this.ensureContext();

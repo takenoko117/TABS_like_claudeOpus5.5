@@ -2417,3 +2417,218 @@ body.on-title #btn-restore-hud {
   white-space: nowrap;
   font-size: 9.5px;
 }
+
+/* ローグライトのボーナス演出 */
+.jk {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  --jk-color: #e8a15c;
+  --jk-glow: rgba(232, 161, 92, 0.55);
+  --jk-row: min(15vh, 112px);
+  --jk-reel-w: min(17.5vw, 150px);
+}
+.jk.tier1 { --jk-color: #dfe7f2; --jk-glow: rgba(190, 215, 255, 0.6); }
+.jk.tier2 { --jk-color: #ffd43b; --jk-glow: rgba(255, 212, 59, 0.75); }
+.jk-shade {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 46%, rgba(40, 20, 60, 0.62), rgba(3, 3, 10, 0.93));
+  animation: jk-fade 0.2s ease-out;
+}
+.jk.reach .jk-shade {
+  background: radial-gradient(circle at 50% 46%, rgba(150, 10, 30, 0.72), rgba(20, 0, 6, 0.95));
+  animation: jk-reach-pulse 0.33s ease-in-out infinite alternate;
+}
+.jk-rays {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 190vmax;
+  height: 190vmax;
+  margin: -95vmax 0 0 -95vmax;
+  opacity: 0.45;
+  background: repeating-conic-gradient(var(--jk-glow) 0deg 9deg, transparent 9deg 24deg);
+  -webkit-mask-image: radial-gradient(circle, #000 8%, transparent 42%);
+  mask-image: radial-gradient(circle, #000 8%, transparent 42%);
+  animation: jk-spin 7s linear infinite;
+}
+.jk.reach .jk-rays { opacity: 0.8; animation-duration: 1.5s; }
+.jk.result .jk-rays { opacity: 0.85; animation-duration: 3.2s; }
+.jk.best3 .jk-rays {
+  background: repeating-conic-gradient(#ff6b6b 0deg 7deg, transparent 7deg 15deg, #ffd43b 15deg 22deg, transparent 22deg 30deg, #4dabf7 30deg 37deg, transparent 37deg 45deg);
+  opacity: 1;
+  animation-duration: 1.6s;
+}
+.jk-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.jk-flash { position: absolute; inset: 0; z-index: 4; background: #fff; opacity: 0; pointer-events: none; }
+.jk-flash.on { animation: jk-flash 0.34s ease-out; }
+.jk-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px;
+}
+.jk-stage.shake { animation: jk-shake 0.4s linear; }
+.jk-title {
+  min-height: 1.15em;
+  font-size: clamp(34px, 8vh, 78px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--jk-color);
+  -webkit-text-stroke: 2px rgba(40, 15, 0, 0.75);
+  text-shadow: 0 0 26px var(--jk-glow), 0 5px 0 rgba(0, 0, 0, 0.55);
+  text-align: center;
+  white-space: nowrap;
+}
+.jk-title.slam { animation: jk-slam 0.38s cubic-bezier(0.2, 1.5, 0.4, 1); }
+.jk-title[data-count]::after {
+  content: attr(data-count);
+  margin-left: 0.4em;
+  color: #fff3bf;
+  font-size: 0.72em;
+}
+.jk.best3 .jk-title {
+  background: linear-gradient(90deg, #ff6b6b, #ffd43b, #69db7c, #4dabf7, #da77f2, #ff6b6b);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.65)) drop-shadow(0 0 18px #ffd43b);
+  animation: jk-rainbow 0.8s linear infinite, jk-slam 0.38s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+/* 宝箱そのものは 3D で描き、ここでは名前の位置だけを決める */
+.jk-chest {
+  height: min(50vh, 380px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  color: var(--jk-color);
+}
+.jk-chest.upgrade .jk-chest-name { animation: jk-upgrade 0.32s ease-out; }
+.jk-chest-name { font-size: 22px; font-weight: 900; text-shadow: 0 2px 6px #000; }
+.jk-hidden { display: none !important; }
+.jk-reels { display: flex; justify-content: center; gap: min(1.4vw, 12px); animation: jk-pop 0.3s cubic-bezier(0.2, 1.5, 0.4, 1); }
+.jk-reel {
+  position: relative;
+  width: var(--jk-reel-w);
+  height: calc(var(--jk-row) * 3);
+  overflow: hidden;
+  border-radius: 12px;
+  border: 3px solid var(--jk-color);
+  background: linear-gradient(180deg, #05070e, #1a2030 50%, #05070e);
+  box-shadow: 0 0 22px var(--jk-glow);
+}
+/* 当たりの列を示す枠と、上下の暗がり */
+.jk-reel::before {
+  content: '';
+  position: absolute;
+  inset: var(--jk-row) 0;
+  z-index: 2;
+  border-block: 3px solid #fff3bf;
+  pointer-events: none;
+}
+.jk-reel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 33%, transparent 67%, rgba(0, 0, 0, 0.72));
+  pointer-events: none;
+}
+.jk-strip { will-change: transform; }
+.jk-reel.fast .jk-strip { filter: blur(2px); }
+.jk-reel.reach { border-color: #ff6b6b; box-shadow: 0 0 36px #ff6b6b; animation: jk-chest-shake 0.1s linear infinite; }
+.jk-reel.hit0 { animation: jk-land 0.28s ease-out; }
+.jk-reel.hit1 { animation: jk-land 0.28s ease-out; border-color: #4dabf7; box-shadow: 0 0 34px #4dabf7; }
+.jk-reel.hit2 { animation: jk-land 0.34s ease-out; border-color: #b197fc; box-shadow: 0 0 46px #b197fc; }
+.jk-reel.hit3 { animation: jk-land 0.42s ease-out, jk-legend 0.5s linear infinite; border-color: #ffd43b; }
+.jk-card {
+  height: var(--jk-row);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px;
+  color: #e9ecef;
+  text-align: center;
+  line-height: 1.15;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.jk-card .jk-icon { font-size: calc(var(--jk-row) * 0.4); line-height: 1.1; }
+.jk-card b { font-size: min(1.75vw, 15px); font-weight: 900; }
+.jk-card small { font-size: min(1.4vw, 11px); opacity: 0.85; }
+.jk-card.r1 { background: rgba(77, 171, 247, 0.2); }
+.jk-card.r2 { background: rgba(177, 151, 252, 0.3); }
+.jk-card.r3 { background: linear-gradient(135deg, rgba(255, 107, 107, 0.45), rgba(255, 212, 59, 0.5), rgba(77, 171, 247, 0.45)); }
+.jk-caption { min-height: 1.3em; color: #fff; font-size: clamp(14px, 2.4vh, 22px); font-weight: 800; text-align: center; text-shadow: 0 2px 4px #000; }
+.jk-hint { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+.jk-chips {
+  position: fixed;
+  left: 12px;
+  top: 76px;
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 190px;
+  pointer-events: none;
+}
+.jk-chip {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  border-radius: 8px;
+  background: rgba(15, 20, 30, 0.86);
+  border: 2px solid #868e96;
+  animation: jk-pop 0.35s cubic-bezier(0.2, 1.8, 0.4, 1);
+}
+.jk-chip.r1 { border-color: #4dabf7; }
+.jk-chip.r2 { border-color: #b197fc; }
+.jk-chip.r3 { border-color: #ffd43b; box-shadow: 0 0 12px #ffd43b; }
+@keyframes jk-fade { from { opacity: 0; } }
+@keyframes jk-spin { to { transform: rotate(360deg); } }
+@keyframes jk-flash { from { opacity: 0.85; } to { opacity: 0; } }
+@keyframes jk-reach-pulse { from { opacity: 0.72; } to { opacity: 1; } }
+@keyframes jk-shake {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-9px, 5px); }
+  30% { transform: translate(8px, -7px); }
+  50% { transform: translate(-6px, -4px); }
+  70% { transform: translate(5px, 4px); }
+  85% { transform: translate(-2px, 2px); }
+}
+@keyframes jk-slam { from { transform: scale(2.6); opacity: 0; } }
+@keyframes jk-rainbow { to { background-position: 300% 0; } }
+@keyframes jk-chest-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  25% { transform: translate(-3px, 1px) rotate(-1.4deg); }
+  75% { transform: translate(3px, -1px) rotate(1.4deg); }
+}
+@keyframes jk-upgrade { 40% { transform: scale(1.32); filter: brightness(2.2); } }
+@keyframes jk-pop { from { transform: scale(0.4); opacity: 0; } }
+@keyframes jk-land { 35% { transform: scale(1.1); } }
+@keyframes jk-legend {
+  0%, 100% { box-shadow: 0 0 46px #ffd43b; }
+  33% { box-shadow: 0 0 56px #ff6b6b; }
+  66% { box-shadow: 0 0 56px #4dabf7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jk-flash.on, .jk-stage.shake, .jk-reel.reach, .jk.reach .jk-shade { animation: none; }
+  .jk-rays { animation-duration: 40s !important; }
+}

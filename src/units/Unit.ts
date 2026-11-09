@@ -150,6 +150,8 @@ export class Unit {
   grantedTags: string[] = [];
   /** 通過済みの門（施設 ID）。同じ門は1体につき1回だけ効く */
   readonly gatesPassed = new Set<number>();
+  /** 巨大化・縮小の門で作り直されたときの、後継の個体 */
+  replacedBy: Unit | null = null;
   /** 属性の門で付与された、攻撃に乗る状態異常 */
   elementInfusion: 'fire' | 'shock' | 'poison' | null = null;
 
