@@ -993,7 +993,7 @@ giant_robot: {
     name: '光速アリ',
     category: 'animal',
     description: '攻撃力・耐久力は低いが、非常に小さく目にも留まらぬ光速で戦場を駆け巡る超高速アリ。鋭い大顎で連続して噛みつく。',
-    cost: 35,
+    cost: 150,
     scale: 0.58,
     massMul: 2.2,
     hp: 35,
