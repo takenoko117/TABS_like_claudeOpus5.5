@@ -726,7 +726,7 @@ export class GameApp {
       ['roguelite', 'roguelite-panel'],
     ];
     for (const [style, panelId] of modes) {
-      document.getElementById(panelId)?.classList.toggle('hidden', this.playStyle === style);
+      document.getElementById(panelId)?.classList.toggle('hidden', this.playStyle !== style);
     }
     // ローグライトの戦闘ルールはローグライトのときだけ有効にする
     this.battle.rules = this.playStyle === 'roguelite' ? this.rogueRules : null;
