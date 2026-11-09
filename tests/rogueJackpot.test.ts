@@ -6,6 +6,7 @@ import {
   JACKPOT_REWARDS,
   JackpotDropTracker,
   applyJackpotReward,
+  jackpotHpDropScale,
   rollJackpot,
   type ChestTier,
   type JackpotReward,
@@ -65,6 +66,33 @@ describe('ボーナス: 宝箱のドロップ', () => {
   it('予算に対して高コストの敵は宝箱の格が上がる', () => {
     const tracker = new JackpotDropTracker(3, () => 0);
     expect(tracker.onKill(0, { cost: 1500, isBoss: false }, 5000)).toBe(1);
+  });
+
+  it('HP倍率は8割以上で最小、減るほど上がる', () => {
+    expect(jackpotHpDropScale(1)).toBeCloseTo(0.05);
+    expect(jackpotHpDropScale(0.8)).toBeCloseTo(0.05);
+    expect(jackpotHpDropScale(0.4)).toBeCloseTo(0.85);
+    expect(jackpotHpDropScale(0)).toBeCloseTo(1.65);
+  });
+
+  it('自軍HPが8割以上あるうちはほぼ出ない', () => {
+    const tracker = new JackpotDropTracker(3, () => 0.5);
+    for (let i = 0; i < 30; i++) {
+      expect(tracker.onKill(i * 10, WEAK, 5000, 1)).toBeNull();
+    }
+  });
+
+  it('自軍HPが減ると同じ乱数でも出るようになる', () => {
+    const rng = () => 0.3;
+    const healthy = new JackpotDropTracker(3, rng);
+    expect(healthy.onKill(0, WEAK, 5000, 1)).toBeNull();
+    const pinch = new JackpotDropTracker(3, rng);
+    expect(pinch.onKill(0, WEAK, 5000, 0)).not.toBeNull();
+  });
+
+  it('ボスは自軍HPが満タンでも金の宝箱を落とす', () => {
+    const tracker = new JackpotDropTracker(0, () => 0.999);
+    expect(tracker.onKill(0, { cost: 1000, isBoss: true }, 5000, 1)).toBe(2);
   });
 });
 

@@ -18,6 +18,22 @@ export const JACKPOT_MAX_DROPS: Readonly<Record<RogueRoundKind, number>> = { nor
 export const JACKPOT_DROP_COOLDOWN = 3.5;
 const BASE_DROP_CHANCE = 0.22;
 const DROP_CHANCE_PER_MISS = 0.12;
+/** 自軍の残りHPがこの割合以上だと、宝箱はほぼ出ない */
+const HEALTHY_HP_RATIO = 0.8;
+/** 残りHPが上限以上のときの確率倍率（ほぼ出ない） */
+const HEALTHY_DROP_SCALE = 0.05;
+/** 残りHPが 0 に近づいたときの追加の確率倍率 */
+const PINCH_DROP_SCALE = 1.6;
+
+/**
+ * 自軍の残りHP割合（0〜1）からドロップ確率の倍率を返す。
+ * HPが8割以上では基礎確率の5%まで絞り、減るほど上がって HP 0 近辺で約1.65倍になる。
+ */
+export function jackpotHpDropScale(allyHpRatio: number): number {
+  const ratio = Math.max(0, Math.min(1, allyHpRatio));
+  const pinch = Math.max(0, Math.min(1, (HEALTHY_HP_RATIO - ratio) / HEALTHY_HP_RATIO));
+  return HEALTHY_DROP_SCALE + PINCH_DROP_SCALE * pinch;
+}
 /** 敵予算に対してこの割合以上のコストの敵は、宝箱が出やすく格も上がる */
 const HIGH_VALUE_COST_RATIO = 0.2;
 const CHEST_TIER_WEIGHTS: readonly number[] = [60, 30, 10];
@@ -86,14 +102,21 @@ export class JackpotDropTracker {
     private readonly rng: () => number = Math.random,
   ) {}
 
-  onKill(time: number, enemy: { cost: number; isBoss: boolean }, enemyBudget: number): ChestTier | null {
+  onKill(
+    time: number,
+    enemy: { cost: number; isBoss: boolean },
+    enemyBudget: number,
+    allyHpRatio?: number,
+  ): ChestTier | null {
     if (enemy.isBoss) return 2;
     if (this.drops >= this.maxDrops || time - this.lastDropTime < JACKPOT_DROP_COOLDOWN) {
       this.misses++;
       return null;
     }
     const highValue = enemy.cost >= enemyBudget * HIGH_VALUE_COST_RATIO;
-    const chance = BASE_DROP_CHANCE + DROP_CHANCE_PER_MISS * this.misses + (highValue ? 0.3 : 0);
+    // 自軍がピンチなほど出やすく、余裕があるうちはほぼ出ない（割合未指定なら従来どおり）
+    const scale = allyHpRatio === undefined ? 1 : jackpotHpDropScale(allyHpRatio);
+    const chance = (BASE_DROP_CHANCE + DROP_CHANCE_PER_MISS * this.misses + (highValue ? 0.3 : 0)) * scale;
     if (this.rng() >= chance) {
       this.misses++;
       return null;

@@ -466,6 +466,8 @@ export class GameApp {
   private readonly jackpot = new JackpotRoulette();
   private jackpotTracker = new JackpotDropTracker(0);
   private jackpotQueue: Array<{ tier: ChestTier; origin: { x: number; y: number } }> = [];
+  /** 戦闘開始時点の自軍ユニットの最大HP合計（宝箱ドロップ率のHP連動用） */
+  private jackpotAllyMaxHpTotal = 0;
   private jackpotRewards: JackpotReward[] = [];
   private readonly elRoguePanel: HTMLElement | null;
   private readonly elRogueModal: HTMLElement | null;
@@ -2619,10 +2621,25 @@ export class GameApp {
     this.jackpot.clearChips();
   }
 
+  /** 自軍の残りHP割合（現在HP合計 ÷ 戦闘開始時の最大HP合計、0〜1） */
+  private currentAllyHpRatio(): number {
+    if (this.jackpotAllyMaxHpTotal <= 0) return 1;
+    const current = this.battle.units.reduce(
+      (sum, u) => sum + (u.alive && u.team === 0 ? Math.max(0, u.hp) : 0),
+      0,
+    );
+    return Math.max(0, Math.min(1, current / this.jackpotAllyMaxHpTotal));
+  }
+
   /** 敵の撃破で宝箱が出るかを決め、出たら次のフレームで演出を始める */
   private onRogueEnemyKilled(victim: Unit, pos: Vector3): void {
     if (this.mode !== 'battle' || this.onTitleScreen || !this.rogue) return;
-    const tier = this.jackpotTracker.onKill(this.battle.time, { cost: victim.type.cost, isBoss: victim.isBoss }, this.rogue.enemyBudget);
+    const tier = this.jackpotTracker.onKill(
+      this.battle.time,
+      { cost: victim.type.cost, isBoss: victim.isBoss },
+      this.rogue.enemyBudget,
+      this.currentAllyHpRatio(),
+    );
     if (tier === null) return;
     const ndc = pos.clone().project(this.view.camera);
     this.jackpotQueue.push({
@@ -3185,6 +3202,9 @@ export class GameApp {
       ];
       this.battle.rules = this.rogueRules;
       this.rogueRules.start(this.battle);
+      this.jackpotAllyMaxHpTotal = this.battle.units
+        .filter((u) => u.team === 0)
+        .reduce((sum, u) => sum + u.maxHp, 0);
       this.resetJackpot();
       this.jackpotTracker = new JackpotDropTracker(JACKPOT_MAX_DROPS[this.rogue.roundKind]);
     }

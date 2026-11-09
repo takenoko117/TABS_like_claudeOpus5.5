@@ -16,6 +16,8 @@ const REEL_STAGGER = 0.55;
 const REACH_EXTRA = 1.0;
 const SLIP_HOLD = 0.55;
 const SLIP_MOVE = 0.16;
+/** 宝箱が出現してからこの秒数は、クリック/タップでスキップできない（誤反応防止） */
+const SKIP_GUARD_SECONDS = 1.0;
 
 interface Reel {
   el: HTMLDivElement;
@@ -126,8 +128,12 @@ export class JackpotRoulette {
         <div class="jk-hint">クリック / Space でスキップ</div>
       </div>
       <div class="jk-flash"></div>`;
+    // 戦闘中の右クリック操作の流れでメニューが開かないようにする
+    root.addEventListener('contextmenu', (e) => e.preventDefault());
     root.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      // 出現直後1秒は、戦闘操作の惰性のクリックで演出を飛ばしてしまわないようにする
+      if (this.t < SKIP_GUARD_SECONDS) return;
       this.skip();
     });
     document.body.appendChild(root);
