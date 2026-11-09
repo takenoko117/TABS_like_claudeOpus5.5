@@ -731,6 +731,8 @@ export class GameApp {
     // ローグライトの戦闘ルールはローグライトのときだけ有効にする
     this.battle.rules = this.playStyle === 'roguelite' ? this.rogueRules : null;
     if (this.playStyle !== 'roguelite') this.hideRogueModal();
+    // 残機ハートはローグライトモードのときだけ表示する
+    this.view.setRogueHeartsVisible(this.playStyle === 'roguelite');
   }
 
   private buildUI(): void {
@@ -1156,6 +1158,7 @@ export class GameApp {
     document.body.classList.add('on-title');
     document.getElementById('title-screen')?.classList.remove('hidden');
     this.renderTitleProgress();
+    this.view.setRogueHeartsVisible(false);
     this.view.resetCamera();
     this.view.autoOrbit = true;
     this.startTitleDemo();
@@ -2427,6 +2430,8 @@ export class GameApp {
     const saved = this.rogue && !this.rogue.ended ? this.rogue : loadRogueRun();
     if (saved) {
       this.rogue = saved;
+      // 再開時はアニメーションなしで残機ハートを即時同期する
+      this.view.syncRogueHearts(saved.lives, ROGUE_MAX_LIVES, true);
       this.loadRogueRound();
     } else {
       this.rogue = null;
@@ -2481,6 +2486,8 @@ export class GameApp {
     this.selectedId = starter.units[0];
     this.hideRogueModal();
     saveRogueRun(this.rogue);
+    // 新規ランは残機ハートを満タンで即時表示する
+    this.view.syncRogueHearts(this.rogue.lives, ROGUE_MAX_LIVES, true);
     this.loadRogueRound();
   }
 
@@ -2678,6 +2685,8 @@ export class GameApp {
       const round = run.round;
       const gained = run.recordWin(ratio, stats.total, stats.maxHit);
       saveRogueRun(run);
+      // ラン終了時も renderRoguePanel を待たずにハートを同期する（エリート勝利のライフ回復など）
+      this.view.syncRogueHearts(run.lives, ROGUE_MAX_LIVES);
       if (run.ended) {
         this.finishRogueRun('clear');
         return;
@@ -2694,6 +2703,8 @@ export class GameApp {
       const round = run.round;
       run.recordLoss(stats.total, stats.maxHit);
       saveRogueRun(run);
+      // ラン終了（ライフ消尽）時も、最後のハートが割れるアニメーションを見せるためここで同期する
+      this.view.syncRogueHearts(run.lives, ROGUE_MAX_LIVES);
       if (run.ended) {
         this.finishRogueRun('defeat');
         return;
@@ -2902,6 +2913,11 @@ export class GameApp {
     if (!this.elRoguePanel) return;
     const run = this.rogue;
     document.getElementById('btn-rogue-quit')?.classList.toggle('hidden', !run || run.ended);
+    // 残機ハートをライフに同期する（減少時は破砕・増加時は復活アニメーションが再生される）
+    if (this.playStyle === 'roguelite') {
+      if (run) this.view.syncRogueHearts(run.lives, ROGUE_MAX_LIVES);
+      else this.view.syncRogueHearts(ROGUE_MAX_LIVES, ROGUE_MAX_LIVES, true);
+    }
     if (!run) {
       const meta = this.rogueMeta;
       this.elRoguePanel.innerHTML = `

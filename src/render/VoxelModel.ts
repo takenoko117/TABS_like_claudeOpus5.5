@@ -6369,4 +6369,66 @@ export function getFacilityVoxelSeeds(
   return seeds;
 }
 
+// ---------------------------------------------------------------
+// ローグライト残機表示用のボクセルハート
+// ---------------------------------------------------------------
+
+/** ハートの輪郭（9列×8行）。先頭が最上段（y=7）、末尾が最下段（y=0） */
+const HEART_PATTERN: readonly string[] = [
+  '011000110',
+  '111101111',
+  '111111111',
+  '111111111',
+  '011111110',
+  '001111100',
+  '000111000',
+  '000010000',
+];
+
+/** ハートをどの部分として切り出すか（left/right は破砕時の半分。中央列は上下で割り振って亀裂らしくする） */
+export type HeartVoxelPart = 'full' | 'left' | 'right';
+/** alive=赤い通常ハート、lost=失ったあとのグレーハート */
+export type HeartVoxelVariant = 'alive' | 'lost';
+
+const HEART_COLORS: Readonly<
+  Record<HeartVoxelVariant, { back: number; mid: number; front: number; highlight: number; shadow: number }>
+> = {
+  alive: { back: 0xa81c34, mid: 0xdd2a47, front: 0xef3e57, highlight: 0xff92a5, shadow: 0x8f1830 },
+  lost: { back: 0x373b43, mid: 0x565b64, front: 0x686e78, highlight: 0x979da8, shadow: 0x2c2f36 },
+};
+
+/** ボクセルハートのグリッドを生成する（9×8×厚み3、原点はグリッド座標） */
+export function buildHeartVoxelGrid(variant: HeartVoxelVariant, part: HeartVoxelPart): VoxelGrid {
+  const g = new VoxelGrid(9, 8, 3);
+  const cols = HEART_COLORS[variant];
+  for (let row = 0; row < 8; row++) {
+    const y = 7 - row;
+    const line = HEART_PATTERN[row];
+    for (let x = 0; x < 9; x++) {
+      if (line[x] !== '1') continue;
+      // 破砕時の左右分割（中央列 x=4 は上半分を左、下半分を右に寄せてジグザグの亀裂にする）
+      if (part === 'left' && !(x < 4 || (x === 4 && y >= 4))) continue;
+      if (part === 'right' && !(x > 4 || (x === 4 && y < 4))) continue;
+      for (let z = 0; z < 3; z++) {
+        let color = z === 0 ? cols.back : z === 1 ? cols.mid : cols.front;
+        // 前面の左上にピンクのハイライト、下端は影色で立体感を出す
+        if (z === 2 && y >= 6 && x >= 1 && x <= 3) color = cols.highlight;
+        else if (y <= 1) color = cols.shadow;
+        g.set(x, y, z, color);
+      }
+    }
+  }
+  return g;
+}
+
+/** ボクセルハートのジオメトリを生成する（中心が原点になるようピボットを取る） */
+export function buildHeartGeometry(
+  variant: HeartVoxelVariant,
+  part: HeartVoxelPart,
+  voxelSize: number,
+): BufferGeometry {
+  const grid = buildHeartVoxelGrid(variant, part);
+  return grid.toGeometry(voxelSize, [grid.sx / 2, grid.sy / 2, grid.sz / 2]);
+}
+
 export type { UnitTypeId };

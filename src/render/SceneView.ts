@@ -1,6 +1,7 @@
 import {
   AmbientLight,
   BoxGeometry,
+  BufferGeometry,
   CanvasTexture,
   Color,
   DirectionalLight,
@@ -36,6 +37,7 @@ import type { Battle } from '../game/Battle';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import {
+  buildHeartGeometry,
   createFacilityGhost,
   GATE_TINTS,
   createFacilityMesh,
@@ -86,6 +88,26 @@ const _outward = new Vector3();
 const _segDir = new Vector3();
 const _mid = new Vector3();
 
+/** ローグライト残機ハート1個分の描画状態 */
+interface RogueHeartVisual {
+  /** 位置決め用グループ（カメラの子） */
+  group: Group;
+  /** 一体表示用メッシュ（alive/lost でジオメトリを差し替える） */
+  full: Mesh;
+  /** 破砕時の左半分・右半分 */
+  left: Mesh;
+  right: Mesh;
+  /** 半分メッシュのフェード用マテリアル（ハートごとに個別） */
+  halfMat: MeshBasicMaterial;
+  state: 'alive' | 'lost' | 'breaking' | 'reviving';
+  /** アニメーション経過秒 */
+  animT: number;
+  /** 破砕時のボクセル散乱を既に出したか */
+  scattered: boolean;
+  /** レイアウトで決まる基準位置 */
+  basePos: Vector3;
+}
+
 /** 施設の描画・HPバー管理用データ */
 interface FacilityVisual {
   facility: Facility;
@@ -124,6 +146,26 @@ export class SceneView {
 
   // 忍者の変わり身の丸太リスト
   private readonly kawariLogs: KawariLogItem[] = [];
+
+  // ローグライト残機のボクセルハート（カメラに追従する HUD 的 3D 表示）
+  private readonly rogueHeartGroup = new Group();
+  private readonly rogueHearts: RogueHeartVisual[] = [];
+  /** 一体表示用マテリアル（色はジオメトリの頂点色に焼き込み済み。alive/lost はジオメトリ差し替えで切り替える） */
+  private readonly rogueHeartMat = new MeshBasicMaterial({
+    vertexColors: true,
+    depthTest: false,
+    transparent: true,
+  });
+  /** ハートのジオメトリ一式（全ハートで共有） */
+  private rogueHeartGeos: {
+    full: BufferGeometry;
+    lost: BufferGeometry;
+    left: BufferGeometry;
+    right: BufferGeometry;
+  } | null = null;
+  /** 同期済みの表示ライフ数（-1 は未同期。次の同期はアニメーションなしで即時反映する） */
+  private rogueLivesShown = -1;
+  private rogueMaxLivesShown = 0;
 
   // 配置フェーズ用の中心境界ライン・プレビューゴースト・ステージ地形グループ
   private readonly dividerGroup = new Group();
@@ -357,6 +399,11 @@ export class SceneView {
     makeBorder(1);
     this.scene.add(this.dividerGroup);
     this.scene.add(this.terrainGroup);
+
+    // 残機ハートはカメラの子にして、カメラを回しても画面左上に固定表示する
+    this.scene.add(this.camera);
+    this.rogueHeartGroup.visible = false;
+    this.camera.add(this.rogueHeartGroup);
   }
 
   /** ステージ固有のビジュアル環境（背景色・フォグ・床テクスチャ・環境光・天候）を適用する */
@@ -3195,6 +3242,221 @@ export class SceneView {
     }
   }
 
+  // ---------------------------------------------------------------
+  // ローグライト残機ハート
+  // ---------------------------------------------------------------
+
+  /** 残機ハート表示の ON/OFF（ローグライトモードのときだけ ON にする） */
+  setRogueHeartsVisible(visible: boolean): void {
+    this.rogueHeartGroup.visible = visible;
+  }
+
+  /**
+   * 残機ハートをライフ数に同期する。
+   * 減っていたら破砕アニメーション、増えていたら復活アニメーションを再生する。
+   * instant=true（または初回同期）のときはアニメーションなしで即時反映する。
+   */
+  syncRogueHearts(lives: number, maxLives: number, instant = false): void {
+    this.rogueHeartGroup.visible = true;
+    if (maxLives !== this.rogueMaxLivesShown || this.rogueHearts.length !== maxLives) {
+      this.buildRogueHearts(maxLives);
+      this.rogueLivesShown = -1;
+    }
+    const clamped = Math.max(0, Math.min(maxLives, lives));
+    if (instant || this.rogueLivesShown < 0) {
+      for (let i = 0; i < maxLives; i++) {
+        this.setHeartImmediate(this.rogueHearts[i], i < clamped);
+      }
+      this.rogueLivesShown = clamped;
+      return;
+    }
+    if (clamped < this.rogueLivesShown) {
+      // 右側のハートから割れる
+      for (let i = clamped; i < this.rogueLivesShown; i++) {
+        const heart = this.rogueHearts[i];
+        if (heart.state === 'alive' || heart.state === 'reviving') {
+          heart.state = 'breaking';
+          heart.animT = 0;
+          heart.scattered = false;
+        } else if (heart.state === 'lost') {
+          // 既に失っている表示なら何もしない
+        }
+      }
+    } else if (clamped > this.rogueLivesShown) {
+      for (let i = this.rogueLivesShown; i < clamped; i++) {
+        const heart = this.rogueHearts[i];
+        if (heart.state === 'lost') {
+          heart.state = 'reviving';
+          heart.animT = 0;
+          heart.full.visible = true;
+          if (this.rogueHeartGeos) heart.full.geometry = this.rogueHeartGeos.full;
+          heart.left.visible = false;
+          heart.right.visible = false;
+        } else if (heart.state === 'breaking') {
+          // 割れている最中に戻ってきた場合は即時復活に倒す
+          this.setHeartImmediate(heart, true);
+        }
+      }
+    }
+    this.rogueLivesShown = clamped;
+  }
+
+  /** ハート表示をアニメーションなしで alive/lost のどちらかに固定する */
+  private setHeartImmediate(heart: RogueHeartVisual, alive: boolean): void {
+    heart.state = alive ? 'alive' : 'lost';
+    heart.animT = 0;
+    heart.scattered = false;
+    heart.full.visible = true;
+    if (this.rogueHeartGeos) heart.full.geometry = alive ? this.rogueHeartGeos.full : this.rogueHeartGeos.lost;
+    heart.left.visible = false;
+    heart.right.visible = false;
+    heart.left.position.set(0, 0, 0);
+    heart.right.position.set(0, 0, 0);
+    heart.left.rotation.set(0, 0, 0);
+    heart.right.rotation.set(0, 0, 0);
+    heart.group.scale.setScalar(1);
+    heart.group.rotation.set(0, 0, 0);
+  }
+
+  /** ハートのメッシュ一式を（最大ライフ数ぶん）構築する */
+  private buildRogueHearts(maxLives: number): void {
+    for (const heart of this.rogueHearts) {
+      this.rogueHeartGroup.remove(heart.group);
+      heart.halfMat.dispose();
+    }
+    this.rogueHearts.length = 0;
+    if (this.rogueHeartGeos) {
+      this.rogueHeartGeos.full.dispose();
+      this.rogueHeartGeos.lost.dispose();
+      this.rogueHeartGeos.left.dispose();
+      this.rogueHeartGeos.right.dispose();
+    }
+    this.rogueMaxLivesShown = maxLives;
+
+    const voxel = 0.03;
+    const fullGeo = buildHeartGeometry('alive', 'full', voxel);
+    const lostGeo = buildHeartGeometry('lost', 'full', voxel);
+    const leftGeo = buildHeartGeometry('alive', 'left', voxel);
+    const rightGeo = buildHeartGeometry('alive', 'right', voxel);
+    this.rogueHeartGeos = { full: fullGeo, lost: lostGeo, left: leftGeo, right: rightGeo };
+
+    for (let i = 0; i < maxLives; i++) {
+      const group = new Group();
+      const halfMat = new MeshBasicMaterial({ vertexColors: true, depthTest: false, transparent: true });
+      const full = new Mesh(fullGeo, this.rogueHeartMat);
+      full.renderOrder = 999;
+      const left = new Mesh(leftGeo, halfMat);
+      left.renderOrder = 999;
+      left.visible = false;
+      const right = new Mesh(rightGeo, halfMat);
+      right.renderOrder = 999;
+      right.visible = false;
+      group.add(full, left, right);
+      this.rogueHeartGroup.add(group);
+      this.rogueHearts.push({
+        group,
+        full,
+        left,
+        right,
+        halfMat,
+        state: 'alive',
+        animT: 0,
+        scattered: false,
+        basePos: new Vector3(),
+      });
+    }
+  }
+
+  /** ハートを画面左上に横並び配置する（カメラ子座標系で、毎フレーム再計算して追従を保証する） */
+  private layoutRogueHearts(): void {
+    const dist = 2.4;
+    const halfH = Math.tan(((this.camera.fov * Math.PI) / 180) * 0.5) * dist;
+    const halfW = halfH * this.camera.aspect;
+    const w = 9 * 0.03;
+    const h = 8 * 0.03;
+    const gap = 0.055;
+    for (let i = 0; i < this.rogueHearts.length; i++) {
+      const heart = this.rogueHearts[i];
+      heart.basePos.set(-halfW + 0.1 + w / 2 + i * (w + gap), halfH - 0.21 - h / 2, -dist);
+      if (heart.state !== 'breaking') heart.group.position.copy(heart.basePos);
+    }
+  }
+
+  /** ハートのアニメーション進行（renderFrame から毎フレーム呼ぶ） */
+  private updateRogueHearts(dt: number): void {
+    if (!this.rogueHeartGroup.visible || this.rogueHearts.length === 0) return;
+    this.layoutRogueHearts();
+    const shakeDur = 0.22;
+    const fallDur = 0.75;
+    for (const heart of this.rogueHearts) {
+      if (heart.state === 'breaking') {
+        heart.animT += dt;
+        if (heart.animT < shakeDur) {
+          // 割れる直前に小刻みに震える
+          const amp = 0.012 + 0.03 * (heart.animT / shakeDur);
+          heart.group.position.set(
+            heart.basePos.x + (Math.random() - 0.5) * 2 * amp,
+            heart.basePos.y + (Math.random() - 0.5) * 2 * amp,
+            heart.basePos.z,
+          );
+        } else {
+          if (!heart.scattered) {
+            heart.scattered = true;
+            heart.group.position.copy(heart.basePos);
+            heart.full.visible = false;
+            heart.left.visible = true;
+            heart.right.visible = true;
+            heart.halfMat.opacity = 1;
+            // 赤いボクセル破片を散らす（ワールド座標へ変換してから既存のドロップ機構へ）
+            const world = new Vector3();
+            heart.group.getWorldPosition(world);
+            const colors = [0xef3e57, 0xdd2a47, 0xff92a5, 0xa81c34];
+            for (let k = 0; k < 16; k++) {
+              const vel = new Vector3(
+                (Math.random() - 0.5) * 2.4,
+                Math.random() * 1.6 + 0.4,
+                (Math.random() - 0.5) * 2.4,
+              );
+              this.pushDroppedVoxel(world.clone(), vel, colors[k % colors.length], 0.055);
+            }
+          }
+          const t = Math.min(1, (heart.animT - shakeDur) / fallDur);
+          const spread = 0.17 * t;
+          const drop = 0.38 * t * t;
+          heart.left.position.set(-spread, -drop, 0);
+          heart.right.position.set(spread, -drop, 0);
+          heart.left.rotation.set(0.5 * t, 0, 0.95 * t);
+          heart.right.rotation.set(0.5 * t, 0, -0.95 * t);
+          heart.halfMat.opacity = 1 - t;
+          if (t >= 1) {
+            heart.left.visible = false;
+            heart.right.visible = false;
+            heart.left.position.set(0, 0, 0);
+            heart.right.position.set(0, 0, 0);
+            heart.left.rotation.set(0, 0, 0);
+            heart.right.rotation.set(0, 0, 0);
+            heart.full.visible = true;
+            if (this.rogueHeartGeos) heart.full.geometry = this.rogueHeartGeos.lost;
+            heart.state = 'lost';
+          }
+        }
+      } else if (heart.state === 'reviving') {
+        heart.animT += dt;
+        const dur = 0.38;
+        const k = Math.min(1, heart.animT / dur);
+        // easeOutBack でポップさせる
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        const eased = 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2);
+        heart.group.scale.setScalar(Math.max(0.05, 0.45 + 0.55 * eased));
+        if (k >= 1) {
+          heart.group.scale.setScalar(1);
+          heart.state = 'alive';
+        }
+      }
+    }
+  }
+
   /** 毎フレームの描画更新 */
   renderFrame(battle: Battle, realDt: number): void {
     this.updateCameraMovement(realDt);
@@ -3203,6 +3465,7 @@ export class SceneView {
     }
     this.syncFacilities(battle, realDt);
     this.syncArrows(battle.combat.arrows);
+    this.updateRogueHearts(realDt);
     this.updateDroppedVoxels(realDt);
     this.updateKawariLogs(realDt);
     this.updateFxAndDynamicVisuals(battle, realDt);
