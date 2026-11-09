@@ -11,6 +11,7 @@ import {
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
 import { SceneView } from '../render/SceneView';
+import { isMountType, isRiderType } from '../units/Mounting';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
 import {
   CATEGORY_ICONS,
@@ -73,6 +74,8 @@ interface PlacedRecord {
   x: number;
   z: number;
   facing?: number;
+  /** かさね配置: このレコードが「同じ lineup 内の onTopOf 番目のレコードの上に乗る」ことを示す */
+  onTopOf?: number;
 }
 
 export interface PresetScenario {
@@ -1442,6 +1445,14 @@ export class GameApp {
           if (!this.isInsideArena(p.x, p.z) || Math.abs(p.x) <= 1.2) return;
           const team: Team = p.x < 0 ? 0 : 1;
           const facing = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+          // かさね配置（試作・サンドボックスのみ）: 乗り手対象の兵種で味方の土台の近くを
+          // クリックしたら、地面ではなく土台の上に乗せる
+          if (!isFacilityTypeId(this.selectedId) && isRiderType(this.selectedId)) {
+            const mount = this.findSandboxMountAt(p.x, p.z, team);
+            if (mount && this.tryPlaceStackedRider(mount, team, facing)) {
+              return;
+            }
+          }
           if (isFacilityTypeId(this.selectedId)) {
             this.battle.spawnFacility(this.selectedId, team, p.x, p.z, facing);
             this.savedLineup.push({ facilityId: this.selectedId, team, x: p.x, z: p.z, facing });
@@ -1458,6 +1469,53 @@ export class GameApp {
 
   private isInsideArena(x: number, z: number): boolean {
     return Math.abs(x) <= 22 && Math.abs(z) <= 16;
+  }
+
+  /**
+   * かさね配置（試作）: 地面ヒット点から半径 1.2m 以内にある、同チームの
+   * 土台候補ユニット（ホワイトリスト内・騎乗中でない・乗り手がいない）を探す。
+   */
+  private findSandboxMountAt(x: number, z: number, team: Team): Unit | null {
+    let best: Unit | null = null;
+    let bestDist = 1.2;
+    for (const u of this.battle.units) {
+      if (!u.alive || u.team !== team) continue;
+      if (!isMountType(u.type.id) || u.mountedOn) continue;
+      if (this.battle.units.some((r) => r.alive && r.mountedOn === u)) continue;
+      const d = Math.hypot(u.pelvis.pos.x - x, u.pelvis.pos.z - z);
+      if (d < bestDist) {
+        bestDist = d;
+        best = u;
+      }
+    }
+    return best;
+  }
+
+  /** かさね配置（試作）: 土台の上に選択中の乗り手を配置し、編成レコードにも onTopOf を残す */
+  private tryPlaceStackedRider(mount: Unit, team: Team, facing: number): boolean {
+    if (isFacilityTypeId(this.selectedId)) return false;
+    const rider = this.battle.spawnMountedUnit(mount, this.selectedId, team, facing);
+    if (!rider) return false;
+    const mountIdx = this.savedLineup.findIndex(
+      (rec) =>
+        rec.typeId === mount.type.id &&
+        rec.team === team &&
+        Math.hypot(rec.x - mount.pelvis.pos.x, rec.z - mount.pelvis.pos.z) < 0.6,
+    );
+    this.savedLineup.push({
+      typeId: this.selectedId,
+      team,
+      x: mount.pelvis.pos.x,
+      z: mount.pelvis.pos.z,
+      facing,
+      onTopOf: mountIdx >= 0 ? mountIdx : undefined,
+    });
+    this.sound.playPlace();
+    this.flashPhaseWarning(
+      `🪜 かさね配置: ${mount.type.name}の上に${rider.type.name}を乗せた`,
+    );
+    this.updateHUD();
+    return true;
   }
 
   private removeNearestUnitAt(x: number, z: number): void {
@@ -1515,7 +1573,18 @@ export class GameApp {
           rec.team === target.team &&
           Math.hypot(rec.x - target.pelvis.pos.x, rec.z - target.pelvis.pos.z) < 0.6,
       );
-      if (lineupIdx >= 0) targetLineup.splice(lineupIdx, 1);
+      if (lineupIdx >= 0) {
+        targetLineup.splice(lineupIdx, 1);
+        // かさね配置: 削除でずれた onTopOf 参照を直す（土台を消したら乗り手は地面配置に戻す）
+        for (const rec of targetLineup) {
+          if (rec.onTopOf === lineupIdx) rec.onTopOf = undefined;
+          else if (rec.onTopOf !== undefined && rec.onTopOf > lineupIdx) rec.onTopOf -= 1;
+        }
+      }
+      // かさね配置: 土台を消したら、乗っていたユニットの結合をその場で解く
+      for (const u of this.battle.units) {
+        if (u.mountedOn === target) u.mountedOn = null;
+      }
       this.battle.removeUnit(target);
       this.sound.playRemove();
       if (this.playStyle === 'versus') this.syncVersusUI();
@@ -2064,11 +2133,23 @@ export class GameApp {
       this.view.setVersusZones(getVersusZones(this.versus.playerCount), 0);
       this.syncVersusUI();
     } else {
+      // かさね配置: onTopOf を持つレコードは、土台レコードから生成したユニットの上に乗せ直す
+      const spawned: (Unit | null)[] = [];
       for (const item of this.savedLineup) {
         if (item.facilityId) {
           this.battle.spawnFacility(item.facilityId, item.team, item.x, item.z, item.facing);
+          spawned.push(null);
         } else if (item.typeId) {
-          this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing);
+          const base = item.onTopOf !== undefined ? spawned[item.onTopOf] : null;
+          const stacked =
+            base && this.playStyle === 'sandbox'
+              ? this.battle.spawnMountedUnit(base, item.typeId, item.team, item.facing)
+              : null;
+          spawned.push(
+            stacked ?? this.battle.spawnUnit(item.typeId, item.team, item.x, item.z, item.facing),
+          );
+        } else {
+          spawned.push(null);
         }
       }
     }
