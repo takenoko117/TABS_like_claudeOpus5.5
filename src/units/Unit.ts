@@ -4,6 +4,7 @@ import type { Facility } from '../facilities/Facility';
 import { DistanceConstraint } from '../physics/Constraint';
 import { PF_RECORD_CONTACT, Particle } from '../physics/Particle';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import { mountSeatRise } from './Mounting';
 import { J, JOINTS, JOINT_COUNT, PELVIS_HEIGHT, SKELETON_CONSTRAINTS } from './Skeleton';
 import type { Team, UnitType } from './UnitTypes';
 
@@ -42,6 +43,8 @@ const _acc = new Vector3();
 const _sum = new Vector3();
 const _dir = new Vector3();
 const _tmp = new Vector3();
+const _mountTarget = new Vector3();
+const _mountJointTarget = new Vector3();
 
 let nextUnitId = 1;
 
@@ -159,6 +162,8 @@ export class Unit {
   /** 大鷲の鷲掴み対象と残り時間 */
   grabbedUnit: Unit | null = null;
   grabTimer = 0;
+  /** かさね配置: 乗っている土台ユニット（null なら通常の地上ユニット） */
+  mountedOn: Unit | null = null;
   fallingFromEagle: Unit | null = null;
   /** 歩行・羽ばたき位相（描画側でも参照可能） */
   walkPhase = Math.random() * Math.PI * 2;
@@ -297,6 +302,16 @@ export class Unit {
     }
 
     this.totalMass = total;
+  }
+
+  /**
+   * かさね配置: このユニットを土台としたとき、乗り手の骨盤が来るべき位置を out に返す。
+   * 土台の胸の上（立つ面）から乗り手の脚の長さだけ上がった点。
+   */
+  riderPelvisTarget(riderScale: number, out: Vector3): Vector3 {
+    out.copy(this.chest.pos);
+    out.y += mountSeatRise(this.type.id, this.scale) + PELVIS_HEIGHT * riderScale;
+    return out;
   }
 
   get pelvis(): Particle {
@@ -445,6 +460,7 @@ export class Unit {
       const maxTurn = (this.type.id === 'lightspeed_ant' ? 22 : 5) * dt;
       this.facing = wrapAngle(this.facing + clamp(diff, -maxTurn, maxTurn));
     }
+    this.applyMountBinding(dt);
     this.applyMuscles(dt);
   }
 
@@ -487,8 +503,8 @@ export class Unit {
       return;
     }
 
-    // 炎上中はパニックでランダム方向に走る
-    if (this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant') {
+    // 炎上中はパニックでランダム方向に走る（土台に乗っている間は走らない）
+    if (!this.mountedOn && this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant') {
       const panicAngle = this.facing + Math.sin(this.walkPhase * 2.5) * 1.2;
       this.desiredFacing = panicAngle;
       this.moveDir.set(Math.sin(panicAngle), 0, Math.cos(panicAngle));
@@ -508,6 +524,8 @@ export class Unit {
       dist >= 1.8 &&
       dist <= 5.2
     ) {
+      // かさね配置: 突撃で飛び出すなら土台から離脱する
+      this.mountedOn = null;
       this.chargeCooldown = 3.2;
       this.attackPhase = 'windup';
       this.phaseTime = 0;
@@ -518,7 +536,7 @@ export class Unit {
       return;
     }
 
-    if (dist > engage * 0.9) {
+    if (!this.mountedOn && dist > engage * 0.9) {
       let mx = dx / Math.max(0.001, dist);
       let mz = dz / Math.max(0.001, dist);
 
@@ -599,7 +617,7 @@ export class Unit {
 
       this.moveDir.set(mx, 0, mz);
       this.moveSpeed = this.type.speed * this.speedMul * (this.attackPhase === 'none' ? 1 : 0.4);
-    } else if (this.type.id === 'spearman' && dist < engage * 0.65 && dist > 1e-3) {
+    } else if (!this.mountedOn && this.type.id === 'spearman' && dist < engage * 0.65 && dist > 1e-3) {
       // 槍兵は懐に潜り込まれたら少しずつ後退して槍の間合いを維持する
       this.moveDir.set(-dx / dist, 0, -dz / dist);
       this.moveSpeed = this.type.speed * this.speedMul * 0.55;
@@ -2121,6 +2139,8 @@ export class Unit {
 
   /** デオキシスの瞬間移動（テレポート）: 敵から安全な距離へ瞬時に跳躍して間合いを支配 */
   private triggerDeoxysTeleport(ctx: UnitContext, reason: 'escape' | 'evade' | 'reposition'): void {
+    // かさね配置: テレポートしたら土台との結合は解ける
+    this.mountedOn = null;
     const fromPos = this.pelvis.pos.clone();
     this.teleportCooldown = 3.6;
     if (reason === 'evade') {
@@ -2286,6 +2306,46 @@ export class Unit {
       .addScaledVector(UP, d[1])
       .addScaledVector(this.forward, z)
       .normalize();
+  }
+
+  /**
+   * かさね配置の結合（力ベース）。
+   * 大鷲の鷲掴み運搬と同じ発想で、乗り手の骨盤・胸・腰・両足を土台側の
+   * アンカー点へ向けてバネ力で引き寄せ続ける。拘束ソルバは使わない。
+   * 土台が死んだら結合は解け、乗り手はそのまま落下して通常ユニットに戻る。
+   */
+  private applyMountBinding(dt: number): void {
+    const mount = this.mountedOn;
+    if (!mount) return;
+    if (!mount.alive || !this.alive) {
+      this.mountedOn = null;
+      return;
+    }
+    mount.riderPelvisTarget(this.scale, _mountTarget);
+    const rs = this.scale;
+    const right = this.rightDir;
+    const mountVel = mount.pelvis.getVelocity(dt, _tmp);
+
+    // [関節, 骨盤目標からの縦オフセット, 横オフセット, バネ係数]
+    const pulls: ReadonlyArray<readonly [number, number, number, number]> = [
+      [J.Pelvis, 0, 0, 170],
+      [J.Chest, 0.42 * rs, 0, 170],
+      [J.HipL, -0.06 * rs, -0.12 * rs, 150],
+      [J.HipR, -0.06 * rs, 0.12 * rs, 150],
+      [J.FootL, -PELVIS_HEIGHT * rs * 0.98, -0.13 * rs, 130],
+      [J.FootR, -PELVIS_HEIGHT * rs * 0.98, 0.13 * rs, 130],
+    ];
+    for (const [jIdx, dy, lateral, k] of pulls) {
+      const p = this.joints[jIdx];
+      _mountJointTarget.copy(_mountTarget);
+      _mountJointTarget.y += dy;
+      _mountJointTarget.addScaledVector(right, lateral);
+      _dir.subVectors(_mountJointTarget, p.pos);
+      p.force.addScaledVector(_dir, k * p.mass);
+      // 土台の速度に追従させる減衰（振動と引き剥がしを抑える）
+      p.getVelocity(dt, _vel).sub(mountVel).multiplyScalar(-14 * p.mass);
+      p.force.add(_vel);
+    }
   }
 
   private applyMuscles(dt: number): void {
@@ -3057,6 +3117,8 @@ export class Unit {
     this.target = null;
     this.laserActive = false;
     this.grabbedUnit = null;
+    // かさね配置: 死んだら土台から外れて落ちる（乗り手側の解除は applyMountBinding でも検出する）
+    this.mountedOn = null;
 
     // おとり（デコイ）破壊時の藁破裂
     if (this.type.id === 'decoy' && this.context) {
