@@ -34,9 +34,9 @@ export interface FacilitySpawnOptions {
 /** 進軍門が配置位置まで滑る時間（秒） */
 export const GATE_MARCH_DURATION = 1.4;
 /** 巨大化の門で到達できる体格の上限 */
-const MAX_GIANT_GATE_SCALE = 3.0;
+export const MAX_GIANT_GATE_SCALE = 3.0;
 /** 縮小の門で縮められる体格の下限 */
-const MIN_SHRINK_GATE_SCALE = 0.45;
+export const MIN_SHRINK_GATE_SCALE = 0.45;
 
 /** 施設が相互作用するバトル環境のインターフェース */
 export interface FacilityBattleContext {

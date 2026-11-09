@@ -2446,8 +2446,53 @@ body.on-title #btn-restore-hud {
   white-space: nowrap;
 }
 
-.unit-card.exhausted {
-  opacity: 0.55;
+.rogue-hidden {
+  display: none !important;
+}
+
+.rogue-relic-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rogue-relic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rogue-relic-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.rogue-relic-row.off {
+  opacity: 0.6;
+}
+
+.rogue-relic-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.rogue-relic-info small {
+  font-size: 10.5px;
+  color: #adb5bd;
+}
+
+.rogue-relic-max {
+  font-size: 11px;
+  font-weight: 800;
+  color: #adb5bd;
 }
 
 .rogue-modal-actions {

@@ -1,8 +1,8 @@
 import { Vector3 } from 'three';
 import type { DamageEvent } from '../combat/CombatSystem';
+import { MAX_GIANT_GATE_SCALE, MIN_SHRINK_GATE_SCALE } from '../facilities/Facility';
 import {
   FACILITY_TYPES,
-  GATE_SIZE_NAMES,
   MAX_GATE_LEVEL,
   isGateTypeId,
   type FacilityTypeId,
@@ -207,6 +207,12 @@ export const MAX_SYNERGY_BLASTS_PER_SECOND = 20;
 /** 群れ4種の攻撃ボーナスの最大スタック数（1スタック = +5%） */
 export const MAX_SWARM_STACKS = 10;
 
+/** 属性ゲートが攻撃に乗せる状態異常 */
+export interface GateInfusion {
+  element: 'fire' | 'shock' | 'poison';
+  durationMul: number;
+}
+
 interface MassProjectile {
   unit: Unit;
   attacker: Unit;
@@ -223,6 +229,8 @@ export class RogueliteRules implements BattleRules {
   tagCounts = new Map<TagId, number>();
   /** 門で兵種に加わったタグ（シナジーの数え方に入る） */
   readonly grantedByType = new Map<UnitTypeId, Set<TagId>>();
+  /** 発動中の属性ゲート。後から出た兵（召喚・分裂・複製）も含めて自軍全員の攻撃に乗る */
+  gateInfusions: GateInfusion[] = [];
   swarmStacks = 0;
   private battle: Battle | null = null;
   private readonly applied = new WeakMap<Unit, Set<string>>();
@@ -248,6 +256,7 @@ export class RogueliteRules implements BattleRules {
     this.battle = battle;
     this.swarmStacks = 0;
     this.grantedByType.clear();
+    this.gateInfusions = [];
     this.mobileTimers.clear();
     this.extendedBurn.clear();
     this.extendedPoison.clear();
@@ -422,17 +431,19 @@ export class RogueliteRules implements BattleRules {
     const tags = getUnitTags(attacker);
     const direct = e.kind === 'physical' || e.kind === 'explosion';
 
-    // 属性の門: 攻撃に状態異常を乗せる
-    if (direct && attacker.elementInfusion && victim.alive) {
-      if (attacker.elementInfusion === 'fire') {
-        victim.burnTimer = Math.max(victim.burnTimer, 2.5);
-        victim.burnAttacker = attacker;
-      } else if (attacker.elementInfusion === 'shock') {
-        victim.shockTimer = Math.max(victim.shockTimer, 0.6);
-        victim.muscle = Math.min(victim.muscle, 0.25);
-      } else {
-        victim.poisonTimer = Math.max(victim.poisonTimer, 3);
-        victim.poisonAttacker = attacker;
+    // 属性ゲート: 攻撃に状態異常を乗せる
+    if (direct && victim.alive) {
+      for (const { element, durationMul } of this.gateInfusions) {
+        if (element === 'fire') {
+          victim.burnTimer = Math.max(victim.burnTimer, 2.5 * durationMul);
+          victim.burnAttacker = attacker;
+        } else if (element === 'shock') {
+          victim.shockTimer = Math.max(victim.shockTimer, 0.6 * durationMul);
+          victim.muscle = Math.min(victim.muscle, 0.25);
+        } else {
+          victim.poisonTimer = Math.max(victim.poisonTimer, 3 * durationMul);
+          victim.poisonAttacker = attacker;
+        }
       }
     }
 
@@ -568,6 +579,11 @@ export const ROGUE_SHOP_REROLL_STEP = 10;
 export const ROGUE_CONSOLATION_GOLD: readonly number[] = [100, 200, 350];
 /** 起死回生の3択が発動する連敗数 */
 export const ROGUE_COMEBACK_STREAK = 2;
+/** 施設スロットの初回価格と、スロットが増えるごとに上がる額 */
+export const ROGUE_SLOT_BASE_PRICE = 1000;
+export const ROGUE_SLOT_PRICE_STEP = 500;
+/** ゲート強化の価格（次のレベル × この額） */
+export const ROGUE_GATE_UPGRADE_PRICE_STEP = 500;
 /** ボスの HP 倍率 */
 export const ROGUE_BOSS_HP_MUL = 2;
 
@@ -600,6 +616,16 @@ export function getRogueWinBonus(round: number): number {
 export function getRogueConsolationGold(lossStreak: number): number {
   const i = Math.max(1, lossStreak) - 1;
   return ROGUE_CONSOLATION_GOLD[Math.min(i, ROGUE_CONSOLATION_GOLD.length - 1)];
+}
+
+/** スロットが slots 個のときの、次のスロットの価格 */
+export function getSlotPrice(slots: number): number {
+  return ROGUE_SLOT_BASE_PRICE + ROGUE_SLOT_PRICE_STEP * Math.max(0, slots - ROGUE_START_SLOTS);
+}
+
+/** ゲートをこのレベルから1段階強化する価格 */
+export function getGateUpgradePrice(level: number): number {
+  return ROGUE_GATE_UPGRADE_PRICE_STEP * (Math.max(0, level) + 1);
 }
 
 /** 同じラウンドで n 回リロール済みのときの次の価格 */
@@ -756,10 +782,12 @@ export function isStarterUnlocked(starter: RogueStarter, meta: RogueMeta): boole
   return true;
 }
 
-/** レリック（陣地レリック）。門はサイズ段階を持つ */
+/** レリック（陣地レリック）。ゲートは強化レベルを持つ */
 export interface OwnedRelic {
   id: FacilityTypeId;
   level: number;
+  /** スロットを使って発動中か */
+  active: boolean;
 }
 
 export type Rarity = 'common' | 'rare' | 'legendary';
@@ -871,7 +899,6 @@ export interface RogueRunState {
   rerollsLeft: number;
   clearedRounds: number;
   score: number;
-  placement: VersusPlacedRecord[];
   history: RogueRoundRecord[];
   pendingRewards: RewardOption[] | null;
   rewardDraws: number;
@@ -904,8 +931,6 @@ export class RogueliteRun {
   rerollsLeft = ROGUE_START_REROLLS;
   clearedRounds = 0;
   score = 0;
-  /** ラウンドをまたいで引き継ぐ自軍の配置 */
-  placement: VersusPlacedRecord[] = [];
   history: RogueRoundRecord[] = [];
   /** 選択待ちの報酬（null なら選択済み） */
   pendingRewards: RewardOption[] | null = null;
@@ -920,7 +945,7 @@ export class RogueliteRun {
       this.roster[id] = count;
       this.pool.push(id);
     }
-    this.relics = [{ id: starter.relic, level: 0 }];
+    this.relics = [{ id: starter.relic, level: 0, active: true }];
     this.shop = this.drawShop();
   }
 
@@ -936,13 +961,71 @@ export class RogueliteRun {
     return getRogueRoundKind(this.round);
   }
 
-  /** 所持レリックの情報（門ならサイズ段階つき） */
-  relicLevel(id: FacilityTypeId): number {
-    return this.relics.find((r) => r.id === id)?.level ?? 0;
-  }
-
   ownsRelic(id: FacilityTypeId): boolean {
     return this.relics.some((r) => r.id === id);
+  }
+
+  /** 発動中のレリック */
+  get activeRelics(): OwnedRelic[] {
+    return this.relics.filter((r) => r.active);
+  }
+
+  /** 発動中のゲート */
+  get activeGates(): OwnedRelic[] {
+    return this.activeRelics.filter((r) => isGateTypeId(r.id));
+  }
+
+  /** レリックを手に入れる（スロットに空きがあれば発動する） */
+  addRelic(id: FacilityTypeId): void {
+    if (this.ownsRelic(id)) return;
+    this.relics.push({ id, level: 0, active: this.activeRelics.length < this.facilitySlots });
+  }
+
+  /** スロットを増やす（発動していないレリックがあれば1つ発動する） */
+  addSlot(): void {
+    if (this.facilitySlots >= ROGUE_MAX_SLOTS) return;
+    this.facilitySlots++;
+    const waiting = this.relics.find((r) => !r.active);
+    if (waiting) waiting.active = true;
+  }
+
+  /** レリックの ON/OFF を切り替える。スロットが一杯なら ON にできない */
+  toggleRelic(index: number): boolean {
+    const r = this.relics[index];
+    if (!r) return false;
+    if (!r.active && this.activeRelics.length >= this.facilitySlots) return false;
+    r.active = !r.active;
+    return true;
+  }
+
+  /** 次のスロットの価格（上限なら null） */
+  get slotPrice(): number | null {
+    return this.facilitySlots >= ROGUE_MAX_SLOTS ? null : getSlotPrice(this.facilitySlots);
+  }
+
+  /** スロットを買う */
+  buySlot(): boolean {
+    const price = this.slotPrice;
+    if (price === null || this.gold < price) return false;
+    this.gold -= price;
+    this.addSlot();
+    return true;
+  }
+
+  /** このゲートの次の強化の価格（強化できなければ null） */
+  gateUpgradePrice(index: number): number | null {
+    const r = this.relics[index];
+    if (!r || !isGateTypeId(r.id) || r.level >= MAX_GATE_LEVEL) return null;
+    return getGateUpgradePrice(r.level);
+  }
+
+  /** ゲートを強化する */
+  buyGateUpgrade(index: number): boolean {
+    const price = this.gateUpgradePrice(index);
+    if (price === null || this.gold < price) return false;
+    this.gold -= price;
+    this.relics[index].level++;
+    return true;
   }
 
   /** 1体以上持っている兵種 */
@@ -995,9 +1078,9 @@ export class RogueliteRun {
     return true;
   }
 
-  /** 1体売却して受け取ったゴールドを返す（持っていなければ 0） */
+  /** 1体売却して受け取ったゴールドを返す（持っていない・最後の1体なら 0） */
   sellUnit(id: UnitTypeId): number {
-    if (!this.ownsUnit(id)) return 0;
+    if (!this.ownsUnit(id) || this.totalOwned <= 1) return 0;
     const amount = getUnitSellPrice(id);
     this.gold += amount;
     this.roster[id] = this.ownedCount(id) - 1;
@@ -1020,25 +1103,6 @@ export class RogueliteRun {
     this.rerollsLeft--;
     this.shop = this.drawShop();
     return true;
-  }
-
-  /** 配置済みのこの兵種の数 */
-  static placedCount(records: readonly VersusPlacedRecord[], id: UnitTypeId): number {
-    return records.filter((r) => r.team === 0 && r.typeId === id).length;
-  }
-
-  /** 配置済みの兵種の総数 */
-  static placedUnitCount(records: readonly VersusPlacedRecord[]): number {
-    return records.filter((r) => r.team === 0 && r.typeId).length;
-  }
-
-  /** 配置済みの陣地レリックの数 */
-  static placedRelicCount(records: readonly VersusPlacedRecord[]): number {
-    return records.filter((r) => r.team === 0 && r.facilityId).length;
-  }
-
-  commitPlacement(records: readonly VersusPlacedRecord[]): void {
-    this.placement = records.filter((r) => r.team === 0).map((r) => ({ ...r }));
   }
 
   /** ラウンド勝利を記録し、獲得スコアを返す */
@@ -1142,7 +1206,6 @@ export class RogueliteRun {
       rerollsLeft: this.rerollsLeft,
       clearedRounds: this.clearedRounds,
       score: this.score,
-      placement: this.placement.map((r) => ({ ...r })),
       history: this.history.map((h) => ({ ...h })),
       pendingRewards: this.pendingRewards ? this.pendingRewards.map((o) => ({ ...o })) : null,
       rewardDraws: this.rewardDraws,
@@ -1171,7 +1234,6 @@ export class RogueliteRun {
     run.rerollsLeft = s.rerollsLeft;
     run.clearedRounds = s.clearedRounds;
     run.score = s.score;
-    run.placement = s.placement ?? [];
     run.history = s.history ?? [];
     run.pendingRewards = s.pendingRewards ?? null;
     run.rewardDraws = s.rewardDraws ?? 0;
@@ -1250,7 +1312,7 @@ function pickRelicReward(run: RogueliteRun, rng: () => number): RewardOption | n
     rarity: pick.rarity,
     relicId: pick.id,
     title: `陣地レリック: ${ft.name}`,
-    description: isGateTypeId(pick.id) ? `${ft.description} 開戦時に後方から置いた位置まで滑り、帯の中の味方全員に効く。` : ft.description,
+    description: relicDescription({ id: pick.id, level: 0 }),
   };
 }
 
@@ -1270,8 +1332,8 @@ function pickGateUpgrade(run: RogueliteRun): RewardOption | null {
     kind: 'gate_upgrade',
     rarity,
     relicIndex: target.i,
-    title: `門の拡張: ${name}`,
-    description: `${GATE_SIZE_NAMES[target.r.level]} → ${GATE_SIZE_NAMES[next]}。帯が広がってより多くの兵に効くようになり、耐久力も上がる`,
+    title: `ゲート強化: ${name}`,
+    description: `Lv${target.r.level + 1} → Lv${next + 1}。${gateEffectText(target.r.id, next)}`,
   };
 }
 
@@ -1292,7 +1354,7 @@ function slotReward(run: RogueliteRun): RewardOption | null {
     kind: 'slot',
     rarity: 'rare',
     title: '施設スロット +1',
-    description: `陣地レリックを同時に ${run.facilitySlots + 1} 個まで置けるようになる`,
+    description: `陣地レリックを同時に ${run.facilitySlots + 1} 個まで発動できるようになる`,
   };
 }
 
@@ -1418,7 +1480,7 @@ export function applyReward(run: RogueliteRun, option: RewardOption): void {
       run.lives = Math.min(ROGUE_MAX_LIVES, run.lives + 1);
       break;
     case 'relic':
-      if (option.relicId && !run.ownsRelic(option.relicId)) run.relics.push({ id: option.relicId, level: 0 });
+      if (option.relicId) run.addRelic(option.relicId);
       break;
     case 'gate_upgrade': {
       const r = option.relicIndex !== undefined ? run.relics[option.relicIndex] : undefined;
@@ -1426,7 +1488,7 @@ export function applyReward(run: RogueliteRun, option: RewardOption): void {
       break;
     }
     case 'slot':
-      run.facilitySlots = Math.min(ROGUE_MAX_SLOTS, run.facilitySlots + 1);
+      run.addSlot();
       break;
   }
 }
@@ -1443,9 +1505,9 @@ export interface RogueMeta {
 }
 
 const META_KEY = 'tabs_voxel_roguelite_meta_v1';
-/** 旧コスト方式のセーブは互換性がないので読まずに消す */
-const LEGACY_RUN_KEY = 'tabs_voxel_roguelite_run_v1';
-const RUN_KEY = 'tabs_voxel_roguelite_run_v2';
+/** 旧方式のセーブは互換性がないので読まずに消す */
+const LEGACY_RUN_KEYS: readonly string[] = ['tabs_voxel_roguelite_run_v1', 'tabs_voxel_roguelite_run_v2'];
+const RUN_KEY = 'tabs_voxel_roguelite_run_v3';
 
 function storage(): Storage | null {
   try {
@@ -1501,7 +1563,7 @@ export function saveRogueRun(run: RogueliteRun | null): void {
 
 export function loadRogueRun(): RogueliteRun | null {
   try {
-    storage()?.removeItem(LEGACY_RUN_KEY);
+    for (const key of LEGACY_RUN_KEYS) storage()?.removeItem(key);
     const raw = storage()?.getItem(RUN_KEY);
     if (!raw) return null;
     const run = RogueliteRun.fromState(JSON.parse(raw) as RogueRunState);
@@ -1511,8 +1573,203 @@ export function loadRogueRun(): RogueliteRun | null {
   }
 }
 
-/** 門ならサイズ名つきの表示名 */
-export function relicDisplayName(r: OwnedRelic): string {
+/** ゲートなら強化レベルつきの表示名 */
+export function relicDisplayName(r: Pick<OwnedRelic, 'id' | 'level'>): string {
   const name = FACILITY_TYPES[r.id].name;
-  return isGateTypeId(r.id) ? `${name}（${GATE_SIZE_NAMES[r.level]}）` : name;
+  return isGateTypeId(r.id) ? `${name} Lv${r.level + 1}` : name;
+}
+
+/** レリックの効果の説明 */
+export function relicDescription(r: Pick<OwnedRelic, 'id' | 'level'>): string {
+  return isGateTypeId(r.id) ? gateEffectText(r.id, r.level) : FACILITY_TYPES[r.id].description;
+}
+
+// ---------------------------------------------------------------
+// ゲートの全員適用
+// ---------------------------------------------------------------
+
+/** レベルごとの、増殖ゲートで複製される確率 */
+export const GATE_CLONE_CHANCE: readonly number[] = [0.25, 0.5, 0.75, 1];
+/** レベルごとの、巨大化ゲートの倍率 */
+export const GATE_GIANT_SCALE: readonly number[] = [1.15, 1.3, 1.45, 1.6];
+/** レベルごとの、縮小ゲートの移動速度倍率 */
+export const GATE_SHRINK_SPEED: readonly number[] = [1.2, 1.35, 1.5, 1.7];
+/** レベルごとの、属性ゲートの状態異常の持続倍率 */
+export const GATE_ELEMENT_DURATION: readonly number[] = [1, 1.5, 2, 2.5];
+
+const GATE_ELEMENTS: Partial<Record<FacilityTypeId, { element: GateInfusion['element']; label: string }>> = {
+  fire_gate: { element: 'fire', label: '燃焼' },
+  thunder_gate: { element: 'shock', label: '感電' },
+  venom_gate: { element: 'poison', label: '毒' },
+};
+
+function gateLevelIndex(level: number): number {
+  return Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(level)));
+}
+
+/** ゲートの効果の説明 */
+export function gateEffectText(id: FacilityTypeId, level: number): string {
+  const lv = gateLevelIndex(level);
+  if (id === 'multiplier_gate') return `全員が ${Math.round(GATE_CLONE_CHANCE[lv] * 100)}% の確率で複製される`;
+  if (id === 'giant_gate') return `全員が ${GATE_GIANT_SCALE[lv]} 倍に巨大化し、HP・攻撃・吹き飛ばしが上がる`;
+  if (id === 'shrink_gate') return `全員が縮んで弾に当たりにくくなり、移動速度 +${Math.round((GATE_SHRINK_SPEED[lv] - 1) * 100)}%（HP -20%）`;
+  const info = GATE_ELEMENTS[id];
+  return info ? `全員の攻撃に${info.label}を付ける（持続 ${GATE_ELEMENT_DURATION[lv]} 倍）` : '';
+}
+
+/**
+ * 発動中のゲートを開戦時に自軍全員へ適用する。シナジーの数には入らない。
+ * 複製に体格の変化が引き継がれるよう、巨大化・縮小を先に適用する。
+ */
+export function applyRogueGates(
+  battle: Battle,
+  rules: RogueliteRules,
+  gates: readonly OwnedRelic[],
+  rng: () => number = Math.random,
+): void {
+  if (gates.length === 0) return;
+  const levelOf = (id: FacilityTypeId) => {
+    const gate = gates.find((g) => g.id === id);
+    return gate ? gateLevelIndex(gate.level) : null;
+  };
+  const allies = () => battle.units.filter((u) => u.alive && u.team === rules.team);
+
+  const shrink = levelOf('shrink_gate');
+  if (shrink !== null) {
+    for (const u of allies()) {
+      if (u.scale <= MIN_SHRINK_GATE_SCALE) continue;
+      battle.transformUnit(u, {
+        scaleMul: Math.max(0.6, MIN_SHRINK_GATE_SCALE / u.scale),
+        hpMul: 0.8,
+        speedMul: GATE_SHRINK_SPEED[shrink],
+      });
+    }
+  }
+
+  const giant = levelOf('giant_gate');
+  if (giant !== null) {
+    const scale = GATE_GIANT_SCALE[giant];
+    for (const u of allies()) {
+      if (u.scale >= MAX_GIANT_GATE_SCALE) continue;
+      battle.transformUnit(u, {
+        scaleMul: Math.min(scale, MAX_GIANT_GATE_SCALE / u.scale),
+        hpMul: scale,
+        damageMul: 1 + (scale - 1) * (0.35 / 0.6),
+        knockbackMul: 1 + (scale - 1) * (0.5 / 0.6),
+      });
+    }
+  }
+
+  const multiplier = levelOf('multiplier_gate');
+  if (multiplier !== null) {
+    for (const u of allies()) {
+      if (rng() >= GATE_CLONE_CHANCE[multiplier]) continue;
+      const angle = rng() * Math.PI * 2;
+      const dist = Math.max(0.9, u.scale * 0.8);
+      battle.spawnCloneUnit(u, u.pelvis.pos.x + Math.cos(angle) * dist, u.pelvis.pos.z + Math.sin(angle) * dist);
+    }
+  }
+
+  rules.gateInfusions = gates.flatMap((g) => {
+    const info = GATE_ELEMENTS[g.id];
+    return info ? [{ element: info.element, durationMul: GATE_ELEMENT_DURATION[gateLevelIndex(g.level)] }] : [];
+  });
+
+  for (const u of allies().slice(0, MAX_GATE_EFFECTS)) {
+    battle.emitEffect({ kind: 'gate_multiply', pos: new Vector3(u.pelvis.pos.x, 0.6, u.pelvis.pos.z), team: u.team });
+  }
+  battle.playFacilitySound('gate_multiply');
+}
+
+/** 開幕の光の演出を出す人数の上限 */
+const MAX_GATE_EFFECTS = 40;
+
+// ---------------------------------------------------------------
+// 自動配置
+// ---------------------------------------------------------------
+
+/** 最前列の X 座標と、一番後ろの X 座標（配置エリアの内側） */
+const FORMATION_FRONT_X = -6;
+const FORMATION_REAR_X = -21;
+/** 隊列の横幅の半分 */
+const FORMATION_HALF_WIDTH = 14;
+const FORMATION_GAP = 0.4;
+const FORMATION_FACING = Math.PI / 2;
+
+/** 射程で前後を分ける（0=近接, 1=中距離, 2=遠距離） */
+export function formationBand(id: UnitTypeId): 0 | 1 | 2 {
+  const range = UNIT_TYPES[id].range;
+  return range < 3 ? 0 : range < 12 ? 1 : 2;
+}
+
+function formationFootprint(id: UnitTypeId): number {
+  return Math.max(1.4, UNIT_TYPES[id].scale * 1.5);
+}
+
+/** 門以外の施設を置く位置（軍の前方の決まった場所） */
+export const ROGUE_FACILITY_POSITIONS: Partial<Record<FacilityTypeId, { x: number; z: number }>> = {
+  buff_totem: { x: -4, z: 0 },
+  cannon_tower: { x: -4, z: -8 },
+  barracks: { x: -4, z: 8 },
+};
+
+/**
+ * 所持している全員と、発動中の門以外の施設の配置を作る。
+ * 近接を前、遠距離を後ろに並べ、毎回同じ並びになる。
+ */
+export function generateRogueFormation(
+  roster: UnitCounts,
+  relics: readonly OwnedRelic[],
+): VersusPlacedRecord[] {
+  const order = new Map(UNIT_TYPE_LIST.map((u, i) => [u.id, i]));
+  const units: UnitTypeId[] = [];
+  for (const id of UNIT_TYPE_LIST.map((u) => u.id)) {
+    for (let i = 0; i < (roster[id] ?? 0); i++) units.push(id);
+  }
+  units.sort(
+    (a, b) =>
+      formationBand(a) - formationBand(b) ||
+      formationFootprint(b) - formationFootprint(a) ||
+      (order.get(a) ?? 0) - (order.get(b) ?? 0),
+  );
+
+  // 同じ帯・横幅に収まる範囲で横列を作る
+  const ranks: UnitTypeId[][] = [];
+  let width = 0;
+  for (const id of units) {
+    const w = formationFootprint(id) + FORMATION_GAP;
+    const rank = ranks[ranks.length - 1];
+    if (!rank || formationBand(rank[0]) !== formationBand(id) || width + w > FORMATION_HALF_WIDTH * 2) {
+      ranks.push([id]);
+      width = w;
+    } else {
+      rank.push(id);
+      width += w;
+    }
+  }
+
+  const depthOf = (rank: readonly UnitTypeId[]) => Math.max(...rank.map(formationFootprint)) + FORMATION_GAP;
+  const totalDepth = ranks.reduce((sum, rank) => sum + depthOf(rank), 0);
+  // 入りきらないほど多いときは奥行きを詰める
+  const compress = Math.min(1, (FORMATION_FRONT_X - FORMATION_REAR_X) / Math.max(1, totalDepth));
+
+  const records: VersusPlacedRecord[] = [];
+  let x = FORMATION_FRONT_X;
+  for (const rank of ranks) {
+    const depth = depthOf(rank) * compress;
+    const rankWidth = rank.reduce((sum, id) => sum + formationFootprint(id) + FORMATION_GAP, 0);
+    let z = -rankWidth / 2;
+    for (const id of rank) {
+      const w = formationFootprint(id) + FORMATION_GAP;
+      records.push({ typeId: id, team: 0, x: x - depth / 2, z: z + w / 2, facing: FORMATION_FACING });
+      z += w;
+    }
+    x -= depth;
+  }
+
+  for (const r of relics) {
+    const pos = ROGUE_FACILITY_POSITIONS[r.id];
+    if (r.active && pos) records.push({ facilityId: r.id, team: 0, x: pos.x, z: pos.z, facing: FORMATION_FACING });
+  }
+  return records;
 }

@@ -10,7 +10,12 @@ import {
 } from '../src/facilities/FacilityTypes';
 import {
   ROGUE_FINAL_ROUND,
+  GATE_CLONE_CHANCE,
+  GATE_GIANT_SCALE,
+  GATE_SHRINK_SPEED,
+  ROGUE_FACILITY_POSITIONS,
   ROGUE_MAX_LIVES,
+  ROGUE_MAX_SLOTS,
   ROGUE_SHOP_SLOTS,
   ROGUE_SKIP_GOLD,
   ROGUE_STARTERS,
@@ -20,6 +25,12 @@ import {
   RogueliteRun,
   UNIT_TAGS,
   applyReward,
+  applyRogueGates,
+  formationBand,
+  generateRogueFormation,
+  getGateUpgradePrice,
+  getSlotPrice,
+  gateEffectText,
   countTags,
   generateComebackOptions,
   generateRewardOptions,
@@ -330,7 +341,7 @@ describe('ローグライト: ランの進行', () => {
       expect(run.inPool(id)).toBe(true);
     }
     expect(run.pool.length).toBe(ROGUE_STARTERS[0].units.length);
-    expect(run.relics).toEqual([{ id: ROGUE_STARTERS[0].relic, level: 0 }]);
+    expect(run.relics).toEqual([{ id: ROGUE_STARTERS[0].relic, level: 0, active: true }]);
   });
 
   it('報酬の3択は種類が重ならず、同じ状態なら同じ内容になる', () => {
@@ -631,6 +642,223 @@ describe('ローグライト: 敗北時の打破策', () => {
     for (let i = 0; i < 40; i++) {
       expect(generateComebackOptions(run, createSeededRng(i)).some((o) => o.kind === 'life')).toBe(false);
     }
+  });
+});
+
+describe('ローグライト v2: 自動配置', () => {
+  const zone = (r: { x: number; z: number }) => r.x >= -22 && r.x <= -1.5 && Math.abs(r.z) <= 16;
+
+  it('所持している全員が配置エリアの中に並び、重ならない', () => {
+    const roster = { clubber: 12, spearman: 8, archer: 10, giant: 3, sniper: 4 };
+    const records = generateRogueFormation(roster, []);
+    expect(records.length).toBe(37);
+    for (const id of Object.keys(roster) as Array<keyof typeof roster>) {
+      expect(records.filter((r) => r.typeId === id).length).toBe(roster[id]);
+    }
+    expect(records.every(zone)).toBe(true);
+    for (let i = 0; i < records.length; i++) {
+      for (let k = i + 1; k < records.length; k++) {
+        expect(Math.hypot(records[i].x - records[k].x, records[i].z - records[k].z)).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('近接が前、遠距離が後ろで、毎回同じ並びになる', () => {
+    const roster = { archer: 3, clubber: 3 };
+    const a = generateRogueFormation(roster, []);
+    expect(a).toEqual(generateRogueFormation(roster, []));
+    expect(formationBand('clubber')).toBe(0);
+    expect(formationBand('archer')).toBe(2);
+    const minMelee = Math.min(...a.filter((r) => r.typeId === 'clubber').map((r) => r.x));
+    const maxArcher = Math.max(...a.filter((r) => r.typeId === 'archer').map((r) => r.x));
+    expect(maxArcher).toBeLessThan(minMelee);
+  });
+
+  it('極端に多くてもエリアからはみ出さない', () => {
+    expect(generateRogueFormation({ giant: 200, clubber: 200 }, []).every(zone)).toBe(true);
+  });
+
+  it('ゲートは戦場に置かず、発動中の門以外の施設だけが決まった位置に置かれる', () => {
+    const records = generateRogueFormation({ clubber: 1 }, [
+      { id: 'fire_gate', level: 0, active: true },
+      { id: 'buff_totem', level: 0, active: true },
+      { id: 'cannon_tower', level: 0, active: false },
+    ]);
+    const facilities = records.filter((r) => r.facilityId);
+    expect(facilities.map((r) => r.facilityId)).toEqual(['buff_totem']);
+    expect(facilities[0].x).toBe(ROGUE_FACILITY_POSITIONS.buff_totem!.x);
+  });
+});
+
+describe('ローグライト v2: ゲートの全員適用', () => {
+  const setup = (counts = 8) => {
+    const battle = new Battle();
+    const rules = new RogueliteRules();
+    battle.rules = rules;
+    for (let i = 0; i < counts; i++) battle.spawnUnit('clubber', 0, -10, -8 + i * 2);
+    battle.spawnUnit('clubber', 1, 10, 0);
+    rules.start(battle);
+    return { battle, rules };
+  };
+  const red = (b: Battle) => b.units.filter((u) => u.team === 0);
+
+  it('増殖はレベルの確率で複製され、最大レベルなら全員が増える', () => {
+    const low = setup();
+    let i = 0;
+    applyRogueGates(low.battle, low.rules, [{ id: 'multiplier_gate', level: 0, active: true }], () => (i++ % 2 === 0 ? 0.1 : 0.9));
+    expect(red(low.battle).length).toBeGreaterThan(8);
+    const max = setup();
+    applyRogueGates(max.battle, max.rules, [{ id: 'multiplier_gate', level: 3, active: true }], createSeededRng(1));
+    expect(red(max.battle).length).toBe(16);
+    const none = setup();
+    applyRogueGates(none.battle, none.rules, [{ id: 'multiplier_gate', level: 0, active: true }], () => GATE_CLONE_CHANCE[0]);
+    expect(red(none.battle).length).toBe(8);
+  });
+
+  it('巨大化はレベルの倍率で全員に効き、敵には効かない', () => {
+    const { battle, rules } = setup();
+    applyRogueGates(battle, rules, [{ id: 'giant_gate', level: 1, active: true }]);
+    expect(red(battle).length).toBe(8);
+    for (const u of red(battle)) {
+      expect(u.scale).toBeCloseTo(GATE_GIANT_SCALE[1]);
+      expect(u.maxHp).toBeCloseTo(UNIT_TYPES.clubber.hp * GATE_GIANT_SCALE[1]);
+    }
+    expect(battle.units.find((u) => u.team === 1)!.scale).toBe(1);
+  });
+
+  it('縮小はレベルで移動速度が上がる', () => {
+    const { battle, rules } = setup(2);
+    applyRogueGates(battle, rules, [{ id: 'shrink_gate', level: 3, active: true }]);
+    expect(red(battle)[0].permSpeedMul).toBeCloseTo(GATE_SHRINK_SPEED[3]);
+    expect(red(battle)[0].scale).toBeCloseTo(0.6);
+  });
+
+  it('複製には巨大化が引き継がれる', () => {
+    const { battle, rules } = setup(2);
+    applyRogueGates(battle, rules, [
+      { id: 'multiplier_gate', level: 3, active: true },
+      { id: 'giant_gate', level: 3, active: true },
+    ]);
+    expect(red(battle).length).toBe(4);
+    for (const u of red(battle)) expect(u.scale).toBeCloseTo(1.6);
+  });
+
+  it('ゲートはシナジーの数に入らない', () => {
+    const { battle, rules } = setup();
+    applyRogueGates(battle, rules, [
+      { id: 'fire_gate', level: 3, active: true },
+      { id: 'giant_gate', level: 0, active: true },
+    ]);
+    expect(rules.tier('fire')).toBe(0);
+    expect(rules.tier('giant')).toBe(0);
+    for (const u of red(battle)) expect(u.grantedTags).not.toContain('giant');
+  });
+
+  it('属性ゲートは重ねられ、レベルで持続が伸びる', () => {
+    const { battle, rules } = setup(1);
+    battle.aiEnabled = true;
+    battle.combat.damageListeners.push((e) => rules.onDamage(e));
+    applyRogueGates(battle, rules, [
+      { id: 'fire_gate', level: 3, active: true },
+      { id: 'venom_gate', level: 0, active: true },
+    ]);
+    const attacker = red(battle)[0];
+    const enemy = battle.spawnUnit('giant', 1, 12, 4);
+    enemy.takeDamage(1, enemy.chest, new Vector3(), 1 / 120, attacker);
+    expect(enemy.burnTimer).toBeCloseTo(2.5 * 2.5);
+    expect(enemy.poisonTimer).toBeCloseTo(3);
+  });
+
+  it('発動するゲートがなければ何も起きない', () => {
+    const { battle, rules } = setup(3);
+    applyRogueGates(battle, rules, []);
+    expect(red(battle).length).toBe(3);
+    expect(rules.gateInfusions).toEqual([]);
+  });
+
+  it('説明文はレベルの数値を出す', () => {
+    expect(gateEffectText('multiplier_gate', 1)).toContain('50%');
+    expect(gateEffectText('giant_gate', 3)).toContain('1.6');
+  });
+});
+
+describe('ローグライト v2: 常設商品とレリックのON/OFF', () => {
+  it('スロットは1000Gから500Gずつ上がり、上限で買えなくなる', () => {
+    expect(getSlotPrice(2)).toBe(1000);
+    expect(getSlotPrice(3)).toBe(1500);
+    const run = new RogueliteRun(1);
+    run.gold = 2500;
+    expect(run.buySlot()).toBe(true);
+    expect(run.gold).toBe(1500);
+    expect(run.buySlot()).toBe(true);
+    expect(run.gold).toBe(0);
+    expect(run.facilitySlots).toBe(ROGUE_MAX_SLOTS);
+    run.gold = 99999;
+    expect(run.slotPrice).toBeNull();
+    expect(run.buySlot()).toBe(false);
+  });
+
+  it('報酬でスロットが増えると次の価格も上がる', () => {
+    const run = new RogueliteRun(1);
+    applyReward(run, { kind: 'slot', rarity: 'rare', title: '', description: '' });
+    expect(run.slotPrice).toBe(1500);
+  });
+
+  it('ゴールドが足りなければスロットもゲート強化も買えない', () => {
+    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
+    run.gold = 0;
+    expect(run.buySlot()).toBe(false);
+    expect(run.buyGateUpgrade(0)).toBe(false);
+    expect(run.relics[0].level).toBe(0);
+  });
+
+  it('ゲート強化はレベルで値上がりし、最大で止まる。門以外は強化できない', () => {
+    expect([0, 1, 2].map(getGateUpgradePrice)).toEqual([500, 1000, 1500]);
+    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
+    run.gold = 3000;
+    expect(run.buyGateUpgrade(0)).toBe(true);
+    expect(run.buyGateUpgrade(0)).toBe(true);
+    expect(run.buyGateUpgrade(0)).toBe(true);
+    expect(run.relics[0].level).toBe(3);
+    expect(run.gold).toBe(0);
+    expect(run.gateUpgradePrice(0)).toBeNull();
+    const heavy = new RogueliteRun(1, ROGUE_STARTERS[1]);
+    expect(heavy.gateUpgradePrice(0)).toBeNull();
+  });
+
+  it('スロットに空きがなければ新しいレリックはOFFで入り、ONにもできない', () => {
+    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
+    run.addRelic('fire_gate');
+    run.addRelic('venom_gate');
+    expect(run.relics.map((r) => r.active)).toEqual([true, true, false]);
+    expect(run.toggleRelic(2)).toBe(false);
+    expect(run.toggleRelic(0)).toBe(true);
+    expect(run.toggleRelic(2)).toBe(true);
+    expect(run.activeRelics.map((r) => r.id)).toEqual(['fire_gate', 'venom_gate']);
+  });
+
+  it('スロットを増やすと待機中のレリックが発動する', () => {
+    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
+    run.addRelic('fire_gate');
+    run.addRelic('venom_gate');
+    run.addSlot();
+    expect(run.activeRelics.length).toBe(3);
+  });
+
+  it('最後の1体は売れない', () => {
+    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
+    run.roster = { clubber: 1 };
+    expect(run.sellUnit('clubber')).toBe(0);
+    expect(run.ownedCount('clubber')).toBe(1);
+  });
+
+  it('レリックのON/OFFと強化は保存される', () => {
+    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
+    run.gold = 1000;
+    run.buyGateUpgrade(0);
+    run.toggleRelic(0);
+    const copy = RogueliteRun.fromState(JSON.parse(JSON.stringify(run.toState())));
+    expect(copy.relics).toEqual(run.relics);
   });
 });
 
