@@ -2959,7 +2959,8 @@ export class GameApp {
     const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}</b> ${'❤'.repeat(run.lives)}`;
     if (this.mode === 'placement') {
       const used = RogueliteRun.placementCost(this.savedLineup);
-      return `${head} ｜ 予算 ${COST_ICON_SVG} <b>${used}</b> / ${run.budget} ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
+      const remain = Math.max(0, run.budget - used);
+      return `${head} ｜ 予算 ${COST_ICON_SVG} 残り <b>${remain}</b> / ${run.budget} pt ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
     }
     const remain = Math.max(0, (this.battle.timeLimitSeconds ?? 0) - this.battle.time);
     return `⚔ ${head} ｜ ⏱ 残り <b>${remain.toFixed(1)}s</b> ｜ 与ダメージ <b>${formatDamage(this.battleStats.total)}</b>`;
@@ -3023,7 +3024,7 @@ export class GameApp {
             : isDone
               ? '🙈 配置完了 (ブラインド中)'
               : isCurrent
-                ? `👉 配置中 (${this.getCurrentTeamCost(t)} / ${this.versus.budget} pt)`
+                ? `👉 配置中 (残り ${Math.max(0, this.versus.budget - this.getCurrentTeamCost(t))} pt)`
                 : '⏳ 待機中';
         const rowClass = isCurrent ? 'versus-turn-row active' : isDone ? 'versus-turn-row done' : 'versus-turn-row';
         rows.push(`
@@ -3253,7 +3254,8 @@ export class GameApp {
       st.specialRules?.maxUnits !== undefined
         ? ` ｜ 配置数: <b>${this.getCurrentRedPlacedCount()}</b>/${st.specialRules.maxUnits}体`
         : '';
-    return `${st.name} ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${st.budget} (残り ${st.budget - used} ｜ ${starPreview})${maxUnitsStr}`;
+    const remain = Math.max(0, st.budget - used);
+    return `${st.name} ｜ 予算: ${COST_ICON_SVG} 残り <b>${remain}</b> / ${st.budget} pt (${starPreview})${maxUnitsStr}`;
   }
 
   private formatVersusBudgetBadge(): string {
@@ -3261,7 +3263,7 @@ export class GameApp {
     const used = this.getCurrentTeamCost(t);
     const budget = this.versus.budget;
     const remain = Math.max(0, budget - used);
-    return `👥 ${this.versus.playerCount}人対戦 ｜ ${TEAM_ICONS[t]} <b>${t + 1}P ${TEAM_NAMES[t]}の配置番</b> ｜ 予算: ${COST_ICON_SVG} <b>${used}</b> / ${budget} (残り ${remain}) ｜ 完了OKでブラインドして次へ`;
+    return `👥 ${this.versus.playerCount}人対戦 ｜ ${TEAM_ICONS[t]} <b>${t + 1}P ${TEAM_NAMES[t]}の配置番</b> ｜ 予算: ${COST_ICON_SVG} 残り <b>${remain}</b> / ${budget} pt ｜ 完了OKでブラインドして次へ`;
   }
 
   private syncPhaseUI(): void {
