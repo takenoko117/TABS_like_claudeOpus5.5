@@ -1,3 +1,5 @@
+@import '@fontsource/dotgothic16/400.css';
+
 * {
   box-sizing: border-box;
   user-select: none;
@@ -1775,39 +1777,36 @@ body.on-title #btn-restore-hud {
 }
 
 .title-logo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   margin: 0;
   color: #ffd43b;
   font-size: clamp(30px, 7.4vw, 62px);
-  font-weight: 900;
-  letter-spacing: 0.02em;
+  font-weight: 400;
   line-height: 1.1;
   text-align: center;
-  text-shadow: 0 4px 0 #b35900, 0 8px 18px rgba(0, 0, 0, 0.55);
-  animation: title-wobble 2.6s ease-in-out infinite;
+  animation: title-bob 1.6s steps(2, jump-none) infinite alternate;
 }
 
-.title-logo span {
-  display: inline-block;
+.title-logo .title-logo-accent {
   color: #ff6b4a;
-  text-shadow: 0 4px 0 #8f1d0d, 0 8px 18px rgba(0, 0, 0, 0.55);
 }
 
 .title-logo .title-logo-en {
-  display: block;
-  margin-top: 0.15em;
+  flex-basis: 100%;
   color: #fff3bf;
   font-size: 0.42em;
-  letter-spacing: 0.24em;
-  text-shadow: 0 2px 0 #b35900, 0 4px 10px rgba(0, 0, 0, 0.55);
 }
 
-@keyframes title-wobble {
-  0%,
-  100% {
-    transform: rotate(-1.2deg) scale(1);
-  }
-  50% {
-    transform: rotate(1.2deg) scale(1.03, 0.98);
+.title-logo .title-logo-en canvas {
+  margin: 0 auto;
+}
+
+@keyframes title-bob {
+  to {
+    transform: translateY(-4px);
   }
 }
 
@@ -2633,33 +2632,19 @@ body.on-title #btn-restore-hud {
 }
 .jk-stage.shake { animation: jk-shake 0.4s linear; }
 .jk-title {
-  min-height: 1.15em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: clamp(34px, 8vh, 78px);
-  font-weight: 900;
-  letter-spacing: 0.02em;
   color: var(--jk-color);
-  -webkit-text-stroke: 2px rgba(40, 15, 0, 0.75);
-  text-shadow: 0 0 26px var(--jk-glow), 0 5px 0 rgba(0, 0, 0, 0.55);
   text-align: center;
   white-space: nowrap;
 }
-.jk-title.slam { animation: jk-slam 0.38s cubic-bezier(0.2, 1.5, 0.4, 1); }
-.jk-title[data-count]::after {
-  content: attr(data-count);
-  margin-left: 0.4em;
-  color: #fff3bf;
-  font-size: 0.72em;
-}
-.jk.best3 .jk-title {
-  background: linear-gradient(90deg, #ff6b6b, #ffd43b, #69db7c, #4dabf7, #da77f2, #ff6b6b);
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: 0;
-  text-shadow: none;
-  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.65)) drop-shadow(0 0 18px #ffd43b);
-  animation: jk-rainbow 0.8s linear infinite, jk-slam 0.38s cubic-bezier(0.2, 1.5, 0.4, 1);
+.jk-title.slam { animation: jk-slam 0.38s steps(5, end); }
+/* レジェンドは色相を回して虹色に光らせる（色そのものはドットごとに描いている） */
+.jk.best3 .jk-title canvas {
+  filter: drop-shadow(0 0 14px #ffd43b);
+  animation: jk-rainbow 0.8s steps(12, end) infinite;
 }
 /* 宝箱そのものは 3D で描き、ここでは名前の位置だけを決める */
 .jk-chest {
@@ -2670,10 +2655,10 @@ body.on-title #btn-restore-hud {
   color: var(--jk-color);
 }
 .jk-chest.upgrade .jk-chest-name { animation: jk-upgrade 0.32s ease-out; }
-.jk-chest-name { font-size: 22px; font-weight: 900; text-shadow: 0 2px 6px #000; }
+.jk-chest-name { font-size: 16px; }
 .jk-hidden { display: none !important; }
 /* リールそのものは 3D で描き、ここでは位置と報酬名だけを決める */
-.jk-reels { display: flex; justify-content: center; gap: min(1.4vw, 12px); margin-bottom: 46px; }
+.jk-reels { display: flex; justify-content: center; gap: min(1.4vw, 12px); margin-bottom: 64px; }
 .jk-reel { position: relative; width: var(--jk-reel-w); height: calc(var(--jk-row) * 3); }
 .jk-label {
   position: absolute;
@@ -2687,17 +2672,18 @@ body.on-title #btn-restore-hud {
   text-align: center;
   line-height: 1.2;
   padding: 3px 2px;
-  border-radius: 8px;
-  background: rgba(8, 10, 18, 0.78);
+  gap: 2px;
+  background: rgba(8, 10, 18, 0.86);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14), 3px 3px 0 2px rgba(0, 0, 0, 0.55);
   opacity: 0;
 }
 .jk-reel.landed .jk-label { opacity: 1; animation: jk-pop 0.25s cubic-bezier(0.2, 1.6, 0.4, 1); }
-.jk-label b { font-size: clamp(11px, 1.9vw, 17px); font-weight: 900; }
-.jk-label small { font-size: clamp(9px, 1.4vw, 12px); }
+.jk-label b { font-size: 16px; font-weight: 400; }
+.jk-label small { font-size: clamp(10px, 1.4vw, 13px); }
 .jk-label.r1 b { color: #74c0fc; }
 .jk-label.r2 b { color: #d0bfff; }
 .jk-label.r3 b { color: #ffd43b; }
-.jk-hint { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+.jk-hint { color: rgba(255, 255, 255, 0.6); font-size: 13px; }
 .jk-chips {
   position: fixed;
   left: 12px;
@@ -2737,7 +2723,7 @@ body.on-title #btn-restore-hud {
   85% { transform: translate(-2px, 2px); }
 }
 @keyframes jk-slam { from { transform: scale(2.6); opacity: 0; } }
-@keyframes jk-rainbow { to { background-position: 300% 0; } }
+@keyframes jk-rainbow { to { filter: drop-shadow(0 0 14px #ffd43b) hue-rotate(360deg); } }
 @keyframes jk-chest-shake {
   0%, 100% { transform: translate(0, 0) rotate(0); }
   25% { transform: translate(-3px, 1px) rotate(-1.4deg); }
@@ -2746,6 +2732,96 @@ body.on-title #btn-restore-hud {
 @keyframes jk-upgrade { 40% { transform: scale(1.32); filter: brightness(2.2); } }
 @keyframes jk-pop { from { transform: scale(0.4); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .jk-flash.on, .jk-stage.shake, .jk.reach .jk-shade { animation: none; }
+  .jk-flash.on, .jk-stage.shake, .jk.reach .jk-shade, .jk.best3 .jk-title canvas, .title-logo { animation: none; }
   .jk-rays { animation-duration: 40s !important; }
+}
+
+/* ---------------------------------------------------------------
+   ドット文字（ボクセル感を出す要所だけに使う）
+   --------------------------------------------------------------- */
+.voxel-text {
+  display: inline-block;
+  line-height: 0;
+}
+
+.voxel-text canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.voxel-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.jk,
+.title-logo,
+.title-card b,
+.phase-badge,
+.start-btn,
+.section-label,
+.side-panel-title,
+.result-title,
+.rogue-modal-title,
+.rogue-card-title,
+.rogue-card-rarity,
+.rogue-sell-title,
+.dmg-label,
+.hp-number,
+.pause-indicator {
+  font-family: 'DotGothic16', 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  font-weight: 400;
+  font-synthesis: none;
+}
+
+.title-card b { font-size: 16px; letter-spacing: 0.04em; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6); }
+.rogue-modal-title { font-size: 20px; text-shadow: 2px 2px 0 #7a4a00; }
+.rogue-card-title { font-size: 16px; }
+.section-label { font-size: 12px; color: #c4cdd6; }
+.side-panel-title { font-size: 13px; }
+.result-title { font-size: 26px; display: flex; justify-content: center; }
+.dmg-label { text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 2px 2px 0 #000; }
+.dmg-huge { letter-spacing: 0; text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 3px 3px 0 #b35900; }
+
+/* 角を落とさず、段差の影でブロックの塊に見せる */
+.phase-badge {
+  border-radius: 0;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.55);
+}
+
+.start-btn {
+  border-radius: 0;
+  background: #e8590c;
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.35), inset -2px -2px 0 rgba(0, 0, 0, 0.28), 3px 3px 0 rgba(0, 0, 0, 0.55);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.start-btn:hover { filter: brightness(1.12); transform: translate(1px, 1px); }
+.start-btn.stop { background: #495057; }
+.start-btn.confirm-turn { background: #2f9e44; }
+
+.title-card,
+.result-banner,
+.rogue-modal-inner,
+.rogue-card,
+.jk-chip {
+  border-radius: 0;
+}
+
+.title-card:not(:hover),
+.rogue-card:not(:disabled) {
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+}
+
+.result-banner,
+.rogue-modal-inner {
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.45), 6px 6px 0 rgba(0, 0, 0, 0.55);
 }

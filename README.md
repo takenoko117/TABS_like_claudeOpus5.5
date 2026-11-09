@@ -160,3 +160,7 @@ npx vitest run
 # 本番用ビルド (dist/ に出力)
 npm run build
 ```
+
+## フォント
+
+ドット文字には [DotGothic16](https://fonts.google.com/specimen/DotGothic16)（SIL Open Font License 1.1）を使用しています。

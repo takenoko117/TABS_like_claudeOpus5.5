@@ -1,6 +1,7 @@
 import type { SoundManager } from '../audio/SoundManager';
 import { JackpotChest3D } from '../render/JackpotChest3D';
 import { JACKPOT_REWARDS, type ChestTier, type JackpotReward } from '../game/RogueJackpot';
+import { preloadVoxelText, setVoxelText, voxelBoxHeight, type VoxelTextOptions } from './VoxelText';
 
 const CHEST_NAMES = ['銅の宝箱', '銀の宝箱', '金の宝箱'];
 const INTRO_TITLES = ['ボーナス！', 'スーパーボーナス!!', 'ゴールドボーナス!!!'];
@@ -41,6 +42,14 @@ export interface JackpotPlayOptions {
   origin: { x: number; y: number };
   sound: SoundManager;
   onFinished(): void;
+}
+
+const TITLE_DEPTH = 2;
+const COUNT_COLOR = 'rgb(255,243,191)';
+const CHEST_NAME_VOXEL: VoxelTextOptions = { height: 32, maxCell: 2, depth: 1, maxWidth: () => window.innerWidth - 32 };
+
+function titleHeight(): number {
+  return Math.max(34, Math.min(78, window.innerHeight * 0.08));
 }
 
 function clamp01(v: number): number {
@@ -86,8 +95,34 @@ export class JackpotRoulette {
   private budgetTotal = 0;
   private countShown = -1;
 
+  private titleRainbow = false;
+
+  constructor() {
+    preloadVoxelText(
+      [
+        ...CHEST_NAMES,
+        ...INTRO_TITLES,
+        ...RESULT_TITLES,
+        'リーチ!!逆転!!…+0123456789G',
+        ...JACKPOT_REWARDS.map((r) => r.name),
+      ].join(''),
+    );
+  }
+
   get active(): boolean {
     return this.opts !== null;
+  }
+
+  private setTitle(text: string, suffix?: string): void {
+    setVoxelText(this.titleEl, text, {
+      height: titleHeight,
+      depth: TITLE_DEPTH,
+      // 半角の英字は幅が狭く、太らせると字の中が潰れる
+      bold: !/[A-Za-z]/.test(text),
+      rainbow: this.titleRainbow,
+      maxWidth: () => window.innerWidth - 32,
+      suffix: suffix ? { text: suffix, color: COUNT_COLOR } : undefined,
+    });
   }
 
   play(opts: JackpotPlayOptions): void {
@@ -101,6 +136,7 @@ export class JackpotRoulette {
     this.rainAcc = 0;
     this.heartbeatAcc = 0;
     this.countShown = -1;
+    this.titleRainbow = false;
     this.maxRarity = Math.max(...opts.rewards.map((r) => r.rarity));
     this.budgetTotal = opts.rewards.reduce((sum, r) => sum + (r.effect.kind === 'gold' ? r.effect.amount : 0), 0);
     this.introEnd = INTRO_BASE + INTRO_PER_TIER * opts.tier;
@@ -122,8 +158,8 @@ export class JackpotRoulette {
       <div class="jk-shade"></div>
       <div class="jk-rays"></div>
       <div class="jk-stage">
-        <div class="jk-title">${INTRO_TITLES[0]}</div>
-        <div class="jk-chest"><div class="jk-chest-name">${CHEST_NAMES[0]}</div></div>
+        <div class="jk-title"></div>
+        <div class="jk-chest"><div class="jk-chest-name"></div></div>
         <div class="jk-reels jk-hidden"></div>
         <div class="jk-hint">クリック / Space でスキップ</div>
       </div>
@@ -143,6 +179,10 @@ export class JackpotRoulette {
     this.chestEl = root.querySelector('.jk-chest') as HTMLDivElement;
     this.reelsEl = root.querySelector('.jk-reels') as HTMLDivElement;
     this.flashEl = root.querySelector('.jk-flash') as HTMLDivElement;
+    // 文字が現れてもリールの位置がずれないよう、見出しの高さは先に確保する
+    this.titleEl.style.minHeight = `${voxelBoxHeight(titleHeight(), TITLE_DEPTH, window.devicePixelRatio || 1)}px`;
+    this.setTitle(INTRO_TITLES[0]);
+    this.setChestName(0);
     // 宝箱と金貨は 3D で描く（WebGL の文脈は使い回す）
     this.chest3d ??= new JackpotChest3D();
     this.chest3d.canvas.className = 'jk-fx';
@@ -171,7 +211,7 @@ export class JackpotRoulette {
       const el = document.createElement('div');
       el.className = 'jk-reel';
       // 絵柄は 3D で描くので、ここは位置決めと報酬名の表示だけを受け持つ
-      el.innerHTML = `<div class="jk-label r${reward.rarity}"><b>${reward.name}</b><small>${reward.detail}</small></div>`;
+      el.innerHTML = `<div class="jk-label r${reward.rarity}"><b></b><small>${reward.detail}</small></div>`;
       this.reelsEl.appendChild(el);
 
       let mainEnd = this.spinStart + FIRST_REEL_SPIN + i * REEL_STAGGER;
@@ -190,6 +230,11 @@ export class JackpotRoulette {
         stopped: false,
       };
     });
+  }
+
+  private setChestName(tier: number): void {
+    const name = this.chestEl.querySelector<HTMLElement>('.jk-chest-name');
+    if (name) setVoxelText(name, CHEST_NAMES[tier], CHEST_NAME_VOXEL);
   }
 
   /** 途中ならすべて止めて結果へ、結果表示中なら閉じる */
@@ -227,20 +272,19 @@ export class JackpotRoulette {
       const tier = this.upgradesDone;
       this.root?.classList.remove(`tier${tier - 1}`);
       this.root?.classList.add(`tier${tier}`);
-      this.titleEl.textContent = INTRO_TITLES[tier];
+      this.setTitle(INTRO_TITLES[tier]);
       retrigger(this.titleEl, 'slam');
       retrigger(this.chestEl, 'upgrade');
       this.chest3d?.setTier(tier, true);
       retrigger(this.flashEl, 'on');
-      const name = this.chestEl.querySelector('.jk-chest-name');
-      if (name) name.textContent = CHEST_NAMES[tier];
+      this.setChestName(tier);
       opts.sound.playJackpotUpgrade(tier);
     }
     if (this.opened || this.t < this.introEnd) return;
     if (!this.lidOpened) {
       this.lidOpened = true;
       this.chestEl.classList.add('jk-hidden');
-      this.titleEl.textContent = '';
+      this.setTitle('');
       retrigger(this.flashEl, 'on');
       retrigger(this.stage, 'shake');
       opts.sound.playJackpotOpen(opts.tier);
@@ -255,16 +299,32 @@ export class JackpotRoulette {
     this.root?.classList.add(`tier${this.opts.tier}`);
     this.chestEl.classList.add('jk-hidden');
     this.reelsEl.classList.remove('jk-hidden');
+    this.paintRewardNames();
     this.chest3d?.layoutReels(
       this.reels.map((r) => r.el.getBoundingClientRect()),
       this.reels,
       this.opts.tier,
     );
     if (!withFx) {
-      this.titleEl.textContent = '';
+      this.setTitle('');
       this.lidOpened = true;
       this.chest3d?.setTier(this.opts.tier, false);
       this.chest3d?.snapOpen();
+    }
+  }
+
+  /** リールの幅に合わせて描くので、リールが表示されてから呼ぶ */
+  private paintRewardNames(): void {
+    for (const reel of this.reels) {
+      const name = reel.el.querySelector<HTMLElement>('.jk-label b');
+      if (!name) continue;
+      setVoxelText(name, reel.reward.name, {
+        height: 32,
+        maxCell: 2,
+        depth: 1,
+        wrap: true,
+        maxWidth: () => reel.el.clientWidth + 8,
+      });
     }
   }
 
@@ -284,7 +344,7 @@ export class JackpotRoulette {
           reel.faked = true;
           this.chest3d?.reels.nudge(reel.index);
           opts.sound.playJackpotReelStop(0);
-          this.titleEl.textContent = '…';
+          this.setTitle('…');
         }
         const slipStart = reel.stopAt - SLIP_MOVE;
         pos = target + clamp01((this.t - slipStart) / SLIP_MOVE);
@@ -313,7 +373,7 @@ export class JackpotRoulette {
       this.reaching = true;
       this.root?.classList.add('reach');
       this.chest3d?.reels.setReach(last.index, true);
-      this.titleEl.textContent = 'リーチ!!';
+      this.setTitle('リーチ!!');
       retrigger(this.titleEl, 'slam');
     }
     if (this.reaching && !last.stopped) {
@@ -336,7 +396,7 @@ export class JackpotRoulette {
     if (reel.reward.rarity >= 1) retrigger(this.stage, 'shake');
     if (reel.reward.rarity >= 2) retrigger(this.flashEl, 'on');
     if (reel.slip) {
-      this.titleEl.textContent = '逆転!!';
+      this.setTitle('逆転!!');
       retrigger(this.titleEl, 'slam');
     }
   }
@@ -346,7 +406,8 @@ export class JackpotRoulette {
     for (const reel of this.reels) if (!reel.stopped) this.stopReel(reel, false);
     this.root?.classList.remove('reach');
     this.root?.classList.add('result', `best${this.maxRarity}`);
-    this.titleEl.textContent = RESULT_TITLES[this.maxRarity];
+    this.titleRainbow = this.maxRarity === 3;
+    this.setTitle(RESULT_TITLES[this.maxRarity]);
     retrigger(this.titleEl, 'slam');
     retrigger(this.flashEl, 'on');
     retrigger(this.stage, 'shake');
@@ -365,7 +426,9 @@ export class JackpotRoulette {
     const shown = Math.round(this.budgetTotal * clamp01((this.t - this.resultAt) / 0.8));
     if (shown === this.countShown) return;
     this.countShown = shown;
-    this.titleEl.dataset.count = `+${shown}G`;
+    const digits = String(this.budgetTotal).length;
+    // 桁が増えても見出しの位置が動かないよう、左を空白で埋める
+    this.setTitle(RESULT_TITLES[this.maxRarity], ` +${String(shown).padStart(digits, ' ')}G`);
     if (shown < this.budgetTotal) opts.sound.playJackpotCoin();
   }
 

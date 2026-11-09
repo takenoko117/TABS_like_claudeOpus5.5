@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
 import { JackpotRoulette } from '../ui/JackpotRoulette';
+import { setVoxelText, type VoxelTextOptions } from '../ui/VoxelText';
 import {
   JACKPOT_MAX_DROPS,
   JackpotDropTracker,
@@ -426,6 +427,30 @@ function isRosterAlive(entity: Unit | Facility): boolean {
   return current.alive;
 }
 
+/** 勝敗バナーの見出し（バナーの幅 min(92vw, 420px) から余白を除いた範囲に収める） */
+const BANNER_VOXEL: VoxelTextOptions = {
+  height: 48,
+  maxCell: 3,
+  depth: 2,
+  maxWidth: () => Math.min(window.innerWidth * 0.92, 420) - 60,
+};
+
+function logoHeight(): number {
+  return Math.max(32, Math.min(64, window.innerWidth * 0.075));
+}
+
+/** タイトルロゴをボクセル文字にする */
+function paintTitleLogo(): void {
+  const maxWidth = (): number => Math.min(760, window.innerWidth - 24);
+  const paint = (selector: string, opts: VoxelTextOptions): void => {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) setVoxelText(el, el.textContent ?? '', opts);
+  };
+  paint('.title-logo-ja', { height: logoHeight, maxCell: 4, depth: 2, bold: true, maxWidth });
+  paint('.title-logo-accent', { height: logoHeight, maxCell: 4, depth: 2, bold: true, maxWidth });
+  paint('.title-logo-en', { height: () => logoHeight() * 0.5, maxCell: 2, depth: 1, maxWidth });
+}
+
 /**
  * ゲーム全体の進行管理と UI バインディング。
  * - アーケードモード: 全40面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
@@ -633,6 +658,7 @@ export class GameApp {
     this.elBanner = document.getElementById('result-banner')!;
     this.elBannerStars = document.getElementById('result-stars');
     this.elBannerText = document.getElementById('result-title')!;
+    paintTitleLogo();
     this.elBannerSub = document.getElementById('result-sub')!;
     this.elBannerUnlock = document.getElementById('result-unlock');
     this.elBannerChallenge = document.getElementById('result-challenge');
@@ -2330,7 +2356,7 @@ export class GameApp {
     this.challengeBest = mergeChallengeBest(this.challengeBest, run.totalScore, run.reachedRound).best;
     saveChallengeBest(this.challengeBest);
 
-    this.elBannerText.textContent = `ROUND ${score.round} クリア！`;
+    setVoxelText(this.elBannerText, `ROUND ${score.round} クリア！`, BANNER_VOXEL);
     this.elBannerSub.textContent = `獲得 +${score.total.toLocaleString()} ｜ 累計スコア ${run.totalScore.toLocaleString()}`;
     this.showChallengeBannerDetail(`
       <div class="challenge-score-row"><span>基本点</span><b>${score.base.toLocaleString()}</b></div>
@@ -2368,7 +2394,7 @@ export class GameApp {
     const best = this.challengeBest;
 
     if (reason === 'quit') document.getElementById('result-stats')?.classList.add('hidden');
-    this.elBannerText.textContent = 'GAME OVER';
+    setVoxelText(this.elBannerText, 'GAME OVER', BANNER_VOXEL);
     this.elBannerSub.textContent = reasonText[reason];
     this.showChallengeBannerDetail(`
       ${isNewRecord ? '<div class="challenge-new-record">🏆 NEW RECORD</div>' : ''}
@@ -2706,7 +2732,7 @@ export class GameApp {
         this.finishRogueRun('clear');
         return;
       }
-      this.elBannerText.textContent = `ROUND ${round} 突破！`;
+      setVoxelText(this.elBannerText, `ROUND ${round} 突破！`, BANNER_VOXEL);
       this.elBannerSub.textContent = `獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G${round === 5 || round === 10 ? ' ｜ ❤ ライフ回復' : ''}`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
@@ -2724,7 +2750,7 @@ export class GameApp {
         this.finishRogueRun('defeat');
         return;
       }
-      this.elBannerText.textContent = `ROUND ${round} 敗北…`;
+      setVoxelText(this.elBannerText, `ROUND ${round} 敗北…`, BANNER_VOXEL);
       this.elBannerSub.textContent = `ライフ -1（残り ${'❤'.repeat(run.lives)}）｜ 💰 残念賞 +${consolation}G${run.lossStreak >= 2 ? `（${run.lossStreak}連敗）` : ''}`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
@@ -2959,7 +2985,7 @@ export class GameApp {
       defeat: 'ライフが尽きました',
       quit: '🏳 ランを終了しました',
     };
-    this.elBannerText.textContent = reason === 'clear' ? 'RUN CLEAR!' : 'GAME OVER';
+    setVoxelText(this.elBannerText, reason === 'clear' ? 'RUN CLEAR!' : 'GAME OVER', BANNER_VOXEL);
     this.elBannerSub.textContent = reasonText[reason];
     const relics = run.relics.map((r) => relicDisplayName(r)).join('・');
     const units = run.ownedUnits.map((id) => `${UNIT_TYPES[id].name}×${run.ownedCount(id)}`).join('・');
@@ -3873,7 +3899,7 @@ export class GameApp {
           this.elBannerStars.textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
           this.elBannerStars.classList.remove('hidden');
         }
-        this.elBannerText.textContent = `ステージ ${st.stageNumber} クリア！`;
+        setVoxelText(this.elBannerText, `ステージ ${st.stageNumber} クリア！`, BANNER_VOXEL);
         this.elBannerSub.textContent = `使用予算: ${usedCost} / ${st.budget} pt ｜ 生存ユニット: ${this.battle.aliveCount(0)} 体`;
 
         if (newlyUnlocked.length > 0 && this.elBannerUnlock) {
@@ -3892,20 +3918,23 @@ export class GameApp {
       } else {
         const isTimeout =
           this.battle.timeLimitSeconds !== null && this.battle.time >= this.battle.timeLimitSeconds;
-        this.elBannerText.textContent =
+        setVoxelText(
+          this.elBannerText,
           res === 'draw'
             ? '引き分け！'
             : isTimeout
               ? '⏱ タイムアップ！ 作戦失敗'
-              : '敗北… 作戦失敗';
+              : '敗北… 作戦失敗',
+          BANNER_VOXEL,
+        );
         this.elBannerSub.textContent = st.hint;
       }
     } else if (this.playStyle === 'versus') {
       if (res === 'draw') {
-        this.elBannerText.textContent = '引き分け！';
+        setVoxelText(this.elBannerText, '引き分け！', BANNER_VOXEL);
         this.elBannerSub.textContent = '全軍ともに全滅しました';
       } else {
-        this.elBannerText.textContent = `${TEAM_ICONS[res]} ${res + 1}P（${TEAM_NAMES[res]}）の勝利！`;
+        setVoxelText(this.elBannerText, `${TEAM_ICONS[res]} ${res + 1}P（${TEAM_NAMES[res]}）の勝利！`, BANNER_VOXEL);
         this.elBannerSub.textContent = `生存ユニット: ${this.battle.aliveCount(res)} 体 ｜ 設定予算: ${this.versus.budget} pt`;
       }
       if (this.elNextStageBtn) {
@@ -3914,10 +3943,10 @@ export class GameApp {
       }
     } else {
       if (res === 'draw') {
-        this.elBannerText.textContent = '引き分け！';
+        setVoxelText(this.elBannerText, '引き分け！', BANNER_VOXEL);
         this.elBannerSub.textContent = '両軍ともに全滅しました';
       } else {
-        this.elBannerText.textContent = `${TEAM_NAMES[res]}の勝利！`;
+        setVoxelText(this.elBannerText, `${TEAM_NAMES[res]}の勝利！`, BANNER_VOXEL);
         this.elBannerSub.textContent = `生存ユニット: ${this.battle.aliveCount(res)} 体`;
       }
     }
