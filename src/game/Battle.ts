@@ -3,6 +3,8 @@ import { CombatSystem, type CombatEffectEvent } from '../combat/CombatSystem';
 import { Facility, type FacilityBattleContext } from '../facilities/Facility';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import { PhysicsWorld, type ChasmSpec, type ObstacleCylinder, type PitSpec } from '../physics/PhysicsWorld';
+import { isMountType, isRiderType } from '../units/Mounting';
+import { PELVIS_HEIGHT } from '../units/Skeleton';
 import { Unit, type UnitContext } from '../units/Unit';
 import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { StageHazardConfig } from './ArcadeStages';
@@ -67,6 +69,33 @@ export class Battle implements UnitContext, FacilityBattleContext {
     const groundY = this.world.getSlopeHeightAt(x, z);
     const unit = new Unit(this.world, UNIT_TYPES[typeId], team, new Vector3(x, groundY, z), f);
     unit.context = this;
+    this.units.push(unit);
+    this.onUnitAdded?.(unit);
+    return unit;
+  }
+
+  /**
+   * かさね配置: 土台ユニットの上に乗り手ユニットを生成する。
+   * 対象外の組み合わせ（土台・乗り手のホワイトリスト外、他チーム、土台が死亡・騎乗中、
+   * 既に乗り手がいる土台）の場合は null を返し、何も生成しない。
+   * 乗り手の初期位置は土台のアンカー（riderPelvisTarget）に合わせる。
+   */
+  spawnMountedUnit(mount: Unit, typeId: UnitTypeId, team: Team, facing?: number): Unit | null {
+    if (!mount.alive || mount.team !== team || mount.mountedOn) return null;
+    if (!isMountType(mount.type.id) || !isRiderType(typeId)) return null;
+    if (this.units.some((u) => u.alive && u.mountedOn === mount)) return null;
+    const f = facing ?? mount.facing;
+    const riderType = UNIT_TYPES[typeId];
+    const seat = mount.riderPelvisTarget(riderType.scale, new Vector3());
+    const unit = new Unit(
+      this.world,
+      riderType,
+      team,
+      new Vector3(seat.x, seat.y - PELVIS_HEIGHT * riderType.scale, seat.z),
+      f,
+    );
+    unit.context = this;
+    unit.mountedOn = mount;
     this.units.push(unit);
     this.onUnitAdded?.(unit);
     return unit;
@@ -474,7 +503,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
   /** 勝者を跳ねさせて喜ばせる（巨体や車両は地響きになってしまうので対象外） */
   celebrate(team: Team): void {
     for (const u of this.units) {
-      if (!u.alive || u.team !== team || u.scale > 1.6) continue;
+      if (!u.alive || u.team !== team || u.scale > 1.6 || u.mountedOn) continue;
       if (u.type.id === 'buggy' || u.type.id === 'sezain') continue;
       const jump = new Vector3(0, 3.4 + Math.random() * 1.6, 0);
       for (const p of u.joints) p.addVelocity(jump, 1);

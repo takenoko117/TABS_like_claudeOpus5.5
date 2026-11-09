@@ -20,6 +20,7 @@ import {
   type TutorialEvent,
   type TutorialStep,
 } from '../ui/TutorialGuide';
+import { isMountType, isRiderType } from '../units/Mounting';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
 import {
   CATEGORY_ICONS,
@@ -102,6 +103,8 @@ interface PlacedRecord {
   x: number;
   z: number;
   facing?: number;
+  /** かさね配置: このレコードが「同じ lineup 内の onTopOf 番目のレコードの上に乗る」ことを示す */
+  onTopOf?: number;
 }
 
 export interface PresetScenario {
@@ -905,8 +908,10 @@ export class GameApp {
       const lineup = this.getActiveLineup();
       const removed = lineup.filter((r) => this.isEditableRecord(r));
       if (removed.length === 0) return;
+      // removeRecord が onTopOf を書き換えるので、復元用には消す前の複製を控える
+      const backup = removed.map((r) => ({ ...r }));
       for (const record of removed) this.removeRecord(record);
-      this.clearedBackup = removed;
+      this.clearedBackup = backup;
       this.showToast('🗑 全消去しました（↶ 戻す / Ctrl+Z で元に戻せます）');
       this.view.clearDebris();
       this.sound.playRemove();
@@ -1790,6 +1795,11 @@ export class GameApp {
       if (!quiet && check.warning) this.flashPhaseWarning(check.warning);
       return false;
     }
+    // かさね配置（試作・サンドボックスのみ）: 乗り手対象の兵種で味方の土台の近くなら、地面ではなく上に乗せる
+    if (this.playStyle === 'sandbox' && !isFacilityTypeId(id) && isRiderType(id)) {
+      const mount = this.findSandboxMountAt(x, z, check.team);
+      if (mount && this.tryPlaceStackedRider(mount, id, check.team, check.facing)) return true;
+    }
     const record: PlacedRecord = isFacilityTypeId(id)
       ? { facilityId: id, team: check.team, x, z, facing: check.facing }
       : { typeId: id, team: check.team, x, z, facing: check.facing };
@@ -1804,19 +1814,72 @@ export class GameApp {
     return true;
   }
 
-  /** 配置レコードから実体を生成し、削除や取り消しのために対応付けを残す */
-  private spawnRecord(record: PlacedRecord): void {
+  /** 配置レコードから実体を生成し、削除や取り消しのために対応付けを残す（mount があればその上に乗せる） */
+  private spawnRecord(record: PlacedRecord, mount: Unit | null = null): Unit | Facility | null {
     let entity: Unit | Facility | null = null;
     if (record.facilityId) {
       entity = this.battle.spawnFacility(record.facilityId, record.team, record.x, record.z, record.facing);
     } else if (record.typeId) {
-      entity = this.battle.spawnUnit(record.typeId, record.team, record.x, record.z, record.facing);
+      entity =
+        (mount && this.battle.spawnMountedUnit(mount, record.typeId, record.team, record.facing)) ||
+        this.battle.spawnUnit(record.typeId, record.team, record.x, record.z, record.facing);
     }
     if (entity) this.placedEntities.set(record, entity);
+    return entity;
   }
 
   private spawnRecords(records: readonly PlacedRecord[]): void {
-    for (const record of records) this.spawnRecord(record);
+    // かさね配置: onTopOf を持つレコードは、土台レコードから生成したユニットの上に乗せ直す
+    const spawnedUnits: Array<Unit | null> = [];
+    for (const record of records) {
+      const mount =
+        this.playStyle === 'sandbox' && record.onTopOf !== undefined ? (spawnedUnits[record.onTopOf] ?? null) : null;
+      const entity = this.spawnRecord(record, mount);
+      spawnedUnits.push(record.typeId ? (entity as Unit | null) : null);
+    }
+  }
+
+  /**
+   * かさね配置（試作）: 地面ヒット点から半径 1.2m 以内にある、同チームの
+   * 土台候補ユニット（ホワイトリスト内・騎乗中でない・乗り手がいない）を探す。
+   */
+  private findSandboxMountAt(x: number, z: number, team: Team): Unit | null {
+    let best: Unit | null = null;
+    let bestDist = 1.2;
+    for (const u of this.battle.units) {
+      if (!u.alive || u.team !== team) continue;
+      if (!isMountType(u.type.id) || u.mountedOn) continue;
+      if (this.battle.units.some((r) => r.alive && r.mountedOn === u)) continue;
+      const d = Math.hypot(u.pelvis.pos.x - x, u.pelvis.pos.z - z);
+      if (d < bestDist) {
+        bestDist = d;
+        best = u;
+      }
+    }
+    return best;
+  }
+
+  /** かさね配置（試作）: 土台の上に乗り手を配置し、編成レコードにも onTopOf を残す */
+  private tryPlaceStackedRider(mount: Unit, id: UnitTypeId, team: Team, facing: number | undefined): boolean {
+    const lineup = this.getActiveLineup();
+    const mountIdx = lineup.findIndex((rec) => this.placedEntities.get(rec) === mount);
+    const record: PlacedRecord = {
+      typeId: id,
+      team,
+      x: mount.pelvis.pos.x,
+      z: mount.pelvis.pos.z,
+      facing,
+      onTopOf: mountIdx >= 0 ? mountIdx : undefined,
+    };
+    const rider = this.battle.spawnMountedUnit(mount, id, team, facing);
+    if (!rider) return false;
+    lineup.push(record);
+    this.placedEntities.set(record, rider);
+    this.clearedBackup = [];
+    this.sound.playPlace();
+    this.flashPhaseWarning(`🪜 かさね配置: ${mount.type.name}の上に${rider.type.name}を乗せた`);
+    this.afterLineupEdited();
+    return true;
   }
 
   /** いま編集している編成（友人対戦は手番プレイヤーのもの） */
@@ -1864,9 +1927,22 @@ export class GameApp {
   private removeRecord(record: PlacedRecord): void {
     const lineup = this.getActiveLineup();
     const idx = lineup.indexOf(record);
-    if (idx >= 0) lineup.splice(idx, 1);
+    if (idx >= 0) {
+      lineup.splice(idx, 1);
+      // かさね配置: 削除でずれた onTopOf 参照を直す（土台を消したら乗り手は地面配置に戻す）
+      for (const rec of lineup) {
+        if (rec.onTopOf === idx) rec.onTopOf = undefined;
+        else if (rec.onTopOf !== undefined && rec.onTopOf > idx) rec.onTopOf -= 1;
+      }
+    }
     const entity = this.placedEntities.get(record);
-    if (entity) this.removeEntity(entity);
+    if (entity) {
+      // かさね配置: 土台を消したら、乗っていたユニットの結合をその場で解く
+      for (const u of this.battle.units) {
+        if (u.mountedOn === entity) u.mountedOn = null;
+      }
+      this.removeEntity(entity);
+    }
   }
 
   private removeEntity(entity: Unit | Facility): void {
