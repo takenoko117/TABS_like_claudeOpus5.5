@@ -454,19 +454,43 @@ body {
   background: rgba(255, 212, 59, 0.25);
 }
 
-.mode-switch-group {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+/* スクロールバー: ブラウザ標準の見た目をやめ、ダークなパネル＋金色アクセントの世界観に合わせる */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 183, 66, 0.55) rgba(10, 14, 22, 0.35);
 }
 
-.mode-switch-group.three-cols {
-  grid-template-columns: 1fr 1fr 1fr;
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
 }
 
-.mode-switch-group.three-cols .ctrl-btn {
-  padding: 6px 4px;
-  font-size: 11px;
+::-webkit-scrollbar-track {
+  background: rgba(10, 14, 22, 0.35);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ffd43b 0%, #ff922b 100%);
+  border-radius: 8px;
+  border: 2px solid rgba(10, 14, 22, 0.55);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffe066 0%, #ffa94d 100%);
+  border: 2px solid rgba(10, 14, 22, 0.55);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #fab005 0%, #f76707 100%);
+  border: 2px solid rgba(10, 14, 22, 0.55);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .stage-grid {

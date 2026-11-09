@@ -716,19 +716,17 @@ export class GameApp {
     this.syncUnitDetailOverlay();
   }
 
-  /** 選択中のゲームモードに合わせて、モードボタンとサイドパネルの表示を切り替える */
+  /** 選択中のゲームモードに合わせて、サイドパネル内のモード別セクションの表示を切り替える（モード選択はタイトル画面で行う） */
   private syncModePanels(): void {
-    const modes: ReadonlyArray<[PlayStyle, string, string]> = [
-      ['arcade', 'btn-mode-arcade', 'arcade-panel'],
-      ['versus', 'btn-mode-versus', 'versus-panel'],
-      ['sandbox', 'btn-mode-sandbox', 'sandbox-panel'],
-      ['challenge', 'btn-mode-challenge', 'challenge-panel'],
-      ['roguelite', 'btn-mode-roguelite', 'roguelite-panel'],
+    const modes: ReadonlyArray<[PlayStyle, string]> = [
+      ['arcade', 'arcade-panel'],
+      ['versus', 'versus-panel'],
+      ['sandbox', 'sandbox-panel'],
+      ['challenge', 'challenge-panel'],
+      ['roguelite', 'roguelite-panel'],
     ];
-    for (const [style, buttonId, panelId] of modes) {
-      const isActive = this.playStyle === style;
-      document.getElementById(buttonId)?.classList.toggle('active', isActive);
-      document.getElementById(panelId)?.classList.toggle('hidden', !isActive);
+    for (const [style, panelId] of modes) {
+      document.getElementById(panelId)?.classList.toggle('hidden', this.playStyle === style);
     }
     // ローグライトの戦闘ルールはローグライトのときだけ有効にする
     this.battle.rules = this.playStyle === 'roguelite' ? this.rogueRules : null;
@@ -790,23 +788,6 @@ export class GameApp {
       this.elTouchEraseBtn.addEventListener('click', () => {
         this.touchEraseMode = !this.touchEraseMode;
         syncEraseBtn();
-      });
-    }
-
-    // モード切替ボタン（アーケード / 友人対戦 / サンドボックス / チャレンジ / ローグライト）
-    const modeButtons: ReadonlyArray<[string, PlayStyle]> = [
-      ['btn-mode-arcade', 'arcade'],
-      ['btn-mode-versus', 'versus'],
-      ['btn-mode-sandbox', 'sandbox'],
-      ['btn-mode-challenge', 'challenge'],
-      ['btn-mode-roguelite', 'roguelite'],
-    ];
-    for (const [id, style] of modeButtons) {
-      document.getElementById(id)?.addEventListener('click', () => {
-        if (this.playStyle === style) return;
-        // 進行中のチャレンジから離れるときは確認する（チャレンジへ入るときは不要）
-        if (style !== 'challenge' && this.blockLeavingChallenge()) return;
-        this.enterPlayStyle(style);
       });
     }
 
