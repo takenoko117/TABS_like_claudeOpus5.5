@@ -1753,7 +1753,7 @@ body.on-title #btn-restore-hud {
 .title-logo {
   margin: 0;
   color: #ffd43b;
-  font-size: clamp(38px, 9vw, 76px);
+  font-size: clamp(30px, 7.4vw, 62px);
   font-weight: 900;
   letter-spacing: 0.02em;
   line-height: 1.1;
@@ -1766,6 +1766,15 @@ body.on-title #btn-restore-hud {
   display: inline-block;
   color: #ff6b4a;
   text-shadow: 0 4px 0 #8f1d0d, 0 8px 18px rgba(0, 0, 0, 0.55);
+}
+
+.title-logo .title-logo-en {
+  display: block;
+  margin-top: 0.15em;
+  color: #fff3bf;
+  font-size: 0.42em;
+  letter-spacing: 0.24em;
+  text-shadow: 0 2px 0 #b35900, 0 4px 10px rgba(0, 0, 0, 0.55);
 }
 
 @keyframes title-wobble {
