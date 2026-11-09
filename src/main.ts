@@ -22,10 +22,21 @@ if (import.meta.env.DEV) {
 }
 
 let lastTime = performance.now();
+let tickErrorCount = 0;
 function animate(now: number): void {
+  // 次フレームを先に予約する: tick 内で例外が起きてもループ自体は止めない
+  requestAnimationFrame(animate);
   const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
   lastTime = now;
-  app.tick(dt);
-  requestAnimationFrame(animate);
+  try {
+    app.tick(dt);
+  } catch (error) {
+    // 1回例外が起きただけでゲーム全体が永久に固まるのを防ぐ。
+    // スタックはコンソールに残すので、再発時はここから原因を追える（連発時は最初の10件だけ記録）
+    tickErrorCount++;
+    if (tickErrorCount <= 10) {
+      console.error(`[animate] tick で例外が発生しました（${tickErrorCount}回目）。ゲームは継続します:`, error);
+    }
+  }
 }
 requestAnimationFrame(animate);

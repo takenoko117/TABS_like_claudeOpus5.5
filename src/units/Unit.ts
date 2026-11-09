@@ -64,9 +64,13 @@ const _kb = new Vector3();
 let nextUnitId = 1;
 
 function wrapAngle(a: number): number {
-  while (a > Math.PI) a -= Math.PI * 2;
-  while (a < -Math.PI) a += Math.PI * 2;
-  return a;
+  // while 減算方式は入力が ±Infinity だと無限ループになるため剰余演算で正規化する（NaN は 0 に倒す）
+  if (!Number.isFinite(a)) return 0;
+  const twoPi = Math.PI * 2;
+  let r = a % twoPi;
+  if (r > Math.PI) r -= twoPi;
+  else if (r < -Math.PI) r += twoPi;
+  return r;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
