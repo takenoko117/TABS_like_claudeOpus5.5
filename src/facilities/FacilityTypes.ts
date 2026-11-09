@@ -4,6 +4,11 @@ export type FacilityTypeId =
   | 'buff_totem'
   | 'multiplier_gate'
   | 'cannon_tower'
+  | 'giant_gate'
+  | 'shrink_gate'
+  | 'fire_gate'
+  | 'thunder_gate'
+  | 'venom_gate'
   | 'terrain_wall'
   | 'terrain_slope'
   | 'terrain_pit';
@@ -13,6 +18,11 @@ export const FACILITY_TYPE_IDS: readonly FacilityTypeId[] = [
   'buff_totem',
   'multiplier_gate',
   'cannon_tower',
+  'giant_gate',
+  'shrink_gate',
+  'fire_gate',
+  'thunder_gate',
+  'venom_gate',
   'terrain_wall',
   'terrain_slope',
   'terrain_pit',
@@ -31,6 +41,8 @@ export interface FacilityType {
   height: number;
   /** 地形ブロック（コスト0・非破壊・ターゲット対象外）かどうか */
   isTerrain?: boolean;
+  /** ローグライトのレリック専用の施設（アーケード・チャレンジの兵種バーと敵編成には出さない） */
+  relicOnly?: boolean;
 }
 
 /** 施設・地形ブロックの一覧定義 */
@@ -71,6 +83,56 @@ export const FACILITY_TYPES: Readonly<Record<FacilityTypeId, FacilityType>> = {
     radius: 0.9,
     height: 2.4,
   },
+  giant_gate: {
+    id: 'giant_gate',
+    name: '巨大化の門',
+    description: '通過した味方を1.6倍の大きさに巨大化させ、HP・攻撃力・吹き飛ばしを高めて「巨体」タグを与える門。同じ門は1体につき1回だけ効く。',
+    cost: 230,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  shrink_gate: {
+    id: 'shrink_gate',
+    name: '縮小の門',
+    description: '通過した味方を0.6倍に縮め、移動速度を50%上げて「機動」タグを与える門。小さくなると弾に当たりにくく、狭い門も通れる。',
+    cost: 150,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  fire_gate: {
+    id: 'fire_gate',
+    name: '炎の門',
+    description: '通過した味方の攻撃に燃焼を付け、「炎」タグを与える門。炎タグの兵種が少なくても炎のシナジーに届く。',
+    cost: 170,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  thunder_gate: {
+    id: 'thunder_gate',
+    name: '雷の門',
+    description: '通過した味方の攻撃に感電を付け、「雷」タグを与える門。感電した敵は一瞬動きが止まる。',
+    cost: 170,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  venom_gate: {
+    id: 'venom_gate',
+    name: '毒の門',
+    description: '通過した味方の攻撃に毒を付け、「毒」タグを与える門。毒は時間をかけて敵のHPを削る。',
+    cost: 170,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
   terrain_wall: {
     id: 'terrain_wall',
     name: '防壁ブロック（壁）',
@@ -109,6 +171,35 @@ export const FACILITY_TYPE_LIST: readonly FacilityType[] = Object.values(FACILIT
 export const COMBAT_FACILITY_TYPE_LIST: readonly FacilityType[] = FACILITY_TYPE_LIST.filter(
   (f) => !f.isTerrain,
 );
+
+/** 門（通過した味方に効果を与える施設）の種類 */
+export const GATE_TYPE_IDS: readonly FacilityTypeId[] = [
+  'multiplier_gate',
+  'giant_gate',
+  'shrink_gate',
+  'fire_gate',
+  'thunder_gate',
+  'venom_gate',
+];
+
+/** 門のサイズ段階ごとの開口幅（m）。0=小門, 1=中門, 2=大門, 3=凱旋門 */
+export const GATE_OPENING_WIDTHS: readonly number[] = [1.7, 3.0, 5.0, 8.0];
+/** 門のサイズ段階の名前 */
+export const GATE_SIZE_NAMES: readonly string[] = ['小門', '中門', '大門', '凱旋門'];
+/** 門のサイズ段階ごとの耐久力 */
+export const GATE_HP_BY_LEVEL: readonly number[] = [300, 450, 650, 900];
+/** 門の最大サイズ段階 */
+export const MAX_GATE_LEVEL = GATE_OPENING_WIDTHS.length - 1;
+
+export function isGateTypeId(id: FacilityTypeId): boolean {
+  return GATE_TYPE_IDS.includes(id);
+}
+
+/** 門の開口幅（m）を返す */
+export function getGateOpeningWidth(level: number): number {
+  const i = Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(level)));
+  return GATE_OPENING_WIDTHS[i];
+}
 
 /** 地形ブロックの一覧 */
 export const TERRAIN_BLOCK_TYPE_LIST: readonly FacilityType[] = FACILITY_TYPE_LIST.filter(

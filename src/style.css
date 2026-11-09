@@ -2095,3 +2095,325 @@ body.on-title #btn-restore-hud {
 .stage-nav-btn:hover {
   background: rgba(40, 50, 70, 0.95);
 }
+
+/* ---------------------------------------------------------------
+   ダメージ数字・HPバーのオーバーレイ
+   --------------------------------------------------------------- */
+.damage-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4;
+  contain: layout style;
+}
+
+.dmg-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  font-weight: 900;
+  font-family: 'Arial Black', system-ui, sans-serif;
+  line-height: 1;
+  white-space: nowrap;
+  color: #ffffff;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.9),
+    1px 1px 0 rgba(0, 0, 0, 0.85),
+    -1px -1px 0 rgba(0, 0, 0, 0.85);
+  will-change: transform, opacity;
+}
+
+.dmg-physical { color: #ffffff; }
+.dmg-explosion { color: #ff5a4a; }
+.dmg-fire { color: #ffa53d; }
+.dmg-shock { color: #ffe95c; }
+.dmg-poison { color: #8fe36a; }
+.dmg-impact { color: #6ec8ff; }
+.dmg-kill { text-decoration: underline; text-decoration-thickness: 2px; }
+.dmg-huge {
+  letter-spacing: 1px;
+  text-shadow:
+    0 0 6px rgba(255, 210, 60, 0.95),
+    0 0 2px rgba(0, 0, 0, 1),
+    2px 2px 0 rgba(0, 0, 0, 0.9);
+}
+
+.hp-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.95), 1px 1px 0 rgba(0, 0, 0, 0.8);
+  will-change: transform;
+}
+
+.hp-number.boss {
+  font-size: 12px;
+  color: #f3d9ff;
+}
+
+/* ---------------------------------------------------------------
+   ローグライト
+   --------------------------------------------------------------- */
+.rogue-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(5, 8, 14, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.rogue-modal-inner {
+  width: min(96vw, 760px);
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: rgba(15, 20, 30, 0.96);
+  border: 2px solid rgba(255, 212, 59, 0.6);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  color: #e9ecef;
+}
+
+.rogue-modal-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #ffd43b;
+  margin-bottom: 4px;
+}
+
+.rogue-modal-sub,
+.rogue-modal-foot {
+  font-size: 12px;
+  color: #adb5bd;
+  margin-bottom: 10px;
+}
+
+.rogue-modal-foot {
+  margin: 10px 0 0;
+}
+
+.rogue-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.rogue-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  text-align: left;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  background: rgba(30, 36, 48, 0.92);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.rogue-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: #ffd43b;
+}
+
+.rogue-card.locked,
+.rogue-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rogue-card.rarity-common { border-color: rgba(173, 181, 189, 0.5); }
+.rogue-card.rarity-rare { border-color: rgba(77, 171, 247, 0.8); }
+.rogue-card.rarity-legendary {
+  border-color: rgba(255, 168, 0, 0.95);
+  box-shadow: 0 0 12px rgba(255, 168, 0, 0.35);
+}
+
+.rogue-card-rarity {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #adb5bd;
+}
+
+.rarity-rare .rogue-card-rarity { color: #74c0fc; }
+.rarity-legendary .rogue-card-rarity { color: #ffc078; }
+
+.rogue-card-icon .unit-portrait-svg {
+  width: 44px;
+  height: 44px;
+}
+
+.rogue-card-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: #fff;
+}
+
+.rogue-card-desc {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #ced4da;
+}
+
+.rogue-card-foot {
+  margin-top: auto;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffd43b;
+}
+
+.rogue-card-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rogue-unit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 2px 2px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+}
+
+.rogue-unit-chip .unit-portrait-svg {
+  width: 22px;
+  height: 22px;
+}
+
+.rogue-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tag-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0;
+}
+
+.tag-row {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid rgba(255, 255, 255, 0.15);
+}
+
+.tag-row.tier-2 { border-left-color: #4dabf7; background: rgba(77, 171, 247, 0.1); }
+.tag-row.tier-4 { border-left-color: #ffa94d; background: rgba(255, 169, 77, 0.14); }
+
+.tag-name {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tag-effect {
+  font-size: 10.5px;
+  color: #ced4da;
+}
+
+.tag-effect i {
+  color: #868e96;
+  font-style: normal;
+}
+
+.unit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.tag-chip {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e9ecef;
+  white-space: nowrap;
+}
+
+.stat-pill.placed {
+  background: rgba(64, 192, 87, 0.25);
+  color: #8ce99a;
+}
+
+.report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0;
+}
+
+.report-row {
+  display: grid;
+  grid-template-columns: 7em 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.report-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.report-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ff8787, #ffd43b);
+}
+
+.growth-title {
+  font-size: 11px;
+  color: #adb5bd;
+  margin-top: 8px;
+}
+
+.growth-chart {
+  width: 100%;
+  height: 90px;
+}
+
+.growth-chart polyline {
+  fill: none;
+  stroke: #ffd43b;
+  stroke-width: 2;
+}
+
+.growth-chart circle.won { fill: #ffd43b; }
+.growth-chart circle.lost { fill: #ff6b6b; }
+
+.stat-pill.placed {
+  white-space: nowrap;
+  font-size: 9.5px;
+}

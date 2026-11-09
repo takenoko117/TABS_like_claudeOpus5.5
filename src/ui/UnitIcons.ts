@@ -867,6 +867,20 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
 }
 
 /** 施設用アイコン SVG を返す */
+/** ローグライトの門のアイコン（色と1文字の記号で種類を表す） */
+function gateIconSvg(color: string, label: string): string {
+  return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+    <rect x="4" y="6" width="6" height="26" rx="1" fill="#3d434e" stroke="#282c34" stroke-width="1"/>
+    <rect x="26" y="6" width="6" height="26" rx="1" fill="#3d434e" stroke="#282c34" stroke-width="1"/>
+    <rect x="6" y="8" width="2" height="22" fill="${color}"/>
+    <rect x="28" y="8" width="2" height="22" fill="${color}"/>
+    <rect x="4" y="4" width="28" height="6" rx="1.5" fill="#4e5563"/>
+    <rect x="12" y="2.5" width="12" height="8" rx="1" fill="#1e222a" stroke="${color}" stroke-width="1"/>
+    <text x="18" y="9" font-size="6" font-weight="900" text-anchor="middle" fill="${color}" font-family="sans-serif">${label}</text>
+    <rect x="11" y="12" width="14" height="18" rx="1" fill="${color}" opacity="0.28"/>
+  </svg>`;
+}
+
 export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
   switch (facilityId) {
     case 'barracks':
@@ -924,6 +938,17 @@ export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
         <line x1="18" y1="11" x2="18" y2="30" stroke="#60c0ff" stroke-width="1.5" stroke-dasharray="3 1.5"/>
         <line x1="23" y1="11" x2="23" y2="30" stroke="#38d9a9" stroke-width="1" stroke-dasharray="2 2"/>
       </svg>`;
+
+    case 'giant_gate':
+      return gateIconSvg('#ffb35c', '大');
+    case 'shrink_gate':
+      return gateIconSvg('#7fd6ff', '小');
+    case 'fire_gate':
+      return gateIconSvg('#ff6a3d', '炎');
+    case 'thunder_gate':
+      return gateIconSvg('#fff06a', '雷');
+    case 'venom_gate':
+      return gateIconSvg('#8fe36a', '毒');
 
     case 'cannon_tower':
       // 防衛キャノン砲台: 円柱石積みタワーと突き出る大砲

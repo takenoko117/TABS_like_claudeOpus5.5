@@ -4,9 +4,36 @@ import type { Unit } from '../units/Unit';
 import type { Team, UnitTypeId } from '../units/UnitTypes';
 import {
   FACILITY_TYPES,
+  GATE_HP_BY_LEVEL,
+  MAX_GATE_LEVEL,
+  getGateOpeningWidth,
+  isGateTypeId,
   type FacilityType,
   type FacilityTypeId,
 } from './FacilityTypes';
+
+/** 門を通過したユニットへの変身指示（巨大化・縮小）。Battle がユニットを作り直して適用する */
+export interface UnitTransform {
+  scaleMul: number;
+  hpMul: number;
+  damageMul?: number;
+  speedMul?: number;
+  knockbackMul?: number;
+  tag?: string;
+}
+
+/** 施設生成時のオプション */
+export interface FacilitySpawnOptions {
+  /** 門のサイズ段階（0=小門〜3=凱旋門） */
+  gateLevel?: number;
+}
+
+/** 大門以上の増殖ゲートで複製できる巨体（体格1.9以上）の1ラウンドあたりの上限 */
+export const MAX_BIG_CLONES_PER_GATE = 3;
+/** 巨大化の門で到達できる体格の上限 */
+const MAX_GIANT_GATE_SCALE = 3.0;
+/** 縮小の門で縮められる体格の下限 */
+const MIN_SHRINK_GATE_SCALE = 0.45;
 
 /** 施設が相互作用するバトル環境のインターフェース */
 export interface FacilityBattleContext {
@@ -15,6 +42,10 @@ export interface FacilityBattleContext {
   readonly time: number;
   spawnUnit(typeId: UnitTypeId, team: Team, x: number, z: number, facing?: number): Unit;
   spawnCloneUnit(parent: Unit, x: number, z: number): Unit;
+  /** 門の変身（巨大化・縮小）を適用したユニットを作り直す */
+  transformUnit?(unit: Unit, transform: UnitTransform): Unit;
+  /** ユニットが門を通過したことを通知する（タグのシナジー再計算など） */
+  onGatePassed?(unit: Unit, gate: Facility): void;
   fireFacilityCannon(facility: Facility, targetPos: Vector3, targetVel?: Vector3): void;
   emitEffect(effect: any): void;
   playFacilitySound?(kind: string): void;
@@ -56,19 +87,28 @@ export class Facility {
   // 召喚する兵種のローテーション
   private spawnerCycle = 0;
 
+  /** 門のサイズ段階（門以外は 0） */
+  readonly gateLevel: number;
+  /** 大門以上の増殖ゲートで複製した巨体の数 */
+  private bigClones = 0;
+
   constructor(
     typeId: FacilityTypeId,
     team: Team,
     x: number,
     z: number,
     facing: number = team === 0 ? Math.PI / 2 : -Math.PI / 2,
+    opts?: FacilitySpawnOptions,
   ) {
     this.type = FACILITY_TYPES[typeId];
     this.team = team;
     this.pos = new Vector3(x, 0, z);
     this.facing = facing;
-    this.hp = this.type.hp;
-    this.maxHp = this.type.hp;
+    this.gateLevel = this.isGate
+      ? Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(opts?.gateLevel ?? 0)))
+      : 0;
+    this.hp = this.isGate ? GATE_HP_BY_LEVEL[this.gateLevel] : this.type.hp;
+    this.maxHp = this.hp;
 
     // 前方向・右方向ベクトル
     this.forward.set(Math.sin(facing), 0, Math.cos(facing));
@@ -86,7 +126,23 @@ export class Facility {
   }
 
   get radius(): number {
-    return this.type.radius;
+    // 大きい門ほど占有範囲（クリック判定・配置の重なり）が広がる
+    return this.isGate ? Math.max(this.type.radius, this.gateOpening / 2 + 0.5) : this.type.radius;
+  }
+
+  /** 通過したユニットに効果を与える門か */
+  get isGate(): boolean {
+    return isGateTypeId(this.type.id);
+  }
+
+  /** 門の開口幅（m） */
+  get gateOpening(): number {
+    return getGateOpeningWidth(this.gateLevel);
+  }
+
+  /** 門の柱の半径（m） */
+  get gatePoleRadius(): number {
+    return 0.32 + 0.1 * this.gateLevel;
   }
 
   get height(): number {
@@ -100,10 +156,10 @@ export class Facility {
 
   /** 施設・地形ブロックの種類に応じた物理コライダーの生成 */
   private setupObstacles(): void {
-    if (this.type.id === 'multiplier_gate') {
-      // 増殖ゲートは左右に2本の支柱コライダーを配置し、中央は通過可能にする
-      const halfSpan = 1.15;
-      const poleRadius = 0.32;
+    if (this.isGate) {
+      // 門は左右に2本の支柱コライダーを開口の外側に配置し、中央は通過可能にする
+      const poleRadius = this.gatePoleRadius;
+      const halfSpan = this.gateOpening / 2 + poleRadius;
       const leftX = this.pos.x - this.rightDir.x * halfSpan;
       const leftZ = this.pos.z - this.rightDir.z * halfSpan;
       const rightX = this.pos.x + this.rightDir.x * halfSpan;
@@ -196,7 +252,12 @@ export class Facility {
         this.updateBuffTotem(dt, ctx);
         break;
       case 'multiplier_gate':
-        this.updateMultiplierGate(dt, ctx);
+      case 'giant_gate':
+      case 'shrink_gate':
+      case 'fire_gate':
+      case 'thunder_gate':
+      case 'venom_gate':
+        this.updateGate(ctx);
         break;
       case 'cannon_tower':
         this.updateCannonTower(dt, ctx);
@@ -267,46 +328,104 @@ export class Facility {
     }
   }
 
-  /** 増殖ゲート: 通過した味方ユニットを検知して複製 */
-  private updateMultiplierGate(dt: number, ctx: FacilityBattleContext): void {
-    const gateWidth = 2.1;
-    const halfWidth = gateWidth / 2;
+  /**
+   * 門: 開口を通過した味方ユニットを検知し、門の種類に応じた効果を与える。
+   * 同じ門は1体につき1回だけ効く（複製体・作り直した個体も通過済みを引き継ぐ）。
+   */
+  private updateGate(ctx: FacilityBattleContext): void {
+    const halfWidth = this.gateOpening / 2;
     const detectDepth = 0.7;
+    const transforms: Array<[Unit, UnitTransform]> = [];
 
     for (const u of ctx.units) {
       if (!u.alive || u.team !== this.team) continue;
-      if (u.gateCooldown > 0) continue;
+      if (u.gateCooldown > 0 || u.gatesPassed.has(this.id)) continue;
 
       // ユニットの位置をゲートのローカル座標系に投影
       const dx = u.pelvis.pos.x - this.pos.x;
       const dz = u.pelvis.pos.z - this.pos.z;
-
-      // ゲート右方向成分（横位置）と前方向成分（奥行き）
       const localRight = dx * this.rightDir.x + dz * this.rightDir.z;
       const localForward = dx * this.forward.x + dz * this.forward.z;
+      if (Math.abs(localRight) > halfWidth || Math.abs(localForward) > detectDepth) continue;
 
-      // ゲート枠内（左右 halfWidth 以内、かつ手前〜奥の狭い厚み detectDepth 以内）を判定
-      if (Math.abs(localRight) <= halfWidth && Math.abs(localForward) <= detectDepth) {
-        // 通過判定成立！クールダウンを付与
-        u.gateCooldown = 4.0;
+      // 通過判定成立
+      u.gatesPassed.add(this.id);
+      u.gateCooldown = 1.0;
 
-        // クローンユニットをゲートの前方少し横（空いている側）にスポーン
-        const cloneOffsetRight = localRight >= 0 ? -0.75 : 0.75;
-        const cloneX = this.pos.x + this.forward.x * 1.45 + this.rightDir.x * cloneOffsetRight;
-        const cloneZ = this.pos.z + this.forward.z * 1.45 + this.rightDir.z * cloneOffsetRight;
-
-        const clone = ctx.spawnCloneUnit(u, cloneX, cloneZ);
-        clone.gateCooldown = 4.0;
-
-        // 複製エフェクトとサウンド発行
-        ctx.emitEffect({
-          kind: 'gate_multiply',
-          pos: new Vector3(cloneX, 0.6, cloneZ),
-          team: this.team,
-        });
-        ctx.playFacilitySound?.('gate_multiply');
+      switch (this.type.id) {
+        case 'multiplier_gate':
+          this.multiplyUnit(u, localRight, ctx);
+          break;
+        case 'giant_gate':
+          if (u.scale < MAX_GIANT_GATE_SCALE) {
+            transforms.push([
+              u,
+              {
+                scaleMul: Math.min(1.6, MAX_GIANT_GATE_SCALE / u.scale),
+                hpMul: 1.6,
+                damageMul: 1.35,
+                knockbackMul: 1.5,
+                tag: 'giant',
+              },
+            ]);
+          }
+          break;
+        case 'shrink_gate':
+          if (u.scale > MIN_SHRINK_GATE_SCALE) {
+            transforms.push([
+              u,
+              { scaleMul: Math.max(0.6, MIN_SHRINK_GATE_SCALE / u.scale), hpMul: 0.8, speedMul: 1.5, tag: 'mobile' },
+            ]);
+          }
+          break;
+        case 'fire_gate':
+          this.infuse(u, 'fire', 'fire');
+          break;
+        case 'thunder_gate':
+          this.infuse(u, 'shock', 'shock');
+          break;
+        case 'venom_gate':
+          this.infuse(u, 'poison', 'poison');
+          break;
       }
+
+      ctx.emitEffect({
+        kind: 'gate_multiply',
+        pos: new Vector3(u.pelvis.pos.x, 0.6, u.pelvis.pos.z),
+        team: this.team,
+      });
+      ctx.playFacilitySound?.('gate_multiply');
+      ctx.onGatePassed?.(u, this);
     }
+
+    // 巨大化・縮小はユニットを作り直すため、走査が終わってからまとめて適用する
+    for (const [u, t] of transforms) {
+      if (!u.alive || !ctx.transformUnit) continue;
+      const next = ctx.transformUnit(u, t);
+      ctx.onGatePassed?.(next, this);
+    }
+  }
+
+  /** 増殖ゲート: ユニットを複製する（大門以上の巨体の複製は回数制限あり） */
+  private multiplyUnit(u: Unit, localRight: number, ctx: FacilityBattleContext): void {
+    const isBig = u.scale >= 1.9;
+    if (isBig && this.bigClones >= MAX_BIG_CLONES_PER_GATE) return;
+    if (isBig) this.bigClones++;
+
+    // クローンユニットをゲートの前方少し横（空いている側）にスポーン
+    const side = Math.max(0.75, u.scale * 0.6);
+    const cloneOffsetRight = localRight >= 0 ? -side : side;
+    const cloneX = this.pos.x + this.forward.x * (1.45 + u.scale * 0.3) + this.rightDir.x * cloneOffsetRight;
+    const cloneZ = this.pos.z + this.forward.z * (1.45 + u.scale * 0.3) + this.rightDir.z * cloneOffsetRight;
+    const clone = ctx.spawnCloneUnit(u, cloneX, cloneZ);
+    clone.gateCooldown = 4.0;
+    u.gateCooldown = 4.0;
+  }
+
+  /** 属性の門: 攻撃に状態異常を乗せ、タグを与える */
+  private infuse(u: Unit, element: 'fire' | 'shock' | 'poison', tag: string): void {
+    u.elementInfusion = element;
+    if (!u.grantedTags.includes(tag)) u.grantedTags.push(tag);
   }
 
   /** 防衛キャノン砲台: 接近する敵を迎撃 */

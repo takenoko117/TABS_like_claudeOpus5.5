@@ -24,6 +24,20 @@ export interface HitEvent {
   carveScale?: number;
 }
 
+/** 数値表示・集計用のダメージの種類 */
+export type DamageKind = 'physical' | 'explosion' | 'fire' | 'shock' | 'poison' | 'impact';
+
+/** ユニットが実際に受けたダメージ（数値表示・レリック・戦闘後の内訳に使う） */
+export interface DamageEvent {
+  victim: Unit;
+  attacker: Unit | null;
+  /** 防御・ダメージカット適用後の実ダメージ */
+  amount: number;
+  kind: DamageKind;
+  killed: boolean;
+  pos: Vector3;
+}
+
 export type CombatEffectEvent =
   | { kind: 'lightning'; points: Vector3[] }
   | { kind: 'gravity_pull'; pos: Vector3 }
@@ -195,6 +209,10 @@ export class CombatSystem {
   projectileDamageMultiplier = 1.0;
 
   onHit: ((e: HitEvent) => void) | null = null;
+  /** ユニットがダメージを受けるたびに呼ばれるリスナー（数値表示・ローグライトのルールなど） */
+  readonly damageListeners: Array<(e: DamageEvent) => void> = [];
+  /** 次に発生するダメージの種類（範囲爆発・継続ダメージなどの処理中だけ切り替える） */
+  currentDamageKind: DamageKind = 'physical';
   onShootArrow: ((owner: Unit) => void) | null = null;
   onEffect: ((e: CombatEffectEvent) => void) | null = null;
 
@@ -210,6 +228,22 @@ export class CombatSystem {
 
   emitEffect(e: CombatEffectEvent): void {
     this.onEffect?.(e);
+  }
+
+  /** ダメージをリスナーへ通知する（Unit.takeDamage から呼ばれる） */
+  notifyDamage(e: DamageEvent): void {
+    for (const fn of this.damageListeners) fn(e);
+  }
+
+  /** 指定した種類でダメージ処理を実行する（処理後は元の種類に戻す） */
+  withDamageKind<T>(kind: DamageKind, fn: () => T): T {
+    const prev = this.currentDamageKind;
+    this.currentDamageKind = kind;
+    try {
+      return fn();
+    } finally {
+      this.currentDamageKind = prev;
+    }
   }
 
   /** 物理ステップで記録された接触を処理し、ダメージとノックバックを適用する */
@@ -386,7 +420,10 @@ export class CombatSystem {
         currentTarget.shockTimer = Math.max(currentTarget.shockTimer, 0.85);
         currentTarget.muscle = Math.min(currentTarget.muscle, 0.08);
         const jolt = new Vector3((Math.random() - 0.5) * 4, 2.5, (Math.random() - 0.5) * 4);
-        const killed = currentTarget.takeDamage(currentDamage, currentTarget.chest, jolt, dt, owner, true);
+        const victim = currentTarget;
+        const killed = this.withDamageKind('shock', () =>
+          victim.takeDamage(currentDamage, victim.chest, jolt, dt, owner, true),
+        );
         this.onHit?.({
           kind: 'magic',
           point: hitPos.clone(),
@@ -491,7 +528,10 @@ export class CombatSystem {
       _dir.multiplyScalar(kb);
 
       const finalDmg = damage * falloff * dmgMul;
-      const killed = u.takeDamage(finalDmg, u.chest, _dir, dt, attacker ?? undefined);
+      const blastKind = hitKind === 'explosion' && this.currentDamageKind === 'physical' ? 'explosion' : this.currentDamageKind;
+      const killed = this.withDamageKind(blastKind, () =>
+        u.takeDamage(finalDmg, u.chest, _dir, dt, attacker ?? undefined),
+      );
       if (attacker) {
         this.onHit?.({
           kind: hitKind,

@@ -45,6 +45,7 @@ const _dir = new Vector3();
 const _tmp = new Vector3();
 const _mountTarget = new Vector3();
 const _mountJointTarget = new Vector3();
+const _kb = new Vector3();
 
 let nextUnitId = 1;
 
@@ -82,7 +83,8 @@ export class Unit {
   /** 標準体格に対する質量倍率 */
   readonly massScale: number;
   readonly totalMass: number;
-  readonly maxHp: number;
+  /** 最大HP（ローグライトの強化で戦闘開始時に書き換えることがある） */
+  maxHp: number;
   /** スライム分裂世代（0=キング, 1=中, 2=小） */
   readonly splitGen: number;
 
@@ -122,6 +124,26 @@ export class Unit {
   kills = 0;
   /** 増殖ゲート通過後のクールダウン（秒） */
   gateCooldown = 0;
+
+  // 戦闘を通して続く強化（ローグライトのタグ・門・ボスなど。毎ステップのリセット後に掛け合わせる）
+  /** 永続の攻撃力倍率 */
+  permDamageMul = 1.0;
+  /** 永続の移動速度倍率 */
+  permSpeedMul = 1.0;
+  /** 永続の被ダメージ倍率 */
+  permVulnerabilityMul = 1.0;
+  /** 与える吹き飛ばしの倍率 */
+  knockbackMul = 1.0;
+  /** 増殖ゲートなどで生まれた複製体か */
+  isClone = false;
+  /** ボスとして強化された個体か（HP数値を常に表示する） */
+  isBoss = false;
+  /** 門などで後から得た属性タグ */
+  grantedTags: string[] = [];
+  /** 通過済みの門（施設 ID）。同じ門は1体につき1回だけ効く */
+  readonly gatesPassed = new Set<number>();
+  /** 属性の門で付与された、攻撃に乗る状態異常 */
+  elementInfusion: 'fire' | 'shock' | 'poison' | null = null;
 
   // 状態異常・特殊ギミック用プロパティ
   context: UnitContext | null = null;
@@ -397,7 +419,9 @@ export class Unit {
       if (this.burnTickTimer <= 0) {
         this.burnTickTimer = 0.22;
         const attacker = this.burnAttacker ?? this;
-        const killed = this.takeDamage(4.5, this.chest, _tmp.set(0, 0.2, 0), dt, attacker);
+        const killed = ctx.combat.withDamageKind('fire', () =>
+          this.takeDamage(4.5, this.chest, _tmp.set(0, 0.2, 0), dt, attacker),
+        );
         ctx.combat.onHit?.({
           kind: 'magic',
           point: this.chest.pos.clone(),
@@ -419,7 +443,9 @@ export class Unit {
       if (this.poisonTickTimer <= 0) {
         this.poisonTickTimer = 0.28;
         const attacker = this.poisonAttacker ?? this;
-        const killed = this.takeDamage(6.0, this.chest, _tmp.set(0, 0.1, 0), dt, attacker);
+        const killed = ctx.combat.withDamageKind('poison', () =>
+          this.takeDamage(6.0, this.chest, _tmp.set(0, 0.1, 0), dt, attacker),
+        );
         ctx.combat.onHit?.({
           kind: 'magic',
           point: this.chest.pos.clone(),
@@ -3100,6 +3126,9 @@ export class Unit {
     const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
     if (creditsAttacker) attacker.damageDealt += Math.min(finalDamage, Math.max(0, this.hp));
     this.hp -= finalDamage;
+    // 与える側の吹き飛ばし倍率（衝撃タグのシナジーや巨大化の門）
+    const kbMul = attacker && attacker !== this ? attacker.knockbackMul : 1;
+    if (kbMul !== 1) dv = _kb.copy(dv).multiplyScalar(kbMul);
     this.hitFlash = 1;
     // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴン・大蛇・バギーは強靭でよろめきにくい）
     const isSuperHeavy =
@@ -3118,12 +3147,22 @@ export class Unit {
     hitParticle.addVelocity(dv, dt);
     _tmp.copy(dv).multiplyScalar(0.3);
     for (const p of this.joints) p.addVelocity(_tmp, dt);
-    if (this.hp <= 0) {
+    const killed = this.hp <= 0;
+    if (killed) {
       if (creditsAttacker) attacker.kills++;
       this.die();
-      return true;
     }
-    return false;
+    if (this.context && finalDamage > 0) {
+      this.context.combat.notifyDamage({
+        victim: this,
+        attacker: attacker && attacker !== this ? attacker : null,
+        amount: finalDamage,
+        kind: this.context.combat.currentDamageKind,
+        killed,
+        pos: hitParticle.pos,
+      });
+    }
+    return killed;
   }
 
   die(): void {

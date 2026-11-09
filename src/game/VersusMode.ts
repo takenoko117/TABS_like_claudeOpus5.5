@@ -13,6 +13,10 @@ export interface VersusPlacedRecord {
   facing?: number;
   /** かさね配置: 同じ lineup 内の土台レコードの index（試作ではサンドボックスのみ使用） */
   onTopOf?: number;
+  /** 門のサイズ段階（ローグライトの門レリック） */
+  gateLevel?: number;
+  /** ボスとして強化する個体（ローグライトの最終ラウンド） */
+  boss?: boolean;
 }
 
 /** 対戦モードの最小・最大予算 (pt) */

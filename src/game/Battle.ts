@@ -1,6 +1,11 @@
 import { Vector3 } from 'three';
 import { CombatSystem, type CombatEffectEvent } from '../combat/CombatSystem';
-import { Facility, type FacilityBattleContext } from '../facilities/Facility';
+import {
+  Facility,
+  type FacilityBattleContext,
+  type FacilitySpawnOptions,
+  type UnitTransform,
+} from '../facilities/Facility';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import { PhysicsWorld, type ChasmSpec, type ObstacleCylinder, type PitSpec } from '../physics/PhysicsWorld';
 import { isMountType, isRiderType } from '../units/Mounting';
@@ -22,6 +27,16 @@ export interface BattleStageConfig {
   damageMultiplier?: number;
   speedMultiplier?: number;
   hazard?: StageHazardConfig;
+}
+
+/** モード固有の戦闘ルール（ローグライトのタグ・レリックなど）を差し込むためのフック */
+export interface BattleRules {
+  /** 毎ステップ、バフのリセット直後（施設・ユニット更新の前）に呼ばれる */
+  onStep?(battle: Battle, dt: number): void;
+  /** ユニットが門を通過したとき */
+  onGatePassed?(battle: Battle, unit: Unit, gate: Facility): void;
+  /** 複製・作り直しで新しいユニットが生まれたとき */
+  onUnitDerived?(battle: Battle, unit: Unit, parent: Unit): void;
 }
 
 /**
@@ -58,6 +73,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   onFacilityAdded: ((f: Facility) => void) | null = null;
   onFacilityRemoved: ((f: Facility) => void) | null = null;
   onPlayFacilitySound: ((kind: string) => void) | null = null;
+  /** モード固有の戦闘ルール（null なら標準ルール） */
+  rules: BattleRules | null = null;
 
   private accumulator = 0;
 
@@ -115,8 +132,11 @@ export class Battle implements UnitContext, FacilityBattleContext {
       { scaleOverride, hpOverride, splitGen },
     );
     unit.context = this;
+    copyDerivedState(parent, unit);
+    if (!unit.grantedTags.includes('clone')) unit.grantedTags.push('clone');
     this.units.push(unit);
     this.onUnitAdded?.(unit);
+    this.rules?.onUnitDerived?.(this, unit, parent);
     return unit;
   }
 
@@ -132,19 +152,71 @@ export class Battle implements UnitContext, FacilityBattleContext {
       { scaleOverride: parent.scale, splitGen: parent.splitGen },
     );
     unit.context = this;
+    copyDerivedState(parent, unit);
+    unit.isClone = true;
+    if (!unit.grantedTags.includes('clone')) unit.grantedTags.push('clone');
     // クローンのHPは親の現在HP割合または基本HP
+    unit.maxHp = parent.maxHp;
     unit.hp = Math.max(15, parent.hp);
     this.units.push(unit);
     this.onUnitAdded?.(unit);
+    this.rules?.onUnitDerived?.(this, unit, parent);
     return unit;
   }
 
+  /**
+   * 門の巨大化・縮小を適用する。体格は生成時に決まるため、同じ位置・向きで作り直して元の個体と入れ替える。
+   * HP の割合、強化、通過済みの門、タグは引き継ぐ。
+   */
+  transformUnit(unit: Unit, t: UnitTransform): Unit {
+    const x = unit.pelvis.pos.x;
+    const z = unit.pelvis.pos.z;
+    const groundY = this.world.getSlopeHeightAt(x, z);
+    const hpRatio = unit.maxHp > 0 ? Math.max(0, unit.hp) / unit.maxHp : 1;
+    const next = new Unit(this.world, unit.type, unit.team, new Vector3(x, groundY, z), unit.facing, {
+      scaleOverride: unit.scale * t.scaleMul,
+      hpOverride: Math.max(1, Math.round(unit.maxHp * t.hpMul)),
+      splitGen: unit.splitGen,
+    });
+    next.context = this;
+    copyDerivedState(unit, next);
+    next.isClone = unit.isClone;
+    next.isBoss = unit.isBoss;
+    next.hp = Math.max(1, next.maxHp * hpRatio);
+    next.gateCooldown = 1.0;
+    next.permDamageMul *= t.damageMul ?? 1;
+    next.permSpeedMul *= t.speedMul ?? 1;
+    next.knockbackMul *= t.knockbackMul ?? 1;
+    if (t.tag && !next.grantedTags.includes(t.tag)) next.grantedTags.push(t.tag);
+
+    // 元の個体は物理ワールドと描画から取り除き、同じ場所に新しい個体を入れる
+    const idx = this.units.indexOf(unit);
+    unit.alive = false;
+    this.removeUnit(unit);
+    if (idx >= 0) this.units.splice(Math.min(idx, this.units.length), 0, next);
+    else this.units.push(next);
+    this.onUnitAdded?.(next);
+    this.rules?.onUnitDerived?.(this, next, unit);
+    return next;
+  }
+
+  onGatePassed(unit: Unit, gate: Facility): void {
+    this.rules?.onGatePassed?.(this, unit, gate);
+  }
+
   /** 施設（召喚ポータル・トーテム・増殖ゲート・防衛砲台・地形ブロック）を生成する */
-  spawnFacility(typeId: FacilityTypeId, team: Team, x: number, z: number, facing?: number): Facility {
+  spawnFacility(
+    typeId: FacilityTypeId,
+    team: Team,
+    x: number,
+    z: number,
+    facing?: number,
+    opts?: FacilitySpawnOptions,
+  ): Facility {
     const defaultFacing =
       team === 0 ? Math.PI / 2 : team === 1 ? -Math.PI / 2 : team === 2 ? Math.PI : 0;
     const f = facing ?? defaultFacing;
-    const facility = new Facility(typeId, team, x, z, f);
+    const facility = new Facility(typeId, team, x, z, f, opts);
     this.facilities.push(facility);
 
     // 物理ワールドの障害物・落とし穴・スロープリストに施設のコライダーを登録
@@ -304,13 +376,16 @@ export class Battle implements UnitContext, FacilityBattleContext {
   step(dt: number): void {
     // ステップ開始時に各ユニットのバフ状態をリセット（ステージ限定のベース倍率を反映）
     for (const u of this.units) {
-      u.damageMul = this.baseDamageMul;
-      u.speedMul = this.baseSpeedMul;
-      u.vulnerabilityMul = 1.0;
+      u.damageMul = this.baseDamageMul * u.permDamageMul;
+      u.speedMul = this.baseSpeedMul * u.permSpeedMul;
+      u.vulnerabilityMul = u.permVulnerabilityMul;
       u.targetRangeMul = 1.0;
       u.hasBuff = false;
     }
     this.combat.projectileDamageMultiplier = 1.0;
+
+    // モード固有ルール（タグのシナジー・レリックの時間制バフなど）
+    if (this.aiEnabled) this.rules?.onStep?.(this, dt);
 
     // ステージ状態異常の更新（AI有効時）
     this.updateStageHazard(dt);
@@ -550,4 +625,15 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
     return null;
   }
+}
+
+/** 複製・作り直しのときに引き継ぐ強化と状態 */
+function copyDerivedState(from: Unit, to: Unit): void {
+  to.permDamageMul = from.permDamageMul;
+  to.permSpeedMul = from.permSpeedMul;
+  to.permVulnerabilityMul = from.permVulnerabilityMul;
+  to.knockbackMul = from.knockbackMul;
+  to.elementInfusion = from.elementInfusion;
+  to.grantedTags = [...from.grantedTags];
+  for (const id of from.gatesPassed) to.gatesPassed.add(id);
 }

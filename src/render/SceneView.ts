@@ -30,7 +30,7 @@ import {
 } from 'three';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
-import { isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
+import { getGateOpeningWidth, isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import { DEFAULT_RED_ZONES, type PlacementZone, type StageTerrainConfig, type StageVisualTheme } from '../game/ArcadeStages';
 import type { Battle } from '../game/Battle';
 import type { Unit } from '../units/Unit';
@@ -1026,9 +1026,16 @@ export class SceneView {
     group.rotation.y = facility.facing;
     group.add(mesh);
 
+    // 門はサイズ段階に合わせて横幅と高さを広げる（小門の見た目が基準）
+    let heightScale = 1;
+    if (facility.isGate && facility.gateLevel > 0) {
+      heightScale = 1 + 0.18 * facility.gateLevel;
+      mesh.scale.set(facility.gateOpening / getGateOpeningWidth(0), heightScale, 1 + 0.25 * facility.gateLevel);
+    }
+
     // 頭上HPバーの構築
     const hpBarGroup = new Group();
-    hpBarGroup.position.set(0, facility.height + 0.38, 0);
+    hpBarGroup.position.set(0, facility.height * heightScale + 0.38, 0);
     const barWidth = 1.35;
     const barHeight = 0.12;
 

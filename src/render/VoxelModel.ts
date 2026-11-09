@@ -5661,6 +5661,16 @@ export function createPreviewGhost(type: UnitType, team: Team): Group {
 
 /** 施設のボクセルグリッドを生成する */
 export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { grid: VoxelGrid; voxelSize: number } {
+  // ローグライトの門は増殖ゲートと同じ形を使い、描画側で色を変える
+  if (
+    typeId === 'giant_gate' ||
+    typeId === 'shrink_gate' ||
+    typeId === 'fire_gate' ||
+    typeId === 'thunder_gate' ||
+    typeId === 'venom_gate'
+  ) {
+    typeId = 'multiplier_gate';
+  }
   const teamCol = TEAM_COLORS[team];
   const primary = teamCol.shirt;
   const accent = teamCol.accent;
@@ -6166,10 +6176,21 @@ export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { gr
 }
 
 /** 施設用のThree.jsメッシュを生成する */
+/** 門の種類ごとの色味（増殖ゲートの形に掛け合わせる） */
+export const GATE_TINTS: Partial<Record<FacilityTypeId, number>> = {
+  giant_gate: 0xffb35c,
+  shrink_gate: 0x7fd6ff,
+  fire_gate: 0xff6a3d,
+  thunder_gate: 0xfff06a,
+  venom_gate: 0x8fe36a,
+};
+
 export function createFacilityMesh(typeId: FacilityTypeId, team: Team): Mesh {
   const { grid, voxelSize } = buildFacilityVoxelGrid(typeId, team);
   const geo = grid.toGeometry(voxelSize, [grid.sx / 2, 0, grid.sz / 2]);
   const mat = new MeshLambertMaterial({ vertexColors: true });
+  const tint = GATE_TINTS[typeId];
+  if (tint !== undefined) mat.color.setHex(tint);
   const mesh = new Mesh(geo, mat);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -6185,6 +6206,8 @@ export function createFacilityGhost(typeId: FacilityTypeId, team: Team): Group {
     transparent: true,
     opacity: 0.65,
   });
+  const tint = GATE_TINTS[typeId];
+  if (tint !== undefined) mat.color.setHex(tint);
   const mesh = new Mesh(geo, mat);
   const g = new Group();
   g.add(mesh);

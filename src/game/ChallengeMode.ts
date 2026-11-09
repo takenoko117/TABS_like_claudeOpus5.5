@@ -85,7 +85,11 @@ interface EnemyCandidate {
 }
 
 /** 抽選対象の一覧を作る（解放リストの順序に結果が左右されないよう ID 順に整列する） */
-function buildCandidates(round: number, unlockedUnits: readonly UnitTypeId[]): EnemyCandidate[] {
+function buildCandidates(
+  round: number,
+  unlockedUnits: readonly UnitTypeId[],
+  facilityStartRound = CHALLENGE_FACILITY_START_ROUND,
+): EnemyCandidate[] {
   const unitIds = [...new Set(unlockedUnits)].sort();
   const candidates: EnemyCandidate[] = unitIds.map((id) => {
     const unit = UNIT_TYPES[id];
@@ -94,8 +98,9 @@ function buildCandidates(round: number, unlockedUnits: readonly UnitTypeId[]): E
     else if (unit.cost < CHEAP_UNIT_COST) baseWeight *= CHEAP_UNIT_WEIGHT;
     return { typeId: id, cost: unit.cost, radius: 0.6 * unit.scale, baseWeight };
   });
-  if (round >= CHALLENGE_FACILITY_START_ROUND) {
+  if (round >= facilityStartRound) {
     for (const f of COMBAT_FACILITY_TYPE_LIST) {
+      if (f.relicOnly) continue;
       candidates.push({ facilityId: f.id, cost: f.cost, radius: f.radius + 0.2, baseWeight: FACILITY_WEIGHT });
     }
   }
@@ -128,10 +133,11 @@ function pickEnemyRoster(
   budget: number,
   candidates: readonly EnemyCandidate[],
   rng: () => number,
+  forced: readonly EnemyCandidate[] = [],
 ): EnemyCandidate[] {
   const cheapest = Math.min(...candidates.map((c) => c.cost));
-  const roster: EnemyCandidate[] = [];
-  let remaining = budget;
+  const roster: EnemyCandidate[] = [...forced];
+  let remaining = budget - forced.reduce((sum, c) => sum + c.cost, 0);
   let decoys = 0;
   let facilities = 0;
   const facilityLimit = Math.min(
@@ -199,6 +205,33 @@ function placeEnemyRoster(roster: readonly EnemyCandidate[], rng: () => number):
     lineup.push({ typeId: c.typeId, facilityId: c.facilityId, team: 1, x, z, facing: -Math.PI / 2 });
   }
   return lineup;
+}
+
+/** 敵編成の生成オプション（ローグライトなど、予算を外から決めるモード用） */
+export interface EnemyLineupOptions {
+  /** 防衛施設が混ざり始めるラウンド */
+  facilityStartRound?: number;
+  /** 必ず編成に入れる兵種（ボスなど）。予算から先に差し引く */
+  forcedUnits?: readonly UnitTypeId[];
+}
+
+/** 予算を指定して敵編成を生成する（同じ引数なら同じ編成になる） */
+export function generateEnemyLineupWithBudget(
+  round: number,
+  seed: number,
+  unitPool: readonly UnitTypeId[],
+  budget: number,
+  opts: EnemyLineupOptions = {},
+): VersusPlacedRecord[] {
+  const rng = createRoundRng(seed, round);
+  const forced = (opts.forcedUnits ?? []).map((id) => ({
+    typeId: id,
+    cost: UNIT_TYPES[id].cost,
+    radius: 0.6 * UNIT_TYPES[id].scale,
+    baseWeight: 0,
+  }));
+  const roster = pickEnemyRoster(budget, buildCandidates(round, unitPool, opts.facilityStartRound), rng, forced);
+  return placeEnemyRoster(roster, rng);
 }
 
 /** 指定ラウンドの敵編成をシードから再現可能な形で生成する */

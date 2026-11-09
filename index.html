@@ -28,6 +28,11 @@
             <b>チャレンジ</b>
             <small id="title-challenge-progress"></small>
           </button>
+          <button type="button" class="title-card" data-mode="roguelite">
+            <span class="title-card-icon">🎲</span>
+            <b>ローグライト</b>
+            <small id="title-roguelite-progress"></small>
+          </button>
           <button type="button" class="title-card" data-mode="versus">
             <span class="title-card-icon">👥</span>
             <b>友人対戦</b>
@@ -127,6 +132,7 @@
         <div class="mode-switch-group">
           <button id="btn-mode-arcade" class="ctrl-btn active">🏆 アーケード</button>
           <button id="btn-mode-challenge" class="ctrl-btn">🔥 チャレンジ</button>
+          <button id="btn-mode-roguelite" class="ctrl-btn">🎲 ローグライト</button>
           <button id="btn-mode-versus" class="ctrl-btn">👥 友人対戦</button>
           <button id="btn-mode-sandbox" class="ctrl-btn">🛠 サンドボックス</button>
         </div>
@@ -193,6 +199,15 @@
         </button>
       </div>
 
+      <!-- ローグライトモード用パネル -->
+      <div id="roguelite-panel" class="panel-section hidden">
+        <div class="section-label">🎲 ローグライト</div>
+        <div id="roguelite-status" class="stage-briefing"></div>
+        <button id="btn-rogue-quit" type="button" class="ctrl-btn danger full hidden" style="margin-top: 6px;">
+          🏳 ランを終了してスコアを確定
+        </button>
+      </div>
+
       <!-- サンドボックス用プリセットパネル -->
       <div id="sandbox-panel" class="panel-section hidden">
         <div class="section-label">プリセット編成</div>
@@ -202,6 +217,10 @@
       <div class="panel-section">
         <div class="section-label">ゲーム速度</div>
         <div id="speed-buttons" class="btn-group"></div>
+      </div>
+      <div class="panel-section">
+        <div class="section-label">ダメージ数値の表示</div>
+        <div id="damage-mode-buttons" class="btn-group"></div>
       </div>
       <div class="panel-section">
         <div class="section-label">視点・操作ヘルプ</div>
@@ -251,6 +270,9 @@
 
     <!-- 短い通知 -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- ローグライトのスターター選択・報酬選択 -->
+    <div id="rogue-modal" class="rogue-modal hidden" role="dialog" aria-label="ローグライト"></div>
 
     <!-- 勝敗リザルトバナー -->
     <div id="result-banner" class="result-banner hidden">
