@@ -2518,62 +2518,31 @@ body.on-title #btn-restore-hud {
 .jk-chest.upgrade .jk-chest-name { animation: jk-upgrade 0.32s ease-out; }
 .jk-chest-name { font-size: 22px; font-weight: 900; text-shadow: 0 2px 6px #000; }
 .jk-hidden { display: none !important; }
-.jk-reels { display: flex; justify-content: center; gap: min(1.4vw, 12px); animation: jk-pop 0.3s cubic-bezier(0.2, 1.5, 0.4, 1); }
-.jk-reel {
-  position: relative;
-  width: var(--jk-reel-w);
-  height: calc(var(--jk-row) * 3);
-  overflow: hidden;
-  border-radius: 12px;
-  border: 3px solid var(--jk-color);
-  background: linear-gradient(180deg, #05070e, #1a2030 50%, #05070e);
-  box-shadow: 0 0 22px var(--jk-glow);
-}
-/* 当たりの列を示す枠と、上下の暗がり */
-.jk-reel::before {
-  content: '';
+/* リールそのものは 3D で描き、ここでは位置と報酬名だけを決める */
+.jk-reels { display: flex; justify-content: center; gap: min(1.4vw, 12px); margin-bottom: 46px; }
+.jk-reel { position: relative; width: var(--jk-reel-w); height: calc(var(--jk-row) * 3); }
+.jk-label {
   position: absolute;
-  inset: var(--jk-row) 0;
-  z-index: 2;
-  border-block: 3px solid #fff3bf;
-  pointer-events: none;
-}
-.jk-reel::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 33%, transparent 67%, rgba(0, 0, 0, 0.72));
-  pointer-events: none;
-}
-.jk-strip { will-change: transform; }
-.jk-reel.fast .jk-strip { filter: blur(2px); }
-.jk-reel.reach { border-color: #ff6b6b; box-shadow: 0 0 36px #ff6b6b; animation: jk-chest-shake 0.1s linear infinite; }
-.jk-reel.hit0 { animation: jk-land 0.28s ease-out; }
-.jk-reel.hit1 { animation: jk-land 0.28s ease-out; border-color: #4dabf7; box-shadow: 0 0 34px #4dabf7; }
-.jk-reel.hit2 { animation: jk-land 0.34s ease-out; border-color: #b197fc; box-shadow: 0 0 46px #b197fc; }
-.jk-reel.hit3 { animation: jk-land 0.42s ease-out, jk-legend 0.5s linear infinite; border-color: #ffd43b; }
-.jk-card {
-  height: var(--jk-row);
-  box-sizing: border-box;
+  left: -4px;
+  right: -4px;
+  top: calc(100% + 6px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 4px;
   color: #e9ecef;
   text-align: center;
-  line-height: 1.15;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  line-height: 1.2;
+  padding: 3px 2px;
+  border-radius: 8px;
+  background: rgba(8, 10, 18, 0.78);
+  opacity: 0;
 }
-.jk-card .jk-icon { font-size: calc(var(--jk-row) * 0.4); line-height: 1.1; }
-.jk-card b { font-size: min(1.75vw, 15px); font-weight: 900; }
-.jk-card small { font-size: min(1.4vw, 11px); opacity: 0.85; }
-.jk-card.r1 { background: rgba(77, 171, 247, 0.2); }
-.jk-card.r2 { background: rgba(177, 151, 252, 0.3); }
-.jk-card.r3 { background: linear-gradient(135deg, rgba(255, 107, 107, 0.45), rgba(255, 212, 59, 0.5), rgba(77, 171, 247, 0.45)); }
-.jk-caption { min-height: 1.3em; color: #fff; font-size: clamp(14px, 2.4vh, 22px); font-weight: 800; text-align: center; text-shadow: 0 2px 4px #000; }
+.jk-reel.landed .jk-label { opacity: 1; animation: jk-pop 0.25s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.jk-label b { font-size: clamp(11px, 1.9vw, 17px); font-weight: 900; }
+.jk-label small { font-size: clamp(9px, 1.4vw, 12px); }
+.jk-label.r1 b { color: #74c0fc; }
+.jk-label.r2 b { color: #d0bfff; }
+.jk-label.r3 b { color: #ffd43b; }
 .jk-hint { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
 .jk-chips {
   position: fixed;
@@ -2622,13 +2591,7 @@ body.on-title #btn-restore-hud {
 }
 @keyframes jk-upgrade { 40% { transform: scale(1.32); filter: brightness(2.2); } }
 @keyframes jk-pop { from { transform: scale(0.4); opacity: 0; } }
-@keyframes jk-land { 35% { transform: scale(1.1); } }
-@keyframes jk-legend {
-  0%, 100% { box-shadow: 0 0 46px #ffd43b; }
-  33% { box-shadow: 0 0 56px #ff6b6b; }
-  66% { box-shadow: 0 0 56px #4dabf7; }
-}
 @media (prefers-reduced-motion: reduce) {
-  .jk-flash.on, .jk-stage.shake, .jk-reel.reach, .jk.reach .jk-shade { animation: none; }
+  .jk-flash.on, .jk-stage.shake, .jk.reach .jk-shade { animation: none; }
   .jk-rays { animation-duration: 40s !important; }
 }

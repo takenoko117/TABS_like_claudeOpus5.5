@@ -19,7 +19,8 @@ const SLIP_MOVE = 0.16;
 
 interface Reel {
   el: HTMLDivElement;
-  strip: HTMLDivElement;
+  index: number;
+  symbols: JackpotReward[];
   reward: JackpotReward;
   winIndex: number;
   slip: boolean;
@@ -54,10 +55,6 @@ function retrigger(el: HTMLElement, cls: string): void {
   el.classList.add(cls);
 }
 
-function cardHtml(r: JackpotReward): string {
-  return `<div class="jk-card r${r.rarity}"><span class="jk-icon">${r.icon}</span><b>${r.name}</b><small>${r.detail}</small></div>`;
-}
-
 /** 宝箱からリールを回して報酬を見せる全画面の演出 */
 export class JackpotRoulette {
   private opts: JackpotPlayOptions | null = null;
@@ -66,7 +63,6 @@ export class JackpotRoulette {
   private titleEl!: HTMLDivElement;
   private chestEl!: HTMLDivElement;
   private reelsEl!: HTMLDivElement;
-  private captionEl!: HTMLDivElement;
   private flashEl!: HTMLDivElement;
   private chest3d: JackpotChest3D | null = null;
   private strip: HTMLDivElement | null = null;
@@ -87,8 +83,6 @@ export class JackpotRoulette {
   private heartbeatAcc = 0;
   private budgetTotal = 0;
   private countShown = -1;
-  /** リール1コマの高さ（px）。揺れの変形に左右されないよう、表示した時点の計算値を使う */
-  private rowH = 100;
 
   get active(): boolean {
     return this.opts !== null;
@@ -129,7 +123,6 @@ export class JackpotRoulette {
         <div class="jk-title">${INTRO_TITLES[0]}</div>
         <div class="jk-chest"><div class="jk-chest-name">${CHEST_NAMES[0]}</div></div>
         <div class="jk-reels jk-hidden"></div>
-        <div class="jk-caption"></div>
         <div class="jk-hint">クリック / Space でスキップ</div>
       </div>
       <div class="jk-flash"></div>`;
@@ -143,7 +136,6 @@ export class JackpotRoulette {
     this.titleEl = root.querySelector('.jk-title') as HTMLDivElement;
     this.chestEl = root.querySelector('.jk-chest') as HTMLDivElement;
     this.reelsEl = root.querySelector('.jk-reels') as HTMLDivElement;
-    this.captionEl = root.querySelector('.jk-caption') as HTMLDivElement;
     this.flashEl = root.querySelector('.jk-flash') as HTMLDivElement;
     // 宝箱と金貨は 3D で描く（WebGL の文脈は使い回す）
     this.chest3d ??= new JackpotChest3D();
@@ -162,7 +154,7 @@ export class JackpotRoulette {
     this.reels = opts.rewards.map((reward, i) => {
       const isLast = i === n - 1;
       const slip = isLast && reward.rarity >= 2;
-      const winIndex = 28 + i * 6 + (isLast && this.maxRarity >= 2 ? 10 : 0);
+      const winIndex = 18 + i * 5 + (isLast && this.maxRarity >= 2 ? 10 : 0);
       const symbols: JackpotReward[] = [];
       for (let k = 0; k < winIndex + 3; k++) symbols.push(k % 2 === 0 ? pick(tease) : pick(JACKPOT_REWARDS));
       symbols[winIndex] = reward;
@@ -172,17 +164,16 @@ export class JackpotRoulette {
 
       const el = document.createElement('div');
       el.className = 'jk-reel';
-      const stripEl = document.createElement('div');
-      stripEl.className = 'jk-strip';
-      stripEl.innerHTML = symbols.map(cardHtml).join('');
-      el.appendChild(stripEl);
+      // 絵柄は 3D で描くので、ここは位置決めと報酬名の表示だけを受け持つ
+      el.innerHTML = `<div class="jk-label r${reward.rarity}"><b>${reward.name}</b><small>${reward.detail}</small></div>`;
       this.reelsEl.appendChild(el);
 
       let mainEnd = this.spinStart + FIRST_REEL_SPIN + i * REEL_STAGGER;
       if (isLast && this.maxRarity >= 2) mainEnd += REACH_EXTRA;
       return {
         el,
-        strip: stripEl,
+        index: i,
+        symbols,
         reward,
         winIndex,
         slip,
@@ -258,8 +249,11 @@ export class JackpotRoulette {
     this.root?.classList.add(`tier${this.opts.tier}`);
     this.chestEl.classList.add('jk-hidden');
     this.reelsEl.classList.remove('jk-hidden');
-    const card = this.reels[0].strip.firstElementChild;
-    if (card) this.rowH = parseFloat(getComputedStyle(card).height) || this.rowH;
+    this.chest3d?.layoutReels(
+      this.reels.map((r) => r.el.getBoundingClientRect()),
+      this.reels,
+      this.opts.tier,
+    );
     if (!withFx) {
       this.titleEl.textContent = '';
       this.lidOpened = true;
@@ -282,7 +276,7 @@ export class JackpotRoulette {
         if (!reel.faked) {
           // 一度はハズレで止まったように見せる
           reel.faked = true;
-          reel.el.classList.add('stopped');
+          this.chest3d?.reels.nudge(reel.index);
           opts.sound.playJackpotReelStop(0);
           this.titleEl.textContent = '…';
         }
@@ -290,7 +284,6 @@ export class JackpotRoulette {
         pos = target + clamp01((this.t - slipStart) / SLIP_MOVE);
       }
       this.setReelPos(reel, pos);
-      reel.el.classList.toggle('fast', p < 0.72);
       const index = Math.floor(pos);
       if (index !== reel.lastIndex) {
         reel.lastIndex = index;
@@ -301,7 +294,7 @@ export class JackpotRoulette {
   }
 
   private setReelPos(reel: Reel, pos: number): void {
-    reel.strip.style.transform = `translate3d(0, ${(1 - pos) * this.rowH}px, 0)`;
+    this.chest3d?.reels.setPosition(reel.index, pos);
   }
 
   /** 残り1本で豪華な報酬が待っているときの「リーチ」演出 */
@@ -313,7 +306,7 @@ export class JackpotRoulette {
     if (!this.reaching && this.t >= startAt && !last.stopped) {
       this.reaching = true;
       this.root?.classList.add('reach');
-      last.el.classList.add('reach');
+      this.chest3d?.reels.setReach(last.index, true);
       this.titleEl.textContent = 'リーチ!!';
       retrigger(this.titleEl, 'slam');
     }
@@ -327,12 +320,13 @@ export class JackpotRoulette {
   private stopReel(reel: Reel, withFx: boolean): void {
     reel.stopped = true;
     this.setReelPos(reel, reel.winIndex);
-    reel.el.classList.remove('fast', 'reach');
-    reel.el.classList.add('stopped', `hit${reel.reward.rarity}`);
+    reel.el.classList.add('landed');
+    this.chest3d?.reels.land(reel.index, reel.reward.rarity);
     if (!withFx || !this.opts) return;
     const rect = reel.el.getBoundingClientRect();
     this.chest3d?.burstAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 18 + reel.reward.rarity * 30, 1 + reel.reward.rarity * 0.2);
     this.opts.sound.playJackpotReelStop(reel.reward.rarity);
+    this.chest3d?.addShake(0.1 + reel.reward.rarity * 0.14);
     if (reel.reward.rarity >= 1) retrigger(this.stage, 'shake');
     if (reel.reward.rarity >= 2) retrigger(this.flashEl, 'on');
     if (reel.slip) {
@@ -351,7 +345,7 @@ export class JackpotRoulette {
     retrigger(this.flashEl, 'on');
     retrigger(this.stage, 'shake');
     opts.sound.playJackpotFanfare(this.maxRarity);
-    this.captionEl.textContent = opts.rewards.map((r) => r.detail).join(' ／ ');
+    this.chest3d?.addShake(0.2 + this.maxRarity * 0.16);
     this.chest3d?.burstAt(window.innerWidth / 2, window.innerHeight * 0.5, 80 + this.maxRarity * 60, 1 + this.maxRarity * 0.25);
   }
 

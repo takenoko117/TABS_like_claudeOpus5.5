@@ -11,6 +11,7 @@ import {
   type JackpotReward,
 } from '../src/game/RogueJackpot';
 import { ROGUE_MAX_LIVES, RogueliteRun } from '../src/game/RogueliteMode';
+import { JACKPOT_ICONS, JACKPOT_ICON_PALETTE, JACKPOT_ICON_SIZE } from '../src/render/JackpotIcons';
 
 function seeded(seed: number): () => number {
   let s = seed >>> 0;
@@ -25,6 +26,20 @@ function seeded(seed: number): () => number {
 
 const reward = (id: string): JackpotReward => JACKPOT_REWARDS.find((r) => r.id === id)!;
 const WEAK = { cost: 40, isBoss: false };
+
+describe('ボーナス: ボクセルの絵柄', () => {
+  it('全報酬に正しい大きさの絵柄があり、色はパレットにある', () => {
+    for (const r of JACKPOT_REWARDS) {
+      const rows = JACKPOT_ICONS[r.id];
+      expect(rows, r.id).toBeDefined();
+      expect(rows.length, r.id).toBe(JACKPOT_ICON_SIZE);
+      for (const row of rows) {
+        expect(row.length, r.id).toBe(JACKPOT_ICON_SIZE);
+        for (const ch of row) if (ch !== '.') expect(JACKPOT_ICON_PALETTE[ch], `${r.id}:${ch}`).toBeDefined();
+      }
+    }
+  });
+});
 
 describe('ボーナス: 宝箱のドロップ', () => {
   it('外れが続くと必ず出る', () => {

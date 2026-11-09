@@ -15,8 +15,21 @@ import {
   PerspectiveCamera,
   PointLight,
   Scene,
+  Vector3,
   WebGLRenderer,
 } from 'three';
+import type { JackpotReward } from '../game/RogueJackpot';
+import { JackpotReels3D } from './JackpotReels3D';
+
+/** リール1本の絵柄の並びと、止まる位置 */
+export interface ReelStrip {
+  symbols: readonly JackpotReward[];
+  winIndex: number;
+}
+
+/** リールの正面が来る奥行き（宝箱より手前） */
+const REEL_PLANE_Z = 3.4;
+const _ray = new Vector3();
 
 const VOXEL = 0.2;
 const W = 16;
@@ -31,7 +44,7 @@ const OPEN_TIME = 0.28;
 const SETTLE_TIME = 0.4;
 const OPEN_ANGLE = -2.0;
 /** 開いた宝箱が落ち着く位置（リールの下から光が伸びて見える） */
-const SETTLED_Y = -2.15;
+const SETTLED_Y = -2.95;
 
 const WOOD = [0x7a4a22, 0x8b5628, 0x6c3f1c];
 const TRIM_COLORS = [0xc8803a, 0xe4edf7, 0xffcf33];
@@ -169,6 +182,8 @@ export class JackpotChest3D {
   private shakeLevel = 0;
   private openAt = -1;
   private settleAt = -1;
+  private cameraShake = 0;
+  readonly reels = new JackpotReels3D();
 
   constructor() {
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true });
@@ -216,20 +231,44 @@ export class JackpotChest3D {
       this.lootMesh.setMatrixAt(i, _zero);
       this.lootMesh.setColorAt(i, _color.setHex(GOLD));
     }
-    this.scene.add(this.lootMesh);
+    this.scene.add(this.lootMesh, this.reels.root);
   }
 
   private halfHeight(): number {
     return Math.tan((FOV * Math.PI) / 360) * CAMERA_Z;
   }
 
-  /** 画面座標を、宝箱のある奥行きの座標へ変換する */
-  private screenToWorld(px: number, py: number): { x: number; y: number } {
-    const h = this.halfHeight();
-    return {
-      x: ((px / window.innerWidth) * 2 - 1) * h * (window.innerWidth / window.innerHeight),
-      y: (1 - (py / window.innerHeight) * 2) * h,
-    };
+  /** 画面座標を、奥行き z の平面上の座標へ変換する */
+  private screenToWorld(px: number, py: number, z = 0): { x: number; y: number } {
+    _ray.set((px / window.innerWidth) * 2 - 1, 1 - (py / window.innerHeight) * 2, 0.5).unproject(this.camera);
+    _ray.sub(this.camera.position);
+    const s = (z - this.camera.position.z) / _ray.z;
+    return { x: this.camera.position.x + _ray.x * s, y: this.camera.position.y + _ray.y * s };
+  }
+
+  /** DOM のリール枠の位置に合わせて 3D のリールを並べる */
+  layoutReels(rects: readonly DOMRect[], strips: readonly ReelStrip[], tier: number): void {
+    const slots = rects.map((rect, i) => {
+      const center = this.screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2, REEL_PLANE_Z);
+      const left = this.screenToWorld(rect.left, rect.top + rect.height / 2, REEL_PLANE_Z);
+      const top = this.screenToWorld(rect.left, rect.top, REEL_PLANE_Z);
+      const bottom = this.screenToWorld(rect.left, rect.bottom, REEL_PLANE_Z);
+      return {
+        x: center.x,
+        y: center.y,
+        z: REEL_PLANE_Z,
+        width: (center.x - left.x) * 2,
+        rowHeight: (top.y - bottom.y) / 3,
+        symbols: strips[i].symbols,
+        winIndex: strips[i].winIndex,
+      };
+    });
+    this.reels.layout(slots, TRIM_COLORS[tier], this.camera.position);
+  }
+
+  /** 3D の画面全体を揺らす */
+  addShake(amount: number): void {
+    this.cameraShake = Math.max(this.cameraShake, amount);
   }
 
   /** 演出の開始。撃破した敵の画面位置から飛んでくる */
@@ -240,6 +279,9 @@ export class JackpotChest3D {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld();
+    this.reels.hide();
+    this.cameraShake = 0;
 
     const origin = this.screenToWorld(originPx, originPy);
     this.originX = origin.x;
@@ -355,7 +397,14 @@ export class JackpotChest3D {
     this.t += dt;
     this.updateChest(dt);
     this.updateLoot(dt);
+    this.reels.update(dt);
+    this.cameraShake = Math.max(0, this.cameraShake - dt * 2.2);
+    const baseX = this.camera.position.x;
+    const baseY = this.camera.position.y;
+    this.camera.position.x += (Math.random() - 0.5) * this.cameraShake;
+    this.camera.position.y += (Math.random() - 0.5) * this.cameraShake;
     this.renderer.render(this.scene, this.camera);
+    this.camera.position.set(baseX, baseY, CAMERA_Z);
   }
 
   private updateChest(dt: number): void {
