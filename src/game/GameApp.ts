@@ -3,6 +3,7 @@ import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
 import { JackpotRoulette } from '../ui/JackpotRoulette';
 import { setVoxelText, type VoxelTextOptions } from '../ui/VoxelText';
+import { TitleLogo3D } from '../render/TitleLogo3D';
 import {
   JACKPOT_MAX_DROPS,
   JackpotDropTracker,
@@ -435,22 +436,6 @@ const BANNER_VOXEL: VoxelTextOptions = {
   maxWidth: () => Math.min(window.innerWidth * 0.92, 420) - 60,
 };
 
-function logoHeight(): number {
-  return Math.max(32, Math.min(64, window.innerWidth * 0.075));
-}
-
-/** タイトルロゴをボクセル文字にする */
-function paintTitleLogo(): void {
-  const maxWidth = (): number => Math.min(760, window.innerWidth - 24);
-  const paint = (selector: string, opts: VoxelTextOptions): void => {
-    const el = document.querySelector<HTMLElement>(selector);
-    if (el) setVoxelText(el, el.textContent ?? '', opts);
-  };
-  paint('.title-logo-ja', { height: logoHeight, maxCell: 4, depth: 2, bold: true, maxWidth });
-  paint('.title-logo-accent', { height: logoHeight, maxCell: 4, depth: 2, bold: true, maxWidth });
-  paint('.title-logo-en', { height: () => logoHeight() * 0.5, maxCell: 2, depth: 1, maxWidth });
-}
-
 /**
  * ゲーム全体の進行管理と UI バインディング。
  * - アーケードモード: 全40面、ステージ予算上限、地形ギミック、クリア評価（★1〜★3）と新ユニット解放
@@ -482,6 +467,7 @@ export class GameApp {
 
   /** タイトル画面の背景で自動対戦を流している間 true（音を鳴らさない） */
   private onTitleScreen = false;
+  private titleLogo: TitleLogo3D | null = null;
   private tutorial: TutorialGuide | null = null;
   private tutorialHighlight: HTMLElement | null = null;
 
@@ -658,7 +644,6 @@ export class GameApp {
     this.elBanner = document.getElementById('result-banner')!;
     this.elBannerStars = document.getElementById('result-stars');
     this.elBannerText = document.getElementById('result-title')!;
-    paintTitleLogo();
     this.elBannerSub = document.getElementById('result-sub')!;
     this.elBannerUnlock = document.getElementById('result-unlock');
     this.elBannerChallenge = document.getElementById('result-challenge');
@@ -1189,6 +1174,7 @@ export class GameApp {
     this.tutorial = null;
     document.body.classList.add('on-title');
     document.getElementById('title-screen')?.classList.remove('hidden');
+    this.titleLogo ??= new TitleLogo3D(document.querySelector<HTMLElement>('.title-logo')!);
     this.renderTitleProgress();
     this.view.setRogueHeartsVisible(false);
     this.view.resetCamera();
@@ -3723,6 +3709,7 @@ export class GameApp {
     if (this.onTitleScreen) {
       this.updateTitleDemo(realDt);
       this.view.renderFrame(this.battle, realDt);
+      this.titleLogo?.update(realDt);
       return;
     }
 
