@@ -11,6 +11,8 @@ export interface VersusPlacedRecord {
   x: number;
   z: number;
   facing?: number;
+  /** かさね配置: 同じ lineup 内の土台レコードの index（試作ではサンドボックスのみ使用） */
+  onTopOf?: number;
 }
 
 /** 対戦モードの最小・最大予算 (pt) */
