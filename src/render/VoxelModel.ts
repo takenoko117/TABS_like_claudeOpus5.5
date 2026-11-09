@@ -2621,6 +2621,10 @@ interface DestructiblePart {
 }
 
 const UP = new Vector3(0, 1, 0);
+/** ヤマムロン強化モードのオーラの寸法と光輪の数 */
+const YAMAMURON_AURA_RADIUS = 5.2;
+const YAMAMURON_AURA_HEIGHT = 11;
+const YAMAMURON_AURA_HALOS = 4;
 const _dir = new Vector3();
 const _up = new Vector3();
 const _right = new Vector3();
@@ -3179,6 +3183,8 @@ export class VoxelCharacterVisual {
   /** ブレス時の火炎ジェット（外炎・内炎・白熱芯の 3 層コーン）と口元の発光球 */
   private dragonJet: Mesh[] = [];
   private dragonMouthGlow: Mesh | null = null;
+  /** ヤマムロン強化モードのオーラ（外炎コーン・内炎コーン・地面の輪・昇る光輪） */
+  private readonly yamamuronAura: Mesh[] = [];
   /** 首の突き出し量（+1: ブレスで前へ突き出す, -1: 溜めで仰け反る） */
   private dragonLunge = 0;
   private dragonLastTime = -1;
@@ -3343,6 +3349,24 @@ export class VoxelCharacterVisual {
       );
       this.dragonMouthGlow.visible = false;
       this.group.add(this.dragonMouthGlow);
+    }
+
+    if (unit.type.id === 'yamamuron') {
+      const addAura = (geom: BufferGeometry, color: number, opacity: number): void => {
+        const mesh = new Mesh(
+          geom,
+          new MeshBasicMaterial({ color, transparent: true, opacity, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }),
+        );
+        mesh.visible = false;
+        this.group.add(mesh);
+        this.yamamuronAura.push(mesh);
+      };
+      addAura(new ConeGeometry(YAMAMURON_AURA_RADIUS, YAMAMURON_AURA_HEIGHT, 28, 1, true), 0xff2a00, 0.34);
+      addAura(new ConeGeometry(YAMAMURON_AURA_RADIUS * 0.74, YAMAMURON_AURA_HEIGHT * 0.86, 24, 1, true), 0xffc226, 0.3);
+      addAura(new TorusGeometry(YAMAMURON_AURA_RADIUS, 0.09, 8, 64), 0xff9500, 0.95);
+      for (let i = 0; i < YAMAMURON_AURA_HALOS; i++) {
+        addAura(new TorusGeometry(1, 0.05, 8, 48), i % 2 === 0 ? 0xfff1a8 : 0xff5a00, 0.85);
+      }
     }
 
     // 拒絶神ゼルエル専用の滑らかメッシュ＆有機的異質パーツ群の初期化
@@ -3706,6 +3730,7 @@ export class VoxelCharacterVisual {
   /** 物理粒子の現在位置に合わせて各ボクセルメッシュの座標・回転・発光色を更新する */
   sync(): void {
     const u = this.unit;
+    if (this.yamamuronAura.length > 0) this.syncYamamuronAura();
     if (u.type.id === 'angel_zeruel') {
       this.syncZeruel();
       this.updateMaterialStatus();
@@ -4076,6 +4101,41 @@ export class VoxelCharacterVisual {
         (g.material as MeshBasicMaterial).color.setHex(jetOn ? 0xffd166 : 0xff7a1a);
       }
     }
+  }
+
+  /** ヤマムロン強化モードのオーラを山の周囲に配置し、脈動させる */
+  private syncYamamuronAura(): void {
+    const u = this.unit;
+    const on = u.alive && u.yamamuronEnraged;
+    const [outer, inner, groundRing, ...halos] = this.yamamuronAura;
+    for (const m of this.yamamuronAura) m.visible = on;
+    if (!on) return;
+
+    const time = performance.now() * 0.001;
+    const { x, z } = u.pelvis.pos;
+
+    // 炎のコーンは逆回転しながら不規則に揺らぐ
+    const flick = Math.sin(time * 23) * 0.04 + Math.random() * 0.05;
+    outer.position.set(x, YAMAMURON_AURA_HEIGHT / 2, z);
+    outer.rotation.y = time * 2.4;
+    outer.scale.set(1.04 + flick, 1 + flick * 1.6, 1.04 + flick);
+    inner.position.set(x, YAMAMURON_AURA_HEIGHT * 0.43, z);
+    inner.rotation.y = -time * 3.6;
+    inner.scale.set(1 - flick, 1 + flick * 2.2, 1 - flick);
+
+    groundRing.position.set(x, 0.14, z);
+    groundRing.rotation.x = Math.PI / 2;
+    groundRing.scale.setScalar(1.1 + Math.sin(time * 6) * 0.1);
+
+    // 光輪は裾野から山頂へ昇りながら窄まって消える
+    halos.forEach((halo, i) => {
+      const t = (time * 0.7 + i / halos.length) % 1;
+      const radius = YAMAMURON_AURA_RADIUS * (1.08 - t * 0.95);
+      halo.position.set(x, 0.2 + t * YAMAMURON_AURA_HEIGHT, z);
+      halo.rotation.x = Math.PI / 2;
+      halo.scale.set(radius, radius, 1);
+      (halo.material as MeshBasicMaterial).opacity = 0.9 * (1 - t);
+    });
   }
 
   /** 暴走バギー専用の4輪オフロードビークル配置処理 */
@@ -5482,7 +5542,7 @@ export class VoxelCharacterVisual {
       }
     }
     this.material.dispose();
-    for (const m of [...this.dragonJet, ...(this.dragonMouthGlow ? [this.dragonMouthGlow] : [])]) {
+    for (const m of [...this.dragonJet, ...this.yamamuronAura, ...(this.dragonMouthGlow ? [this.dragonMouthGlow] : [])]) {
       m.geometry.dispose();
       (m.material as MeshBasicMaterial).dispose();
     }

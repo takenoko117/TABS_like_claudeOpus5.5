@@ -1392,6 +1392,44 @@ export class SoundManager {
         noise.stop(t + 0.58);
         break;
       }
+      case 'yamamuron_awaken':
+      case 'yamamuron_quake': {
+        if (!this.throttle('yama_quake', 200)) return;
+        // 地の底から響く地鳴り（発動時はより長く重い）
+        const len = e.kind === 'yamamuron_awaken' ? 1.8 : 1.1;
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'sawtooth';
+        boom.frequency.setValueAtTime(62, t);
+        boom.frequency.exponentialRampToValueAtTime(20, t + len);
+        const blp = ctx.createBiquadFilter();
+        blp.type = 'lowpass';
+        blp.frequency.setValueAtTime(220, t);
+        bg.gain.setValueAtTime(0.85, t);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + len);
+        boom.connect(blp);
+        blp.connect(bg);
+        bg.connect(this.masterGain);
+        boom.start(t);
+        boom.stop(t + len + 0.03);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        noise.loop = true;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(520, t);
+        lp.frequency.exponentialRampToValueAtTime(90, t + len);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.6, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + len);
+        noise.connect(lp);
+        lp.connect(ng);
+        ng.connect(this.masterGain);
+        noise.start(t);
+        noise.stop(t + len + 0.03);
+        break;
+      }
       case 'piano_wave': {
         if (!this.throttle('pno_wv', 110)) return;
         const master = this.masterGain;

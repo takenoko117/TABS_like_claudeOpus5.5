@@ -36,6 +36,14 @@ const MAX_MUSCLE_ACCEL = 300;
 export const FLAME_DRAG = 1.8;
 /** 手裏剣に掛かる重力の倍率 */
 const SHURIKEN_GRAVITY_SCALE = 0.25;
+/** ヤマムロン強化モード: 発動するHP割合・攻撃頻度倍率・同時攻撃数 */
+const YAMAMURON_RAGE_HP_RATIO = 0.5;
+const YAMAMURON_RAGE_ATTACK_RATE = 2;
+const YAMAMURON_RAGE_MAX_TARGETS = 3;
+/** ヤマムロン強化モードの地震: 間隔（秒）・半径・中心での威力 */
+const YAMAMURON_QUAKE_INTERVAL = 2.5;
+const YAMAMURON_QUAKE_RADIUS = 12;
+const YAMAMURON_QUAKE_DAMAGE = 70;
 
 const _target = new Vector3();
 const _vel = new Vector3();
@@ -155,6 +163,10 @@ export class Unit {
   private burnTickTimer = 0;
   /** 毒残り時間（巨大アナコンダ） */
   poisonTimer = 0;
+  /** ヤマムロンの強化モード（HP半分以下）中か */
+  yamamuronEnraged = false;
+  private earthquakeTimer = 0;
+  private rageAuraTimer = 0;
   poisonAttacker: Unit | null = null;
   private poisonTickTimer = 0;
   /** 凍結硬直残り時間（永久凍土ブリザード） */
@@ -471,7 +483,7 @@ export class Unit {
       }
     }
 
-    this.cooldown -= dt;
+    this.cooldown -= dt * this.attackRateMul;
 
     if (ctx.aiEnabled) {
       this.think(dt, ctx);
@@ -853,7 +865,7 @@ export class Unit {
       this.cooldown = 0.3;
       return;
     }
-    this.phaseTime += dt;
+    this.phaseTime += dt * this.attackRateMul;
     const ty = this.type;
 
     // 対物スナイパー・衛星攻撃兵士の照準レーザー更新
@@ -1453,6 +1465,99 @@ export class Unit {
     for (const wp of this.weaponParticles) wp.addVelocity(_tmp, dt);
   }
 
+  /** 攻撃の進行速度の倍率（ヤマムロンの強化モードで 2 倍） */
+  private get attackRateMul(): number {
+    return this.yamamuronEnraged ? YAMAMURON_RAGE_ATTACK_RATE : 1;
+  }
+
+  /** 噴火の着弾狙い点。強化モードでは最寄りの敵を含めて最大 3 体を同時に狙う */
+  private eruptionAimPoints(ctx: UnitContext): Vector3[] {
+    const t = this.target;
+    const targets: Unit[] = t && t.alive ? [t] : [];
+    if (this.yamamuronEnraged) {
+      const p = this.pelvis.pos;
+      const range2 = this.type.range * this.type.range;
+      const dist2 = (u: Unit): number => (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2;
+      const others = ctx.units
+        .filter((u) => u.alive && u.team !== this.team && u !== t && dist2(u) <= range2)
+        .sort((a, b) => dist2(a) - dist2(b));
+      targets.push(...others.slice(0, YAMAMURON_RAGE_MAX_TARGETS - targets.length));
+    }
+    if (targets.length > 0) {
+      return targets.map((u) => u.pelvis.pos.clone().addScaledVector(u.velocity, 0.25));
+    }
+    if (this.targetFacility && this.targetFacility.alive) return [this.targetFacility.pos.clone()];
+    return [this.pelvis.pos.clone().addScaledVector(this.forward, 15.0)];
+  }
+
+  /** 火口から狙い点へ放物線を描く火山弾を 1 発撃つ */
+  private fireVolcanoRock(from: Vector3, aim: Vector3, ctx: UnitContext): void {
+    const spread = this.type.projectile?.spread ?? 0.07;
+    const targetPoint = aim.clone().add(
+      new Vector3((Math.random() - 0.5) * 32 * spread, 0, (Math.random() - 0.5) * 32 * spread),
+    );
+    targetPoint.y = 0.1;
+
+    const speed = this.type.projectile?.speed ?? 28;
+    const dx = targetPoint.x - from.x;
+    const dz = targetPoint.z - from.z;
+    const dh = Math.max(0.5, Math.hypot(dx, dz));
+    const flight = Math.max(0.6, dh / speed);
+    const vx = dx / flight;
+    const vz = dz / flight;
+    const g = GRAVITY * 0.45;
+    const vy = (targetPoint.y - from.y) / flight + 0.5 * g * flight;
+    const vel = new Vector3(vx, vy, vz);
+
+    ctx.combat.fireProjectile(this, from, vel, 'volcano_rock', {
+      damage: (this.type.projectile?.damage ?? 120) * this.damageMul,
+      gravityScale: 0.45,
+      life: 5.0,
+    });
+  }
+
+  /** ヤマムロンの強化モード: HP半分以下の間、オーラを纏い定期的に地震を起こす */
+  private updateYamamuronRage(dt: number, ctx: UnitContext): void {
+    const enraged = this.hp <= this.maxHp * YAMAMURON_RAGE_HP_RATIO;
+    if (enraged && !this.yamamuronEnraged) {
+      ctx.combat.emitEffect({ kind: 'yamamuron_awaken', pos: this.pelvis.pos.clone(), scale: this.scale });
+      this.earthquakeTimer = 0;
+    }
+    this.yamamuronEnraged = enraged;
+    if (!enraged) return;
+
+    this.rageAuraTimer -= dt;
+    if (this.rageAuraTimer <= 0) {
+      this.rageAuraTimer = 0.08;
+      ctx.combat.emitEffect({ kind: 'yamamuron_aura', pos: this.pelvis.pos.clone(), scale: this.scale });
+    }
+
+    this.earthquakeTimer -= dt;
+    if (this.earthquakeTimer <= 0) {
+      this.earthquakeTimer = YAMAMURON_QUAKE_INTERVAL;
+      const center = new Vector3(this.pelvis.pos.x, PELVIS_HEIGHT, this.pelvis.pos.z);
+      // 地面を伝わる揺れなので飛行ユニットには届かない
+      const grounded = ctx.units.filter((u) => !u.isFlying);
+      ctx.combat.applyRadialBlast(
+        this,
+        center,
+        YAMAMURON_QUAKE_RADIUS,
+        YAMAMURON_QUAKE_DAMAGE,
+        11,
+        1.2,
+        grounded,
+        dt,
+        'melee',
+        ctx.facilities ?? [],
+      );
+      ctx.combat.emitEffect({
+        kind: 'yamamuron_quake',
+        pos: new Vector3(center.x, 0.05, center.z),
+        radius: YAMAMURON_QUAKE_RADIUS,
+      });
+    }
+  }
+
   /** strike フェーズ中に連続処理される攻撃（ガトリング・火炎ブレス・大鷲急降下・スライム着地） */
   private updateStrikeContinuous(dt: number, ctx: UnitContext): void {
     const st = this.type.style;
@@ -1518,42 +1623,14 @@ export class Unit {
         this.pelvis.addVelocity(recoil, dt);
       }
     } else if (st === 'eruption') {
-      this.subAttackTimer -= dt;
+      this.subAttackTimer -= dt * this.attackRateMul;
       if (this.subAttackTimer <= 0) {
         this.subAttackTimer = 0.38;
         const from = this.chest.pos.clone();
         from.y += 1.4 * this.scale;
         ctx.combat.emitEffect({ kind: 'eruption_burst', pos: from.clone(), scale: this.scale });
 
-        const aim =
-          t && t.alive
-            ? t.pelvis.pos.clone().addScaledVector(t.velocity, 0.25)
-            : this.targetFacility && this.targetFacility.alive
-            ? this.targetFacility.pos.clone()
-            : this.pelvis.pos.clone().addScaledVector(this.forward, 15.0);
-
-        const spread = this.type.projectile?.spread ?? 0.07;
-        const targetPoint = aim.clone().add(
-          new Vector3((Math.random() - 0.5) * 32 * spread, 0, (Math.random() - 0.5) * 32 * spread),
-        );
-        targetPoint.y = 0.1;
-
-        const speed = this.type.projectile?.speed ?? 28;
-        const dx = targetPoint.x - from.x;
-        const dz = targetPoint.z - from.z;
-        const dh = Math.max(0.5, Math.hypot(dx, dz));
-        const flight = Math.max(0.6, dh / speed);
-        const vx = dx / flight;
-        const vz = dz / flight;
-        const g = GRAVITY * 0.45;
-        const vy = (targetPoint.y - from.y) / flight + 0.5 * g * flight;
-        const vel = new Vector3(vx, vy, vz);
-
-        ctx.combat.fireProjectile(this, from, vel, 'volcano_rock', {
-          damage: (this.type.projectile?.damage ?? 120) * this.damageMul,
-          gravityScale: 0.45,
-          life: 5.0,
-        });
+        for (const aim of this.eruptionAimPoints(ctx)) this.fireVolcanoRock(from, aim, ctx);
       }
     } else if (st === 'piano_performance') {
       this.subAttackTimer -= dt;
@@ -1976,6 +2053,7 @@ export class Unit {
 
     // 1-6. ヤマムロンの山岳重歩行・地鳴りと踏み潰し
     if (id === 'yamamuron' && ctx.aiEnabled) {
+      this.updateYamamuronRage(dt, ctx);
       const speedH = Math.hypot(this.velocity.x, this.velocity.z);
       if (speedH > 0.25) {
         this.stepDustTimer -= dt;
@@ -2389,6 +2467,12 @@ export class Unit {
     }
   }
 
+  /** 常時浮遊している兵種か */
+  get isFlying(): boolean {
+    const id = this.type.id;
+    return id === 'giant_eagle' || id === 'dragon' || id === 'angel_ramiel' || id === 'angel_sahaquiel' || id === 'angel_zeruel' || id === 'deoxys';
+  }
+
   private applyMuscles(dt: number): void {
     const P = this.joints;
     const pelvis = P[J.Pelvis];
@@ -2402,7 +2486,7 @@ export class Unit {
     const pv = pelvis.getVelocity(dt, this.velocity);
     this.updateFrame();
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys';
+    const isFlyer = this.isFlying;
     const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
     const slopeH = !overChasm && this.context ? this.context.world.getSlopeHeightAt(pelvis.pos.x, pelvis.pos.z) : 0;
     // 足（またはビークルの各接地粒子）が地面・スロープ付近にあれば「支えられている」とみなす

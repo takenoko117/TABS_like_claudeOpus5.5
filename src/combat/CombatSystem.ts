@@ -95,6 +95,9 @@ export type CombatEffectEvent =
   | { kind: 'sezain_shot'; from: Vector3; dir: Vector3 }
   | { kind: 'eruption_burst'; pos: Vector3; scale: number }
   | { kind: 'eruption_explosion'; pos: Vector3 }
+  | { kind: 'yamamuron_awaken'; pos: Vector3; scale: number }
+  | { kind: 'yamamuron_aura'; pos: Vector3; scale: number }
+  | { kind: 'yamamuron_quake'; pos: Vector3; radius: number }
   | { kind: 'piano_wave'; pos: Vector3; forward: Vector3; radius: number; team: Team }
   | { kind: 'piano_note'; pos: Vector3; color?: number }
   | { kind: 'dragon_charge'; pos: Vector3; team: Team }

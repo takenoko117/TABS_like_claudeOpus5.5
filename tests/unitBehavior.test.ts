@@ -448,6 +448,120 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(damage).toBeGreaterThan(80);
   });
 
+  describe('ヤマムロンの強化モード', () => {
+    const fps = 120;
+
+    /** ヤマムロンと、静止した不死身の敵 count 体を横一列に並べる */
+    function setupYamamuron(count: number, enemyX = 0): { battle: DiagBattle; fuji: Unit; dummies: Unit[] } {
+      const battle = new DiagBattle();
+      const fuji = battle.spawnUnit('yamamuron', 0, -15, 0);
+      const dummies: Unit[] = [];
+      for (let i = 0; i < count; i++) {
+        const dummy = battle.spawnUnit('swordsman', 1, enemyX, -6 + i * 4);
+        battle.frozen.add(dummy);
+        dummy.hp = 1e7;
+        dummies.push(dummy);
+      }
+      battle.aiEnabled = true;
+      return { battle, fuji, dummies };
+    }
+
+    /** 指定秒数シミュレートし、火山弾の発射数と噴火回数を数える */
+    function countEruptions(battle: DiagBattle, seconds: number): { rocks: number; bursts: number } {
+      const res = { rocks: 0, bursts: 0 };
+      const original = battle.combat.fireProjectile.bind(battle.combat);
+      battle.combat.fireProjectile = ((...args: Parameters<typeof original>) => {
+        if (args[3] === 'volcano_rock') res.rocks++;
+        return original(...args);
+      }) as typeof original;
+      battle.combat.onEffect = (e) => {
+        if (e.kind === 'eruption_burst') res.bursts++;
+      };
+      for (let i = 0; i < fps * seconds; i++) battle.step(battle.fixedDt);
+      return res;
+    }
+
+    it('HP は 5000 で、HP が半分を超える間は強化されない', () => {
+      const { battle, fuji } = setupYamamuron(1);
+      expect(fuji.maxHp).toBe(5000);
+      fuji.hp = fuji.maxHp * 0.5 + 1;
+      for (let i = 0; i < fps; i++) battle.step(battle.fixedDt);
+      expect(fuji.yamamuronEnraged).toBe(false);
+    });
+
+    it('HP 半分以下で強化モードに入り、発動演出とオーラの粒子を出し続ける', () => {
+      const { battle, fuji } = setupYamamuron(1);
+      fuji.hp = fuji.maxHp * 0.5;
+      let awaken = 0;
+      let aura = 0;
+      battle.combat.onEffect = (e) => {
+        if (e.kind === 'yamamuron_awaken') awaken++;
+        if (e.kind === 'yamamuron_aura') aura++;
+      };
+      for (let i = 0; i < fps * 2; i++) battle.step(battle.fixedDt);
+      expect(fuji.yamamuronEnraged).toBe(true);
+      expect(awaken).toBe(1);
+      expect(aura).toBeGreaterThan(10);
+    });
+
+    it('強化モードでは噴火の頻度が 2 倍になる', () => {
+      const seconds = 30;
+      const normal = setupYamamuron(1);
+      const normalCount = countEruptions(normal.battle, seconds).bursts;
+      const enraged = setupYamamuron(1);
+      enraged.fuji.hp = enraged.fuji.maxHp * 0.5;
+      const enragedCount = countEruptions(enraged.battle, seconds).bursts;
+      expect(enragedCount / normalCount).toBeGreaterThan(1.6);
+      expect(enragedCount / normalCount).toBeLessThan(2.4);
+    });
+
+    it('強化モードでは 1 回の噴火で最大 3 体へ同時に火山弾を撃つ', () => {
+      const enraged = setupYamamuron(5);
+      enraged.fuji.hp = enraged.fuji.maxHp * 0.5;
+      const res = countEruptions(enraged.battle, 12);
+      expect(res.bursts).toBeGreaterThan(0);
+      expect(res.rocks).toBe(res.bursts * 3);
+    });
+
+    it('強化前の噴火と、敵が 3 体未満のときは敵の数しか撃たない', () => {
+      const normal = countEruptions(setupYamamuron(5).battle, 12);
+      expect(normal.rocks).toBe(normal.bursts);
+
+      const two = setupYamamuron(2);
+      two.fuji.hp = two.fuji.maxHp * 0.5;
+      const res = countEruptions(two.battle, 12);
+      expect(res.rocks).toBe(res.bursts * 2);
+    });
+
+    it('地震は周囲の地上の敵にだけダメージを与え、遠くの敵と飛行ユニットには届かない', () => {
+      const battle = new DiagBattle();
+      const fuji = battle.spawnUnit('yamamuron', 0, 0, 0);
+      const near = battle.spawnUnit('swordsman', 1, 7, 0);
+      const far = battle.spawnUnit('swordsman', 1, 24, 0);
+      const flyer = battle.spawnUnit('giant_eagle', 1, 0, 7);
+      for (const u of [near, far, flyer]) {
+        battle.frozen.add(u);
+        u.hp = 1e7;
+      }
+      fuji.hp = fuji.maxHp * 0.5;
+      const quakeHits = new Set<Unit>();
+      let quakes = 0;
+      battle.combat.onEffect = (e) => {
+        if (e.kind === 'yamamuron_quake') quakes++;
+      };
+      battle.combat.onHit = (e) => {
+        if (e.attacker === fuji && e.kind === 'melee' && e.victim) quakeHits.add(e.victim as Unit);
+      };
+      battle.aiEnabled = true;
+      // 発動と同時の初回の地震だけを見る
+      for (let i = 0; i < 3; i++) battle.step(battle.fixedDt);
+      expect(quakes).toBe(1);
+      expect(quakeHits.has(near)).toBe(true);
+      expect(quakeHits.has(far)).toBe(false);
+      expect(quakeHits.has(flyer)).toBe(false);
+    });
+  });
+
   it('ホンゴンがピアノ演奏で音楽波動と音符を放ち範囲ダメージを与える', () => {
     const battle = new DiagBattle();
     const pianist = battle.spawnUnit('hongon', 0, -6, 0);
@@ -598,7 +712,9 @@ describe('1対1 総当たりで膠着しない', () => {
         battle.spawnUnit(ia, 0, -6, 0);
         battle.spawnUnit(ib, 1, 6, 0);
         battle.aiEnabled = true;
-        const steps = Math.round(120 / battle.fixedDt);
+        // ヤマムロン（HP 5000）の火山弾は遠距離無効のホンゴンに通らないため、決着まで約 200 秒かかる
+        const isSlowMatch = (ia === 'yamamuron' && ib === 'hongon') || (ia === 'hongon' && ib === 'yamamuron');
+        const steps = Math.round((isSlowMatch ? 300 : 120) / battle.fixedDt);
         for (let i = 0; i < steps && battle.result() === null; i++) battle.step(battle.fixedDt);
         if (battle.result() === null) stalls.push(ib);
       }

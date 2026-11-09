@@ -2140,6 +2140,68 @@ export class SceneView {
         }
         break;
       }
+      case 'yamamuron_awaken': {
+        // 強化モード発動: 全身から天へ噴き上がる業火と、地を這う灼熱の衝撃波
+        const s = e.scale;
+        for (let i = 0; i < 180; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const out = 2 + Math.random() * 9;
+          const vel = new Vector3(Math.cos(ang) * out, 9 + Math.random() * 22, Math.sin(ang) * out);
+          const col = i % 4 === 0 ? 0xffffff : i % 4 === 1 ? 0xffd43b : i % 4 === 2 ? 0xff7700 : 0xff1f00;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.34, 0.9 + Math.random() * 0.6, 7.0);
+        }
+        for (const [speed, col] of [[26, 0xffffff], [17, 0xff9500], [10, 0xff1f00]] as const) {
+          const ringN = 64;
+          for (let i = 0; i < ringN; i++) {
+            const ang = (i / ringN) * Math.PI * 2;
+            const dir = new Vector3(Math.cos(ang), 0.03, Math.sin(ang));
+            const p = e.pos.clone().addScaledVector(dir, 0.9 * s);
+            p.y = 0.3;
+            this.pushFxParticle(p, dir.multiplyScalar(speed), col, 0.3, 0.8, 0.5);
+          }
+        }
+        break;
+      }
+      case 'yamamuron_aura': {
+        // 強化モード中: 山肌から立ち昇り続ける火の粉
+        const s = e.scale;
+        for (let i = 0; i < 9; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = (0.5 + Math.random() * 1.1) * s;
+          const p = new Vector3(
+            e.pos.x + Math.cos(ang) * r,
+            0.2 + Math.random() * 1.2 * s,
+            e.pos.z + Math.sin(ang) * r,
+          );
+          // 山を螺旋状に巻き上がる
+          const vel = new Vector3(-Math.sin(ang) * 3.2, 5 + Math.random() * 8, Math.cos(ang) * 3.2);
+          const col = i % 5 === 0 ? 0xffffff : i % 3 === 0 ? 0xffd43b : i % 2 === 0 ? 0xff7700 : 0xff2a00;
+          this.pushFxParticle(p, vel, col, 0.2, 0.55 + Math.random() * 0.45, 2.5);
+        }
+        break;
+      }
+      case 'yamamuron_quake': {
+        // 地震: 外へ走る地割れの波と、跳ね上がる岩盤
+        const ringN = 72;
+        for (const [life, col] of [[0.7, 0xffb347], [0.5, 0x8d6e4a]] as const) {
+          for (let i = 0; i < ringN; i++) {
+            const ang = (i / ringN) * Math.PI * 2;
+            const dir = new Vector3(Math.cos(ang), 0.02, Math.sin(ang));
+            const p = e.pos.clone().addScaledVector(dir, 1.0);
+            p.y = 0.15;
+            this.pushFxParticle(p, dir.multiplyScalar(e.radius / life), col, 0.3, life, 0.3);
+          }
+        }
+        for (let i = 0; i < 46; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = Math.sqrt(Math.random()) * e.radius;
+          const p = new Vector3(e.pos.x + Math.cos(ang) * r, 0.1, e.pos.z + Math.sin(ang) * r);
+          const vel = new Vector3((Math.random() - 0.5) * 3, 5 + Math.random() * 7, (Math.random() - 0.5) * 3);
+          if (i % 2 === 0) this.pushDroppedVoxel(p, vel, i % 4 === 0 ? 0x5c4631 : 0x8d6e4a, 0.14);
+          else this.pushFxParticle(p, vel, 0xb79a7a, 0.3, 0.55 + Math.random() * 0.3, 4.0);
+        }
+        break;
+      }
       case 'piano_wave': {
         // ピアノ演奏の音楽波紋（美しい同心円状の音波リング）
         const teamCol = TEAM_COLORS[e.team].accent;

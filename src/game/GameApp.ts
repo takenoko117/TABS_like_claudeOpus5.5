@@ -375,6 +375,8 @@ const SHAKE_BY_EFFECT: Readonly<Record<string, number>> = {
   rocket_explosion: 0.16,
   tank_explosion: 0.24,
   eruption_explosion: 0.24,
+  yamamuron_awaken: 0.5,
+  yamamuron_quake: 0.4,
   robot_punch_impact: 0.26,
   satellite_beam: 0.2,
   ramiel_beam: 0.22,
