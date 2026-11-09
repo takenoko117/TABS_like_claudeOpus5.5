@@ -588,7 +588,49 @@ describe('兵種固有の不具合の回帰テスト', () => {
     expect(hitCount).toBeGreaterThan(2);
   });
 
-  it('ホンゴンは特殊効果で遠距離攻撃（矢・銃弾・爆弾など）を完全に無効化し、近接攻撃のみダメージを受ける', () => {
+  it('ホンゴンの結界は遠距離ダメージを累計 1000 まで吸収し、超えた分から本体に通る', () => {
+    const battle = new DiagBattle();
+    const pianist = battle.spawnUnit('hongon', 0, 0, 0);
+    const hit = (amount: number, ranged: boolean): void => {
+      pianist.takeDamage(amount, pianist.chest, new Vector3(), battle.fixedDt, undefined, ranged);
+    };
+    const hp = pianist.hp;
+
+    hit(900, true);
+    expect(pianist.hp).toBe(hp);
+    expect(pianist.rangedBarrier).toBe(100);
+
+    // 近接攻撃は結界を素通りし、残量も減らさない
+    hit(10, false);
+    expect(pianist.hp).toBe(hp - 10);
+    expect(pianist.rangedBarrier).toBe(100);
+
+    // 残量を超えた分だけが本体に通り、以降は遠距離攻撃がそのまま通る
+    hit(130, true);
+    expect(pianist.hp).toBe(hp - 40);
+    expect(pianist.rangedBarrier).toBe(0);
+    hit(20, true);
+    expect(pianist.hp).toBe(hp - 60);
+  });
+
+  it('ホンゴンの結界は範囲内の爆風だけで減り、吸収しきれない分は爆風でも通る', () => {
+    const battle = new DiagBattle();
+    const pianist = battle.spawnUnit('hongon', 0, 0, 0);
+    const bomberman = battle.spawnUnit('bomber', 1, 20, 0);
+    const blast = (x: number, damage: number): void => {
+      battle.combat.applyRadialBlast(bomberman, new Vector3(x, pianist.pelvis.pos.y, 0), 3, damage, 0, 0, battle.units, battle.fixedDt);
+    };
+    const hp = pianist.hp;
+
+    blast(30, 5000);
+    expect(pianist.rangedBarrier).toBe(1000);
+
+    blast(0, 1100);
+    expect(pianist.rangedBarrier).toBe(0);
+    expect(pianist.hp).toBeCloseTo(hp - 100);
+  });
+
+  it('ホンゴンは結界が残っている間は遠距離攻撃（矢・銃弾・爆弾など）を無効化し、近接攻撃のみダメージを受ける', () => {
     const battle = new DiagBattle();
     const pianist = battle.spawnUnit('hongon', 0, 0, 0);
     battle.spawnUnit('archer', 1, 8, 0);
@@ -605,7 +647,7 @@ describe('兵種固有の不具合の回帰テスト', () => {
     battle.aiEnabled = true;
     for (let i = 0; i < 120 * 3; i++) battle.step(battle.fixedDt);
 
-    // 遠距離攻撃ユニットからの射撃・爆撃を多数受けても、ホンゴンのHPは全く減らない！
+    // 結界が残っている間は、射撃・爆撃を受けてもホンゴンのHPは減らない
     expect(pianist.hp).toBe(initialHp);
     expect(blockedNotes).toBeGreaterThan(0);
 
@@ -712,9 +754,7 @@ describe('1対1 総当たりで膠着しない', () => {
         battle.spawnUnit(ia, 0, -6, 0);
         battle.spawnUnit(ib, 1, 6, 0);
         battle.aiEnabled = true;
-        // ヤマムロン（HP 5000）の火山弾は遠距離無効のホンゴンに通らないため、決着まで約 200 秒かかる
-        const isSlowMatch = (ia === 'yamamuron' && ib === 'hongon') || (ia === 'hongon' && ib === 'yamamuron');
-        const steps = Math.round((isSlowMatch ? 300 : 120) / battle.fixedDt);
+        const steps = Math.round(120 / battle.fixedDt);
         for (let i = 0; i < steps && battle.result() === null; i++) battle.step(battle.fixedDt);
         if (battle.result() === null) stalls.push(ib);
       }

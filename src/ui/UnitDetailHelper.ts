@@ -196,9 +196,9 @@ export function getPlaceableDetail(
   if (ut.id === 'hongon') {
     pills.push({
       label: '特効',
-      value: '🛡️ 遠距離無効',
+      value: '🛡️ 遠距離無効(累計1000)',
       className: 'stat-pill special',
-      title: '特殊効果: 矢・銃弾・爆弾・砲撃・遠距離魔法などあらゆる遠距離攻撃を完全に無効化',
+      title: '特殊効果: 矢・銃弾・爆弾・砲撃・遠距離魔法などあらゆる遠距離攻撃のダメージを累計1000まで無効化',
     });
   }
 

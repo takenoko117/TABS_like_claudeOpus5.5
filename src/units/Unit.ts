@@ -36,6 +36,8 @@ const MAX_MUSCLE_ACCEL = 300;
 export const FLAME_DRAG = 1.8;
 /** 手裏剣に掛かる重力の倍率 */
 const SHURIKEN_GRAVITY_SCALE = 0.25;
+/** ホンゴンの旋律結界が 1 体につき吸収できる遠距離ダメージの累計 */
+export const HONGON_RANGED_BARRIER = 1000;
 /** ヤマムロン強化モード: 発動するHP割合・攻撃頻度倍率・同時攻撃数 */
 const YAMAMURON_RAGE_HP_RATIO = 0.5;
 const YAMAMURON_RAGE_ATTACK_RATE = 2;
@@ -165,6 +167,8 @@ export class Unit {
   private burnTickTimer = 0;
   /** 毒残り時間（巨大アナコンダ） */
   poisonTimer = 0;
+  /** ホンゴンの旋律結界の残量（遠距離ダメージの累計吸収量） */
+  rangedBarrier = 0;
   /** ヤマムロンの強化モード（HP半分以下）中か */
   yamamuronEnraged = false;
   private earthquakeTimer = 0;
@@ -230,6 +234,7 @@ export class Unit {
     this.splitGen = opts?.splitGen ?? 0;
     this.massScale = s * s * s * type.massMul;
     this.bodyId = world.createBodyId();
+    if (type.id === 'hongon') this.rangedBarrier = HONGON_RANGED_BARRIER;
     this.maxHp = opts?.hpOverride ?? type.hp;
     this.hp = this.maxHp;
     this.facing = facing;
@@ -3141,6 +3146,18 @@ export class Unit {
   }
 
   /**
+   * ホンゴンの旋律結界で遠距離ダメージを吸収する（1 体につき累計 HONGON_RANGED_BARRIER まで）。
+   * @returns 結界を貫通して本体に届くダメージ
+   */
+  absorbRangedDamage(amount: number): number {
+    if (this.rangedBarrier <= 0) return amount;
+    const absorbed = Math.min(this.rangedBarrier, amount);
+    this.rangedBarrier -= absorbed;
+    this.context?.combat.emitEffect({ kind: 'piano_note', pos: this.chest.pos.clone() });
+    return amount - absorbed;
+  }
+
+  /**
    * ダメージを受ける。
    * @param hitParticle 被弾した粒子（ここに強いノックバックを与える）
    * @param dv ノックバックの速度変化
@@ -3149,15 +3166,9 @@ export class Unit {
   takeDamage(amount: number, hitParticle: Particle, dv: Vector3, dt: number, attacker?: Unit, isRanged?: boolean): boolean {
     if (!this.alive) return false;
 
-    // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（飛翔体・射撃・砲撃・遠距離魔法を完全無効化）
-    if (this.type.id === 'hongon' && isRanged) {
-      if (this.context) {
-        this.context.combat.emitEffect({
-          kind: 'piano_note',
-          pos: hitParticle.pos.clone(),
-        });
-      }
-      return false;
+    if (isRanged) {
+      amount = this.absorbRangedDamage(amount);
+      if (amount <= 0) return false;
     }
 
     // からくり忍者の「変わり身の術」（被弾時にクールダウン中なければ無効化してワープ回避）

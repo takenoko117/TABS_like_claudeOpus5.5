@@ -415,22 +415,21 @@ export class CombatSystem {
       const hitPos = currentTarget.chest.pos.clone();
       chainPoints.push(hitPos);
 
-      // ホンゴンの特殊効果: 遠距離攻撃無効（遠距離魔法・雷撃を無効化）
-      if (currentTarget.type.id === 'hongon') {
-        this.emitEffect({ kind: 'piano_note', pos: hitPos.clone() });
-      } else {
+      // ホンゴンの旋律結界が吸収しきった雷撃は感電も起こさない
+      const shockDamage = currentTarget.absorbRangedDamage(currentDamage);
+      if (shockDamage > 0) {
         // 感電麻痺とランダムな痙攣インパルス
         currentTarget.shockTimer = Math.max(currentTarget.shockTimer, 0.85);
         currentTarget.muscle = Math.min(currentTarget.muscle, 0.08);
         const jolt = new Vector3((Math.random() - 0.5) * 4, 2.5, (Math.random() - 0.5) * 4);
         const victim = currentTarget;
         const killed = this.withDamageKind('shock', () =>
-          victim.takeDamage(currentDamage, victim.chest, jolt, dt, owner, true),
+          victim.takeDamage(shockDamage, victim.chest, jolt, dt, owner, true),
         );
         this.onHit?.({
           kind: 'magic',
           point: hitPos.clone(),
-          damage: currentDamage,
+          damage: shockDamage,
           attacker: owner,
           victim: currentTarget,
           hitParticle: currentTarget.chest,
@@ -513,15 +512,14 @@ export class CombatSystem {
 
     for (const u of units) {
       if (!u.alive || u.team === attackerTeam) continue;
-      // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（爆撃・砲撃・ビームなどの遠距離爆風を完全無効化）
-      if (u.type.id === 'hongon' && hitKind !== 'melee') {
-        this.emitEffect({ kind: 'piano_note', pos: u.chest.pos.clone() });
-        continue;
-      }
       const d2 = u.pelvis.pos.distanceToSquared(center);
       if (d2 > r2) continue;
       const dist = Math.sqrt(d2);
       const falloff = clamp(1 - dist / (radius * 1.15), 0.35, 1);
+      // 爆撃・砲撃などの遠距離爆風はホンゴンの旋律結界で吸収される
+      const incomingDmg = damage * falloff * dmgMul;
+      const finalDmg = hitKind === 'melee' ? incomingDmg : u.absorbRangedDamage(incomingDmg);
+      if (finalDmg <= 0) continue;
       _dir.subVectors(u.chest.pos, center);
       if (_dir.lengthSq() < 1e-6) _dir.set(Math.random() - 0.5, 0.5, Math.random() - 0.5);
       _dir.normalize();
@@ -530,7 +528,6 @@ export class CombatSystem {
       const kb = (knockback * falloff) / Math.pow(u.massScale, 0.55);
       _dir.multiplyScalar(kb);
 
-      const finalDmg = damage * falloff * dmgMul;
       const blastKind = hitKind === 'explosion' && this.currentDamageKind === 'physical' ? 'explosion' : this.currentDamageKind;
       const killed = this.withDamageKind(blastKind, () =>
         u.takeDamage(finalDmg, u.chest, _dir, dt, attacker ?? undefined),
@@ -1116,15 +1113,9 @@ export class CombatSystem {
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
     if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
-      const isHongon = bestU.alive && bestU.type.id === 'hongon';
-      if (isHongon) {
-        // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（爆発弾直撃を無効化）
-        this.emitEffect({ kind: 'piano_note', pos: a.pos.clone() });
-      } else {
-        const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0) * this.projectileDamageMultiplier;
-        if (bestU.alive && bestU.team !== a.team) {
-          bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined, true);
-        }
+      const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0) * this.projectileDamageMultiplier;
+      if (bestU.alive && bestU.team !== a.team) {
+        bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined, true);
       }
       this.triggerExplosiveProjectileHit(a, a.pos, units, [], dt);
       return true;
@@ -1133,13 +1124,6 @@ export class CombatSystem {
     const speed = a.vel.length();
 
     if (bestU.alive) {
-      // 魔法使いホンゴンの特殊効果: 遠距離攻撃無効（矢・銃弾・狙撃・手裏剣・火炎などを完全無効化）
-      if (bestU.type.id === 'hongon') {
-        this.emitEffect({ kind: 'piano_note', pos: a.pos.clone() });
-        a.life = 0;
-        a.pierceLeft = 0;
-        return true;
-      }
       // 盾兵の正面ガード判定（盾粒子への命中、または正面からの射撃）
       const isShieldBlock =
         bestU.type.id === 'shielder' &&
@@ -1159,6 +1143,14 @@ export class CombatSystem {
           ? a.damage
           : a.damage * clamp(speed / a.refSpeed, 0.5, 1.2) * (isSlimeBounce ? 0.5 : 1.0) * shieldDamageMul) * this.projectileDamageMultiplier;
 
+      // ホンゴンの旋律結界が吸収しきった弾はその場で消える
+      const hitDamage = bestU.absorbRangedDamage(rawDamage);
+      if (hitDamage <= 0) {
+        a.life = 0;
+        a.pierceLeft = 0;
+        return true;
+      }
+
       const kbFactor =
         a.projectileKind === 'sniper'
           ? 0.09
@@ -1176,11 +1168,11 @@ export class CombatSystem {
         bestU.burnAttacker = a.owner;
       }
 
-      const killed = bestU.takeDamage(rawDamage, bestP, _dir, dt, a.owner);
+      const killed = bestU.takeDamage(hitDamage, bestP, _dir, dt, a.owner);
       this.onHit?.({
         kind: 'arrow',
         point: a.pos.clone(),
-        damage: rawDamage,
+        damage: hitDamage,
         attacker: a.owner,
         victim: bestU,
         hitParticle: bestP,
@@ -1269,12 +1261,9 @@ export class CombatSystem {
         const perpH = Math.abs(-dirH.z * toU.x + dirH.x * toU.z);
         const effectivePerp = Math.min(perp3D, perpH);
         if (effectivePerp <= beamRadius + u.bodyRadius * 0.6) {
-          // ホンゴンの特殊効果: 遠距離攻撃無効（貫通レーザービームを無効化）
-          if (u.type.id === 'hongon') {
-            this.emitEffect({ kind: 'piano_note', pos: u.chest.pos.clone() });
-            continue;
-          }
-          const dmg = (isInitial ? 280 + Math.random() * 50 : 48 + Math.random() * 12) * owner.damageMul;
+          // 貫通レーザーもホンゴンの旋律結界で吸収される
+          const dmg = u.absorbRangedDamage((isInitial ? 280 + Math.random() * 50 : 48 + Math.random() * 12) * owner.damageMul);
+          if (dmg <= 0) continue;
           const impulse = dir.clone().multiplyScalar(isInitial ? 18.0 : 7.5);
           impulse.y = Math.max(impulse.y, isInitial ? 4.5 : 1.8);
           u.takeDamage(dmg, u.chest, impulse, dt, owner, true);
@@ -1326,10 +1315,8 @@ export class CombatSystem {
     const from = owner.joints[J.HandR].pos.clone();
     this.emitEffect({ kind: 'sachiel_pile', from, to: targetPos.clone() });
     if (target && target.alive && target.team !== owner.team) {
-      if (target.type.id === 'hongon') {
-        this.emitEffect({ kind: 'piano_note', pos: targetPos.clone() });
-      } else {
-        const dmg = (110 + Math.random() * 25) * owner.damageMul;
+      const dmg = target.absorbRangedDamage((110 + Math.random() * 25) * owner.damageMul);
+      if (dmg > 0) {
         const dir = new Vector3().subVectors(targetPos, from).normalize();
         target.takeDamage(dmg, target.chest, dir.clone().multiplyScalar(12.0), dt, owner, true);
         this.onHit?.({
