@@ -151,6 +151,11 @@ export class Facility {
     return this.isMarchGate && this.alive && this.marchPhase !== 'done';
   }
 
+  /** 進軍門が滑り始めたか（＝開戦したか） */
+  get marchBegun(): boolean {
+    return this.isMarchGate && this.marchPhase !== 'ready';
+  }
+
   /** 進軍門の帯の後端の X 座標（滑っている間は門の現在位置） */
   get marchLaneStartX(): number {
     return this.marchPhase === 'sweeping' ? this.pos.x : (this.marchFromX ?? this.pos.x);

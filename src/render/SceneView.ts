@@ -1166,6 +1166,17 @@ export class SceneView {
         mat.emissiveIntensity = 0;
       }
 
+      // ローグライトの進軍門は開戦後に戦場の中央へ出て視界を遮るため、滑り始めたら半透明にする
+      if (fac.isMarchGate) {
+        const targetOpacity = fac.marchBegun ? 0.45 : 1;
+        if (mat.opacity !== targetOpacity) {
+          mat.opacity = targetOpacity;
+          mat.transparent = targetOpacity < 1;
+          mat.depthWrite = targetOpacity >= 1;
+          mat.needsUpdate = true;
+        }
+      }
+
       // HPバーの向き（常にカメラ正面を向くビルボード）とスケール更新
       vis.hpBarGroup.quaternion.copy(this.camera.quaternion);
       const hpRatio = clamp01(fac.hp / fac.maxHp);
