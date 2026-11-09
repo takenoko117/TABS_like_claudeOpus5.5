@@ -32,6 +32,7 @@ import {
 import type { ProjectileKind } from '../combat/CombatSystem';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Particle } from '../physics/Particle';
+import { buildAwakenedJewel, buildAwakenedMountain } from './YamamuronAwakenedModel';
 import {
   buildDragonBodyHalves,
   buildDragonForeleg,
@@ -186,6 +187,8 @@ interface VoxelPartTemplate {
   voxelSize: number;
   pivot: readonly [number, number, number];
   geometry: BufferGeometry;
+  /** 被弾してもボクセルを削らない（高精細モデルで再構築の負荷を避ける） */
+  uncarvable?: boolean;
 }
 
 interface UnitTemplateSet {
@@ -216,6 +219,24 @@ function makeTemplate(
 
 function specTemplate(spec: DragonPartSpec): VoxelPartTemplate {
   return makeTemplate(spec.grid, spec.voxelSize, spec.pivot);
+}
+
+/** ヤマムロン強化形態の胴体と頭のテンプレート（陣営ごとに 1 度だけ生成する） */
+interface YamamuronAwakenedTemplates {
+  torso: VoxelPartTemplate;
+  head: VoxelPartTemplate;
+}
+const yamamuronAwakenedCache = new Map<Team, YamamuronAwakenedTemplates>();
+function getYamamuronAwakenedTemplates(team: Team): YamamuronAwakenedTemplates {
+  let set = yamamuronAwakenedCache.get(team);
+  if (!set) {
+    set = {
+      torso: { ...specTemplate(buildAwakenedMountain(team)), uncarvable: true },
+      head: { ...specTemplate(buildAwakenedJewel()), uncarvable: true },
+    };
+    yamamuronAwakenedCache.set(team, set);
+  }
+  return set;
 }
 
 /** ドラゴンの後半身・前脚・首と尾の節・尾先（部位破壊対象外の装飾メッシュ）のジオメトリ */
@@ -2622,8 +2643,8 @@ interface DestructiblePart {
 
 const UP = new Vector3(0, 1, 0);
 /** ヤマムロン強化モードのオーラの寸法と光輪の数 */
-const YAMAMURON_AURA_RADIUS = 5.2;
-const YAMAMURON_AURA_HEIGHT = 11;
+const YAMAMURON_AURA_RADIUS = 6.6;
+const YAMAMURON_AURA_HEIGHT = 15;
 const YAMAMURON_AURA_HALOS = 4;
 const _dir = new Vector3();
 const _up = new Vector3();
@@ -3185,6 +3206,8 @@ export class VoxelCharacterVisual {
   private dragonMouthGlow: Mesh | null = null;
   /** ヤマムロン強化モードのオーラ（外炎コーン・内炎コーン・地面の輪・昇る光輪） */
   private readonly yamamuronAura: Mesh[] = [];
+  /** 胴体と頭が強化形態のモデルに差し替わっているか */
+  private yamamuronAwakened = false;
   /** 首の突き出し量（+1: ブレスで前へ突き出す, -1: 溜めで仰け反る） */
   private dragonLunge = 0;
   private dragonLastTime = -1;
@@ -3361,8 +3384,10 @@ export class VoxelCharacterVisual {
         this.group.add(mesh);
         this.yamamuronAura.push(mesh);
       };
-      addAura(new ConeGeometry(YAMAMURON_AURA_RADIUS, YAMAMURON_AURA_HEIGHT, 28, 1, true), 0xff2a00, 0.34);
-      addAura(new ConeGeometry(YAMAMURON_AURA_RADIUS * 0.74, YAMAMURON_AURA_HEIGHT * 0.86, 24, 1, true), 0xffc226, 0.3);
+      // 山の造形が見えるようコーンは薄くする。強化形態は戦闘中に初めて要るので配置時に作っておく
+      getYamamuronAwakenedTemplates(unit.team);
+      addAura(new ConeGeometry(YAMAMURON_AURA_RADIUS, YAMAMURON_AURA_HEIGHT, 28, 1, true), 0xff2a00, 0.14);
+      addAura(new ConeGeometry(YAMAMURON_AURA_RADIUS * 0.74, YAMAMURON_AURA_HEIGHT * 0.86, 24, 1, true), 0xffc226, 0.1);
       addAura(new TorusGeometry(YAMAMURON_AURA_RADIUS, 0.09, 8, 64), 0xff9500, 0.95);
       for (let i = 0; i < YAMAMURON_AURA_HALOS; i++) {
         addAura(new TorusGeometry(1, 0.05, 8, 48), i % 2 === 0 ? 0xfff1a8 : 0xff5a00, 0.85);
@@ -4103,9 +4128,32 @@ export class VoxelCharacterVisual {
     }
   }
 
+  /** ヤマムロンの胴体と頭を強化形態／通常形態のモデルへ差し替える（損壊は修復される） */
+  private setYamamuronForm(awakened: boolean): void {
+    this.yamamuronAwakened = awakened;
+    const forms = awakened
+      ? getYamamuronAwakenedTemplates(this.unit.team)
+      : getUnitTemplateSet(this.unit.type, this.unit.team);
+    const swaps: ReadonlyArray<[DestructiblePart, VoxelPartTemplate]> = [
+      [this.parts.torso, forms.torso],
+      [this.parts.head, forms.head],
+    ];
+    for (const [part, template] of swaps) {
+      if (part.ownsGeometry) part.mesh.geometry.dispose();
+      part.ownsGeometry = false;
+      part.mutableGrid = null;
+      part.template = template;
+      part.mesh.geometry = template.geometry;
+      part.hp = part.maxHp;
+      part.destroyed = false;
+      part.mesh.visible = true;
+    }
+  }
+
   /** ヤマムロン強化モードのオーラを山の周囲に配置し、脈動させる */
   private syncYamamuronAura(): void {
     const u = this.unit;
+    if (u.yamamuronEnraged !== this.yamamuronAwakened) this.setYamamuronForm(u.yamamuronEnraged);
     const on = u.alive && u.yamamuronEnraged;
     const [outer, inner, groundRing, ...halos] = this.yamamuronAura;
     for (const m of this.yamamuronAura) m.visible = on;
@@ -5411,7 +5459,7 @@ export class VoxelCharacterVisual {
     gridRadius: number,
     outDrops: DroppedVoxelSeed[],
   ): number {
-    if (part.destroyed) return 0;
+    if (part.destroyed || part.template.uncarvable) return 0;
     if (!part.mutableGrid) {
       part.mutableGrid = part.template.grid.clone();
     }

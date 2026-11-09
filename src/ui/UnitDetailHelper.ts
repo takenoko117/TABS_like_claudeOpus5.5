@@ -207,7 +207,7 @@ export function getPlaceableDetail(
       label: '特効',
       value: '🌋 HP半分で強化',
       className: 'stat-pill special',
-      title: '強化モード: HP半分以下で攻撃頻度2倍・最大3体へ同時噴火・地震による周囲への範囲攻撃',
+      title: '強化モード: HP半分以下で変身し、移動速度20倍・射程5倍・攻撃頻度2倍・最大3体へ同時噴火・地震による周囲への範囲攻撃',
     });
   }
 

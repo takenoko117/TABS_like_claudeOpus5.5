@@ -42,6 +42,10 @@ export const HONGON_RANGED_BARRIER = 1000;
 const YAMAMURON_RAGE_HP_RATIO = 0.5;
 const YAMAMURON_RAGE_ATTACK_RATE = 2;
 const YAMAMURON_RAGE_MAX_TARGETS = 3;
+const YAMAMURON_RAGE_SPEED_MUL = 20;
+const YAMAMURON_RAGE_RANGE_MUL = 5;
+/** 強化中のヤマムロンは射程に関わらず、地震の届くこの距離まで敵に詰め寄る */
+const YAMAMURON_RAGE_CHASE_DISTANCE = 9;
 /** ヤマムロン強化モードの地震: 間隔（秒）・半径・中心での威力 */
 const YAMAMURON_QUAKE_INTERVAL = 2.5;
 const YAMAMURON_QUAKE_RADIUS = 12;
@@ -585,7 +589,8 @@ export class Unit {
       return;
     }
 
-    if (!this.mountedOn && dist > engage * 0.9) {
+    const stopDistance = this.yamamuronEnraged ? YAMAMURON_RAGE_CHASE_DISTANCE : engage * 0.9;
+    if (!this.mountedOn && dist > stopDistance) {
       let mx = dx / Math.max(0.001, dist);
       let mz = dz / Math.max(0.001, dist);
 
@@ -676,7 +681,9 @@ export class Unit {
       }
 
       this.moveDir.set(mx, 0, mz);
-      this.moveSpeed = this.type.speed * this.speedMul * (this.attackPhase === 'none' ? 1 : 0.4);
+      this.moveSpeed = this.yamamuronEnraged
+        ? this.type.speed * this.speedMul * YAMAMURON_RAGE_SPEED_MUL
+        : this.type.speed * this.speedMul * (this.attackPhase === 'none' ? 1 : 0.4);
     } else if (!this.mountedOn && this.type.id === 'spearman' && dist < engage * 0.65 && dist > 1e-3) {
       // 槍兵は懐に潜り込まれたら少しずつ後退して槍の間合いを維持する
       this.moveDir.set(-dx / dist, 0, -dz / dist);
@@ -741,7 +748,7 @@ export class Unit {
       st === 'psychic' ||
       st === 'zeruel_cutter'
     ) {
-      return this.type.range;
+      return this.attackRange;
     }
     return this.type.range * this.scale + fac.radius;
   }
@@ -790,7 +797,7 @@ export class Unit {
       st === 'psychic' ||
       st === 'zeruel_cutter'
     ) {
-      return this.type.range;
+      return this.attackRange;
     }
     return this.type.range * this.scale + t.bodyRadius;
   }
@@ -1472,6 +1479,11 @@ export class Unit {
     for (const wp of this.weaponParticles) wp.addVelocity(_tmp, dt);
   }
 
+  /** 遠距離攻撃の射程（ヤマムロンの強化モードで 5 倍） */
+  private get attackRange(): number {
+    return this.type.range * (this.yamamuronEnraged ? YAMAMURON_RAGE_RANGE_MUL : 1);
+  }
+
   /** 攻撃の進行速度の倍率（ヤマムロンの強化モードで 2 倍） */
   private get attackRateMul(): number {
     return this.yamamuronEnraged ? YAMAMURON_RAGE_ATTACK_RATE : 1;
@@ -1483,7 +1495,7 @@ export class Unit {
     const targets: Unit[] = t && t.alive ? [t] : [];
     if (this.yamamuronEnraged) {
       const p = this.pelvis.pos;
-      const range2 = this.type.range * this.type.range;
+      const range2 = this.attackRange * this.attackRange;
       const dist2 = (u: Unit): number => (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2;
       const others = ctx.units
         .filter((u) => u.alive && u.team !== this.team && u !== t && dist2(u) <= range2)
@@ -1519,7 +1531,8 @@ export class Unit {
     ctx.combat.fireProjectile(this, from, vel, 'volcano_rock', {
       damage: (this.type.projectile?.damage ?? 120) * this.damageMul,
       gravityScale: 0.45,
-      life: 5.0,
+      // 強化中の長射程でも空中で消えないよう、飛行時間より長く保つ
+      life: Math.max(5.0, flight + 1.0),
     });
   }
 
@@ -2600,7 +2613,7 @@ export class Unit {
 
       // 3. 移動: 目標速度との差に応じて胴体を押す
       if (supported || (this.type.id === 'lightspeed_ant' && this.target && this.target.pelvis.pos.y > 1.8)) {
-        const isFastAnt = this.type.id === 'lightspeed_ant';
+        const isFastAnt = this.type.id === 'lightspeed_ant' || this.yamamuronEnraged;
         _acc.set(this.moveDir.x * this.moveSpeed - pv.x, 0, this.moveDir.z * this.moveSpeed - pv.z);
         _acc.multiplyScalar(isFastAnt ? 16 : isFlyer ? 8 : 6);
         clampLength(_acc, isFastAnt ? 42 : isFlyer ? 18 : 14);

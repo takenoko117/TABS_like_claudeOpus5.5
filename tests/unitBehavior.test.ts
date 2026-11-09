@@ -523,6 +523,47 @@ describe('兵種固有の不具合の回帰テスト', () => {
       expect(res.rocks).toBe(res.bursts * 3);
     });
 
+    it('強化モードの射程は 5 倍になり、強化前は届かない距離の敵にも噴火する', () => {
+      const far = 150;
+      const normal = setupYamamuron(1, -15 + far);
+      expect(countEruptions(normal.battle, 3).bursts).toBe(0);
+
+      const enraged = setupYamamuron(1, -15 + far);
+      enraged.fuji.hp = enraged.fuji.maxHp * 0.5;
+      expect(countEruptions(enraged.battle, 3).bursts).toBeGreaterThan(0);
+    });
+
+    it('射程いっぱいで撃った火山弾は着弾まで消えない', () => {
+      const { battle, fuji, dummies } = setupYamamuron(1, 150);
+      fuji.hp = fuji.maxHp * 0.5;
+      const original = battle.combat.fireProjectile.bind(battle.combat);
+      const lives: Array<{ life: number; dist: number }> = [];
+      battle.combat.fireProjectile = ((...args: Parameters<typeof original>) => {
+        const dist = Math.abs(args[1].x - dummies[0].pelvis.pos.x);
+        lives.push({ life: args[4]?.life ?? 0, dist });
+        return original(...args);
+      }) as typeof original;
+      for (let i = 0; i < fps * 2; i++) battle.step(battle.fixedDt);
+      expect(lives.length).toBeGreaterThan(0);
+      for (const { life, dist } of lives) expect(life).toBeGreaterThan(dist / 28);
+    });
+
+    it('強化モードでは約 20 倍の速さで敵に詰め寄り、地震の届く距離で止まる', () => {
+      const { battle, fuji, dummies } = setupYamamuron(1, 60);
+      fuji.hp = fuji.maxHp * 0.5;
+      const startX = fuji.pelvis.pos.x;
+      let peak = 0;
+      for (let i = 0; i < fps * 2; i++) {
+        battle.step(battle.fixedDt);
+        peak = Math.max(peak, Math.hypot(fuji.velocity.x, fuji.velocity.z));
+      }
+      expect(peak).toBeGreaterThan(12);
+      expect(fuji.pelvis.pos.x - startX).toBeGreaterThan(14);
+
+      for (let i = 0; i < fps * 8; i++) battle.step(battle.fixedDt);
+      expect(hdist(fuji, dummies[0])).toBeLessThan(14);
+    });
+
     it('強化前の噴火と、敵が 3 体未満のときは敵の数しか撃たない', () => {
       const normal = countEruptions(setupYamamuron(5).battle, 12);
       expect(normal.rocks).toBe(normal.bursts);
