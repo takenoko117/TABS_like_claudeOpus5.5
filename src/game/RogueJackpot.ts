@@ -1,7 +1,8 @@
 import { Vector3 } from 'three';
 import type { Unit } from '../units/Unit';
 import type { Battle } from './Battle';
-import type { RogueRoundKind, RogueliteRun } from './RogueliteMode';
+import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
+import { getSquadSize, getUnitSlotCost, type RogueRoundKind, type RogueliteRun } from './RogueliteMode';
 
 /** レア度。0=コモン, 1=レア, 2=エピック, 3=レジェンド */
 export type JackpotRarity = 0 | 1 | 2 | 3;
@@ -45,11 +46,11 @@ const MAX_SMITE_EFFECTS = 24;
 
 export type JackpotEffect =
   | { kind: 'gold'; amount: number }
-  | { kind: 'score'; amount: number }
   | { kind: 'reroll' }
   | { kind: 'heal'; ratio: number }
   | { kind: 'buff'; damage?: number; speed?: number; guard?: number }
-  | { kind: 'clone'; count: number }
+  | { kind: 'clone'; count: number; show: 'lottery' | 'barrage' }
+  | { kind: 'summon' }
   | { kind: 'smite'; ratio: number; cap: number };
 
 export interface JackpotReward {
@@ -64,22 +65,21 @@ export interface JackpotReward {
 }
 
 export const JACKPOT_REWARDS: readonly JackpotReward[] = [
-  { id: 'budget_s', name: '小判', detail: 'ゴールド +30G', icon: '🪙', rarity: 0, scope: 'run', effect: { kind: 'gold', amount: 30 } },
-  { id: 'score_s', name: '勝ち星', detail: 'スコア +300', icon: '⭐', rarity: 0, scope: 'run', effect: { kind: 'score', amount: 300 } },
   { id: 'heal_s', name: '応急手当', detail: '全軍 HP 30%回復', icon: '🩹', rarity: 0, scope: 'battle', effect: { kind: 'heal', ratio: 0.3 } },
   { id: 'atk_s', name: '闘志', detail: '全軍 攻撃 +25%', icon: '⚔️', rarity: 0, scope: 'battle', effect: { kind: 'buff', damage: 1.25 } },
-  { id: 'spd_s', name: '追い風', detail: '全軍 速度 +25%', icon: '💨', rarity: 0, scope: 'battle', effect: { kind: 'buff', speed: 1.25 } },
+  { id: 'spd_s', name: '追い風', detail: '全軍 速度 +100%', icon: '💨', rarity: 0, scope: 'battle', effect: { kind: 'buff', speed: 2 } },
   { id: 'guard_s', name: '鉄壁', detail: '全軍 被ダメ -20%', icon: '🛡️', rarity: 0, scope: 'battle', effect: { kind: 'buff', guard: 0.8 } },
-  { id: 'budget_m', name: '千両箱', detail: 'ゴールド +60G', icon: '💰', rarity: 1, scope: 'run', effect: { kind: 'gold', amount: 60 } },
+  { id: 'budget_m', name: '千両箱', detail: 'ゴールド +100G', icon: '💰', rarity: 1, scope: 'run', effect: { kind: 'gold', amount: 100 } },
   { id: 'reroll', name: '引き直し券', detail: '報酬・ショップの引き直し +1', icon: '🎟️', rarity: 1, scope: 'run', effect: { kind: 'reroll' } },
   { id: 'heal_l', name: '大回復', detail: '全軍 HP 全快', icon: '💖', rarity: 1, scope: 'battle', effect: { kind: 'heal', ratio: 1 } },
-  { id: 'reinforce', name: '援軍', detail: '味方3体を複製', icon: '👥', rarity: 1, scope: 'battle', effect: { kind: 'clone', count: 3 } },
   { id: 'smite', name: '天罰', detail: '敵全体に雷撃', icon: '⚡', rarity: 1, scope: 'battle', effect: { kind: 'smite', ratio: 0.25, cap: 300 } },
-  { id: 'budget_l', name: '黄金の山', detail: 'ゴールド +120G', icon: '🏆', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 120 } },
+  { id: 'budget_l', name: '黄金の山', detail: 'ゴールド +200G', icon: '🏆', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 200 } },
   { id: 'overdrive', name: 'オーバードライブ', detail: '攻撃 +50% 速度 +30%', icon: '🔥', rarity: 2, scope: 'battle', effect: { kind: 'buff', damage: 1.5, speed: 1.3 } },
-  { id: 'budget_xl', name: '大財宝', detail: 'ゴールド +250G', icon: '👑', rarity: 3, scope: 'run', effect: { kind: 'gold', amount: 250 } },
-  { id: 'army', name: '全軍複製', detail: '味方を最大16体複製', icon: '🌟', rarity: 3, scope: 'battle', effect: { kind: 'clone', count: MAX_CLONES_PER_REWARD } },
-  { id: 'judgement', name: '神の裁き', detail: '敵全体に大雷撃', icon: '🌩️', rarity: 3, scope: 'battle', effect: { kind: 'smite', ratio: 0.6, cap: 900 } },
+  { id: 'reinforce', name: '援軍', detail: '抽選で味方3体を複製', icon: '👥', rarity: 2, scope: 'battle', effect: { kind: 'clone', count: 3, show: 'lottery' } },
+  { id: 'budget_xl', name: '大財宝', detail: 'ゴールド +300G', icon: '👑', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 300 } },
+  { id: 'judgement', name: '神の裁き', detail: '敵全体に大雷撃', icon: '🌩️', rarity: 2, scope: 'battle', effect: { kind: 'smite', ratio: 0.6, cap: 900 } },
+  { id: 'army', name: '全軍複製', detail: '味方を最大16体複製', icon: '🌟', rarity: 3, scope: 'battle', effect: { kind: 'clone', count: MAX_CLONES_PER_REWARD, show: 'barrage' } },
+  { id: 'summon', name: '増援要請', detail: '未所持の強兵を召喚し仲間に', icon: '📯', rarity: 3, scope: 'battle', effect: { kind: 'summon' } },
 ];
 
 function pickWeighted(weights: readonly number[], rng: () => number): number {
@@ -132,19 +132,27 @@ export interface JackpotRollContext {
   rng: () => number;
   /** 戦闘が続いているか（決着の一撃ならランに残る報酬だけを出す） */
   battleActive: boolean;
+  /** 増援要請で呼べる兵種の数。省略すると制限なし */
+  summonSlots?: number;
 }
 
 /** 宝箱の中身を抽選する。リールの数だけ返し、最後に止まるリールが一番豪華になるよう昇順に並べる */
 export function rollJackpot(tier: ChestTier, ctx: JackpotRollContext): JackpotReward[] {
   const pool = JACKPOT_REWARDS.filter((r) => ctx.battleActive || r.scope === 'run');
   const result: JackpotReward[] = [];
+  let summonsLeft = ctx.summonSlots ?? Infinity;
   for (let i = 0; i < CHEST_REEL_COUNTS[tier]; i++) {
     // 最初の1本は宝箱の格のぶんだけレア度を保証する
     const minRarity = i === 0 ? tier : 0;
-    const weights = JACKPOT_RARITY_WEIGHTS.map((w, rarity) => (rarity >= minRarity ? w : 0));
+    const available = summonsLeft > 0 ? pool : pool.filter((r) => r.effect.kind !== 'summon');
+    // 候補のないレア度は引かない（決着の一撃ではコモンやレジェンドの候補がない）
+    const weights = JACKPOT_RARITY_WEIGHTS.map((w, rarity) =>
+      rarity >= minRarity && available.some((r) => r.rarity === rarity) ? w : 0,
+    );
     const rarity = pickWeighted(weights, ctx.rng);
-    const candidates = pool.filter((r) => r.rarity === rarity);
+    const candidates = available.filter((r) => r.rarity === rarity);
     const reward = candidates[Math.floor(ctx.rng() * candidates.length)];
+    if (reward.effect.kind === 'summon') summonsLeft--;
     result.push(reward);
   }
   return result.sort((a, b) => a.rarity - b.rarity);
@@ -152,6 +160,66 @@ export function rollJackpot(tier: ChestTier, ctx: JackpotRollContext): JackpotRe
 
 function emitAllyEffect(battle: Battle, u: Unit): void {
   battle.emitEffect({ kind: 'gate_multiply', pos: new Vector3(u.pelvis.pos.x, 0.6, u.pelvis.pos.z), team: u.team });
+}
+
+/** 複製する味方をランダムに選ぶ */
+export function pickCloneSources(battle: Battle, count: number, rng: () => number = Math.random): Unit[] {
+  return battle.units
+    .filter((u) => u.alive && u.team === 0)
+    .map((u) => ({ u, key: rng() }))
+    .sort((a, b) => a.key - b.key)
+    .slice(0, count)
+    .map(({ u }) => u);
+}
+
+/** 味方1体をすぐそばに複製する */
+export function cloneAlly(battle: Battle, source: Unit, rng: () => number = Math.random): Unit {
+  const angle = rng() * Math.PI * 2;
+  const dist = Math.max(0.9, source.scale * 0.8);
+  const clone = battle.spawnCloneUnit(
+    source,
+    source.pelvis.pos.x + Math.cos(angle) * dist,
+    source.pelvis.pos.z + Math.sin(angle) * dist,
+  );
+  emitAllyEffect(battle, clone);
+  return clone;
+}
+
+/** 兵種のコストから、宝箱と同じ4段階のレア度を返す */
+export function unitJackpotRarity(id: UnitTypeId): JackpotRarity {
+  const cost = UNIT_TYPES[id].cost;
+  return cost <= 150 ? 0 : cost <= 450 ? 1 : cost <= 900 ? 2 : 3;
+}
+
+/** 増援要請で呼べる兵種（未所持のエピック・レジェンドで、ユニット枠に収まるもの） */
+export function summonCandidates(run: RogueliteRun): UnitTypeId[] {
+  return UNIT_TYPE_LIST.map((u) => u.id).filter(
+    (id) => unitJackpotRarity(id) >= 2 && !run.ownsUnit(id) && getUnitSlotCost(id) <= run.unitSlots,
+  );
+}
+
+export function pickSummonUnit(run: RogueliteRun, rng: () => number = Math.random): UnitTypeId | null {
+  const candidates = summonCandidates(run);
+  return candidates.length > 0 ? candidates[Math.floor(rng() * candidates.length)] : null;
+}
+
+/** 味方の中心付近に部隊を召喚し、カードを手持ちに加える */
+export function summonUnit(battle: Battle, run: RogueliteRun, id: UnitTypeId, rng: () => number = Math.random): Unit[] {
+  const allies = battle.units.filter((u) => u.alive && u.team === 0);
+  const cx = allies.reduce((sum, u) => sum + u.pelvis.pos.x, 0) / Math.max(1, allies.length);
+  const cz = allies.reduce((sum, u) => sum + u.pelvis.pos.z, 0) / Math.max(1, allies.length);
+  run.gainUnit(id);
+  const spawned: Unit[] = [];
+  for (let i = 0; i < getSquadSize(id); i++) {
+    const angle = rng() * Math.PI * 2;
+    const dist = 1 + rng() * 2;
+    const unit = battle.spawnUnit(id, 0, cx + Math.cos(angle) * dist, cz + Math.sin(angle) * dist);
+    const top = new Vector3(unit.pelvis.pos.x, 16, unit.pelvis.pos.z);
+    battle.emitEffect({ kind: 'lightning', points: [top, unit.pelvis.pos.clone()] });
+    emitAllyEffect(battle, unit);
+    spawned.push(unit);
+  }
+  return spawned;
 }
 
 /** 戦闘終了時に残っていた宝箱を、1個あたり JACKPOT_UNOPENED_CHEST_GOLD のゴールドとして回収する。増えた額を返す */
@@ -174,9 +242,6 @@ export function applyJackpotReward(
     case 'gold':
       run.gold += effect.amount;
       break;
-    case 'score':
-      run.score += effect.amount;
-      break;
     case 'reroll':
       run.rerollsLeft++;
       break;
@@ -195,13 +260,12 @@ export function applyJackpotReward(
       }
       break;
     case 'clone': {
-      const shuffled = allies.map((u) => ({ u, key: rng() })).sort((a, b) => a.key - b.key);
-      for (const { u } of shuffled.slice(0, effect.count)) {
-        const angle = rng() * Math.PI * 2;
-        const dist = Math.max(0.9, u.scale * 0.8);
-        const clone = battle.spawnCloneUnit(u, u.pelvis.pos.x + Math.cos(angle) * dist, u.pelvis.pos.z + Math.sin(angle) * dist);
-        emitAllyEffect(battle, clone);
-      }
+      for (const u of pickCloneSources(battle, effect.count, rng)) cloneAlly(battle, u, rng);
+      break;
+    }
+    case 'summon': {
+      const id = pickSummonUnit(run, rng);
+      if (id) summonUnit(battle, run, id, rng);
       break;
     }
     case 'smite': {

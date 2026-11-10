@@ -23,31 +23,18 @@ export const JACKPOT_ICON_PALETTE: Readonly<Record<string, number>> = {
 
 /** 報酬 ID ごとのドット絵。ボクセルに押し出してリールの絵柄にする */
 export const JACKPOT_ICONS: Readonly<Record<string, readonly string[]>> = {
-  budget_s: [
-    '...YYYYY...',
-    '..YYYYYYY..',
-    '.YYyyyyyYY.',
-    '.YYyYYYyYY.',
-    '.YYyyyyyYY.',
-    '.YYyYYYyYY.',
-    '.YYyyyyyYY.',
-    '.YYyYYYyYY.',
-    '.YYyyyyyYY.',
-    '..YYYYYYY..',
-    '...YYYYY...',
-  ],
-  score_s: [
-    '.....Y.....',
-    '.....Y.....',
-    '....YYY....',
-    '....YYY....',
-    'YYYYYYYYYYY',
-    '.YYYYYYYYY.',
-    '..YYYYYYY..',
-    '..YYYYYYY..',
-    '..YYY.YYY..',
-    '.YYY...YYY.',
-    '.Y.......Y.',
+  summon: [
+    '.........YY',
+    '.......YYYY',
+    '.....YYYyYY',
+    'YY.YYYYYyYY',
+    'YYYYYYYYyYY',
+    'YYYYYYYYyYY',
+    'YY.YYYYYyYY',
+    '..N..YYYyYY',
+    '.NN....YYYY',
+    '.NN......YY',
+    '...........',
   ],
   heal_s: [
     '...........',

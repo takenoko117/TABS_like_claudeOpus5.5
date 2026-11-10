@@ -8,6 +8,9 @@ import {
   applyJackpotReward,
   collectUnopenedChests,
   jackpotHpDropScale,
+  summonCandidates,
+  summonUnit,
+  unitJackpotRarity,
   rollJackpot,
   type ChestTier,
   type JackpotReward,
@@ -146,12 +149,12 @@ describe('ボーナス: 効果', () => {
     const rerolls = run.rerollsLeft;
     applyJackpotReward(reward('budget_xl'), battle, run);
     applyJackpotReward(reward('reroll'), battle, run);
-    expect(run.gold).toBe(gold + 250);
+    expect(run.gold).toBe(gold + 300);
     expect(run.rerollsLeft).toBe(rerolls + 1);
   });
 
   it('予算系の報酬はすべてゴールドに置き換わっている', () => {
-    for (const id of ['budget_s', 'budget_m', 'budget_l', 'budget_xl']) {
+    for (const id of ['budget_m', 'budget_l', 'budget_xl']) {
       expect(reward(id).effect.kind).toBe('gold');
       expect(reward(id).detail).toContain('ゴールド');
     }
@@ -174,6 +177,40 @@ describe('ボーナス: 効果', () => {
     applyJackpotReward(reward('army'), battle, run);
     expect(battle.units.filter((u) => u.team === 0).length).toBe(4);
     expect(battle.units.filter((u) => u.team === 1).length).toBe(1);
+  });
+
+  it('出目の更新: 削除・数値・レア度', () => {
+    expect(JACKPOT_REWARDS.some((r) => r.id === 'budget_s' || r.id === 'score_s')).toBe(false);
+    expect(reward('spd_s').effect).toEqual({ kind: 'buff', speed: 2 });
+    expect(reward('budget_m').effect).toEqual({ kind: 'gold', amount: 100 });
+    expect(reward('budget_l').effect).toEqual({ kind: 'gold', amount: 200 });
+    for (const id of ['reinforce', 'judgement', 'budget_xl']) expect(reward(id).rarity).toBe(2);
+    expect(reward('summon').rarity).toBe(3);
+  });
+
+  it('増援要請は未所持のエピック以上を召喚し、手持ちに加える', () => {
+    const { battle, run } = setup();
+    const before = battle.units.filter((u) => u.team === 0).length;
+    const candidates = summonCandidates(run);
+    expect(candidates.length).toBeGreaterThan(0);
+    for (const id of candidates) {
+      expect(unitJackpotRarity(id)).toBeGreaterThanOrEqual(2);
+      expect(run.ownsUnit(id)).toBe(false);
+    }
+    const id = candidates[0];
+    const spawned = summonUnit(battle, run, id);
+    expect(run.ownsUnit(id)).toBe(true);
+    expect(spawned.every((u) => u.team === 0 && u.type.id === id)).toBe(true);
+    expect(battle.units.filter((u) => u.team === 0).length).toBe(before + spawned.length);
+    expect(summonCandidates(run)).not.toContain(id);
+  });
+
+  it('呼べる兵種がないときは増援要請は出ない', () => {
+    const rng = seeded(3);
+    for (let i = 0; i < 300; i++) {
+      const rolled = rollJackpot(2, { rng, battleActive: true, summonSlots: 0 });
+      expect(rolled.some((r) => r.effect.kind === 'summon')).toBe(false);
+    }
   });
 
   it('雷撃は敵全体にだけ、上限つきでダメージを与える', () => {

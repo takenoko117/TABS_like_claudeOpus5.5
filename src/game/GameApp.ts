@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
 import { JackpotRoulette } from '../ui/JackpotRoulette';
+import { JackpotRewardFx } from '../ui/JackpotRewardFx';
 import { DroppedChests, type DroppedChest } from '../render/DroppedChests';
 import { setVoxelText, type VoxelTextOptions } from '../ui/VoxelText';
 import { UnitPreviews } from '../render/UnitPreviews';
@@ -18,6 +19,11 @@ import {
   JACKPOT_MAX_DROPS,
   JackpotDropTracker,
   applyJackpotReward,
+  cloneAlly,
+  pickCloneSources,
+  pickSummonUnit,
+  summonCandidates,
+  summonUnit,
   collectUnopenedChests,
   rollJackpot,
   type JackpotReward,
@@ -512,6 +518,7 @@ export class GameApp {
   private rogueRoster: Array<Unit | Facility> = [];
   /** 敵の撃破で出るボーナスのルーレット */
   private readonly jackpot = new JackpotRoulette();
+  private readonly jackpotFx = new JackpotRewardFx();
   private jackpotTracker = new JackpotDropTracker(0);
   /** 敵が戦場に落とした宝箱（SceneView の初回利用時に作る） */
   private droppedChestsField: DroppedChests | null = null;
@@ -1171,9 +1178,12 @@ export class GameApp {
     // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: メニュー開閉、H: 全UI開閉、Esc: 詳細閉じる）
     window.addEventListener('keydown', (e) => {
       // ボーナス演出中は戦闘の操作を受け付けず、決定キーでスキップだけできる
-      if (this.jackpot.active) {
+      if (this.jackpotBusy) {
         e.preventDefault();
-        if (e.code === 'Space' || e.code === 'Enter') this.jackpot.skip();
+        if (e.code === 'Space' || e.code === 'Enter') {
+          if (this.jackpot.active) this.jackpot.skip();
+          else this.jackpotFx.skip();
+        }
         return;
       }
       // 確認ダイアログの表示中は、ダイアログのボタン操作だけを通す
@@ -2746,11 +2756,15 @@ export class GameApp {
 
   /** 戦場の宝箱を開ける。戦闘を止めてボーナス演出へ進む */
   private openDroppedChest(chest: DroppedChest): void {
-    if (!this.rogue || this.jackpot.active || this.battle.result() !== null) return;
+    if (!this.rogue || this.jackpotBusy || this.battle.result() !== null) return;
     const ndc = chest.position.clone().project(this.view.camera);
     const origin = { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight };
     this.droppedChests.remove(chest);
-    const rewards = rollJackpot(chest.tier, { rng: Math.random, battleActive: true });
+    const rewards = rollJackpot(chest.tier, {
+      rng: Math.random,
+      battleActive: true,
+      summonSlots: summonCandidates(this.rogue).length,
+    });
     this.view.addCameraShake(0.3);
     this.jackpot.play({
       tier: chest.tier,
@@ -2768,16 +2782,79 @@ export class GameApp {
     else this.droppedChestsField.update(realDt);
   }
 
-  private applyJackpotRewards(rewards: readonly JackpotReward[]): void {
+  /** ボーナスの宝箱演出、または報酬ごとの追加演出の最中か（この間は戦闘を止める） */
+  private get jackpotBusy(): boolean {
+    return this.jackpot.active || this.jackpotFx.active;
+  }
+
+  /** 報酬を順に適用する。抽選などの演出がある報酬は、演出が終わってから続きへ進む */
+  private applyJackpotRewards(rewards: readonly JackpotReward[], start = 0): void {
     const run = this.rogue;
     if (!run) return;
-    for (const reward of rewards) {
-      applyJackpotReward(reward, this.battle, run);
+    for (let i = start; i < rewards.length; i++) {
+      const reward = rewards[i];
       this.jackpotRewards.push(reward);
       this.jackpot.addChip(reward);
+      if (this.playJackpotRewardFx(reward, run, () => this.applyJackpotRewards(rewards, i + 1))) return;
+      applyJackpotReward(reward, this.battle, run);
     }
     this.view.addCameraShake(0.25);
     this.renderRoguePanel();
+  }
+
+  /** 演出のある報酬なら演出を始めて true を返す。報酬の効果は演出の中で適用し、終わると next を呼ぶ */
+  private playJackpotRewardFx(reward: JackpotReward, run: RogueliteRun, next: () => void): boolean {
+    const effect = reward.effect;
+    const sound = this.sound;
+    if (effect.kind === 'summon') {
+      const candidates = summonCandidates(run);
+      const id = pickSummonUnit(run);
+      if (!id) return false;
+      this.jackpotFx.playLottery({
+        title: '増援要請!!',
+        resultTitle: 'NEW!!',
+        candidates,
+        winners: [id],
+        sound,
+        onFinished: () => {
+          summonUnit(this.battle, run, id);
+          this.view.addCameraShake(0.5);
+          next();
+        },
+      });
+      return true;
+    }
+    if (effect.kind !== 'clone') return false;
+    const sources = pickCloneSources(this.battle, effect.count);
+    if (sources.length === 0) return false;
+    if (effect.show === 'lottery') {
+      this.jackpotFx.playLottery({
+        title: '援軍!!',
+        resultTitle: '複製!!',
+        candidates: [...new Set(this.battle.units.filter((u) => u.alive && u.team === 0).map((u) => u.type.id))],
+        winners: sources.map((u) => u.type.id),
+        sound,
+        onFinished: () => {
+          for (const u of sources) cloneAlly(this.battle, u);
+          this.view.addCameraShake(0.35);
+          next();
+        },
+      });
+      return true;
+    }
+    this.jackpotFx.playBarrage({
+      count: sources.length,
+      sound,
+      onSpawn: (index) => {
+        const clone = cloneAlly(this.battle, sources[index]);
+        const { x, z } = clone.pelvis.pos;
+        this.battle.emitEffect({ kind: 'lightning', points: [new Vector3(x, 18, z), clone.pelvis.pos.clone()] });
+        this.view.addCameraShake(0.22);
+      },
+      onClimax: () => this.view.addCameraShake(0.9),
+      onFinished: next,
+    });
+    return true;
   }
 
   private handleRogueBattleEnd(res: Exclude<BattleResult, null>): void {
@@ -4333,8 +4410,9 @@ export class GameApp {
     this.updateAdaptiveQuality(realDt);
     if (this.finishSlowMoTimer > 0) this.finishSlowMoTimer -= realDt;
     if (this.jackpot.active) this.jackpot.update(realDt);
+    if (this.jackpotFx.active) this.jackpotFx.update(realDt);
     this.updateDroppedChests(realDt);
-    if (!this.paused && !this.jackpot.active) {
+    if (!this.paused && !this.jackpotBusy) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
       this.battle.advance(realDt * scale);
@@ -4352,7 +4430,7 @@ export class GameApp {
     if (this.mode === 'battle') {
       const res = this.battle.result();
       // 開封の演出中に決着したら、演出が終わってから結果へ進む
-      if (res !== null && this.announcedResult === null && !this.jackpot.active) {
+      if (res !== null && this.announcedResult === null && !this.jackpotBusy) {
         this.announcedResult = res;
         // 友人対戦・サンドボックスは誰かの勝利なので、1 人用モードの負けだけ敗北音にする
         if (this.isSoloPlayStyle() && res !== 0) this.sound.playDefeat();
