@@ -89,6 +89,7 @@ function buildCandidates(
   round: number,
   unlockedUnits: readonly UnitTypeId[],
   facilityStartRound = CHALLENGE_FACILITY_START_ROUND,
+  unitWeightMul?: (id: UnitTypeId) => number,
 ): EnemyCandidate[] {
   const unitIds = [...new Set(unlockedUnits)].sort();
   const candidates: EnemyCandidate[] = unitIds.map((id) => {
@@ -96,6 +97,7 @@ function buildCandidates(
     let baseWeight = CATEGORY_WEIGHTS[unit.category];
     if (id === 'decoy') baseWeight = DECOY_WEIGHT;
     else if (unit.cost < CHEAP_UNIT_COST) baseWeight *= CHEAP_UNIT_WEIGHT;
+    if (unitWeightMul) baseWeight *= unitWeightMul(id);
     return { typeId: id, cost: unit.cost, radius: 0.6 * unit.scale, baseWeight };
   });
   if (round >= facilityStartRound) {
@@ -134,6 +136,7 @@ function pickEnemyRoster(
   candidates: readonly EnemyCandidate[],
   rng: () => number,
   forced: readonly EnemyCandidate[] = [],
+  baseIdealCost?: number,
 ): EnemyCandidate[] {
   const cheapest = Math.min(...candidates.map((c) => c.cost));
   const roster: EnemyCandidate[] = [...forced];
@@ -161,7 +164,7 @@ function pickEnemyRoster(
     const strongEnough = pool.filter((c) => c.cost >= requiredAverage);
     if (strongEnough.length > 0) pool = strongEnough;
 
-    const idealCost = Math.max(budget / IDEAL_COST_DIVISOR, requiredAverage * 1.5);
+    const idealCost = Math.max(baseIdealCost ?? 0, budget / IDEAL_COST_DIVISOR, requiredAverage * 1.5);
     const picked = pickWeighted(pool, idealCost, rng);
     roster.push(picked);
     remaining -= picked.cost;
@@ -213,6 +216,10 @@ export interface EnemyLineupOptions {
   facilityStartRound?: number;
   /** 必ず編成に入れる兵種（ボスなど）。予算から先に差し引く */
   forcedUnits?: readonly UnitTypeId[];
+  /** 抽選時に中心とする目標コスト（未指定なら予算から自動算出） */
+  idealCost?: number;
+  /** 兵種ごとの出現重みに掛ける倍率（ハードモードで高額兵種を増やす用途など） */
+  unitWeightMul?: (id: UnitTypeId) => number;
 }
 
 /** 予算を指定して敵編成を生成する（同じ引数なら同じ編成になる） */
@@ -230,7 +237,8 @@ export function generateEnemyLineupWithBudget(
     radius: 0.6 * UNIT_TYPES[id].scale,
     baseWeight: 0,
   }));
-  const roster = pickEnemyRoster(budget, buildCandidates(round, unitPool, opts.facilityStartRound), rng, forced);
+  const candidates = buildCandidates(round, unitPool, opts.facilityStartRound, opts.unitWeightMul);
+  const roster = pickEnemyRoster(budget, candidates, rng, forced, opts.idealCost);
   return placeEnemyRoster(roster, rng);
 }
 

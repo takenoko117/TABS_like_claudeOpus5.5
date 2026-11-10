@@ -560,10 +560,20 @@ export class RogueliteRules implements BattleRules {
 // ランの進行
 // ---------------------------------------------------------------
 
-/** 最終ラウンド（ボス） */
-export const ROGUE_FINAL_ROUND = 15;
+/** 最終ラウンド（最終ボス） */
+export const ROGUE_FINAL_ROUND = 30;
+/** 中ボスラウンド（撃破後にハードモードへ突入） */
+export const ROGUE_MID_BOSS_ROUND = 15;
+/** ハードモードが始まるラウンド */
+export const ROGUE_HARD_START_ROUND = 16;
+/** ボスラウンド */
+export const ROGUE_BOSS_ROUNDS: readonly number[] = [ROGUE_MID_BOSS_ROUND, ROGUE_FINAL_ROUND];
 /** エリートラウンド */
-export const ROGUE_ELITE_ROUNDS: readonly number[] = [5, 10];
+export const ROGUE_ELITE_ROUNDS: readonly number[] = [5, 10, 20, 25];
+/** ハードモードでの敵予算の倍率 */
+export const ROGUE_HARD_BUDGET_MUL = 1.25;
+/** ハードモードで重点的に出現する高額強力ユニットの基準コスト */
+export const ROGUE_HIGH_COST_UNIT_MIN = 480;
 /** 開始時のゴールド（最初のショップで1〜2体買える程度） */
 export const ROGUE_START_GOLD = 300;
 export const ROGUE_START_LIVES = 3;
@@ -691,24 +701,35 @@ function costAffinity(id: UnitTypeId, round: number): number {
   return Math.exp(-(d * d) / 1.2);
 }
 
-/** ラウンドの敵予算（エリートは +15%） */
+/** ラウンド16以降はハードモード */
+export function isRogueHardMode(round: number): boolean {
+  return round >= ROGUE_HARD_START_ROUND;
+}
+
+/** ラウンドの敵予算（エリートは +15%、ハードモードはさらに +25%） */
 export function getRogueEnemyBudget(round: number): number {
   const r = Math.max(1, round) - 1;
   const base = 500 + 180 * r + 14 * r * r;
-  const mul = ROGUE_ELITE_ROUNDS.includes(round) ? 1.15 : 1;
-  return Math.round((base * mul) / 50) * 50;
+  const eliteMul = ROGUE_ELITE_ROUNDS.includes(round) ? 1.15 : 1;
+  const hardMul = isRogueHardMode(round) ? ROGUE_HARD_BUDGET_MUL : 1;
+  return Math.round((base * eliteMul * hardMul) / 50) * 50;
 }
 
 export type RogueRoundKind = 'normal' | 'elite' | 'boss';
 
 export function getRogueRoundKind(round: number): RogueRoundKind {
-  if (round >= ROGUE_FINAL_ROUND) return 'boss';
+  if (round >= ROGUE_FINAL_ROUND || ROGUE_BOSS_ROUNDS.includes(round)) return 'boss';
   return ROGUE_ELITE_ROUNDS.includes(round) ? 'elite' : 'normal';
 }
 
 const DIVINE_UNITS: readonly UnitTypeId[] = UNIT_TYPE_LIST.filter((u) => u.category === 'divine').map(
   (u) => u.id,
 );
+
+/** ハードモードで重点的に出現する高額強力ユニット（コスト 480 以上） */
+export const ROGUE_HIGH_COST_UNITS: readonly UnitTypeId[] = UNIT_TYPE_LIST.filter(
+  (u) => u.cost >= ROGUE_HIGH_COST_UNIT_MIN,
+).map((u) => u.id);
 
 /** 敵に出る兵種（全兵種） */
 export const ROGUE_ENEMY_POOL: readonly UnitTypeId[] = UNIT_TYPE_LIST.map((u) => u.id);
@@ -722,23 +743,70 @@ export function getRogueEnemyPool(round: number): UnitTypeId[] {
   return ROGUE_ENEMY_POOL.filter((id) => UNIT_TYPES[id].cost <= cap);
 }
 
-/** ラウンドの敵編成を生成する。最終ラウンドは使徒・神から1体をボスとして必ず入れる */
+/**
+ * ラウンドの敵編成を生成する。
+ * - ボスラウンド（15面・30面）は使徒・神から1体をボスとして必ず入れる。
+ * - ハードモード（16面〜30面）は高額強力なユニットを確定枠＋高重みで増加させる。
+ */
 export function generateRogueEnemyLineup(round: number, seed: number): VersusPlacedRecord[] {
   const budget = getRogueEnemyBudget(round);
   const pool = getRogueEnemyPool(round);
-  if (getRogueRoundKind(round) !== 'boss') {
+  const isBoss = getRogueRoundKind(round) === 'boss';
+  const isHard = isRogueHardMode(round);
+
+  if (!isBoss && !isHard) {
     return generateEnemyLineupWithBudget(round, seed ^ 0x5bd1e995, pool, budget, {
       facilityStartRound: 6,
     });
   }
-  const rng = createSeededRng(seed ^ 0x1b873593);
-  const bossId = DIVINE_UNITS[Math.floor(rng() * DIVINE_UNITS.length)];
+
+  const forcedUnits: UnitTypeId[] = [];
+  let bossId: UnitTypeId | null = null;
+  if (isBoss) {
+    const bossRng = createSeededRng(Math.imul(seed ^ 0x1b873593, 31) + (round === ROGUE_MID_BOSS_ROUND ? 0 : round * 4099));
+    bossId = DIVINE_UNITS[Math.floor(bossRng() * DIVINE_UNITS.length)];
+    forcedUnits.push(bossId);
+  }
+
+  let idealCost: number | undefined;
+  let unitWeightMul: ((id: UnitTypeId) => number) | undefined;
+
+  if (isHard) {
+    const hardStep = Math.max(0, round - ROGUE_HARD_START_ROUND);
+    const highPool = pool.filter((id) => UNIT_TYPES[id].cost >= ROGUE_HIGH_COST_UNIT_MIN);
+    if (highPool.length > 0) {
+      const hardRng = createSeededRng(Math.imul(seed ^ 0x7f4a7c15, 31) + round * 9973);
+      const targetHighCount = 2 + Math.floor(hardStep / 3);
+      let forcedCost = forcedUnits.reduce((sum, id) => sum + UNIT_TYPES[id].cost, 0);
+      const maxForcedBudget = budget * 0.7;
+      for (let i = 0; i < targetHighCount; i++) {
+        const affordable = highPool.filter((id) => forcedCost + UNIT_TYPES[id].cost <= maxForcedBudget);
+        if (affordable.length === 0) break;
+        const pick = affordable[Math.floor(hardRng() * affordable.length)];
+        forcedUnits.push(pick);
+        forcedCost += UNIT_TYPES[pick].cost;
+      }
+    }
+    idealCost = 600 + hardStep * 50;
+    unitWeightMul = (id: UnitTypeId) => {
+      const cost = UNIT_TYPES[id].cost;
+      if (cost >= ROGUE_HIGH_COST_UNIT_MIN) return 4.0 + hardStep * 0.25;
+      if (cost >= 300) return 1.8;
+      if (cost <= 150) return 0.2;
+      return 0.6;
+    };
+  }
+
   const lineup = generateEnemyLineupWithBudget(round, seed ^ 0x5bd1e995, pool, budget, {
     facilityStartRound: 6,
-    forcedUnits: [bossId],
+    forcedUnits,
+    idealCost,
+    unitWeightMul,
   });
-  const boss = lineup.find((r) => r.typeId === bossId);
-  if (boss) boss.boss = true;
+  if (bossId) {
+    const boss = lineup.find((r) => r.typeId === bossId);
+    if (boss) boss.boss = true;
+  }
   return lineup;
 }
 
@@ -856,6 +924,7 @@ export interface RewardOption {
 export function getRarityWeights(round: number): [number, number, number] {
   if (round <= 4) return [52, 36, 12];
   if (round <= 9) return [34, 42, 24];
+  if (isRogueHardMode(round)) return [12, 38, 50];
   return [20, 42, 38];
 }
 
@@ -983,6 +1052,10 @@ export class RogueliteRun {
 
   get roundKind(): RogueRoundKind {
     return getRogueRoundKind(this.round);
+  }
+
+  get isHardMode(): boolean {
+    return isRogueHardMode(this.round);
   }
 
   // ---- カードとデッキ ----
@@ -1162,7 +1235,10 @@ export class RogueliteRun {
     this.score += gained;
     this.clearedRounds++;
     this.lossRewardPicks = 0;
-    this.eliteRewardPicks = this.roundKind === 'elite' ? ROGUE_ELITE_REWARD_PICKS : 0;
+    this.eliteRewardPicks =
+      this.round < ROGUE_FINAL_ROUND && (this.roundKind === 'elite' || this.roundKind === 'boss')
+        ? ROGUE_ELITE_REWARD_PICKS
+        : 0;
     this.gold += getRogueWinBonus(this.round);
     this.history.push({ round: this.round, won: true, damage, maxHit });
     if (this.round >= ROGUE_FINAL_ROUND) {
@@ -1408,10 +1484,13 @@ export function generateRewardOptions(run: RogueliteRun, rng: () => number): Rew
     picked.push(option.unitId!);
     options.push(option);
   }
+  const isMilestoneFirstPick =
+    (run.roundKind === 'elite' || (run.roundKind === 'boss' && run.eliteRewardPicks > 0)) &&
+    run.lossRewardPicks === 0 &&
+    run.eliteRewardPicks !== 1 &&
+    run.eliteRewardPicks !== 2;
   const third =
-    (run.roundKind === 'elite' && run.lossRewardPicks === 0 && run.eliteRewardPicks !== 1 && run.eliteRewardPicks !== 2
-      ? unitSlotReward(run)
-      : null) ??
+    (isMilestoneFirstPick ? unitSlotReward(run) : null) ??
     (rng() < REWARD_RELIC_CHANCE ? pickRelicReward(run, rng) : null) ??
     goldReward(run);
   options.push(third);

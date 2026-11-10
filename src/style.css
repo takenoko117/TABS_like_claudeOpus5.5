@@ -3441,8 +3441,26 @@ body.war-room-open #coach { display: none !important; }
 
 .wr-nodes {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
+}
+
+.wr-nodes-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wr-hard-tag {
+  padding: 2px 6px;
+  border: 1px solid #ff5c5c;
+  background: rgba(210, 40, 40, 0.25);
+  color: #ff9b8a;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
 }
 
 .wr-node {
@@ -4728,29 +4746,35 @@ kbd { border-width: 2px; }
 .wr-logo canvas { image-rendering: pixelated; }
 
 .wr-node {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   font-family: 'DotGothic16', var(--font-ui);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 400;
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.wr-node.hard:not(.done):not(.current) {
+  border-color: rgba(255, 92, 92, 0.45);
+  background: #22121a;
+  color: #ffc2ba;
 }
 
 /* エリートは悪魔、ボスは鬼のマーク */
 .wr-node.elite,
 .wr-node.boss {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   background: #1c1230;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
 }
 
 .wr-node.boss {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   background: #2a1010;
-  font-size: 27px;
+  font-size: 22px;
 }
 
 .wr-node.elite.done,

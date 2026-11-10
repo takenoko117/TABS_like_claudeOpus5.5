@@ -52,6 +52,9 @@ import { DamageStats } from './DamageStats';
 import {
   RARITY_LABELS,
   ROGUE_FINAL_ROUND,
+  ROGUE_MID_BOSS_ROUND,
+  ROGUE_HARD_START_ROUND,
+  ROGUE_BOSS_ROUNDS,
   ROGUE_STARTERS,
   ROGUE_TIME_LIMIT_SECONDS,
   ROGUE_BOSS_HP_MUL,
@@ -64,6 +67,7 @@ import {
   relicDescription,
   ROGUE_START_GOLD,
   getRogueWinBonus,
+  isRogueHardMode,
   unitRarity,
   TAG_IDS,
   TAG_INFO,
@@ -1304,7 +1308,7 @@ export class GameApp {
     if (rogue) {
       const meta = this.rogueMeta;
       rogue.textContent =
-        meta.bestRound > 0 ? `最高 ROUND ${meta.bestRound} ・ クリア ${meta.clears} 回` : '軍を育てて全15ラウンド突破';
+        meta.bestRound > 0 ? `最高 ROUND ${meta.bestRound} ・ クリア ${meta.clears} 回` : `軍を育てて全${ROGUE_FINAL_ROUND}ラウンド突破`;
     }
     const challenge = document.getElementById('title-challenge-progress');
     if (challenge) {
@@ -2596,7 +2600,7 @@ export class GameApp {
     this.showRogueModal(
       `
       <div class="rogue-modal-title">スターター部隊を選んでください</div>
-      <div class="rogue-modal-sub">ゴールド${ROGUE_START_GOLD}G・ライフ3で出撃。通算3敗で終了します。ユニットは報酬で集め、ゴールドで枠とレベルを強化します。出撃前にデッキを組み、全${ROGUE_FINAL_ROUND}ラウンドの突破を目指します。</div>
+      <div class="rogue-modal-sub">ゴールド${ROGUE_START_GOLD}G・ライフ3で出撃。通算3敗で終了します。ユニットは報酬で集め、ゴールドで枠とレベルを強化します。ROUND ${ROGUE_MID_BOSS_ROUND}のボス戦からハードモードへ突入し、全${ROGUE_FINAL_ROUND}ラウンドの突破を目指します。</div>
       <div class="rogue-card-row">${cards}</div>
       <div class="rogue-modal-foot">ベスト: ${meta.bestScore.toLocaleString()}点 ／ 最高 ROUND ${meta.bestRound || '—'} ／ クリア ${meta.clears}回</div>
     `,
@@ -2796,8 +2800,10 @@ export class GameApp {
         this.finishRogueRun('clear');
         return;
       }
-      setVoxelText(this.elBannerText, `ROUND ${round} 突破！`, BANNER_VOXEL);
-      this.elBannerSub.textContent = `獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G`;
+      const isMidBoss = round === ROGUE_MID_BOSS_ROUND;
+      setVoxelText(this.elBannerText, isMidBoss ? `ROUND ${round} ボス撃破！` : `ROUND ${round} 突破！`, BANNER_VOXEL);
+      const hardNotice = isMidBoss ? `🔥 ROUND ${ROGUE_HARD_START_ROUND} からハードモード突入！ ｜ ` : '';
+      this.elBannerSub.textContent = `${hardNotice}獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
@@ -2947,13 +2953,22 @@ export class GameApp {
       })
       .join('');
     const lost = run.lossRewardPicks > 0;
-    const elite = !lost && run.eliteRewardPicks > 0;
-    const title = lost ? '逆転の報酬を選んでください' : elite ? 'エリート撃破！ 報酬を選んでください' : '勝利！ 報酬を選んでください';
+    const isMidBoss = !lost && run.round === ROGUE_MID_BOSS_ROUND && run.eliteRewardPicks > 0;
+    const elite = !lost && !isMidBoss && run.eliteRewardPicks > 0;
+    const title = lost
+      ? '逆転の報酬を選んでください'
+      : isMidBoss
+        ? 'ボス撃破！ ハードモード突入前の報酬を選んでください'
+        : elite
+          ? 'エリート撃破！ 報酬を選んでください'
+          : '勝利！ 報酬を選んでください';
     const lead = lost
       ? `あと${run.lossRewardPicks}回選べます（レア以上のユニットが出やすい）`
-      : elite
-        ? `ROUND ${run.round} 突破 ・ あと${run.eliteRewardPicks}回選べます`
-        : `ROUND ${run.round} 突破`;
+      : isMidBoss
+        ? `ROUND ${run.round} ボス突破（次から🔥ハードモード） ・ あと${run.eliteRewardPicks}回選べます`
+        : elite
+          ? `ROUND ${run.round} 突破 ・ あと${run.eliteRewardPicks}回選べます`
+          : `ROUND ${run.round} 突破`;
     this.showRogueModal(
       `
       <div class="rogue-modal-title">${title}</div>
@@ -3006,30 +3021,45 @@ export class GameApp {
     return `<span class="rg-heart-slot" role="img" aria-label="ライフ ${lives}/${ROGUE_MAX_LIVES}"></span>`;
   }
 
-  /** ヘッダーのラウンド進行（到達済み・現在・エリート・ボスを描き分ける） */
+  /** ヘッダーのラウンド進行（到達済み・現在・エリート・ボス・ハードモードを2段で描き分ける） */
   private renderRogueRoundNodes(run: RogueliteRun): string {
-    return Array.from({ length: ROGUE_FINAL_ROUND }, (_, i) => {
-      const n = i + 1;
+    const renderNode = (n: number) => {
       const state = n < run.round ? ' done' : n === run.round ? ' current' : '';
-      const kind = n === ROGUE_FINAL_ROUND ? ' boss' : ROGUE_ELITE_ROUNDS.includes(n) ? ' elite' : '';
+      const isBoss = ROGUE_BOSS_ROUNDS.includes(n);
+      const isElite = ROGUE_ELITE_ROUNDS.includes(n);
+      const isHard = isRogueHardMode(n);
+      const kind = (isBoss ? ' boss' : isElite ? ' elite' : '') + (isHard ? ' hard' : '');
       // エリートは悪魔、ボスは鬼のマークで示す
-      const mark = n === ROGUE_FINAL_ROUND ? '👹' : ROGUE_ELITE_ROUNDS.includes(n) ? '😈' : String(n);
-      const label = kind ? `ROUND ${n}（${n === ROGUE_FINAL_ROUND ? 'ボス' : 'エリート'}）` : `ROUND ${n}`;
+      const mark = isBoss ? '👹' : isElite ? '😈' : String(n);
+      const modeTag = isHard ? 'ハード・' : '';
+      const kindLabel = isBoss ? 'ボス' : isElite ? 'エリート' : isHard ? 'ハード' : '';
+      const label = kindLabel ? `ROUND ${n}（${isBoss || isElite ? modeTag : ''}${kindLabel}）` : `ROUND ${n}`;
       return `<span class="wr-node${state}${kind}" title="${label}"${n === run.round ? ' aria-current="step"' : ''}>${mark}</span>`;
-    }).join('');
+    };
+    const normalRow = Array.from({ length: ROGUE_MID_BOSS_ROUND }, (_, i) => renderNode(i + 1)).join('');
+    const hardCount = Math.max(0, ROGUE_FINAL_ROUND - ROGUE_MID_BOSS_ROUND);
+    const hardRow = Array.from({ length: hardCount }, (_, i) => renderNode(ROGUE_MID_BOSS_ROUND + 1 + i)).join('');
+    return `
+      <div class="wr-nodes-row">${normalRow}</div>
+      <div class="wr-nodes-row is-hard"><span class="wr-hard-tag" title="ROUND ${ROGUE_HARD_START_ROUND}〜${ROGUE_FINAL_ROUND}: ハードモード（高額強力な敵が増加）">🔥HARD</span>${hardRow}</div>`;
   }
 
   /** 「次はエリート戦」などの、この先の山場の案内 */
   private rogueContextBadge(run: RogueliteRun): { text: string; kind: 'elite' | 'boss' } | null {
-    if (run.roundKind === 'boss') return { text: 'ボス戦', kind: 'boss' };
-    if (run.roundKind === 'elite') return { text: 'エリート戦', kind: 'elite' };
+    const hardPrefix = run.isHardMode ? '🔥 ハード ・ ' : '';
+    if (run.roundKind === 'boss') {
+      return { text: `${hardPrefix}${run.round >= ROGUE_FINAL_ROUND ? '最終ボス戦' : 'ボス戦'}`, kind: 'boss' };
+    }
+    if (run.roundKind === 'elite') return { text: `${hardPrefix}エリート戦`, kind: 'elite' };
     const nextElite = ROGUE_ELITE_ROUNDS.find((r) => r > run.round);
-    const target = nextElite ?? ROGUE_FINAL_ROUND;
-    const kind = nextElite ? 'elite' : 'boss';
-    const label = nextElite ? 'エリート戦' : 'ボス戦';
+    const nextBoss = ROGUE_BOSS_ROUNDS.find((r) => r > run.round) ?? ROGUE_FINAL_ROUND;
+    const isEliteNext = nextElite !== undefined && nextElite < nextBoss;
+    const target = isEliteNext ? nextElite : nextBoss;
+    const kind = isEliteNext ? 'elite' : 'boss';
+    const label = isEliteNext ? 'エリート戦' : target >= ROGUE_FINAL_ROUND ? '最終ボス戦' : 'ボス戦';
     const left = target - run.round;
     if (left <= 0) return null;
-    return { text: left === 1 ? `次は${label}` : `${label}まで あと${left}`, kind };
+    return { text: `${hardPrefix}${left === 1 ? `次は${label}` : `${label}まで あと${left}`}`, kind };
   }
 
   /** 作戦室の左カラム。敵の兵種を1枚ずつのカードで並べる */
@@ -3283,7 +3313,7 @@ export class GameApp {
       </header>
       <div class="wr-panel">
         <section class="wr-col wr-col-enemy" aria-label="次の敵">
-          <h2 class="wr-title">次の敵 <span>ROUND ${run.round}</span></h2>
+          <h2 class="wr-title">次の敵 <span>ROUND ${run.round}${run.isHardMode ? ' 🔥 HARD' : ''}</span></h2>
           <div class="wr-enemy-list">${this.renderRogueEnemyCards(this.savedLineup.filter((r) => r.team === 1))}</div>
           <div class="wr-enemy-foot">
             <span>敵予算 <b>${run.enemyBudget.toLocaleString()}</b> pt</span>
@@ -3609,8 +3639,9 @@ export class GameApp {
       .map((r) => `<span class="reward-chip">${relicDisplayName(r)}${r.active ? '' : '（OFF）'}</span>`)
       .join('');
     const kind = run.roundKind === 'boss' ? '👑 ボス' : run.roundKind === 'elite' ? '⚔ エリート' : '';
+    const hard = run.isHardMode ? '🔥 ハード' : '';
     this.elRoguePanel.innerHTML = `
-      <div class="brief-title">ROUND ${run.round} / ${ROGUE_FINAL_ROUND} ${kind}</div>
+      <div class="brief-title">ROUND ${run.round} / ${ROGUE_FINAL_ROUND} ${hard} ${kind}</div>
       <div class="brief-sub">❤ ${'❤'.repeat(run.lives)}${'♡'.repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ｜ 💰 ${run.gold}G ｜ 敵 ${run.enemyBudget.toLocaleString()}pt ｜ スコア ${run.score.toLocaleString()}</div>
       <div class="brief-badges"><span class="brief-badge-label">レリック枠 ${run.activeRelics.length}/${run.relicSlots} ｜ ユニット枠 ${run.usedUnitSlots}/${run.unitSlots}:</span>${relics}</div>
       <div class="tag-panel">${tagRows || '<div class="brief-hint">デッキにユニットを入れるとタグのシナジーが表示されます</div>'}</div>
@@ -3618,7 +3649,7 @@ export class GameApp {
         <span class="brief-badge-label">敵軍編成:</span>
         ${this.renderEnemyChips(enemies)}
       </div>
-      <div class="brief-hint">デッキのカードが部隊で自動出撃します。倒れてもカードは失われません。ゲートは開戦時に全員に効きます。通算3敗でラン終了。負けると勝利の2倍のゴールドと、レアユニットが出やすい報酬の3択を2回受け取れます。時間切れは生き残った合計コストで判定します。ラウンド5・10はエリート、${ROGUE_FINAL_ROUND}はボスです。</div>
+      <div class="brief-hint">デッキのカードが部隊で自動出撃します。倒れてもカードは失われません。ゲートは開戦時に全員に効きます。通算3敗でラン終了。負けると勝利の2倍のゴールドと、レアユニットが出やすい報酬の3択を2回受け取れます。時間切れは生き残った合計コストで判定します。ラウンド5・10・20・25はエリート、${ROGUE_MID_BOSS_ROUND}は中ボス、${ROGUE_FINAL_ROUND}は最終ボスです。ラウンド${ROGUE_HARD_START_ROUND}からはハードモードに突入し、敵に高額強力なユニットが増加します。</div>
     `;
     this.rogueTagKey = this.computeRogueTagKey();
   }
@@ -3634,7 +3665,8 @@ export class GameApp {
   private formatRogueBadge(): string {
     const run = this.rogue;
     if (!run) return '🎲 ローグライト ｜ スターター部隊を選んでください';
-    const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}</b> ${this.rogueHeartSlotHtml(run.lives)}`;
+    const hard = run.isHardMode ? ' 🔥HARD' : '';
+    const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}${hard}</b> ${this.rogueHeartSlotHtml(run.lives)}`;
     if (this.mode === 'placement') {
       return `${head} ｜ ゴールド ${COST_ICON_SVG} <b>${run.gold}</b> G ｜ 全軍 <b>${this.battle.aliveCount(0)}</b> 体 ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
     }
@@ -4251,7 +4283,7 @@ export class GameApp {
       const pill = document.getElementById('rg-pill');
       if (pill) {
         pill.innerHTML = `
-          <span class="rg-round">ROUND <b>${run.round}</b> / ${ROGUE_FINAL_ROUND}</span>
+          <span class="rg-round">ROUND <b>${run.round}</b> / ${ROGUE_FINAL_ROUND}${run.isHardMode ? ' 🔥' : ''}</span>
           ${this.rogueHeartSlotHtml(run.lives)}
           <span class="rg-time${!decided && remain <= 10 ? ' low' : ''}">${decided ? '決着' : `残り <b>${Math.ceil(remain)}</b> 秒`}</span>`;
       }

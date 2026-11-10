@@ -10,6 +10,9 @@ import {
 } from '../src/facilities/FacilityTypes';
 import {
   ROGUE_FINAL_ROUND,
+  ROGUE_MID_BOSS_ROUND,
+  ROGUE_HARD_START_ROUND,
+  ROGUE_HIGH_COST_UNIT_MIN,
   GATE_CLONE_CHANCE,
   GATE_GIANT_SCALE,
   GATE_SEQUENCE_MAX_SECONDS,
@@ -40,6 +43,8 @@ import {
   getLossUnitRarityWeights,
   getRarityWeights,
   getRogueLossGold,
+  getRogueRoundKind,
+  isRogueHardMode,
   unitRarity,
   getRogueEnemyBudget,
   getRogueRoundIncome,
@@ -332,10 +337,52 @@ describe('ローグライト: ランの進行', () => {
   });
 
   it('最終ラウンドには使徒・神のボスが1体入る', () => {
+    expect(ROGUE_FINAL_ROUND).toBe(30);
     const lineup = generateRogueEnemyLineup(ROGUE_FINAL_ROUND, 7);
     const bosses = lineup.filter((r) => r.boss);
     expect(bosses.length).toBe(1);
     expect(UNIT_TYPES[bosses[0].typeId!].category).toBe('divine');
+  });
+
+  it('15面はボス戦で、突破すると16面からハードモードに突入し高額強力な敵が増加する', () => {
+    expect(getRogueRoundKind(ROGUE_MID_BOSS_ROUND)).toBe('boss');
+    expect(isRogueHardMode(ROGUE_MID_BOSS_ROUND)).toBe(false);
+    expect(isRogueHardMode(ROGUE_HARD_START_ROUND)).toBe(true);
+
+    // 15面にも使徒・神のボスが1体入る
+    const boss15 = generateRogueEnemyLineup(ROGUE_MID_BOSS_ROUND, 7).filter((r) => r.boss);
+    expect(boss15.length).toBe(1);
+    expect(UNIT_TYPES[boss15[0].typeId!].category).toBe('divine');
+
+    // 15面を勝ってもクリア終了にはならず、3回の報酬選択を経て16面（ハードモード）へ進む
+    const run = new RogueliteRun(17);
+    run.round = ROGUE_MID_BOSS_ROUND;
+    run.recordWin(1, 500, 100);
+    expect(run.ended).toBe(false);
+    expect(run.eliteRewardPicks).toBe(3);
+    expect(run.pendingRewards!.some((o) => o.kind === 'unit_slot')).toBe(true);
+    run.chooseReward(null);
+    run.chooseReward(null);
+    run.chooseReward(null);
+    run.advanceRound();
+    expect(run.round).toBe(ROGUE_HARD_START_ROUND);
+    expect(run.isHardMode).toBe(true);
+
+    // ハードモード（16〜30面）では通常モードより高額強力なユニット（コスト480以上）が大幅に増える
+    const countHighCost = (round: number, seed: number) =>
+      generateRogueEnemyLineup(round, seed).filter(
+        (r) => r.typeId && UNIT_TYPES[r.typeId].cost >= ROGUE_HIGH_COST_UNIT_MIN,
+      ).length;
+    let normalHigh = 0;
+    let hardStartHigh = 0;
+    let hardLateHigh = 0;
+    for (let s = 1; s <= 20; s++) {
+      normalHigh += countHighCost(14, s);
+      hardStartHigh += countHighCost(16, s);
+      hardLateHigh += countHighCost(28, s);
+    }
+    expect(hardStartHigh).toBeGreaterThan(normalHigh * 2);
+    expect(hardLateHigh).toBeGreaterThan(hardStartHigh);
   });
 
   it('スターターのカードとレリックでランが始まり、先頭から枠に収まるだけデッキに入る', () => {
