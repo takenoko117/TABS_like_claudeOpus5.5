@@ -285,6 +285,27 @@ export class SoundManager {
     this.jackpotTone(ctx, 2637.02, t + 0.04, 0.14, 'square', 0.07);
   }
 
+  /** ゴールドを払って強化したときの、金貨とレジの音 */
+  playPurchase(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.throttle('purchase', 60)) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 1567.98, t, 0.07, 'square', 0.09);
+    this.jackpotTone(ctx, 2093, t + 0.05, 0.07, 'square', 0.09);
+    this.jackpotTone(ctx, 2637.02, t + 0.1, 0.18, 'square', 0.09);
+    this.jackpotTone(ctx, 523.25, t + 0.16, 0.2, 'triangle', 0.2);
+    this.jackpotTone(ctx, 783.99, t + 0.22, 0.34, 'triangle', 0.2);
+  }
+
+  /** 操作できなかったときの低いブザー */
+  playDenied(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.throttle('denied', 90)) return;
+    const t = ctx.currentTime;
+    this.jackpotTone(ctx, 165, t, 0.09, 'square', 0.12);
+    this.jackpotTone(ctx, 130, t + 0.1, 0.14, 'square', 0.12);
+  }
+
   /** 弓の発射音（弦の弾き＋風切り） */
   playBowShoot(): void {
     const ctx = this.ensureContext();

@@ -555,7 +555,7 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
 
     case 'angel_ramiel':
-      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+      return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
         <polygon points="24,2 44,24 24,46 4,24" fill="#1864ab" fill-opacity="0.55" stroke="#e0f2fe" stroke-width="2"/>
         <polygon points="24,2 44,24 24,24" fill="#74c0fc" fill-opacity="0.65"/>
         <polygon points="24,2 4,24 24,24" fill="#e0f2fe" fill-opacity="0.75"/>
@@ -570,7 +570,7 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <circle cx="17" cy="33" r="1.3" fill="#e0f2fe"/>
       </svg>`;
     case 'angel_sachiel':
-      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+      return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
         <path d="M24,6 C16,6 13,14 13,24 C13,34 18,42 24,44 C30,42 35,34 35,24 C35,14 32,6 24,6 Z" fill="#141517" stroke="#343a40" stroke-width="2"/>
         <polygon points="24,10 18,22 24,36 30,22" fill="#f8f9fa"/>
         <circle cx="21" cy="20" r="2" fill="#141517"/>
@@ -578,7 +578,7 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <circle cx="24" cy="28" r="3.2" fill="#ff1744"/>
       </svg>`;
     case 'angel_zeruel':
-      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+      return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
         <path d="M4,12 L44,12 L38,36 L30,44 L18,44 L10,36 Z" fill="#141518" stroke="#343a40" stroke-width="2"/>
         <path d="M4,14 L14,14 L12,28 L4,22 Z M44,14 L34,14 L36,28 L44,22 Z" fill="#1f2126" stroke="#c92a2a" stroke-width="1.2"/>
         <path d="M18,12 C18,12 21,8 24,8 C27,8 30,12 30,12 L31,21 C31,23 27,25 24,25 C21,25 17,23 17,21 Z" fill="#f8f9fa"/>
@@ -595,7 +595,7 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <ellipse cx="24" cy="33" rx="6.5" ry="2.2" stroke="#ff8787" stroke-width="0.9" fill="none"/>
       </svg>`;
     case 'angel_sahaquiel':
-      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none" stroke="currentColor">
+      return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
         <ellipse cx="24" cy="24" rx="20" ry="12" fill="#f76707" stroke="#ffd43b" stroke-width="2"/>
         <circle cx="24" cy="24" r="7.5" fill="#ffffff"/>
         <circle cx="24" cy="24" r="4.5" fill="#1971c2"/>
@@ -826,7 +826,7 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
 
     case 'hayato':
-      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none">
+      return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none">
         <polygon points="24,3 37,8 41,20 39,32 32,43 24,46 16,43 9,32 7,20 11,8" fill="#e9b782"/>
         <polygon points="24,3 37,8 41,20 39,30 34,17 27,13 21,14 14,17 9,30 7,20 11,8" fill="#17151a"/>
         <path d="M13,20 L21,17 M28,15 L36,19" stroke="#201a18" stroke-width="2.2" stroke-linecap="round"/>

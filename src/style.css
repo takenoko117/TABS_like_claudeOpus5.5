@@ -2435,38 +2435,6 @@ body.on-title #btn-restore-hud {
   gap: 8px;
 }
 
-.rogue-relic-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.rogue-relic-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.rogue-relic-row.off {
-  opacity: 0.6;
-}
-
-.rogue-relic-info {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  font-size: 12px;
-}
-
-.rogue-relic-info small {
-  font-size: 10.5px;
-  color: #adb5bd;
-}
-
 .rogue-relic-max {
   font-size: 11px;
   font-weight: 800;
@@ -2902,35 +2870,6 @@ body.on-title #btn-restore-hud {
   gap: 8px;
 }
 
-/* ユニット枠の埋まり具合。カードごとにまとめ、まとまりの間を空ける */
-.deck-gauge {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-bottom: 8px;
-}
-
-.deck-gauge span {
-  display: flex;
-  gap: 2px;
-}
-
-.deck-gauge i {
-  width: 18px;
-  height: 10px;
-  border-radius: 2px;
-  background: #ffd43b;
-}
-
-.deck-gauge i.free {
-  background: none;
-  border: 1px dashed rgba(255, 255, 255, 0.4);
-}
-
-.deck-gauge.is-full i {
-  box-shadow: 0 0 5px rgba(255, 212, 59, 0.6);
-}
-
 .deck-full-badge {
   margin-left: 6px;
   padding: 1px 7px;
@@ -2943,8 +2882,10 @@ body.on-title #btn-restore-hud {
 
 .deck-slot-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   min-height: 214px;
   border-radius: 10px;
   border: 2px dashed rgba(255, 255, 255, 0.28);
@@ -2952,6 +2893,11 @@ body.on-title #btn-restore-hud {
   font-size: 12px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.4);
+}
+
+.deck-slot-empty .empty-slot-face {
+  width: min(96px, 70%);
+  height: auto;
 }
 
 .rogue-deck-card {
@@ -2999,6 +2945,55 @@ body.on-title #btn-restore-hud {
   flex: 1;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.deck-card-stage:hover { background: rgba(255, 255, 255, 0.07); }
+.deck-card-stage:focus-visible { outline: 2px solid #ffd43b; outline-offset: -2px; }
+.deck-card-stage.no-room { cursor: not-allowed; }
+
+/* 押すとどちらへ動くかを常に見せる */
+.deck-move-hint {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(10, 14, 22, 0.78);
+  color: #ffd43b;
+  font-size: 11px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.deck-move-hint em { font-style: normal; margin-left: 2px; }
+.deck-move-hint.no-room { color: #ff8787; }
+
+.slot-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.slot-cost-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+.slot-cost-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .deck-card-stage .unit-voxel {
@@ -3057,13 +3052,6 @@ body.on-title #btn-restore-hud {
 
 .deck-card-meta b {
   color: #ffd43b;
-}
-
-.deck-toggle {
-  padding: 2px 6px;
-  font-size: 11px;
-  text-shadow: none;
-  pointer-events: auto;
 }
 
 .deck-card-foot {
@@ -3129,12 +3117,6 @@ body.on-title #btn-restore-hud {
   height: 120px;
 }
 
-.rogue-relic-row .unit-voxel.prop-voxel {
-  width: 96px;
-  height: 96px;
-  margin: 0;
-}
-
 .prop-fallback {
   display: flex;
   align-items: center;
@@ -3145,16 +3127,445 @@ body.on-title #btn-restore-hud {
 .rogue-room-actions {
   position: sticky;
   bottom: 0;
-  justify-content: flex-end;
-  padding: 10px 0 14px;
-  background: linear-gradient(to top, rgba(15, 20, 30, 1) 75%, rgba(15, 20, 30, 0));
+  z-index: 6;
+  flex-wrap: nowrap;
+  padding: 12px 0 14px;
+  background: linear-gradient(to top, rgba(15, 20, 30, 1) 80%, rgba(15, 20, 30, 0));
+}
+
+.room-action {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 76px;
+  border: 0;
+  color: #fff;
+  font-family: 'DotGothic16', 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  font-size: 24px;
+  letter-spacing: 0.04em;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  box-shadow: inset 3px 3px 0 rgba(255, 255, 255, 0.3), inset -3px -3px 0 rgba(0, 0, 0, 0.28), 3px 3px 0 rgba(0, 0, 0, 0.55);
+  transition: filter 0.12s, transform 0.08s;
+}
+
+.room-action.sortie { flex: 2; background: #e8590c; font-size: 30px; }
+.room-action.scout { background: #1c7ed6; }
+.room-action:hover:not(:disabled) { filter: brightness(1.12); transform: translate(1px, 1px); }
+.room-action:disabled { background: #495057; color: #adb5bd; cursor: not-allowed; }
+.room-action .room-icon { width: 52px; height: 52px; flex: none; }
+
+/* ---- 作戦室の区画 ---- */
+.rogue-modal-inner.rogue-war-room { --room-pad-x: 20px; padding-left: var(--room-pad-x); padding-right: var(--room-pad-x); }
+
+/* 買い物の間も残高が見えるよう、上に固定する */
+.room-top {
+  position: sticky;
+  top: -18px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -18px calc(var(--room-pad-x) * -1) 8px;
+  padding: 10px var(--room-pad-x) 8px;
+  background: rgb(15, 20, 30);
+  border-bottom: 2px solid rgba(255, 212, 59, 0.35);
+}
+
+.room-top-text { min-width: 0; }
+.room-top-text .rogue-modal-sub { margin-bottom: 0; }
+
+.room-gold {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 16px 2px 4px;
+  background: rgba(255, 212, 59, 0.12);
+  border: 2px solid #ffd43b;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+  font-family: 'DotGothic16', 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  color: #ffd43b;
+  line-height: 1;
+  text-shadow: 2px 2px 0 #7a4a00;
+}
+
+.room-gold .unit-voxel.prop-voxel { width: 64px; height: 64px; margin: 0; background: none; }
+.room-gold-value { font-size: 44px; font-weight: 400; font-variant-numeric: tabular-nums; transition: color 0.1s; }
+.room-gold-value.spending { color: #ff8787; }
+.room-gold-unit { font-size: 22px; align-self: flex-end; padding-bottom: 12px; }
+
+.room-zone {
+  margin-top: 12px;
+  padding: 10px 12px 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.room-zone.zone-deck { border-color: #ffd43b; background: rgba(255, 212, 59, 0.07); }
+.room-zone.zone-bench { border-color: #5c7cfa; border-style: dashed; background: rgba(92, 124, 250, 0.07); }
+.room-zone.zone-relic { border-color: #be4bdb; background: rgba(190, 75, 219, 0.07); }
+
+.room-zone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.room-zone-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+.room-zone-name {
+  font-family: 'DotGothic16', 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  font-size: 20px;
+  color: #fff;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.zone-deck .room-zone-name { color: #ffd43b; }
+.zone-bench .room-zone-name { color: #a5b4fc; }
+.zone-relic .room-zone-name { color: #e599f7; }
+.room-zone-count { font-size: 13px; font-weight: 800; color: #dee2e6; }
+.room-zone-title small { font-size: 11px; color: #adb5bd; }
+
+.room-zone-empty {
+  padding: 18px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #868e96;
+}
+
+.room-buy {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 8px;
+  border: 2px solid #8ce99a;
+  background: #2b8a3e;
+  color: #fff;
+  font-family: 'DotGothic16', 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  font-size: 17px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+  transition: filter 0.12s, transform 0.08s;
+}
+
+.room-buy:hover:not(:disabled) { filter: brightness(1.15); transform: translate(1px, 1px); }
+.room-buy:disabled { background: #343a40; border-color: #495057; color: #868e96; cursor: not-allowed; }
+.room-buy.is-max { background: #343a40; border-color: #495057; color: #adb5bd; cursor: default; }
+.room-buy .room-icon { width: 44px; height: 44px; flex: none; }
+.room-buy:disabled .room-icon { filter: grayscale(1); opacity: 0.6; }
+.room-buy-label { display: flex; flex-direction: column; gap: 2px; line-height: 1.1; }
+
+.room-buy-label small {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 15px;
+  color: #ffd43b;
+}
+
+.room-buy:disabled .room-buy-label small { color: #868e96; }
+
+/* ユニット枠のゲージ。現在の枠数で等分し、アイコンで埋める */
+.deck-gauge {
+  display: grid;
+  grid-template-columns: repeat(var(--slots), minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.gauge-unit,
+.gauge-free {
+  display: flex;
+  height: clamp(52px, 8vw, 76px);
+  min-width: 0;
+}
+
+.gauge-unit {
+  border: 2px solid #ffd43b;
+  background: linear-gradient(to bottom, #ffe066, #f59f00);
+  box-shadow: inset 0 0 0 1px rgba(122, 74, 0, 0.5), 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.gauge-unit i {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gauge-unit i + i { border-left: 2px dotted rgba(122, 74, 0, 0.7); }
+
+.gauge-unit svg {
+  width: 100%;
+  max-width: 64px;
+  height: 100%;
+}
+
+.gauge-free {
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.gauge-free .empty-slot-face {
+  width: 100%;
+  max-width: 60px;
+  height: 90%;
+}
+
+.deck-gauge.is-full .gauge-unit { box-shadow: inset 0 0 0 1px rgba(122, 74, 0, 0.5), 0 0 10px rgba(255, 212, 59, 0.7); }
+
+/* シナジーの四角いアイコン */
+.syn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.syn-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 78px;
+  height: 78px;
+  padding: 2px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #adb5bd;
+  font: inherit;
+  line-height: 1.1;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.syn-tile.tier-0 .syn-icon { filter: grayscale(1); opacity: 0.6; }
+.syn-tile.tier-2 { border-color: #4dabf7; background: rgba(77, 171, 247, 0.18); color: #e7f5ff; box-shadow: 0 0 9px rgba(77, 171, 247, 0.55); }
+.syn-tile.tier-4 { border-color: #ffa94d; background: rgba(255, 169, 77, 0.22); color: #fff4e6; box-shadow: 0 0 12px rgba(255, 169, 77, 0.75); }
+.syn-tile.selected { outline: 2px solid #fff; outline-offset: 1px; }
+.syn-icon { font-size: 28px; }
+.syn-name { font-size: 11px; font-weight: 800; }
+.syn-count { font-size: 11px; font-weight: 800; color: #ffd43b; }
+
+.syn-detail {
+  min-height: 2.8em;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #dee2e6;
+}
+
+/* レリック */
+.relic-gauge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.relic-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  padding: 6px;
+  border: 2px dashed rgba(229, 153, 247, 0.5);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(229, 153, 247, 0.55);
+}
+
+.relic-slot.filled {
+  border: 2px solid #e599f7;
+  background: rgba(190, 75, 219, 0.3);
+  box-shadow: 0 0 9px rgba(229, 153, 247, 0.6);
+}
+
+.relic-slot svg { width: 100%; height: 100%; }
+
+.relic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 10px;
+}
+
+.relic-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  text-align: center;
+}
+
+.relic-icon {
+  position: relative;
+  display: block;
+  width: 112px;
+  height: 112px;
+  padding: 0;
+  border: 3px solid #e599f7;
+  background: radial-gradient(circle at 50% 55%, rgba(229, 153, 247, 0.5), rgba(190, 75, 219, 0.15) 75%);
+  box-shadow: 0 0 16px rgba(229, 153, 247, 0.85), inset 0 0 12px rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.08s;
+}
+
+.relic-icon:hover { transform: translate(1px, 1px); filter: brightness(1.12); }
+.relic-icon:focus-visible { outline: 2px solid #ffd43b; outline-offset: 2px; }
+.relic-icon.no-room { cursor: not-allowed; }
+.relic-icon .unit-voxel.prop-voxel { width: 100%; height: 100%; background: none; }
+
+.relic-tile.off .relic-icon {
+  border-color: #495057;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.relic-tile.off .relic-icon .unit-voxel { filter: grayscale(1) brightness(0.55); }
+.relic-tile.off .relic-name,
+.relic-tile.off .relic-desc { opacity: 0.55; }
+.relic-name { font-size: 12.5px; color: #fff; }
+.relic-desc { font-size: 10.5px; line-height: 1.3; color: #adb5bd; }
+.relic-up { width: 100%; max-width: 132px; margin-top: auto; }
+
+/* ---- 作戦室の演出 ---- */
+.flip-moving { position: relative; z-index: 5; }
+
+.rogue-deck-card.fx-upgraded,
+.relic-tile.fx-upgraded { animation: room-upgraded 0.6s ease-out; }
+
+@keyframes room-upgraded {
+  0% { filter: brightness(1); }
+  25% { filter: brightness(1.9) saturate(1.3); }
+  100% { filter: brightness(1); }
+}
+
+.relic-tile.fx-on .relic-icon { animation: relic-on 0.5s ease-out; }
+.relic-tile.fx-on .relic-icon .unit-voxel { animation: relic-model-on 0.5s ease-out; }
+.relic-tile.fx-off .relic-icon { animation: relic-off 0.34s ease-out; }
+.relic-tile.fx-off .relic-icon .unit-voxel { animation: relic-model-off 0.34s ease-out; }
+
+@keyframes relic-on {
+  0% { transform: scale(0.86); box-shadow: 0 0 0 rgba(229, 153, 247, 0); }
+  45% { transform: scale(1.14); box-shadow: 0 0 44px 12px rgba(255, 230, 255, 0.95); }
+  100% { transform: scale(1); }
+}
+
+@keyframes relic-model-on {
+  0% { filter: grayscale(1) brightness(0.55); }
+  45% { filter: grayscale(0) brightness(2.1); }
+  100% { filter: none; }
+}
+
+@keyframes relic-off {
+  0% { transform: scale(1.06); }
+  55% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+@keyframes relic-model-off {
+  0% { filter: none; }
+  100% { filter: grayscale(1) brightness(0.55); }
+}
+
+/* 金貨などの飛ぶ演出。画面の作り直しで消えないようモーダルの外に置く */
+.room-fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.room-fx-coin {
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  width: 24px;
+  height: 24px;
+}
+
+.room-fx-coin svg { width: 100%; height: 100%; }
+
+.room-fx-spent {
+  position: absolute;
+  font-family: 'DotGothic16', 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  font-size: 30px;
+  color: #ff6b6b;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 #000, -1px -1px 0 #000;
+}
+
+.room-fx-ring {
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  border: 5px solid #ffd43b;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rogue-deck-card.fx-upgraded,
+  .relic-tile.fx-upgraded,
+  .relic-tile.fx-on .relic-icon,
+  .relic-tile.fx-on .relic-icon .unit-voxel,
+  .relic-tile.fx-off .relic-icon,
+  .relic-tile.fx-off .relic-icon .unit-voxel { animation: none; }
+}
+
+@media (max-height: 480px) {
+  .room-action { min-height: 44px; font-size: 16px; }
+  .room-action.sortie { font-size: 18px; }
+  .room-action .room-icon { width: 30px; height: 30px; }
+  .rogue-room-actions { padding: 6px 0 8px; }
+  .room-gold .unit-voxel.prop-voxel { width: 36px; height: 36px; }
+  .room-gold-value { font-size: 26px; }
+  .room-gold-unit { font-size: 14px; padding-bottom: 5px; }
 }
 
 @media (max-width: 640px) {
   .unit-voxel { width: 80px; height: 80px; }
-  .rogue-war-room { padding-left: 10px; padding-right: 10px; }
+  .rogue-modal-inner.rogue-war-room { --room-pad-x: 10px; }
+  .room-gold .unit-voxel.prop-voxel { width: 44px; height: 44px; }
+  .room-gold { padding-right: 10px; }
+  .room-gold-value { font-size: 32px; }
+  .room-gold-unit { font-size: 16px; padding-bottom: 7px; }
+  .room-top .rogue-modal-title { font-size: 15px; }
+  .room-zone { padding: 8px 6px; }
+  .room-zone-head { align-items: flex-start; }
+  .room-zone-name { font-size: 17px; }
+  .room-buy { padding: 4px 8px 4px 4px; font-size: 13px; }
+  .room-buy .room-icon { width: 34px; height: 34px; }
+  .room-buy-label small { font-size: 12px; }
+  .deck-gauge { gap: 3px; }
+  .gauge-unit, .gauge-free { height: 46px; }
+  .syn-tile { width: 64px; height: 64px; }
+  .syn-icon { font-size: 22px; }
+  .relic-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
+  .relic-icon { width: 88px; height: 88px; }
+  .room-action { min-height: 60px; font-size: 18px; gap: 6px; }
+  .room-action.sortie { font-size: 22px; }
+  .room-action .room-icon { width: 38px; height: 38px; }
   .squad-count { font-size: 19px; }
-  .rogue-relic-row .unit-voxel.prop-voxel { width: 72px; height: 72px; }
   .rogue-deck-grid { gap: 4px; }
   .deck-card-slotbar { gap: 4px; }
   .deck-slot-empty { min-height: 150px; }
@@ -3168,8 +3579,8 @@ body.on-title #btn-restore-hud {
   .deck-up { padding: 3px 2px; font-size: 11px; }
   .deck-up small { font-size: 9px; white-space: nowrap; }
   /* 1枠のカードは幅が狭いので、情報を絞ってモデルを見せる（倍率は強化ボタン、タグはシナジー欄にある） */
+  .slots-1 .deck-move-hint em { display: none; }
   .slots-1 .deck-card-info { bottom: 0; padding: 4px 3px; background: linear-gradient(to bottom, rgba(10, 14, 22, 0.72), rgba(10, 14, 22, 0) 44px); }
   .slots-1 .deck-card-info.bottom,
   .slots-1 .deck-meta-extra { display: none; }
-  .slots-1 .deck-toggle { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); white-space: nowrap; }
 }

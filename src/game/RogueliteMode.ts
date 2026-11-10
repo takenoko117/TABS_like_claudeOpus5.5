@@ -1304,7 +1304,7 @@ function unitOption(id: UnitTypeId): RewardOption {
     rarity: unitRarity(id),
     unitId: id,
     title: UNIT_TYPES[id].name,
-    description: `枠 ${getUnitSlotCost(id)} ・ ${getSquadSize(id)}人の部隊を手に入れる`,
+    description: `${getSquadSize(id)}人の部隊を手に入れる`,
   };
 }
 
