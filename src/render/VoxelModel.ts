@@ -3187,6 +3187,13 @@ function createRamielPrismWingGeometry(s: number): BufferGeometry {
  * 物理ラグドールの各関節位置に合わせてボクセルパーツを毎フレーム追従させ、
  * 被弾時にはボクセルの欠損・部位破壊を適用するクラス。
  */
+/** 属性の門で強化された兵の発光色 */
+const ELEMENT_GLOW: Readonly<Record<'fire' | 'shock' | 'poison', readonly [number, number, number]>> = {
+  fire: [0.42, 0.13, 0.02],
+  shock: [0.3, 0.27, 0.04],
+  poison: [0.1, 0.32, 0.06],
+};
+
 export class VoxelCharacterVisual {
   readonly group = new Group();
   private readonly material: MeshLambertMaterial;
@@ -5318,6 +5325,10 @@ export class VoxelCharacterVisual {
       this.material.emissive.setRGB(0.15, 0.55, 0.85);
     } else if (u.burnTimer > 0) {
       this.material.emissive.setRGB(0.65, 0.22, 0.02);
+    } else if (u.elementInfusion) {
+      // 属性の門で強化された兵は属性の色でほのかに光る
+      const [r, g, b] = ELEMENT_GLOW[u.elementInfusion];
+      this.material.emissive.setRGB(r, g, b);
     } else {
       this.material.emissive.setRGB(0, 0, 0);
     }
@@ -5767,9 +5778,76 @@ export function createPreviewGhost(type: UnitType, team: Team): Group {
   return g;
 }
 
+/**
+ * ゲートのエネルギー発生装置の1本分を作る。
+ * body は金属の筐体、glow は発光する部分（描画側で属性の色を付ける）で、噴射口はモデルの +X を向く。
+ */
+export function buildGatePylonGrids(team: Team): {
+  body: VoxelGrid;
+  glow: VoxelGrid;
+  voxelSize: number;
+  pivot: [number, number, number];
+} {
+  const sx = 15;
+  const sy = 33;
+  const sz = 13;
+  const c = 6;
+  const body = new VoxelGrid(sx, sy, sz);
+  const glow = new VoxelGrid(sx, sy, sz);
+  const accent = TEAM_COLORS[team].shirt;
+  const dark = 0x23272f;
+  const metal = 0x3a414d;
+  const light = 0x5d6675;
+  const copper = 0xc08040;
+  const LIT = 0xffffff;
+
+  for (let z = 0; z < sz; z++) {
+    for (let x = 0; x < sx; x++) {
+      const dx = Math.abs(x - c);
+      const dz = Math.abs(z - c);
+      const box = Math.max(dx, dz);
+      for (let y = 0; y < sy; y++) {
+        if (y <= 2) {
+          // 土台（角を落とした台座と、チーム色の縁取り）
+          if (box <= 6 && dx + dz <= 10) body.set(x, y, z, y === 2 && box === 6 ? accent : dark);
+        } else if (y <= 5) {
+          const r = y === 5 ? 4 : 5;
+          if (box <= r) body.set(x, y, z, y === 5 ? light : metal);
+        } else if (y <= 22) {
+          // 反応炉: 中央の発光コアを4本の支柱とコイルが囲む
+          if (box <= 1) glow.set(x, y, z, LIT);
+          else if (dx >= 3 && dx <= 4 && dz >= 3 && dz <= 4) body.set(x, y, z, metal);
+          else if (box === 3 && (y - 9) % 5 <= 1 && y >= 9 && y <= 20) body.set(x, y, z, copper);
+        } else if (y <= 26) {
+          // 上部の蓋
+          const r = y === 23 ? 5 : 4;
+          if (box <= r) body.set(x, y, z, y === 24 && box === 4 ? accent : y === 23 ? light : metal);
+        } else if (y <= 29) {
+          if (box <= 2) body.set(x, y, z, dark);
+        } else if (dx + dz <= (y === 32 ? 0 : 1)) {
+          // 頂点の発光クリスタル
+          glow.set(x, y, z, LIT);
+        }
+      }
+    }
+  }
+
+  // 内側へ向いた3段の噴射口（ここから網が張られる）
+  for (const base of [7, 14, 20]) {
+    for (let y = base; y <= base + 2; y++) {
+      for (let z = c - 1; z <= c + 1; z++) {
+        for (let x = c + 2; x <= c + 6; x++) body.set(x, y, z, y === base + 1 && z === c ? light : metal);
+        glow.set(c + 7, y, z, LIT);
+      }
+    }
+  }
+  return { body, glow, voxelSize: 0.088, pivot: [c + 0.5, 0, c + 0.5] };
+}
+
 /** 施設のボクセルグリッドを生成する */
 export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { grid: VoxelGrid; voxelSize: number } {
-  // ローグライトの門は増殖ゲートと同じ形を使い、描画側で色を変える
+  const gateEnergy = GATE_TINTS[typeId] ?? 0x66ccff;
+  // ローグライトの門は増殖ゲートと同じ形を使い、エネルギーの色だけを変える
   if (
     typeId === 'giant_gate' ||
     typeId === 'shrink_gate' ||
@@ -5950,98 +6028,34 @@ export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { gr
     }
 
     case 'multiplier_gate': {
-      // 増殖ゲート: 左右の頑丈な門柱、上部アーチ梁、「x2」プレート、中央のエネルギー膜
-      const sx = 34;
-      const sy = 32;
-      const sz = 12;
-      const voxelSize = 0.088;
+      // 配置プレビューと破壊時の破片に使う、最小の開口のゲート全体（左右の発生装置とエネルギー網）
+      const pylons = buildGatePylonGrids(team);
+      const sx = 42;
+      const sy = pylons.body.sy;
+      const sz = pylons.body.sz;
       const g = new VoxelGrid(sx, sy, sz);
-
-      // 左柱 (x: 2..8, z: 2..9, y: 0..27)
-      for (let y = 0; y <= 27; y++) {
-        const pCol = y % 6 === 0 ? primary : 0x3d434e;
-        for (let z = 2; z <= 9; z++) {
-          for (let x = 2; x <= 8; x++) {
-            g.set(x, y, z, pCol);
-          }
-        }
-        // 柱の前面ライン
-        g.set(5, y, 10, primary);
-      }
-      // 左柱ベース拡大
-      for (let y = 0; y <= 2; y++) {
-        for (let z = 1; z <= 10; z++) {
-          for (let x = 1; x <= 9; x++) {
-            g.set(x, y, z, 0x2e323b);
+      const left = 7;
+      const right = 34;
+      const px = pylons.pivot[0] - 0.5;
+      for (let z = 0; z < sz; z++) {
+        for (let y = 0; y < sy; y++) {
+          for (let x = 0; x < pylons.body.sx; x++) {
+            const bodyColor = pylons.body.get(x, y, z);
+            const color = pylons.glow.get(x, y, z) !== 0 ? gateEnergy : bodyColor;
+            if (color === 0) continue;
+            g.set(left + (x - px), y, z, color);
+            g.set(right - (x - px), y, z, color);
           }
         }
       }
-
-      // 右柱 (x: 25..31, z: 2..9, y: 0..27)
-      for (let y = 0; y <= 27; y++) {
-        const pCol = y % 6 === 0 ? primary : 0x3d434e;
-        for (let z = 2; z <= 9; z++) {
-          for (let x = 25; x <= 31; x++) {
-            g.set(x, y, z, pCol);
-          }
-        }
-        // 柱の前面ライン
-        g.set(28, y, 10, primary);
-      }
-      // 右柱ベース拡大
-      for (let y = 0; y <= 2; y++) {
-        for (let z = 1; z <= 10; z++) {
-          for (let x = 24; x <= 32; x++) {
-            g.set(x, y, z, 0x2e323b);
-          }
+      const netZ = Math.floor(sz / 2);
+      for (let y = 4; y <= 28; y++) {
+        for (let x = 15; x <= 26; x++) {
+          if ((x + y) % 5 === 0 || (x - y + 100) % 5 === 0) g.set(x, y, netZ, gateEnergy);
         }
       }
-
-      // 上部アーチ梁 (y: 25..31, x: 2..31, z: 3..8)
-      for (let y = 25; y <= 31; y++) {
-        for (let z = 3; z <= 8; z++) {
-          for (let x = 2; x <= 31; x++) {
-            g.set(x, y, z, 0x484f5c);
-          }
-        }
-      }
-
-      // 中央上部「x2」プレート (y: 27..30, x: 13..21, z: 9)
-      const gold = 0xffd700;
-      // 'x' (x: 13..15, y: 27..29)
-      g.set(13, 27, 9, gold);
-      g.set(15, 27, 9, gold);
-      g.set(14, 28, 9, gold);
-      g.set(13, 29, 9, gold);
-      g.set(15, 29, 9, gold);
-
-      // '2' (x: 17..20, y: 27..30)
-      g.set(17, 30, 9, gold);
-      g.set(18, 30, 9, gold);
-      g.set(19, 30, 9, gold);
-      g.set(20, 29, 9, gold);
-      g.set(19, 28, 9, gold);
-      g.set(18, 28, 9, gold);
-      g.set(17, 27, 9, gold);
-      g.set(18, 27, 9, gold);
-      g.set(19, 27, 9, gold);
-      g.set(20, 27, 9, gold);
-
-      // 中央のエネルギー膜（開口部 x: 9..24, y: 2..24, z: 5..6）
-      const energyCol = primary;
-      for (let y = 2; y <= 24; y++) {
-        for (let x = 9; x <= 24; x++) {
-          // 格子状またはストライプ状のエネルギーライン
-          if ((x + y) % 3 === 0 || y % 4 === 0) {
-            g.set(x, y, 5, energyCol);
-            g.set(x, y, 6, energyCol);
-          }
-        }
-      }
-
-      return { grid: g, voxelSize };
+      return { grid: g, voxelSize: pylons.voxelSize };
     }
-
     case 'cannon_tower': {
       // 防衛キャノン砲台: 円柱石積み砦、胸壁付きデッキ、黒鉄の長砲身
       const sx = 24;
@@ -6284,8 +6298,9 @@ export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { gr
 }
 
 /** 施設用のThree.jsメッシュを生成する */
-/** 門の種類ごとの色味（増殖ゲートの形に掛け合わせる） */
+/** 門の種類ごとのエネルギーの色 */
 export const GATE_TINTS: Partial<Record<FacilityTypeId, number>> = {
+  multiplier_gate: 0xc77dff,
   giant_gate: 0xffb35c,
   shrink_gate: 0x7fd6ff,
   fire_gate: 0xff6a3d,
@@ -6297,8 +6312,6 @@ export function createFacilityMesh(typeId: FacilityTypeId, team: Team): Mesh {
   const { grid, voxelSize } = buildFacilityVoxelGrid(typeId, team);
   const geo = grid.toGeometry(voxelSize, [grid.sx / 2, 0, grid.sz / 2]);
   const mat = new MeshLambertMaterial({ vertexColors: true });
-  const tint = GATE_TINTS[typeId];
-  if (tint !== undefined) mat.color.setHex(tint);
   const mesh = new Mesh(geo, mat);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -6314,8 +6327,6 @@ export function createFacilityGhost(typeId: FacilityTypeId, team: Team): Group {
     transparent: true,
     opacity: 0.65,
   });
-  const tint = GATE_TINTS[typeId];
-  if (tint !== undefined) mat.color.setHex(tint);
   const mesh = new Mesh(geo, mat);
   const g = new Group();
   g.add(mesh);

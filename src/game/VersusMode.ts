@@ -15,6 +15,10 @@ export interface VersusPlacedRecord {
   onTopOf?: number;
   /** 門のサイズ段階（ローグライトの門レリック） */
   gateLevel?: number;
+  /** ユニットレベル（ローグライト。省略時は 1） */
+  level?: number;
+  /** 門以外のレリックのレベル（ローグライト。0 始まり） */
+  relicLevel?: number;
   /** ボスとして強化する個体（ローグライトの最終ラウンド） */
   boss?: boolean;
 }

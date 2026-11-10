@@ -3,9 +3,14 @@ import type { ObstacleCylinder, PitSpec, SlopeSpec } from '../physics/PhysicsWor
 import type { Unit } from '../units/Unit';
 import type { Team, UnitTypeId } from '../units/UnitTypes';
 import {
+  BARRACKS_INTERVAL_BY_LEVEL,
+  CANNON_DAMAGE_BY_LEVEL,
   FACILITY_TYPES,
   GATE_HP_BY_LEVEL,
   MAX_GATE_LEVEL,
+  RELIC_HP_BY_LEVEL,
+  TOTEM_HEAL_BY_LEVEL,
+  TOTEM_RADIUS_BY_LEVEL,
   getGateOpeningWidth,
   getMarchGateOpeningWidth,
   isGateTypeId,
@@ -29,6 +34,10 @@ export interface FacilitySpawnOptions {
   gateLevel?: number;
   /** 指定すると進軍門になる。開戦時にこの X 座標から配置位置まで門が滑る */
   marchFromX?: number;
+  /** 指定すると開戦演出専用の門になる。隊列全体を覆うこの幅で表示する（m） */
+  enchantWidth?: number;
+  /** 門以外のレリックのレベル（0 始まり） */
+  relicLevel?: number;
 }
 
 /** 進軍門が配置位置まで滑る時間（秒） */
@@ -98,6 +107,12 @@ export class Facility {
   readonly marchHomeX: number;
   private marchPhase: 'ready' | 'sweeping' | 'done' = 'ready';
   private marchElapsed = 0;
+  /** 開戦演出専用の門の幅（m。専用の門でなければ null） */
+  readonly enchantWidth: number | null;
+  /** 開戦演出専用の門の不透明度 */
+  marchOpacity = 0.9;
+  /** 門以外のレリックのレベル（0 始まり） */
+  readonly relicLevel: number;
 
   constructor(
     typeId: FacilityTypeId,
@@ -116,7 +131,9 @@ export class Facility {
       : 0;
     this.marchFromX = this.isGate ? (opts?.marchFromX ?? null) : null;
     this.marchHomeX = x;
-    this.hp = this.isGate ? GATE_HP_BY_LEVEL[this.gateLevel] : this.type.hp;
+    this.enchantWidth = this.isGate ? (opts?.enchantWidth ?? null) : null;
+    this.relicLevel = this.isGate ? 0 : Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(opts?.relicLevel ?? 0)));
+    this.hp = this.isGate ? GATE_HP_BY_LEVEL[this.gateLevel] : this.type.hp * RELIC_HP_BY_LEVEL[this.relicLevel];
     this.maxHp = this.hp;
 
     // 前方向・右方向ベクトル
@@ -169,6 +186,21 @@ export class Facility {
     this.pos.x = this.marchFromX;
   }
 
+  /** 開戦演出専用の門: 外から指定した位置へ動かす（効果は演出側が与える） */
+  setMarchX(x: number): void {
+    this.pos.x = x;
+  }
+
+  /** 開戦演出専用の門: 通過を終える */
+  endMarch(): void {
+    this.marchPhase = 'done';
+  }
+
+  /** 開戦演出専用の門か */
+  get isEnchantGate(): boolean {
+    return this.enchantWidth !== null;
+  }
+
   /** 進軍門を進め、帯の中の味方に効果を与える。まだ滑っている間は true を返す */
   updateMarch(dt: number, ctx: FacilityBattleContext): boolean {
     if (this.marchFromX === null || this.marchPhase !== 'sweeping') return false;
@@ -188,6 +220,7 @@ export class Facility {
 
   /** 門の開口幅（m） */
   get gateOpening(): number {
+    if (this.enchantWidth !== null) return this.enchantWidth;
     return this.isMarchGate ? getMarchGateOpeningWidth(this.gateLevel) : getGateOpeningWidth(this.gateLevel);
   }
 
@@ -322,8 +355,8 @@ export class Facility {
   private updateBarracks(dt: number, ctx: FacilityBattleContext): void {
     this.actionTimer -= dt;
     if (this.actionTimer <= 0) {
-      // 4.5秒ごとに召喚
-      this.actionTimer = 4.5;
+      // レベルごとの間隔で召喚（Lv1 は 4.5 秒）
+      this.actionTimer = BARRACKS_INTERVAL_BY_LEVEL[this.relicLevel];
 
       // 剣士と棍棒兵を交互、または時々槍兵を召喚
       const spawnTypes: UnitTypeId[] = ['swordsman', 'clubber', 'swordsman', 'spearman'];
@@ -350,7 +383,7 @@ export class Facility {
 
   /** 加護のトーテム: 周囲の味方にバフ（攻撃力・速度・リジェネ）を適用 */
   private updateBuffTotem(dt: number, ctx: FacilityBattleContext): void {
-    const buffRadius = 6.8;
+    const buffRadius = TOTEM_RADIUS_BY_LEVEL[this.relicLevel];
     const r2 = buffRadius * buffRadius;
 
     // 範囲内の味方ユニットにバフを付与
@@ -362,8 +395,8 @@ export class Facility {
         u.damageMul = Math.max(u.damageMul, 1.45);
         u.speedMul = Math.max(u.speedMul, 1.35);
         u.hasBuff = true;
-        // HPの継続自動回復（毎秒 7.5 HP）
-        u.heal(7.5 * dt);
+        // HPの継続自動回復
+        u.heal(TOTEM_HEAL_BY_LEVEL[this.relicLevel] * dt);
       }
     }
 
@@ -480,6 +513,11 @@ export class Facility {
   private infuse(u: Unit, element: 'fire' | 'shock' | 'poison', tag: string): void {
     u.elementInfusion = element;
     if (!u.grantedTags.includes(tag)) u.grantedTags.push(tag);
+  }
+
+  /** 砲弾の威力倍率 */
+  get cannonDamageMul(): number {
+    return CANNON_DAMAGE_BY_LEVEL[this.relicLevel];
   }
 
   /** 防衛キャノン砲台: 接近する敵を迎撃 */

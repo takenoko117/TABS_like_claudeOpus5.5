@@ -47,6 +47,7 @@ import {
   getProjectileGeometry,
   VoxelCharacterVisual,
 } from './VoxelModel';
+import { EnergyGateVisual } from './EnergyGateVisual';
 
 /** 部位損壊や薬莢・花びら・ゼリー飛沫として地面にドロップする不透明ボクセルパーティクル */
 interface DroppedVoxel {
@@ -117,6 +118,8 @@ interface FacilityVisual {
   hpBarGroup: Group;
   /** 進軍門の帯 */
   marchLane?: Mesh;
+  /** 門の見た目（発生装置とエネルギー網） */
+  energyGate?: EnergyGateVisual;
   lastHp: number;
 }
 
@@ -130,6 +133,8 @@ export class SceneView {
 
   private readonly unitVisuals = new Map<number, VoxelCharacterVisual>();
   private readonly facilityVisuals = new Map<number, FacilityVisual>();
+  /** ゲートのエネルギーのアニメーション用の時刻 */
+  private gateClock = 0;
   private readonly arrowMeshes: Mesh[] = [];
   private readonly arrowMaterial = new MeshLambertMaterial({ vertexColors: true });
 
@@ -1104,18 +1109,16 @@ export class SceneView {
   /** 施設ビジュアルを登録する */
   addFacilityVisual(facility: Facility): void {
     if (this.facilityVisuals.has(facility.id)) return;
-    const mesh = createFacilityMesh(facility.type.id, facility.team);
+    // 門は左右のエネルギー発生装置と網でできていて、開口が変わっても装置は伸びない
+    const heightScale = facility.isGate ? 1 + 0.18 * facility.gateLevel : 1;
+    const energyGate = facility.isGate
+      ? new EnergyGateVisual(facility.type.id, facility.team, facility.gateOpening / 2 + facility.gatePoleRadius, heightScale)
+      : undefined;
+    const mesh = energyGate ? energyGate.body : createFacilityMesh(facility.type.id, facility.team);
     const group = new Group();
     group.position.copy(facility.pos);
     group.rotation.y = facility.facing;
-    group.add(mesh);
-
-    // 門はサイズ段階に合わせて横幅と高さを広げる（小門の見た目が基準）
-    let heightScale = 1;
-    if (facility.isGate && (facility.gateLevel > 0 || facility.isMarchGate)) {
-      heightScale = 1 + 0.18 * facility.gateLevel;
-      mesh.scale.set(facility.gateOpening / getGateOpeningWidth(0), heightScale, 1 + 0.25 * facility.gateLevel);
-    }
+    group.add(energyGate ? energyGate.root : mesh);
 
     // 進軍門は、開戦時に通過する帯を地面に示す
     const marchLane = facility.isMarchGate ? this.createGateLaneMesh(facility.type.id) : undefined;
@@ -1134,7 +1137,7 @@ export class SceneView {
     const fillMat = new MeshBasicMaterial({ color: TEAM_COLORS[facility.team]?.shirt ?? 0xe0473a });
     const fillMesh = new Mesh(new BoxGeometry(barWidth, barHeight, 0.05), fillMat);
     hpBarGroup.add(fillMesh);
-    hpBarGroup.visible = !facility.isTerrain;
+    hpBarGroup.visible = !facility.isTerrain && !facility.isEnchantGate;
     group.add(hpBarGroup);
 
     this.scene.add(group);
@@ -1146,6 +1149,7 @@ export class SceneView {
       hpBarGroup,
       lastHp: facility.hp,
       marchLane,
+      energyGate,
     });
   }
 
@@ -1175,15 +1179,20 @@ export class SceneView {
       vis.marchLane.geometry.dispose();
       (vis.marchLane.material as Material).dispose();
     }
-    vis.mesh.geometry.dispose();
-    if (vis.mesh.material instanceof MeshLambertMaterial) {
-      vis.mesh.material.dispose();
+    if (vis.energyGate) {
+      vis.energyGate.dispose();
+    } else {
+      vis.mesh.geometry.dispose();
+      if (vis.mesh.material instanceof MeshLambertMaterial) {
+        vis.mesh.material.dispose();
+      }
     }
     this.facilityVisuals.delete(facility.id);
   }
 
   /** 施設の状態・被弾フラッシュ・HPバー・破壊演出を同期する */
   syncFacilities(battle: Battle, dt: number): void {
+    this.gateClock += dt;
     // 既存ビジュアルの同期と破壊判定
     for (const [id, vis] of this.facilityVisuals) {
       const fac = vis.facility;
@@ -1213,9 +1222,13 @@ export class SceneView {
         mat.emissiveIntensity = 0;
       }
 
+      if (vis.energyGate) {
+        vis.energyGate.update(this.gateClock, fac.isEnchantGate ? fac.marchOpacity / 0.9 : 1);
+      }
+
       // ローグライトの進軍門は開戦後に戦場の中央へ出て視界を遮るため、滑り始めたら半透明にする
       if (fac.isMarchGate) {
-        const targetOpacity = fac.marchBegun ? 0.45 : 1;
+        const targetOpacity = fac.isEnchantGate ? fac.marchOpacity : fac.marchBegun ? 0.45 : 1;
         if (mat.opacity !== targetOpacity) {
           mat.opacity = targetOpacity;
           mat.transparent = targetOpacity < 1;
@@ -1260,6 +1273,7 @@ export class SceneView {
         }
 
         this.scene.remove(vis.group);
+        vis.energyGate?.dispose();
         this.facilityVisuals.delete(id);
       }
     }

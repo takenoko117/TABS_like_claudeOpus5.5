@@ -164,6 +164,8 @@ export class Unit {
   replacedBy: Unit | null = null;
   /** 属性の門で付与された、攻撃に乗る状態異常 */
   elementInfusion: 'fire' | 'shock' | 'poison' | null = null;
+  /** ユニットレベルの HP 倍率（分裂で生まれる個体にも掛ける） */
+  levelHpMul = 1;
 
   // 状態異常・特殊ギミック用プロパティ
   context: UnitContext | null = null;
@@ -518,6 +520,13 @@ export class Unit {
       this.facing = wrapAngle(this.facing + clamp(diff, -maxTurn, maxTurn));
     }
     this.applyMountBinding(dt);
+    this.applyMuscles(dt);
+  }
+
+  /** カードの表示用: AI なしで、指定の速度で歩く動きだけを進める */
+  previewStep(dt: number, speed: number): void {
+    this.moveDir.set(Math.sin(this.facing), 0, Math.cos(this.facing));
+    this.moveSpeed = speed;
     this.applyMuscles(dt);
   }
 

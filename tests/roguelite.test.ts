@@ -12,15 +12,19 @@ import {
   ROGUE_FINAL_ROUND,
   GATE_CLONE_CHANCE,
   GATE_GIANT_SCALE,
+  GATE_SEQUENCE_MAX_SECONDS,
   GATE_SHRINK_SPEED,
   ROGUE_FACILITY_POSITIONS,
   ROGUE_MAX_LIVES,
-  ROGUE_MAX_SLOTS,
-  ROGUE_SHOP_SLOTS,
+  ROGUE_MAX_RELIC_SLOTS,
+  ROGUE_MAX_UNIT_LEVEL,
+  ROGUE_MAX_UNIT_SLOTS,
   ROGUE_SKIP_GOLD,
   ROGUE_STARTERS,
   ROGUE_START_GOLD,
   ROGUE_START_LIVES,
+  ROGUE_START_UNIT_SLOTS,
+  RogueGateSequence,
   RogueliteRules,
   RogueliteRun,
   UNIT_TAGS,
@@ -28,25 +32,26 @@ import {
   applyRogueGates,
   formationBand,
   generateRogueFormation,
-  getGateUpgradePrice,
-  getSlotPrice,
+  getRelicLevelPrice,
+  getRelicSlotPrice,
   gateEffectText,
   countTags,
   generateComebackOptions,
   generateRewardOptions,
-  generateShopSlots,
   generateRogueEnemyLineup,
   getRogueConsolationGold,
   getRogueEnemyBudget,
   getRogueRoundIncome,
   getRogueWinBonus,
-  getShopRerollPrice,
-  getShopWeight,
-  getUnitPrice,
-  getUnitSellPrice,
+  getSquadSize,
   getTagTier,
+  getUnitLevelMul,
+  getUnitLevelPrice,
+  getUnitSlotCost,
+  getUnitSlotPrice,
   isStarterUnlocked,
   mergeRogueMeta,
+  type OwnedRelic,
 } from '../src/game/RogueliteMode';
 import { createSeededRng } from '../src/game/ChallengeMode';
 import { UNIT_TYPES, UNIT_TYPE_LIST } from '../src/units/UnitTypes';
@@ -332,56 +337,81 @@ describe('ローグライト: ランの進行', () => {
     expect(UNIT_TYPES[bosses[0].typeId!].category).toBe('divine');
   });
 
-  it('スターターの兵種とレリックでランが始まる', () => {
+  it('スターターのカードとレリックでランが始まり、先頭から枠に収まるだけデッキに入る', () => {
     const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
     expect(run.gold).toBe(ROGUE_START_GOLD);
     expect(run.lives).toBe(ROGUE_START_LIVES);
-    for (const [id, count] of ROGUE_STARTERS[0].units) {
-      expect(run.ownedCount(id)).toBe(count);
-      expect(run.inPool(id)).toBe(true);
-    }
-    expect(run.pool.length).toBe(ROGUE_STARTERS[0].units.length);
+    expect(run.unitSlots).toBe(ROGUE_START_UNIT_SLOTS);
+    expect(run.cards.map((c) => c.id)).toEqual([...ROGUE_STARTERS[0].units]);
+    expect(run.cards.every((c) => c.level === 1)).toBe(true);
+    expect(run.deck.map((c) => c.id)).toEqual(['clubber', 'spearman', 'swordsman']);
+    expect(run.bench.map((c) => c.id)).toEqual(['archer']);
     expect(run.relics).toEqual([{ id: ROGUE_STARTERS[0].relic, level: 0, active: true }]);
+    const mage = new RogueliteRun(1, ROGUE_STARTERS[3]);
+    expect(mage.deck.map((c) => c.id)).toEqual(['archmage', 'archer']);
   });
 
-  it('報酬の3択は種類が重ならず、同じ状態なら同じ内容になる', () => {
+  it('報酬は3枚で、1・2枠目は別々のユニットカード、同じ状態なら同じ内容になる', () => {
     const run = new RogueliteRun(99);
-    const a = generateRewardOptions(run, createSeededRng(5));
-    const b = generateRewardOptions(run, createSeededRng(5));
-    expect(a).toEqual(b);
-    expect(a.length).toBe(3);
-    expect(new Set(a.map((o) => o.kind)).size).toBe(3);
-    for (const o of a) {
-      if (o.kind === 'unit') {
-        expect(o.unitChoices!.length).toBe(3);
-        expect(new Set(o.unitChoices).size).toBe(3);
-        for (const id of o.unitChoices!) expect(run.inPool(id)).toBe(false);
-      }
-      if (o.kind === 'relic') expect(run.ownsRelic(o.relicId!)).toBe(false);
+    for (let i = 0; i < 40; i++) {
+      const a = generateRewardOptions(run, createSeededRng(i));
+      expect(a).toEqual(generateRewardOptions(run, createSeededRng(i)));
+      expect(a.length).toBe(3);
+      expect(a[0].kind).toBe('unit');
+      expect(a[1].kind).toBe('unit');
+      expect(a[0].unitId).not.toBe(a[1].unitId);
+      expect(['relic', 'gold']).toContain(a[2].kind);
     }
   });
 
-  it('エリートラウンドの報酬には施設スロットが必ず入る', () => {
+  it('枠に収まらない兵種とレベル上限のカードは報酬に出ない', () => {
+    const run = new RogueliteRun(99);
+    run.round = 15;
+    run.card('clubber')!.level = ROGUE_MAX_UNIT_LEVEL;
+    for (let i = 0; i < 200; i++) {
+      for (const o of generateRewardOptions(run, createSeededRng(i))) {
+        if (!o.unitId) continue;
+        expect(getUnitSlotCost(o.unitId)).toBeLessThanOrEqual(run.unitSlots);
+        expect(o.unitId).not.toBe('clubber');
+      }
+    }
+  });
+
+  it('エリートラウンドの報酬の3枠目はユニット枠になる', () => {
     const run = new RogueliteRun(3);
     run.round = 5;
     for (let i = 0; i < 10; i++) {
-      const opts = generateRewardOptions(run, createSeededRng(i));
-      expect(opts.some((o) => o.kind === 'slot')).toBe(true);
+      expect(generateRewardOptions(run, createSeededRng(i))[2].kind).toBe('unit_slot');
     }
+    applyReward(run, { kind: 'unit_slot', rarity: 'rare', title: '', description: '' });
+    expect(run.unitSlots).toBe(ROGUE_START_UNIT_SLOTS + 1);
   });
 
-  it('全兵種がプールに入っていると兵種カードは出ない', () => {
+  it('全カードがレベル上限でもレリックやゴールドで報酬が出る', () => {
     const run = new RogueliteRun(3);
-    run.pool = UNIT_TYPE_LIST.map((u) => u.id);
+    run.cards = UNIT_TYPE_LIST.map((u) => ({ id: u.id, level: ROGUE_MAX_UNIT_LEVEL, inDeck: false }));
     for (let i = 0; i < 20; i++) {
-      expect(generateRewardOptions(run, createSeededRng(i)).some((o) => o.kind === 'unit')).toBe(false);
+      const options = generateRewardOptions(run, createSeededRng(i));
+      expect(options.length).toBeGreaterThan(0);
+      expect(options.some((o) => o.kind === 'unit')).toBe(false);
     }
   });
 
-  it('門の拡張で門のサイズが1段階上がる', () => {
+  it('持っているカードやレリックの報酬はレベルが上がる', () => {
     const run = new RogueliteRun(3, ROGUE_STARTERS[0]);
-    applyReward(run, { kind: 'gate_upgrade', rarity: 'common', title: '', description: '', relicIndex: 0 });
+    applyReward(run, { kind: 'unit', rarity: 'common', title: '', description: '', unitId: 'clubber' });
+    expect(run.card('clubber')!.level).toBe(2);
+    applyReward(run, { kind: 'relic', rarity: 'common', title: '', description: '', relicId: ROGUE_STARTERS[0].relic });
     expect(run.relics[0].level).toBe(1);
+  });
+
+  it('空き枠に収まる新しいカードはデッキに入り、収まらなければ控えになる', () => {
+    const run = new RogueliteRun(3, ROGUE_STARTERS[0]);
+    applyReward(run, { kind: 'unit', rarity: 'rare', title: '', description: '', unitId: 'dragon' });
+    expect(run.card('dragon')!.inDeck).toBe(false);
+    run.unitSlots = 6;
+    applyReward(run, { kind: 'unit', rarity: 'rare', title: '', description: '', unitId: 'giant' });
+    expect(run.card('giant')!.inDeck).toBe(true);
   });
 
   it('勝つと報酬が用意され、負けるとライフが減って0で終わる', () => {
@@ -423,9 +453,10 @@ describe('ローグライト: ランの進行', () => {
 
   it('ランの状態を保存して復元できる', () => {
     const run = new RogueliteRun(123, ROGUE_STARTERS[2]);
-    run.recordWin(0.5, 100, 50);
-    run.gold += 300;
-    run.buyShopSlot(0);
+    run.gold += 3000;
+    run.buyCardLevel('charger');
+    run.buyUnitSlot();
+    run.toggleDeck('ninja');
     run.lossStreak = 1;
     const copy = RogueliteRun.fromState(JSON.parse(JSON.stringify(run.toState())));
     expect(copy.toState()).toEqual(run.toState());
@@ -445,62 +476,116 @@ describe('ローグライト: ランの進行', () => {
   });
 });
 
-describe('ローグライト: 所持数とゴールド', () => {
-  it('価格は所持数×0.75で上がる（100Gなら100→175→250→325）', () => {
-    expect([0, 1, 2, 3].map((n) => getUnitPrice('swordsman', n))).toEqual([100, 175, 250, 325]);
-  });
-
-  it('価格は5G刻みで、売却では必ず損をする', () => {
-    for (const ut of UNIT_TYPE_LIST) {
-      for (let n = 0; n < 8; n++) expect(getUnitPrice(ut.id, n) % 5).toBe(0);
-      expect(getUnitSellPrice(ut.id)).toBeLessThan(getUnitPrice(ut.id, 0));
+describe('ローグライト v3: カードと部隊', () => {
+  it('枠コストと人数は仕様の表と一致する', () => {
+    const table: Array<[keyof typeof UNIT_TYPES, number, number]> = [
+      ['decoy', 1, 8], ['clubber', 1, 8], ['spearman', 1, 4], ['archer', 1, 4], ['shielder', 1, 3],
+      ['swordsman', 1, 3], ['charger', 1, 3], ['bomber', 1, 2], ['ninja', 1, 2], ['lightspeed_ant', 1, 2],
+      ['giant_eagle', 2, 3], ['samurai', 2, 3], ['archmage', 2, 3], ['rocket_soldier', 2, 3], ['sniper', 2, 2],
+      ['slime', 2, 2], ['gravimancer', 2, 2], ['buggy', 2, 2], ['minigunner', 2, 2], ['hongon', 2, 2],
+      ['satellite_soldier', 2, 2], ['zaisan', 2, 2], ['sezain', 2, 1], ['anaconda', 2, 1],
+      ['deoxys', 3, 2], ['giant', 3, 2], ['warelephant', 3, 1], ['dragon', 3, 1], ['angel_sachiel', 3, 1],
+      ['giant_tank', 4, 1], ['giant_robot', 4, 1], ['angel_ramiel', 4, 1], ['yamamuron', 4, 1],
+      ['angel_sahaquiel', 4, 1], ['angel_zeruel', 4, 1],
+    ];
+    expect(table.length).toBe(UNIT_TYPE_LIST.length);
+    for (const [id, slot, size] of table) {
+      expect([id, getUnitSlotCost(id), getSquadSize(id)]).toEqual([id, slot, size]);
     }
-    expect(getUnitSellPrice('swordsman')).toBe(70);
   });
 
-  it('買うと所持数が増えて枠が売り切れになり、次の価格が上がる', () => {
-    const run = new RogueliteRun(5);
-    run.gold = 100000;
-    const id = run.shop[0]!;
-    const count = run.ownedCount(id);
-    const price = run.priceOf(id);
-    expect(run.buyShopSlot(0)).toBe(true);
-    expect(run.gold).toBe(100000 - price);
-    expect(run.ownedCount(id)).toBe(count + 1);
-    expect(run.shop[0]).toBeNull();
-    expect(run.priceOf(id)).toBeGreaterThan(price);
-    expect(run.buyShopSlot(0)).toBe(false);
-  });
-
-  it('ゴールドが足りなければ買えない', () => {
-    const run = new RogueliteRun(5);
-    run.gold = 0;
-    const id = run.shop[0]!;
-    const count = run.ownedCount(id);
-    expect(run.buyShopSlot(0)).toBe(false);
-    expect(run.ownedCount(id)).toBe(count);
-    expect(run.shop[0]).toBe(id);
-  });
-
-  it('売却で所持数が1減り、基本価格の70%が戻る。0体は売れない', () => {
+  it('枠を超えてデッキに入れられず、外すと入れられる', () => {
     const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
-    run.gold = 0;
-    expect(run.sellUnit('swordsman')).toBe(70);
-    expect(run.gold).toBe(70);
-    expect(run.ownedCount('swordsman')).toBe(1);
-    run.sellUnit('swordsman');
-    expect(run.ownsUnit('swordsman')).toBe(false);
-    expect(run.inPool('swordsman')).toBe(true);
-    expect(run.sellUnit('swordsman')).toBe(0);
-    expect(run.gold).toBe(140);
+    expect(run.usedUnitSlots).toBe(3);
+    expect(run.toggleDeck('archer')).toBe(false);
+    expect(run.toggleDeck('clubber')).toBe(true);
+    expect(run.toggleDeck('archer')).toBe(true);
+    expect(run.usedUnitSlots).toBe(3);
+    expect(run.toggleDeck('dragon')).toBe(false);
   });
 
-  it('戦闘の勝敗で所持数は減らない', () => {
+  it('控えのカードはレベルを保持する', () => {
     const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
-    const before = run.totalOwned;
+    run.gold = 1000;
+    run.buyCardLevel('clubber');
+    run.toggleDeck('clubber');
+    run.toggleDeck('clubber');
+    expect(run.card('clubber')!.level).toBe(2);
+  });
+
+  it('ユニット枠は200Gから100Gずつ上がり、上限で買えない', () => {
+    expect(getUnitSlotPrice(3)).toBe(200);
+    expect(getUnitSlotPrice(4)).toBe(300);
+    const run = new RogueliteRun(5);
+    run.gold = 200;
+    expect(run.buyUnitSlot()).toBe(true);
+    expect(run.gold).toBe(0);
+    expect(run.buyUnitSlot()).toBe(false);
+    run.unitSlots = ROGUE_MAX_UNIT_SLOTS;
+    run.gold = 99999;
+    expect(run.unitSlotPrice).toBeNull();
+    expect(run.buyUnitSlot()).toBe(false);
+  });
+
+  it('レベルの価格は 100 × 枠コスト × 現在のレベルで、上限で止まる', () => {
+    expect([1, 2, 3, 4].map((l) => getUnitLevelPrice('clubber', l))).toEqual([100, 200, 300, 400]);
+    expect(getUnitLevelPrice('giant_tank', 2)).toBe(800);
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    run.gold = 1000;
+    for (let i = 0; i < 4; i++) expect(run.buyCardLevel('clubber')).toBe(true);
+    expect(run.gold).toBe(0);
+    expect(run.card('clubber')!.level).toBe(ROGUE_MAX_UNIT_LEVEL);
+    run.gold = 99999;
+    expect(run.buyCardLevel('clubber')).toBe(false);
+    expect(run.buyCardLevel('dragon')).toBe(false);
+  });
+
+  it('ゴールドが足りなければレベルは上がらない', () => {
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    run.gold = 99;
+    expect(run.buyCardLevel('clubber')).toBe(false);
+    expect(run.card('clubber')!.level).toBe(1);
+    expect(run.gold).toBe(99);
+  });
+
+  it('レベルの倍率は Lv5 で 1.8 倍', () => {
+    expect([1, 2, 3, 4, 5].map((l) => Number(getUnitLevelMul(l).toFixed(1)))).toEqual([1, 1.2, 1.4, 1.6, 1.8]);
+  });
+
+  it('デッキのカードだけが正しい人数とレベルで編成される', () => {
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    run.gold = 1000;
+    run.buyCardLevel('spearman');
+    const records = generateRogueFormation(run.deckRoster, run.relics, run.deckLevels);
+    expect(records.filter((r) => r.typeId === 'clubber').length).toBe(8);
+    expect(records.filter((r) => r.typeId === 'spearman').length).toBe(4);
+    expect(records.filter((r) => r.typeId === 'spearman').every((r) => r.level === 2)).toBe(true);
+    expect(records.filter((r) => r.typeId === 'swordsman').length).toBe(3);
+    expect(records.some((r) => r.typeId === 'archer')).toBe(false);
+    expect(run.deckBodies).toBe(15);
+  });
+
+  it('戦闘の勝敗でカードは減らない', () => {
+    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+    const before = run.cards.length;
     run.recordLoss(0, 0);
     run.advanceRound();
-    expect(run.totalOwned).toBe(before);
+    expect(run.cards.length).toBe(before);
+  });
+
+  it('複製と分裂にもレベルの倍率が乗る', () => {
+    const battle = new Battle();
+    const slime = battle.spawnUnit('slime', 0, -6, 0);
+    slime.maxHp *= 1.8;
+    slime.hp = slime.maxHp;
+    slime.levelHpMul = 1.8;
+    slime.permDamageMul *= 1.8;
+    const clone = battle.spawnCloneUnit(slime, -6, 3);
+    expect(clone.maxHp).toBeCloseTo(slime.maxHp);
+    expect(clone.permDamageMul).toBeCloseTo(1.8);
+    const split = battle.spawnSplitSlime(slime, -6, -3, 1);
+    expect(split.maxHp).toBe(Math.round(90 * 1.8));
+    expect(split.permDamageMul).toBeCloseTo(1.8);
   });
 
   it('勝利ボーナスとラウンド収入を受け取る', () => {
@@ -515,63 +600,19 @@ describe('ローグライト: 所持数とゴールド', () => {
   });
 });
 
-describe('ローグライト: ショップ', () => {
-  it('枠数は5で、プールの兵種だけが並び、同じ兵種の重複もありうる', () => {
-    const shop = generateShopSlots(['clubber'], 1, createSeededRng(1));
-    expect(shop).toEqual(Array(ROGUE_SHOP_SLOTS).fill('clubber'));
-    const run = new RogueliteRun(9);
-    expect(run.shop.length).toBe(ROGUE_SHOP_SLOTS);
-    for (const id of run.shop) expect(run.inPool(id!)).toBe(true);
+describe('ローグライト v3: レリックのレベル', () => {
+  it('門以外のレリックもレベルで効果と耐久力が上がる', () => {
+    const battle = new Battle();
+    const base = battle.spawnFacility('cannon_tower', 0, -4, -8);
+    const high = battle.spawnFacility('cannon_tower', 0, -4, 8, undefined, { relicLevel: 3 });
+    expect(high.maxHp).toBeCloseTo(base.maxHp * 2);
+    expect(high.cannonDamageMul).toBeCloseTo(2.2);
+    expect(base.cannonDamageMul).toBe(1);
   });
 
-  it('序盤は低価格帯、後半は高価格帯の重みが大きい', () => {
-    expect(getShopWeight('clubber', 1)).toBeGreaterThan(getShopWeight('dragon', 1));
-    expect(getShopWeight('dragon', 15)).toBeGreaterThan(getShopWeight('clubber', 15));
-  });
-
-  it('枠はラウンド切り替えでのみ再抽選され、買った枠も戻る', () => {
-    const run = new RogueliteRun(9);
-    run.gold = 100000;
-    run.buyShopSlot(1);
-    const during = [...run.shop];
-    run.recordLoss(0, 0);
-    expect(run.shop).toEqual(during);
-    run.advanceRound();
-    expect(run.shop.every((id) => id !== null)).toBe(true);
-  });
-
-  it('リロールはゴールドを払い、同じラウンドで値上がりし、次のラウンドで元に戻る', () => {
-    const run = new RogueliteRun(9);
-    run.pool = UNIT_TYPE_LIST.map((u) => u.id);
-    run.gold = 1000;
-    const first = [...run.shop];
-    expect(run.shopRerollPrice).toBe(getShopRerollPrice(0));
-    expect(run.rerollShop()).toBe(true);
-    expect(run.gold).toBe(1000 - getShopRerollPrice(0));
-    expect(run.shop).not.toEqual(first);
-    expect(run.shopRerollPrice).toBeGreaterThan(getShopRerollPrice(0));
-    run.advanceRound();
-    expect(run.shopRerollPrice).toBe(getShopRerollPrice(0));
-    run.gold = 0;
-    expect(run.rerollShop()).toBe(false);
-  });
-
-  it('引き直し券ならゴールドを使わず、券が尽きると使えない', () => {
-    const run = new RogueliteRun(9);
-    const gold = run.gold;
-    const tickets = run.rerollsLeft;
-    expect(run.rerollShopWithTicket()).toBe(true);
-    expect(run.gold).toBe(gold);
-    expect(run.rerollsLeft).toBe(tickets - 1);
-    run.rerollsLeft = 0;
-    expect(run.rerollShopWithTicket()).toBe(false);
-  });
-
-  it('プール追加の報酬は選んだ兵種をプールに入れ、所持数は増やさない', () => {
-    const run = new RogueliteRun(9, ROGUE_STARTERS[0]);
-    applyReward(run, { kind: 'unit', rarity: 'common', title: '', description: '', unitId: 'dragon', unitChoices: ['dragon'] });
-    expect(run.inPool('dragon')).toBe(true);
-    expect(run.ownedCount('dragon')).toBe(0);
+  it('編成にレリックのレベルが渡る', () => {
+    const records = generateRogueFormation({ clubber: 1 }, [{ id: 'buff_totem', level: 2, active: true }]);
+    expect(records.find((r) => r.facilityId === 'buff_totem')!.relicLevel).toBe(2);
   });
 });
 
@@ -622,18 +663,20 @@ describe('ローグライト: 敗北時の打破策', () => {
     expect(run.pendingRewards).toBeNull();
   });
 
-  it('起死回生の無料ユニットは所持数を増やして未解放ならプールにも加える', () => {
+  it('起死回生の強ユニットは未所持なら獲得、所持済みならレベル +2', () => {
     const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
     run.round = 8;
     run.lives = 1;
+    run.unitSlots = 6;
     const seen = new Set<string>();
     for (let i = 0; i < 40; i++) {
       for (const o of generateComebackOptions(run, createSeededRng(i))) seen.add(o.kind);
     }
     expect([...seen].sort()).toEqual(['free_unit', 'gold', 'life', 'relic']);
     applyReward(run, { kind: 'free_unit', rarity: 'rare', title: '', description: '', unitId: 'samurai' });
-    expect(run.ownedCount('samurai')).toBe(1);
-    expect(run.inPool('samurai')).toBe(true);
+    expect(run.card('samurai')!.level).toBe(1);
+    applyReward(run, { kind: 'free_unit', rarity: 'rare', title: '', description: '', unitId: 'samurai' });
+    expect(run.card('samurai')!.level).toBe(3);
   });
 
   it('ライフが満タンなら起死回生にライフは出ない', () => {
@@ -782,54 +825,48 @@ describe('ローグライト v2: ゲートの全員適用', () => {
   });
 });
 
-describe('ローグライト v2: 常設商品とレリックのON/OFF', () => {
-  it('スロットは1000Gから500Gずつ上がり、上限で買えなくなる', () => {
-    expect(getSlotPrice(2)).toBe(1000);
-    expect(getSlotPrice(3)).toBe(1500);
+describe('ローグライト v3: レリック枠と強化', () => {
+  it('レリック枠は1000Gから500Gずつ上がり、上限で買えなくなる', () => {
+    expect(getRelicSlotPrice(2)).toBe(1000);
+    expect(getRelicSlotPrice(3)).toBe(1500);
     const run = new RogueliteRun(1);
     run.gold = 2500;
-    expect(run.buySlot()).toBe(true);
+    expect(run.buyRelicSlot()).toBe(true);
     expect(run.gold).toBe(1500);
-    expect(run.buySlot()).toBe(true);
+    expect(run.buyRelicSlot()).toBe(true);
     expect(run.gold).toBe(0);
-    expect(run.facilitySlots).toBe(ROGUE_MAX_SLOTS);
+    expect(run.relicSlots).toBe(ROGUE_MAX_RELIC_SLOTS);
     run.gold = 99999;
-    expect(run.slotPrice).toBeNull();
-    expect(run.buySlot()).toBe(false);
+    expect(run.relicSlotPrice).toBeNull();
+    expect(run.buyRelicSlot()).toBe(false);
   });
 
-  it('報酬でスロットが増えると次の価格も上がる', () => {
-    const run = new RogueliteRun(1);
-    applyReward(run, { kind: 'slot', rarity: 'rare', title: '', description: '' });
-    expect(run.slotPrice).toBe(1500);
-  });
-
-  it('ゴールドが足りなければスロットもゲート強化も買えない', () => {
+  it('ゴールドが足りなければレリック枠もレベルも買えない', () => {
     const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
     run.gold = 0;
-    expect(run.buySlot()).toBe(false);
-    expect(run.buyGateUpgrade(0)).toBe(false);
+    expect(run.buyRelicSlot()).toBe(false);
+    expect(run.buyRelicLevel(0)).toBe(false);
     expect(run.relics[0].level).toBe(0);
   });
 
-  it('ゲート強化はレベルで値上がりし、最大で止まる。門以外は強化できない', () => {
-    expect([0, 1, 2].map(getGateUpgradePrice)).toEqual([500, 1000, 1500]);
+  it('レリックの強化はレベルで値上がりし、最大で止まる。門以外も強化できる', () => {
+    expect([0, 1, 2].map(getRelicLevelPrice)).toEqual([500, 1000, 1500]);
     const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
     run.gold = 3000;
-    expect(run.buyGateUpgrade(0)).toBe(true);
-    expect(run.buyGateUpgrade(0)).toBe(true);
-    expect(run.buyGateUpgrade(0)).toBe(true);
+    expect(run.buyRelicLevel(0)).toBe(true);
+    expect(run.buyRelicLevel(0)).toBe(true);
+    expect(run.buyRelicLevel(0)).toBe(true);
     expect(run.relics[0].level).toBe(3);
     expect(run.gold).toBe(0);
-    expect(run.gateUpgradePrice(0)).toBeNull();
+    expect(run.relicLevelPrice(0)).toBeNull();
     const heavy = new RogueliteRun(1, ROGUE_STARTERS[1]);
-    expect(heavy.gateUpgradePrice(0)).toBeNull();
+    expect(heavy.relicLevelPrice(0)).toBe(500);
   });
 
-  it('スロットに空きがなければ新しいレリックはOFFで入り、ONにもできない', () => {
+  it('枠に空きがなければ新しいレリックはOFFで入り、ONにもできない', () => {
     const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
-    run.addRelic('fire_gate');
-    run.addRelic('venom_gate');
+    run.gainRelic('fire_gate');
+    run.gainRelic('venom_gate');
     expect(run.relics.map((r) => r.active)).toEqual([true, true, false]);
     expect(run.toggleRelic(2)).toBe(false);
     expect(run.toggleRelic(0)).toBe(true);
@@ -837,28 +874,141 @@ describe('ローグライト v2: 常設商品とレリックのON/OFF', () => {
     expect(run.activeRelics.map((r) => r.id)).toEqual(['fire_gate', 'venom_gate']);
   });
 
-  it('スロットを増やすと待機中のレリックが発動する', () => {
+  it('枠を増やすと待機中のレリックが発動する', () => {
     const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
-    run.addRelic('fire_gate');
-    run.addRelic('venom_gate');
-    run.addSlot();
+    run.gainRelic('fire_gate');
+    run.gainRelic('venom_gate');
+    run.addRelicSlot();
     expect(run.activeRelics.length).toBe(3);
   });
+});
 
-  it('最後の1体は売れない', () => {
-    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
-    run.roster = { clubber: 1 };
-    expect(run.sellUnit('clubber')).toBe(0);
-    expect(run.ownedCount('clubber')).toBe(1);
+describe('ローグライト: 開戦時のゲート演出', () => {
+  const setup = (counts = 6) => {
+    const battle = new Battle();
+    const rules = new RogueliteRules();
+    battle.rules = rules;
+    for (let i = 0; i < counts; i++) battle.spawnUnit('clubber', 0, -8 - i * 2, -6 + i * 2);
+    battle.spawnUnit('clubber', 1, 18, 0);
+    rules.start(battle);
+    return { battle, rules };
+  };
+  const GATES: OwnedRelic[] = [
+    { id: 'fire_gate', level: 1, active: true },
+    { id: 'multiplier_gate', level: 1, active: true },
+    { id: 'giant_gate', level: 2, active: true },
+    { id: 'shrink_gate', level: 0, active: true },
+  ];
+  const summary = (battle: Battle) =>
+    battle.units
+      .filter((u) => u.team === 0)
+      .map((u) => [u.scale.toFixed(3), u.maxHp.toFixed(2), u.permDamageMul.toFixed(3), u.permSpeedMul.toFixed(3), u.elementInfusion, u.isClone])
+      .map(String)
+      .sort();
+  const runToEnd = (battle: Battle) => {
+    let steps = 0;
+    while (battle.opening && steps++ < 2000) battle.step(battle.fixedDt);
+    return steps;
+  };
+
+  it('演出ありでも途中スキップでも一括適用でも最終結果が一致する', () => {
+    const bulk = setup();
+    applyRogueGates(bulk.battle, bulk.rules, GATES, createSeededRng(7));
+
+    const played = setup();
+    played.battle.beginCombat(new RogueGateSequence(played.battle, played.rules, GATES, createSeededRng(7)));
+    runToEnd(played.battle);
+
+    const skipped = setup();
+    const seq = new RogueGateSequence(skipped.battle, skipped.rules, GATES, createSeededRng(7));
+    skipped.battle.beginCombat(seq);
+    for (let i = 0; i < 90; i++) skipped.battle.step(skipped.battle.fixedDt);
+    seq.skip();
+
+    expect(summary(played.battle)).toEqual(summary(bulk.battle));
+    expect(summary(skipped.battle)).toEqual(summary(bulk.battle));
+    expect(played.rules.gateInfusions).toEqual(bulk.rules.gateInfusions);
+    expect(skipped.rules.gateInfusions).toEqual(bulk.rules.gateInfusions);
   });
 
-  it('レリックのON/OFFと強化は保存される', () => {
-    const run = new RogueliteRun(1, ROGUE_STARTERS[0]);
-    run.gold = 1000;
-    run.buyGateUpgrade(0);
-    run.toggleRelic(0);
-    const copy = RogueliteRun.fromState(JSON.parse(JSON.stringify(run.toState())));
-    expect(copy.relics).toEqual(run.relics);
+  it('演出は2秒以内に終わり、その間は制限時間も行動も進まず、終わると0秒から始まる', () => {
+    const { battle, rules } = setup();
+    battle.timeLimitSeconds = 90;
+    const u = battle.units.find((x) => x.team === 0)!;
+    const startX = u.pelvis.pos.x;
+    battle.beginCombat(new RogueGateSequence(battle, rules, GATES.slice(0, 2), createSeededRng(1)));
+    expect(battle.aiEnabled).toBe(false);
+    for (let i = 0; i < 60; i++) {
+      battle.step(battle.fixedDt);
+      expect(battle.time).toBe(0);
+    }
+    expect(battle.aiEnabled).toBe(false);
+    const steps = runToEnd(battle) + 60;
+    expect(steps * battle.fixedDt).toBeLessThanOrEqual(GATE_SEQUENCE_MAX_SECONDS + 0.02);
+    expect(battle.aiEnabled).toBe(true);
+    expect(battle.time).toBeLessThanOrEqual(battle.fixedDt);
+    void startX;
+  });
+
+  it('ゲートが通過した兵から順に強化され、ゲートは最後に消える', () => {
+    const { battle, rules } = setup();
+    battle.beginCombat(new RogueGateSequence(battle, rules, [{ id: 'giant_gate', level: 3, active: true }], createSeededRng(1)));
+    battle.step(battle.fixedDt);
+    expect(battle.facilities.filter((f) => f.isEnchantGate).length).toBe(1);
+    const counts: number[] = [];
+    for (let i = 0; i < 80 && battle.opening; i++) {
+      battle.step(battle.fixedDt);
+      counts.push(battle.units.filter((u) => u.team === 0 && u.scale > 1.5).length);
+    }
+    expect(counts.some((c) => c > 0 && c < 6)).toBe(true);
+    runToEnd(battle);
+    expect(battle.units.filter((u) => u.team === 0).every((u) => u.scale > 1.5)).toBe(true);
+    expect(battle.facilities.length).toBe(0);
+  });
+
+  it('隊列より大きいゲートは柱の当たり判定を持たず、幅が隊列を覆う', () => {
+    const { battle, rules } = setup();
+    battle.beginCombat(new RogueGateSequence(battle, rules, [{ id: 'fire_gate', level: 0, active: true }], createSeededRng(1)));
+    battle.step(battle.fixedDt);
+    const gate = battle.facilities[0];
+    expect(gate.obstacles.length).toBe(0);
+    expect(gate.gateOpening).toBeGreaterThanOrEqual(28);
+  });
+
+  it('属性の見た目は複製にも付き、敵には付かない', () => {
+    const { battle, rules } = setup(3);
+    applyRogueGates(battle, rules, [
+      { id: 'multiplier_gate', level: 3, active: true },
+      { id: 'venom_gate', level: 0, active: true },
+    ], createSeededRng(2));
+    const red = battle.units.filter((u) => u.team === 0);
+    expect(red.length).toBe(6);
+    expect(red.every((u) => u.elementInfusion === 'poison')).toBe(true);
+    expect(battle.units.find((u) => u.team === 1)!.elementInfusion).toBeNull();
+  });
+
+  it('ゲートがなければ演出なしで即座に開戦する', () => {
+    const { battle } = setup();
+    battle.beginCombat(null);
+    expect(battle.aiEnabled).toBe(true);
+    expect(battle.opening).toBeNull();
+  });
+});
+
+describe('ローグライト v3: カードのボクセルモデル', () => {
+  it('全兵種が歩き続けても崩れず、原点から離れない', async () => {
+    const { UnitPreviewActor } = await import('../src/render/UnitPreviews');
+    for (const ut of UNIT_TYPE_LIST) {
+      const actor = new UnitPreviewActor(ut.id);
+      actor.hop();
+      for (let i = 0; i < 90; i++) actor.advance(1 / 30);
+      for (const p of actor.world.particles) {
+        expect([ut.id, Number.isFinite(p.pos.x + p.pos.y + p.pos.z)]).toEqual([ut.id, true]);
+        expect(Math.abs(p.pos.x)).toBeLessThan(40);
+      }
+      expect(Math.hypot(actor.unit.pelvis.pos.x, actor.unit.pelvis.pos.z)).toBeLessThan(0.01);
+      expect(actor.unit.alive).toBe(true);
+    }
   });
 });
 

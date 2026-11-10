@@ -39,6 +39,11 @@ export interface BattleRules {
   onUnitDerived?(battle: Battle, unit: Unit, parent: Unit): void;
 }
 
+/** 開戦時に戦闘の前へ差し込む演出。続いている間は update が true を返す */
+export interface BattleOpening {
+  update(dt: number): boolean;
+}
+
 /**
  * 戦場のロジック全体（描画に依存しない）。
  * 物理ワールド・ユニット・施設・戦闘システムを固定タイムステップで進める。
@@ -55,6 +60,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   aiEnabled = false;
   /** 開戦前に進軍門が滑っている最中か */
   gateMarching = false;
+  /** 開戦演出。終わるまで戦闘は始まらず、制限時間も進まない */
+  opening: BattleOpening | null = null;
   /** 経過シミュレーション時間（秒） */
   time = 0;
   /** ステージ限定ルール: 制限時間（秒。null なら無制限） */
@@ -123,7 +130,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
   /** スライム死亡時の分裂子スライムを生成する */
   spawnSplitSlime(parent: Unit, x: number, z: number, splitGen: number): Unit {
     const scaleOverride = splitGen === 1 ? 0.9 : 0.55;
-    const hpOverride = splitGen === 1 ? 90 : 35;
+    const hpOverride = Math.round((splitGen === 1 ? 90 : 35) * parent.levelHpMul);
     const groundY = this.world.getSlopeHeightAt(x, z);
     const unit = new Unit(
       this.world,
@@ -293,7 +300,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
   }
 
   /** 戦闘を開始する。配置中に進んだ時間は制限時間に含めない */
-  beginCombat(): void {
+  beginCombat(opening: BattleOpening | null = null): void {
     this.resetProgress();
     // 進軍門があれば、門が滑り終わるまで全軍を待機させる
     for (const f of this.facilities) {
@@ -301,7 +308,15 @@ export class Battle implements UnitContext, FacilityBattleContext {
       f.startMarch();
       this.gateMarching = true;
     }
-    this.aiEnabled = !this.gateMarching;
+    this.opening = opening;
+    this.aiEnabled = !this.gateMarching && !opening;
+  }
+
+  private updateOpening(dt: number): void {
+    if (this.opening?.update(dt)) return;
+    this.opening = null;
+    this.time = 0;
+    this.aiEnabled = true;
   }
 
   /** 進軍門を進める。すべて滑り終えたら戦闘を始める（待機中の時間は制限時間に含めない） */
@@ -318,6 +333,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   private resetProgress(): void {
     this.gateMarching = false;
+    this.opening = null;
     this.time = 0;
     this.accumulator = 0;
     this.hazardTimer = 0;
@@ -372,7 +388,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
       Math.sin(angle) * speed,
       (dz / dh) * Math.cos(angle) * speed,
     );
-    this.combat.fireCannonBall(facility.team, from, vel, 65);
+    this.combat.fireCannonBall(facility.team, from, vel, 65 * facility.cannonDamageMul);
   }
 
   emitEffect(effect: CombatEffectEvent): void {
@@ -397,6 +413,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   step(dt: number): void {
     if (this.gateMarching) this.updateGateMarch(dt);
+    if (this.opening) this.updateOpening(dt);
 
     // ステップ開始時に各ユニットのバフ状態をリセット（ステージ限定のベース倍率を反映）
     for (const u of this.units) {
@@ -438,7 +455,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.world.step(dt);
     this.combat.processContacts(this.world.contacts, dt);
     this.combat.updateArrows(dt, this.units, this.world.obstacles, this.facilities);
-    this.time += dt;
+    if (!this.opening) this.time += dt;
   }
 
   /** ステージ状態異常（31面〜）の周期・常時効果を適用する */
@@ -658,6 +675,7 @@ function copyDerivedState(from: Unit, to: Unit): void {
   to.permVulnerabilityMul = from.permVulnerabilityMul;
   to.knockbackMul = from.knockbackMul;
   to.elementInfusion = from.elementInfusion;
+  to.levelHpMul = from.levelHpMul;
   to.grantedTags = [...from.grantedTags];
   for (const id of from.gatesPassed) to.gatesPassed.add(id);
 }

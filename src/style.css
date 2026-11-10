@@ -2847,3 +2847,121 @@ body.on-title #btn-restore-hud {
 .rogue-modal-inner {
   box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.45), 6px 6px 0 rgba(0, 0, 0, 0.55);
 }
+
+/* ---- 作戦室とカードのボクセルモデル ---- */
+.rogue-modal-inner.rogue-war-room {
+  width: min(96vw, 980px);
+  padding-bottom: 0;
+}
+
+.unit-voxel {
+  position: relative;
+  display: block;
+  width: 96px;
+  height: 96px;
+  flex: none;
+  margin: 0 auto;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 62%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.02) 70%);
+}
+
+.unit-voxel canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.unit-voxel .unit-portrait-svg {
+  position: absolute;
+  inset: 22%;
+  width: 56%;
+  height: 56%;
+}
+
+.unit-voxel.ready canvas { opacity: 1; }
+.unit-voxel.ready .unit-portrait-svg { display: none; }
+
+.rogue-unit-chip .unit-voxel {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+
+.rogue-unit-chip .unit-voxel .unit-portrait-svg {
+  width: 56%;
+  height: 56%;
+}
+
+.rogue-deck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.rogue-deck-card {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: rgba(30, 36, 48, 0.92);
+}
+
+.rogue-deck-card:not(.in-deck) {
+  background: rgba(30, 36, 48, 0.55);
+}
+
+.rogue-deck-card.rarity-rare { border-color: rgba(77, 171, 247, 0.7); }
+.rogue-deck-card.rarity-legendary { border-color: rgba(255, 168, 0, 0.9); }
+
+.deck-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.deck-card-meta {
+  font-size: 11.5px;
+  color: #ced4da;
+}
+
+.deck-card-meta b {
+  color: #ffd43b;
+}
+
+.deck-card-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+}
+
+.deck-up small {
+  display: block;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.rogue-relic-row .rogue-card-icon .unit-portrait-svg,
+.rogue-relic-row .rogue-card-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.rogue-room-actions {
+  position: sticky;
+  bottom: 0;
+  justify-content: flex-end;
+  padding: 10px 0 14px;
+  background: linear-gradient(to top, rgba(15, 20, 30, 1) 75%, rgba(15, 20, 30, 0));
+}
+
+@media (max-width: 640px) {
+  .rogue-deck-grid { grid-template-columns: 1fr; }
+  .unit-voxel { width: 80px; height: 80px; }
+}

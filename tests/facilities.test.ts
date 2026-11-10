@@ -210,3 +210,18 @@ describe('施設システム (Facilities)', () => {
     expect(battle.world.pits.length).toBe(0);
   });
 });
+
+describe('ゲートの見た目', () => {
+  it('開口が広がっても発生装置は伸びず、間隔と網の幅だけが変わる', async () => {
+    const { EnergyGateVisual } = await import('../src/render/EnergyGateVisual');
+    const narrow = new EnergyGateVisual('fire_gate', 0, 1.2, 1);
+    const wide = new EnergyGateVisual('fire_gate', 0, 15, 1);
+    const pylon = (v: InstanceType<typeof EnergyGateVisual>, i: number) => v.root.children[i];
+    expect(pylon(wide, 0).scale.x).toBe(pylon(narrow, 0).scale.x);
+    expect(wide.body.geometry.getAttribute('position').count).toBe(narrow.body.geometry.getAttribute('position').count);
+    expect(pylon(wide, 0).position.x).toBeCloseTo(-15);
+    expect(pylon(wide, 1).position.x).toBeCloseTo(15);
+    expect(wide.netWidth).toBeGreaterThan(narrow.netWidth + 25);
+    wide.update(1, 0.5);
+  });
+});

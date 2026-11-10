@@ -184,6 +184,16 @@ export const GATE_TYPE_IDS: readonly FacilityTypeId[] = [
 
 /** 門のサイズ段階ごとの開口幅（m）。0=小門, 1=中門, 2=大門, 3=凱旋門 */
 export const GATE_OPENING_WIDTHS: readonly number[] = [1.7, 3.0, 5.0, 8.0];
+/** 加護のトーテムのレベルごとの効果半径（m） */
+export const TOTEM_RADIUS_BY_LEVEL: readonly number[] = [6.8, 8.5, 10.5, 13];
+/** 加護のトーテムのレベルごとの毎秒回復量 */
+export const TOTEM_HEAL_BY_LEVEL: readonly number[] = [7.5, 10, 13, 17];
+/** 防衛砲台のレベルごとの砲弾の威力倍率 */
+export const CANNON_DAMAGE_BY_LEVEL: readonly number[] = [1, 1.3, 1.7, 2.2];
+/** 召喚ポータルのレベルごとの召喚間隔（秒） */
+export const BARRACKS_INTERVAL_BY_LEVEL: readonly number[] = [4.5, 3.8, 3.1, 2.4];
+/** 門以外のレリックのレベルごとの耐久力倍率 */
+export const RELIC_HP_BY_LEVEL: readonly number[] = [1, 1.3, 1.6, 2];
 /** 門のサイズ段階の名前 */
 export const GATE_SIZE_NAMES: readonly string[] = ['小門', '中門', '大門', '凱旋門'];
 /** 門のサイズ段階ごとの耐久力 */
