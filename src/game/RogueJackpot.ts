@@ -1,7 +1,7 @@
 import { Vector3 } from 'three';
 import type { Unit } from '../units/Unit';
 import type { Battle } from './Battle';
-import { ROGUE_MAX_LIVES, type RogueRoundKind, type RogueliteRun } from './RogueliteMode';
+import type { RogueRoundKind, RogueliteRun } from './RogueliteMode';
 
 /** レア度。0=コモン, 1=レア, 2=エピック, 3=レジェンド */
 export type JackpotRarity = 0 | 1 | 2 | 3;
@@ -45,7 +45,6 @@ export type JackpotEffect =
   | { kind: 'gold'; amount: number }
   | { kind: 'score'; amount: number }
   | { kind: 'reroll' }
-  | { kind: 'life' }
   | { kind: 'heal'; ratio: number }
   | { kind: 'buff'; damage?: number; speed?: number; guard?: number }
   | { kind: 'clone'; count: number }
@@ -75,7 +74,6 @@ export const JACKPOT_REWARDS: readonly JackpotReward[] = [
   { id: 'reinforce', name: '援軍', detail: '味方3体を複製', icon: '👥', rarity: 1, scope: 'battle', effect: { kind: 'clone', count: 3 } },
   { id: 'smite', name: '天罰', detail: '敵全体に雷撃', icon: '⚡', rarity: 1, scope: 'battle', effect: { kind: 'smite', ratio: 0.25, cap: 300 } },
   { id: 'budget_l', name: '黄金の山', detail: 'ゴールド +120G', icon: '🏆', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 120 } },
-  { id: 'life', name: '命の欠片', detail: 'ライフ +1', icon: '❤️', rarity: 2, scope: 'run', effect: { kind: 'life' } },
   { id: 'overdrive', name: 'オーバードライブ', detail: '攻撃 +50% 速度 +30%', icon: '🔥', rarity: 2, scope: 'battle', effect: { kind: 'buff', damage: 1.5, speed: 1.3 } },
   { id: 'budget_xl', name: '大財宝', detail: 'ゴールド +250G', icon: '👑', rarity: 3, scope: 'run', effect: { kind: 'gold', amount: 250 } },
   { id: 'army', name: '全軍複製', detail: '味方を最大16体複製', icon: '🌟', rarity: 3, scope: 'battle', effect: { kind: 'clone', count: MAX_CLONES_PER_REWARD } },
@@ -130,17 +128,13 @@ export class JackpotDropTracker {
 
 export interface JackpotRollContext {
   rng: () => number;
-  /** ライフに空きがあるか */
-  canGainLife: boolean;
   /** 戦闘が続いているか（決着の一撃ならランに残る報酬だけを出す） */
   battleActive: boolean;
 }
 
 /** 宝箱の中身を抽選する。リールの数だけ返し、最後に止まるリールが一番豪華になるよう昇順に並べる */
 export function rollJackpot(tier: ChestTier, ctx: JackpotRollContext): JackpotReward[] {
-  let pool = JACKPOT_REWARDS.filter(
-    (r) => (ctx.battleActive || r.scope === 'run') && (ctx.canGainLife || r.effect.kind !== 'life'),
-  );
+  const pool = JACKPOT_REWARDS.filter((r) => ctx.battleActive || r.scope === 'run');
   const result: JackpotReward[] = [];
   for (let i = 0; i < CHEST_REEL_COUNTS[tier]; i++) {
     // 最初の1本は宝箱の格のぶんだけレア度を保証する
@@ -150,8 +144,6 @@ export function rollJackpot(tier: ChestTier, ctx: JackpotRollContext): JackpotRe
     const candidates = pool.filter((r) => r.rarity === rarity);
     const reward = candidates[Math.floor(ctx.rng() * candidates.length)];
     result.push(reward);
-    // ライフは1箱で1回まで
-    if (reward.effect.kind === 'life') pool = pool.filter((r) => r.effect.kind !== 'life');
   }
   return result.sort((a, b) => a.rarity - b.rarity);
 }
@@ -178,9 +170,6 @@ export function applyJackpotReward(
       break;
     case 'reroll':
       run.rerollsLeft++;
-      break;
-    case 'life':
-      run.lives = Math.min(ROGUE_MAX_LIVES, run.lives + 1);
       break;
     case 'heal':
       for (const u of allies) {

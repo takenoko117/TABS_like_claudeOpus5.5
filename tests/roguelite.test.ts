@@ -15,7 +15,6 @@ import {
   GATE_SEQUENCE_MAX_SECONDS,
   GATE_SHRINK_SPEED,
   ROGUE_FACILITY_POSITIONS,
-  ROGUE_MAX_LIVES,
   ROGUE_MAX_RELIC_SLOTS,
   ROGUE_MAX_UNIT_LEVEL,
   ROGUE_MAX_UNIT_SLOTS,
@@ -36,10 +35,12 @@ import {
   getRelicSlotPrice,
   gateEffectText,
   countTags,
-  generateComebackOptions,
   generateRewardOptions,
   generateRogueEnemyLineup,
-  getRogueConsolationGold,
+  getLossUnitRarityWeights,
+  getRarityWeights,
+  getRogueLossGold,
+  unitRarity,
   getRogueEnemyBudget,
   getRogueRoundIncome,
   getRogueWinBonus,
@@ -457,7 +458,7 @@ describe('ローグライト: ランの進行', () => {
     run.buyCardLevel('charger');
     run.buyUnitSlot();
     run.toggleDeck('ninja');
-    run.lossStreak = 1;
+    run.recordLoss(0, 0);
     const copy = RogueliteRun.fromState(JSON.parse(JSON.stringify(run.toState())));
     expect(copy.toState()).toEqual(run.toState());
   });
@@ -616,75 +617,117 @@ describe('ローグライト v3: レリックのレベル', () => {
   });
 });
 
-describe('ローグライト: 敗北時の打破策', () => {
-  it('残念賞は連敗で増える', () => {
-    expect([1, 2, 3, 4].map(getRogueConsolationGold)).toEqual([100, 200, 350, 350]);
-  });
-
-  it('負けると残念賞を受け取り、勝つと連敗がリセットされる', () => {
+describe('ローグライト: 敗北のルール', () => {
+  it('敗北のゴールドは勝利ボーナスの2倍', () => {
+    expect(getRogueLossGold(1)).toBe(getRogueWinBonus(1) * 2);
     const run = new RogueliteRun(5);
+    run.round = 7;
     const gold = run.gold;
-    expect(run.recordLoss(0, 0)).toBe(100);
-    expect(run.gold).toBe(gold + 100);
-    expect(run.lossStreak).toBe(1);
-    run.recordWin(1, 0, 0);
-    expect(run.lossStreak).toBe(0);
-    run.chooseReward(null);
-    expect(run.recordLoss(0, 0)).toBe(100);
+    expect(run.recordLoss(0, 0)).toBe(getRogueWinBonus(7) * 2);
+    expect(run.gold).toBe(gold + getRogueWinBonus(7) * 2);
   });
 
-  it('2連敗の直後は起死回生の3択になり、選ぶと次のラウンドは通常に戻る', () => {
+  it('敗北後は報酬の3択を2回受け取ってから次へ進み、勝利後は1回', () => {
     const run = new RogueliteRun(5);
     run.recordLoss(0, 0);
-    expect(run.pendingRewards).toBeNull();
-    run.advanceRound();
-    expect(run.recordLoss(0, 0)).toBe(200);
-    expect(run.comebackPending).toBe(true);
+    expect(run.lossRewardPicks).toBe(2);
     expect(run.pendingRewards?.length).toBe(3);
     run.chooseReward(run.pendingRewards![0]);
-    expect(run.comebackPending).toBe(false);
-  });
-
-  it('起死回生の引き直しも起死回生の候補から出る', () => {
-    const run = new RogueliteRun(5);
-    run.recordLoss(0, 0);
-    run.recordLoss(0, 0);
-    expect(run.reroll()).toBe(true);
-    expect(run.comebackPending).toBe(true);
-    for (const o of run.pendingRewards!) expect(['free_unit', 'gold', 'life', 'relic']).toContain(o.kind);
-  });
-
-  it('ライフが尽きる敗北では起死回生も残念賞も出ない', () => {
-    const run = new RogueliteRun(5);
-    run.lives = 2;
-    run.recordLoss(0, 0);
-    expect(run.recordLoss(0, 0)).toBe(0);
-    expect(run.ended).toBe(true);
+    expect(run.lossRewardPicks).toBe(1);
+    expect(run.pendingRewards?.length).toBe(3);
+    run.chooseReward(null);
+    expect(run.lossRewardPicks).toBe(0);
+    expect(run.pendingRewards).toBeNull();
+    run.advanceRound();
+    run.recordWin(1, 0, 0);
+    run.chooseReward(null);
     expect(run.pendingRewards).toBeNull();
   });
 
-  it('起死回生の強ユニットは未所持なら獲得、所持済みならレベル +2', () => {
-    const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
-    run.round = 8;
-    run.lives = 1;
-    run.unitSlots = 6;
-    const seen = new Set<string>();
-    for (let i = 0; i < 40; i++) {
-      for (const o of generateComebackOptions(run, createSeededRng(i))) seen.add(o.kind);
+  it('敗北後の抽選はユニットのレア以上が出やすい', () => {
+    const rareShare = ([c, r, l]: [number, number, number]) => (r + l) / (c + r + l);
+    for (const round of [1, 5, 10]) {
+      expect(rareShare(getLossUnitRarityWeights(round))).toBeGreaterThan(rareShare(getRarityWeights(round)));
     }
-    expect([...seen].sort()).toEqual(['free_unit', 'gold', 'life', 'relic']);
-    applyReward(run, { kind: 'free_unit', rarity: 'rare', title: '', description: '', unitId: 'samurai' });
-    expect(run.card('samurai')!.level).toBe(1);
-    applyReward(run, { kind: 'free_unit', rarity: 'rare', title: '', description: '', unitId: 'samurai' });
-    expect(run.card('samurai')!.level).toBe(3);
+    const countRare = (picks: number) => {
+      const run = new RogueliteRun(5, ROGUE_STARTERS[0]);
+      run.unitSlots = 12;
+      run.lossRewardPicks = picks;
+      let rare = 0;
+      for (let i = 0; i < 400; i++) {
+        for (const o of generateRewardOptions(run, createSeededRng(i))) {
+          if (o.unitId && unitRarity(o.unitId) !== 'common') rare++;
+        }
+      }
+      return rare;
+    };
+    expect(countRare(2)).toBeGreaterThan(countRare(0));
   });
 
-  it('ライフが満タンなら起死回生にライフは出ない', () => {
+  it('通算3敗で勝ちを挟んでも終了し、最後の敗北では報酬もゴールドも出ない', () => {
     const run = new RogueliteRun(5);
-    run.lives = ROGUE_MAX_LIVES;
-    for (let i = 0; i < 40; i++) {
-      expect(generateComebackOptions(run, createSeededRng(i)).some((o) => o.kind === 'life')).toBe(false);
-    }
+    run.recordLoss(0, 0);
+    run.chooseReward(null);
+    run.chooseReward(null);
+    run.advanceRound();
+    run.recordWin(1, 0, 0);
+    run.chooseReward(null);
+    run.advanceRound();
+    run.recordLoss(0, 0);
+    run.chooseReward(null);
+    run.chooseReward(null);
+    run.advanceRound();
+    expect(run.ended).toBe(false);
+    const gold = run.gold;
+    expect(run.recordLoss(0, 0)).toBe(0);
+    expect(run.gold).toBe(gold);
+    expect(run.ended).toBe(true);
+    expect(run.endReason).toBe('defeat');
+    expect(run.pendingRewards).toBeNull();
+  });
+
+  it('エリートに勝ってもライフは回復しない', () => {
+    const run = new RogueliteRun(5);
+    run.recordLoss(0, 0);
+    run.round = 5;
+    run.lossRewardPicks = 0;
+    run.recordWin(1, 0, 0);
+    expect(run.lives).toBe(ROGUE_START_LIVES - 1);
+  });
+
+  it('ユニット枠 +1 はエリートの勝利後だけで、敗北後には出ない', () => {
+    const run = new RogueliteRun(5);
+    run.round = 5;
+    run.recordWin(1, 0, 0);
+    expect(run.pendingRewards!.some((o) => o.kind === 'unit_slot')).toBe(true);
+    const lost = new RogueliteRun(5);
+    lost.round = 5;
+    lost.recordLoss(0, 0);
+    expect(lost.pendingRewards!.some((o) => o.kind === 'unit_slot')).toBe(false);
+  });
+
+  it('最終ラウンドで負けてもラウンドは進まず、同じボスに再挑戦する', () => {
+    const run = new RogueliteRun(5);
+    run.round = ROGUE_FINAL_ROUND;
+    run.recordLoss(0, 0);
+    run.chooseReward(null);
+    run.chooseReward(null);
+    const gold = run.gold;
+    run.advanceRound();
+    expect(run.round).toBe(ROGUE_FINAL_ROUND);
+    expect(run.gold).toBe(gold + getRogueRoundIncome(ROGUE_FINAL_ROUND));
+    expect(run.ended).toBe(false);
+    run.recordWin(1, 0, 0);
+    expect(run.endReason).toBe('clear');
+  });
+
+  it('報酬の途中で保存しても残り回数が戻る', () => {
+    const run = new RogueliteRun(5);
+    run.recordLoss(0, 0);
+    run.chooseReward(null);
+    const copy = RogueliteRun.fromState(JSON.parse(JSON.stringify(run.toState())));
+    expect(copy.lossRewardPicks).toBe(1);
+    expect(copy.pendingRewards).toEqual(run.pendingRewards);
   });
 });
 

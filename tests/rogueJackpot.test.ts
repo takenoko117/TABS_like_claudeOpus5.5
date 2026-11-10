@@ -11,7 +11,7 @@ import {
   type ChestTier,
   type JackpotReward,
 } from '../src/game/RogueJackpot';
-import { ROGUE_MAX_LIVES, RogueliteRun } from '../src/game/RogueliteMode';
+import { RogueliteRun } from '../src/game/RogueliteMode';
 import { JACKPOT_ICONS, JACKPOT_ICON_PALETTE, JACKPOT_ICON_SIZE } from '../src/render/JackpotIcons';
 
 function seeded(seed: number): () => number {
@@ -97,7 +97,7 @@ describe('ボーナス: 宝箱のドロップ', () => {
 });
 
 describe('ボーナス: 抽選', () => {
-  const base = { canGainLife: true, battleActive: true };
+  const base = { battleActive: true };
 
   it('リールの数は宝箱の格で決まり、昇順で最後が一番豪華', () => {
     const rng = seeded(1);
@@ -113,16 +113,12 @@ describe('ボーナス: 抽選', () => {
   it('決着の一撃ではランに残る報酬だけが出る', () => {
     const rng = seeded(2);
     for (let i = 0; i < 300; i++) {
-      for (const r of rollJackpot(2, { rng, canGainLife: true, battleActive: false })) expect(r.scope).toBe('run');
+      for (const r of rollJackpot(2, { rng, battleActive: false })) expect(r.scope).toBe('run');
     }
   });
 
-  it('ライフは満タンなら出ず、1箱で1回まで', () => {
-    const rng = seeded(3);
-    for (let i = 0; i < 500; i++) {
-      expect(rollJackpot(2, { rng, canGainLife: false, battleActive: true }).some((r) => r.effect.kind === 'life')).toBe(false);
-      expect(rollJackpot(2, { ...base, rng }).filter((r) => r.effect.kind === 'life').length).toBeLessThanOrEqual(1);
-    }
+  it('宝箱にライフ回復はない', () => {
+    expect(JACKPOT_REWARDS.some((r) => r.detail.includes('ライフ'))).toBe(false);
   });
 });
 
@@ -134,18 +130,14 @@ describe('ボーナス: 効果', () => {
     return { battle, ally, enemy, run: new RogueliteRun(1) };
   };
 
-  it('ゴールド・ライフ・引き直しはランに残る', () => {
+  it('ゴールド・引き直しはランに残る', () => {
     const { battle, run } = setup();
     const gold = run.gold;
     const rerolls = run.rerollsLeft;
-    run.lives = ROGUE_MAX_LIVES - 1;
     applyJackpotReward(reward('budget_xl'), battle, run);
     applyJackpotReward(reward('reroll'), battle, run);
-    applyJackpotReward(reward('life'), battle, run);
-    applyJackpotReward(reward('life'), battle, run);
     expect(run.gold).toBe(gold + 250);
     expect(run.rerollsLeft).toBe(rerolls + 1);
-    expect(run.lives).toBe(ROGUE_MAX_LIVES);
   });
 
   it('予算系の報酬はすべてゴールドに置き換わっている', () => {

@@ -583,10 +583,12 @@ export const ROGUE_UNIT_LEVEL_STEP = 0.2;
 export const ROGUE_SQUAD_SLOT_VALUE = 300;
 /** 部隊の人数の上限 */
 export const ROGUE_MAX_SQUAD_SIZE = 8;
-/** 残念賞のゴールド（1敗目・2連敗・3連敗以降） */
-export const ROGUE_CONSOLATION_GOLD: readonly number[] = [100, 200, 350];
-/** 起死回生の3択が発動する連敗数 */
-export const ROGUE_COMEBACK_STREAK = 2;
+/** 敗北時のゴールドが、そのラウンドの勝利ボーナスの何倍か */
+export const ROGUE_LOSS_GOLD_MUL = 2;
+/** 敗北後に報酬の3択を受け取れる回数（勝利は1回） */
+export const ROGUE_LOSS_REWARD_PICKS = 2;
+/** 敗北後の報酬で、ユニットのレア度の重みに掛ける倍率 [コモン, レア, レジェンド] */
+export const ROGUE_LOSS_RARITY_MUL: readonly [number, number, number] = [0.5, 1.5, 3];
 /** ユニット枠の初回価格と、枠が増えるごとに上がる額 */
 export const ROGUE_UNIT_SLOT_BASE_PRICE = 200;
 export const ROGUE_UNIT_SLOT_PRICE_STEP = 100;
@@ -658,10 +660,9 @@ export function getRogueWinBonus(round: number): number {
   return roundGold(100 + 15 * round);
 }
 
-/** 連敗数に応じた残念賞ゴールド */
-export function getRogueConsolationGold(lossStreak: number): number {
-  const i = Math.max(1, lossStreak) - 1;
-  return ROGUE_CONSOLATION_GOLD[Math.min(i, ROGUE_CONSOLATION_GOLD.length - 1)];
+/** ラウンド敗北時に支給するゴールド */
+export function getRogueLossGold(round: number): number {
+  return getRogueWinBonus(round) * ROGUE_LOSS_GOLD_MUL;
 }
 
 /** レリック枠が slots 個のときの、次の枠の価格 */
@@ -825,7 +826,7 @@ export const ROGUE_RELIC_POOL: ReadonlyArray<{ id: FacilityTypeId; rarity: Rarit
   { id: 'cannon_tower', rarity: 'rare' },
 ];
 
-export type RewardKind = 'unit' | 'gold' | 'relic' | 'unit_slot' | 'free_unit' | 'life';
+export type RewardKind = 'unit' | 'gold' | 'relic' | 'unit_slot';
 
 export interface RewardOption {
   kind: RewardKind;
@@ -846,8 +847,14 @@ export function getRarityWeights(round: number): [number, number, number] {
   return [40, 45, 15];
 }
 
-function rollRarity(round: number, rng: () => number): Rarity {
+/** 敗北後の報酬でのユニットのレア度の出やすさ [コモン, レア, レジェンド] */
+export function getLossUnitRarityWeights(round: number): [number, number, number] {
   const [c, r, l] = getRarityWeights(round);
+  const [cm, rm, lm] = ROGUE_LOSS_RARITY_MUL;
+  return [c * cm, r * rm, l * lm];
+}
+
+function rollRarity([c, r, l]: readonly [number, number, number], rng: () => number): Rarity {
   const roll = rng() * (c + r + l);
   return roll < c ? 'common' : roll < c + r ? 'rare' : 'legendary';
 }
@@ -861,11 +868,6 @@ export function unitRarity(id: UnitTypeId): Rarity {
 /** ゴールド報酬の量（ラウンドが進むほど大きい） */
 export function getGoldRewardAmount(round: number): number {
   return Math.round((150 + 12 * round) / 50) * 50;
-}
-
-/** 起死回生の3択のゴールドの量 */
-export function getComebackGoldAmount(round: number): number {
-  return 300 + 50 * round;
 }
 
 function weightedPick<T>(items: readonly T[], weight: (t: T) => number, rng: () => number): T | undefined {
@@ -912,8 +914,7 @@ export interface RogueRunState {
   gold: number;
   cards: RogueCard[];
   unitSlots: number;
-  lossStreak: number;
-  comebackPending: boolean;
+  lossRewardPicks: number;
   relics: OwnedRelic[];
   relicSlots: number;
   rerollsLeft: number;
@@ -936,9 +937,8 @@ export class RogueliteRun {
   cards: RogueCard[] = [];
   unitSlots = ROGUE_START_UNIT_SLOTS;
   /** 現在の連敗数（勝利でリセット） */
-  lossStreak = 0;
-  /** 待っている報酬が起死回生の3択か */
-  comebackPending = false;
+  /** 敗北後の報酬の3択を、あと何回受け取れるか */
+  lossRewardPicks = 0;
   relics: OwnedRelic[] = [];
   relicSlots = ROGUE_START_RELIC_SLOTS;
   rerollsLeft = ROGUE_START_REROLLS;
@@ -1000,11 +1000,11 @@ export class RogueliteRun {
     return this.usedUnitSlots + getUnitSlotCost(id) <= this.unitSlots;
   }
 
-  /** カードを手に入れる。すでに持っていれば levels だけレベルが上がる */
-  gainUnit(id: UnitTypeId, levels = 1): void {
+  /** カードを手に入れる。すでに持っていればレベルが上がる */
+  gainUnit(id: UnitTypeId): void {
     const owned = this.card(id);
     if (owned) {
-      owned.level = Math.min(ROGUE_MAX_UNIT_LEVEL, owned.level + levels);
+      owned.level = Math.min(ROGUE_MAX_UNIT_LEVEL, owned.level + 1);
       return;
     }
     this.cards.push({ id, level: 1, inDeck: this.fitsInDeck(id) });
@@ -1146,11 +1146,9 @@ export class RogueliteRun {
     const gained = 1000 + Math.round(Math.max(0, Math.min(1, survivalRatio)) * 200);
     this.score += gained;
     this.clearedRounds++;
-    this.lossStreak = 0;
-    this.comebackPending = false;
+    this.lossRewardPicks = 0;
     this.gold += getRogueWinBonus(this.round);
     this.history.push({ round: this.round, won: true, damage, maxHit });
-    if (this.roundKind === 'elite') this.lives = Math.min(ROGUE_MAX_LIVES, this.lives + 1);
     if (this.round >= ROGUE_FINAL_ROUND) {
       this.score += this.lives * 500;
       this.endReason = 'clear';
@@ -1161,24 +1159,21 @@ export class RogueliteRun {
     return gained;
   }
 
-  /** ラウンド敗北を記録し、受け取った残念賞ゴールドを返す。ライフが尽きたらランは終わる */
+  /** ラウンド敗北を記録し、受け取ったゴールドを返す。通算で3回負けるとランは終わる */
   recordLoss(damage: number, maxHit: number): number {
     this.lives--;
-    this.lossStreak++;
     this.history.push({ round: this.round, won: false, damage, maxHit });
     this.pendingRewards = null;
-    this.comebackPending = false;
+    this.lossRewardPicks = 0;
     if (this.lives <= 0) {
       this.endReason = 'defeat';
       return 0;
     }
-    const consolation = getRogueConsolationGold(this.lossStreak);
-    this.gold += consolation;
-    if (this.lossStreak === ROGUE_COMEBACK_STREAK) {
-      this.comebackPending = true;
-      this.pendingRewards = this.drawRewards();
-    }
-    return consolation;
+    const gold = getRogueLossGold(this.round);
+    this.gold += gold;
+    this.lossRewardPicks = ROGUE_LOSS_REWARD_PICKS;
+    this.pendingRewards = this.drawRewards();
+    return gold;
   }
 
   finish(reason: RogueEndReason): void {
@@ -1188,9 +1183,10 @@ export class RogueliteRun {
 
   advanceRound(): void {
     if (this.ended) return;
-    this.round++;
+    // 最終ラウンドで負けたときは同じボスに再挑戦する
+    this.round = Math.min(ROGUE_FINAL_ROUND, this.round + 1);
     this.pendingRewards = null;
-    this.comebackPending = false;
+    this.lossRewardPicks = 0;
     this.gold += getRogueRoundIncome(this.round);
   }
 
@@ -1198,7 +1194,7 @@ export class RogueliteRun {
   drawRewards(): RewardOption[] {
     const rng = createSeededRng(Math.imul(this.seed ^ 0x27d4eb2d, 31) + this.rewardDraws * 7919 + this.round * 104729);
     this.rewardDraws++;
-    return this.comebackPending ? generateComebackOptions(this, rng) : generateRewardOptions(this, rng);
+    return generateRewardOptions(this, rng);
   }
 
   /** 3択を引き直す（回数制限あり） */
@@ -1209,7 +1205,7 @@ export class RogueliteRun {
     return true;
   }
 
-  /** 報酬を受け取る（null ならスキップしてゴールドを受け取る） */
+  /** 報酬を受け取る（null ならスキップしてゴールドを受け取る）。敗北後は続けて次の3択が出る */
   chooseReward(option: RewardOption | null): void {
     if (!this.pendingRewards) return;
     if (option === null) {
@@ -1217,8 +1213,8 @@ export class RogueliteRun {
     } else {
       applyReward(this, option);
     }
-    this.pendingRewards = null;
-    this.comebackPending = false;
+    this.lossRewardPicks = Math.max(0, this.lossRewardPicks - 1);
+    this.pendingRewards = this.lossRewardPicks > 0 ? this.drawRewards() : null;
   }
 
   toState(): RogueRunState {
@@ -1230,8 +1226,7 @@ export class RogueliteRun {
       gold: this.gold,
       cards: this.cards.map((c) => ({ ...c })),
       unitSlots: this.unitSlots,
-      lossStreak: this.lossStreak,
-      comebackPending: this.comebackPending,
+      lossRewardPicks: this.lossRewardPicks,
       relics: this.relics.map((r) => ({ ...r })),
       relicSlots: this.relicSlots,
       rerollsLeft: this.rerollsLeft,
@@ -1252,8 +1247,7 @@ export class RogueliteRun {
     run.gold = s.gold;
     run.cards = s.cards.filter((c) => c.id in UNIT_TYPES).map((c) => ({ ...c }));
     run.unitSlots = s.unitSlots;
-    run.lossStreak = s.lossStreak;
-    run.comebackPending = s.comebackPending;
+    run.lossRewardPicks = s.lossRewardPicks;
     run.relics = s.relics.filter((r) => r.id in FACILITY_TYPES);
     run.relicSlots = s.relicSlots;
     run.rerollsLeft = s.rerollsLeft;
@@ -1293,14 +1287,13 @@ function canOfferUnit(run: RogueliteRun, id: UnitTypeId): boolean {
   return getUnitSlotCost(id) <= run.unitSlots && (run.card(id)?.level ?? 0) < ROGUE_MAX_UNIT_LEVEL;
 }
 
-/** ユニットカードの報酬。すでに持っているカードなら levels だけレベルが上がる */
-function unitOption(run: RogueliteRun, id: UnitTypeId, kind: 'unit' | 'free_unit', levels: number): RewardOption {
+/** ユニットカードの報酬。すでに持っているカードならレベルが上がる */
+function unitOption(run: RogueliteRun, id: UnitTypeId): RewardOption {
   const owned = run.card(id);
   const title = UNIT_TYPES[id].name;
-  const base = { kind, rarity: unitRarity(id), unitId: id, title };
+  const base = { kind: 'unit' as const, rarity: unitRarity(id), unitId: id, title };
   if (owned) {
-    const next = Math.min(ROGUE_MAX_UNIT_LEVEL, owned.level + levels);
-    return { ...base, description: `持っているカードのレベルが上がる: Lv${owned.level} → Lv${next}（無料）` };
+    return { ...base, description: `持っているカードのレベルが上がる: Lv${owned.level} → Lv${owned.level + 1}（無料）` };
   }
   return { ...base, description: `枠 ${getUnitSlotCost(id)} ・ ${getSquadSize(id)}人の部隊を手に入れる` };
 }
@@ -1309,14 +1302,15 @@ function unitOption(run: RogueliteRun, id: UnitTypeId, kind: 'unit' | 'free_unit
 function pickUnitReward(run: RogueliteRun, rng: () => number, exclude: readonly UnitTypeId[]): RewardOption | null {
   const candidates = UNIT_TYPE_LIST.map((u) => u.id).filter((id) => canOfferUnit(run, id) && !exclude.includes(id));
   if (candidates.length === 0) return null;
-  const rarity = rollRarity(run.round, rng);
+  const weights = run.lossRewardPicks > 0 ? getLossUnitRarityWeights(run.round) : getRarityWeights(run.round);
+  const rarity = rollRarity(weights, rng);
   const band = candidates.filter((id) => unitRarity(id) === rarity);
   const tags = ownedTags(run);
   // ビルド寄せ: 今の軍とタグを共有する兵種が出やすい
   const weight = (id: UnitTypeId) =>
     costAffinity(id, run.round) * ((UNIT_TAGS[id] ?? []).some((t) => tags.has(t)) ? 2.5 : 1);
   const id = weightedPick(band.length > 0 ? band : candidates, weight, rng);
-  return id ? unitOption(run, id, 'unit', 1) : null;
+  return id ? unitOption(run, id) : null;
 }
 
 /** レリックの報酬を1枚引く。すでに持っているレリックならレベルが上がる */
@@ -1324,7 +1318,7 @@ function pickRelicReward(run: RogueliteRun, rng: () => number): RewardOption | n
   const levelOf = (id: FacilityTypeId) => run.relics.find((r) => r.id === id)?.level ?? -1;
   const pool = ROGUE_RELIC_POOL.filter((r) => levelOf(r.id) < MAX_GATE_LEVEL);
   if (pool.length === 0) return null;
-  const rarity = rollRarity(run.round, rng);
+  const rarity = rollRarity(getRarityWeights(run.round), rng);
   const band = pool.filter((r) => r.rarity === rarity);
   const tags = ownedTags(run);
   const pick = weightedPick(
@@ -1382,7 +1376,7 @@ const REWARD_RELIC_CHANCE = 0.55;
 
 /**
  * 3択の報酬を作る。1・2枠目はユニットカード、3枠目はレリックかゴールド。
- * エリートラウンドの後は3枠目がユニット枠に固定される。
+ * エリートラウンドの勝利後は3枠目がユニット枠に固定される。
  */
 export function generateRewardOptions(run: RogueliteRun, rng: () => number): RewardOption[] {
   const options: RewardOption[] = [];
@@ -1394,7 +1388,7 @@ export function generateRewardOptions(run: RogueliteRun, rng: () => number): Rew
     options.push(option);
   }
   const third =
-    (run.roundKind === 'elite' ? unitSlotReward(run) : null) ??
+    (run.roundKind === 'elite' && run.lossRewardPicks === 0 ? unitSlotReward(run) : null) ??
     (rng() < REWARD_RELIC_CHANCE ? pickRelicReward(run, rng) : null) ??
     goldReward(run);
   options.push(third);
@@ -1407,62 +1401,13 @@ export function generateRewardOptions(run: RogueliteRun, rng: () => number): Rew
   return options;
 }
 
-/** 起死回生で手に入れる強ユニット（そのラウンドで手が届く範囲の高コスト兵種から選ぶ） */
-function pickComebackUnit(run: RogueliteRun, rng: () => number): RewardOption | null {
-  const cap = Math.max(200, run.enemyBudget * 0.25);
-  const strong = UNIT_TYPE_LIST.filter((u) => u.cost <= cap && canOfferUnit(run, u.id))
-    .sort((a, b) => b.cost - a.cost)
-    .slice(0, 5);
-  const ut = strong[Math.floor(rng() * strong.length)];
-  return ut ? unitOption(run, ut.id, 'free_unit', 2) : null;
-}
-
-function comebackGoldReward(run: RogueliteRun): RewardOption {
-  const amount = getComebackGoldAmount(run.round);
-  return {
-    kind: 'gold',
-    rarity: 'rare',
-    amount,
-    title: `軍資金 +${amount}G`,
-    description: `所持ゴールドが ${run.gold} → ${run.gold + amount}G になる`,
-  };
-}
-
-function comebackLifeReward(run: RogueliteRun): RewardOption | null {
-  if (run.lives >= ROGUE_MAX_LIVES) return null;
-  return {
-    kind: 'life',
-    rarity: 'rare',
-    title: 'ライフ +1',
-    description: `ライフが ${run.lives} → ${run.lives + 1} になる`,
-  };
-}
-
-/** 2連敗の直後に出す起死回生の3択（候補のうち3つを出す） */
-export function generateComebackOptions(run: RogueliteRun, rng: () => number): RewardOption[] {
-  const candidates = [
-    pickComebackUnit(run, rng),
-    comebackGoldReward(run),
-    comebackLifeReward(run),
-    pickRelicReward(run, rng),
-  ].filter((o): o is RewardOption => o !== null);
-  const shuffled = candidates.map((o) => ({ o, key: rng() })).sort((a, b) => a.key - b.key);
-  return shuffled.slice(0, 3).map(({ o }) => o);
-}
-
 export function applyReward(run: RogueliteRun, option: RewardOption): void {
   switch (option.kind) {
     case 'unit':
-      if (option.unitId) run.gainUnit(option.unitId, 1);
-      break;
-    case 'free_unit':
-      if (option.unitId) run.gainUnit(option.unitId, 2);
+      if (option.unitId) run.gainUnit(option.unitId);
       break;
     case 'gold':
       run.gold += option.amount ?? 0;
-      break;
-    case 'life':
-      run.lives = Math.min(ROGUE_MAX_LIVES, run.lives + 1);
       break;
     case 'relic':
       if (option.relicId) run.gainRelic(option.relicId);
@@ -1490,8 +1435,9 @@ const LEGACY_RUN_KEYS: readonly string[] = [
   'tabs_voxel_roguelite_run_v1',
   'tabs_voxel_roguelite_run_v2',
   'tabs_voxel_roguelite_run_v3',
+  'tabs_voxel_roguelite_run_v4',
 ];
-const RUN_KEY = 'tabs_voxel_roguelite_run_v4';
+const RUN_KEY = 'tabs_voxel_roguelite_run_v5';
 
 function storage(): Storage | null {
   try {

@@ -46,6 +46,7 @@ import {
   ROGUE_STARTERS,
   ROGUE_TIME_LIMIT_SECONDS,
   ROGUE_BOSS_HP_MUL,
+  ROGUE_LOSS_GOLD_MUL,
   ROGUE_MAX_LIVES,
   RogueliteRules,
   RogueliteRun,
@@ -2502,7 +2503,7 @@ export class GameApp {
     }).join('');
     this.showRogueModal(`
       <div class="rogue-modal-title">🎲 ローグライト — スターター部隊を選ぶ</div>
-      <div class="rogue-modal-sub">ゴールド${ROGUE_START_GOLD}G・ライフ3で出撃。ユニットは報酬で集め、ゴールドで枠とレベルを強化します。出撃前にデッキを組み、全${ROGUE_FINAL_ROUND}ラウンドの突破を目指します。</div>
+      <div class="rogue-modal-sub">ゴールド${ROGUE_START_GOLD}G・ライフ3で出撃。通算3敗で終了します。ユニットは報酬で集め、ゴールドで枠とレベルを強化します。出撃前にデッキを組み、全${ROGUE_FINAL_ROUND}ラウンドの突破を目指します。</div>
       <div class="rogue-card-row">${cards}</div>
       <div class="rogue-modal-foot">ベスト: ${meta.bestScore.toLocaleString()}点 ／ 最高 ROUND ${meta.bestRound || '—'} ／ クリア ${meta.clears}回</div>
     `);
@@ -2650,7 +2651,6 @@ export class GameApp {
     if (!next || !run) return;
     const rewards = rollJackpot(next.tier, {
       rng: Math.random,
-      canGainLife: run.lives < ROGUE_MAX_LIVES,
       battleActive: this.battle.aliveCount(0) > 0 && this.battle.aliveCount(1) > 0,
     });
     this.view.addCameraShake(0.3);
@@ -2688,14 +2688,12 @@ export class GameApp {
       const round = run.round;
       const gained = run.recordWin(ratio, stats.total, stats.maxHit);
       saveRogueRun(run);
-      // ラン終了時も renderRoguePanel を待たずにハートを同期する（エリート勝利のライフ回復など）
-      this.view.syncRogueHearts(run.lives, ROGUE_MAX_LIVES);
       if (run.ended) {
         this.finishRogueRun('clear');
         return;
       }
       setVoxelText(this.elBannerText, `ROUND ${round} 突破！`, BANNER_VOXEL);
-      this.elBannerSub.textContent = `獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G${round === 5 || round === 10 ? ' ｜ ❤ ライフ回復' : ''}`;
+      this.elBannerSub.textContent = `獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
@@ -2704,7 +2702,7 @@ export class GameApp {
       }
     } else {
       const round = run.round;
-      const consolation = run.recordLoss(stats.total, stats.maxHit);
+      const lossGold = run.recordLoss(stats.total, stats.maxHit);
       saveRogueRun(run);
       // ラン終了（ライフ消尽）時も、最後のハートが割れるアニメーションを見せるためここで同期する
       this.view.syncRogueHearts(run.lives, ROGUE_MAX_LIVES);
@@ -2713,11 +2711,11 @@ export class GameApp {
         return;
       }
       setVoxelText(this.elBannerText, `ROUND ${round} 敗北…`, BANNER_VOXEL);
-      this.elBannerSub.textContent = `ライフ -1（残り ${'❤'.repeat(run.lives)}）｜ 💰 残念賞 +${consolation}G${run.lossStreak >= 2 ? `（${run.lossStreak}連敗）` : ''}`;
+      this.elBannerSub.textContent = `ライフ -1（残り ${'❤'.repeat(run.lives)}）｜ 💰 +${lossGold}G（勝利の${ROGUE_LOSS_GOLD_MUL}倍）｜ 🛟 報酬${run.lossRewardPicks}回`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
-        this.elNextStageBtn.textContent = run.comebackPending ? '🛟 起死回生の3択へ (Space)' : `▶ ROUND ${round + 1} へ (Space)`;
+        this.elNextStageBtn.textContent = '🛟 逆転の報酬を選ぶ (Space)';
         this.elNextStageBtn.classList.remove('hidden');
       }
     }
@@ -2804,8 +2802,8 @@ export class GameApp {
         </button>`;
       })
       .join('');
-    const title = run.comebackPending
-      ? `🛟 起死回生の3択 — ${run.lossStreak}連敗からの立て直し`
+    const title = run.lossRewardPicks > 0
+      ? `🛟 逆転の報酬 — あと${run.lossRewardPicks}回選べる（レアユニット出現率アップ）`
       : `🎁 報酬を1つ選ぶ — ROUND ${run.round} 突破`;
     this.showRogueModal(`
       <div class="rogue-modal-title">${title}</div>
@@ -2823,6 +2821,12 @@ export class GameApp {
     if (!run?.pendingRewards) return;
     run.chooseReward(option);
     if (option?.unitId && run.card(option.unitId)?.inDeck) this.selectedId = option.unitId;
+    if (run.pendingRewards) {
+      saveRogueRun(run);
+      this.sound.playPlace();
+      this.showRogueRewards();
+      return;
+    }
     run.advanceRound();
     saveRogueRun(run);
     this.sound.playPlace();
@@ -3150,7 +3154,7 @@ export class GameApp {
         <span class="brief-badge-label">敵軍編成:</span>
         ${this.renderEnemyChips(enemies)}
       </div>
-      <div class="brief-hint">デッキのカードが部隊で自動出撃します。倒れてもカードは失われません。ゲートは開戦時に全員に効きます。負けるとライフ-1で残念賞、2連敗で起死回生の3択。時間切れは生き残った合計コストで判定します。ラウンド5・10はエリート、${ROGUE_FINAL_ROUND}はボスです。</div>
+      <div class="brief-hint">デッキのカードが部隊で自動出撃します。倒れてもカードは失われません。ゲートは開戦時に全員に効きます。通算3敗でラン終了。負けると勝利の2倍のゴールドと、レアユニットが出やすい報酬の3択を2回受け取れます。時間切れは生き残った合計コストで判定します。ラウンド5・10はエリート、${ROGUE_FINAL_ROUND}はボスです。</div>
     `;
     this.rogueTagKey = this.computeRogueTagKey();
   }
@@ -3582,8 +3586,8 @@ export class GameApp {
           this.elStartBtn.textContent = this.rogue?.endReason === 'clear' ? 'RUN CLEAR' : 'GAME OVER';
           this.elStartBtn.disabled = true;
         } else if (this.announcedResult !== null) {
-          this.elStartBtn.textContent = this.rogue.comebackPending
-            ? '🛟 起死回生の3択へ (Space)'
+          this.elStartBtn.textContent = this.rogue.lossRewardPicks > 0
+            ? '🛟 逆転の報酬を選ぶ (Space)'
             : this.rogue.pendingRewards
               ? '🎁 報酬を選ぶ (Space)'
               : '▶ 次のラウンドへ (Space)';
