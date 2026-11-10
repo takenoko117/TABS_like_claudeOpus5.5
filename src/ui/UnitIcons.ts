@@ -974,6 +974,14 @@ export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
       return gateIconSvg('#b0bccc', '守');
     case 'impact_gate':
       return gateIconSvg('#e0c090', '衝');
+    case 'rebirth_gate':
+      return gateIconSvg('#7ee0a8', '転');
+    case 'samsara_gate':
+      return gateIconSvg('#ffe08a', '輪');
+    case 'blast_gate':
+      return gateIconSvg('#ff8a3d', '爆');
+    case 'magnet_gate':
+      return gateIconSvg('#c48aff', '磁');
 
     case 'cannon_tower':
       // 防衛キャノン砲台: 円柱石積みタワーと突き出る大砲

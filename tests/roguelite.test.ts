@@ -889,7 +889,9 @@ describe('ローグライト v2: ゲートの全員適用', () => {
     const { battle, rules } = setup(2);
     applyRogueGates(battle, rules, [{ id: 'shrink_gate', level: 3, active: true }]);
     expect(red(battle)[0].permSpeedMul).toBeCloseTo(GATE_SHRINK_SPEED[3]);
-    expect(red(battle)[0].scale).toBeCloseTo(0.6);
+    expect(red(battle)[0].scale).toBeCloseTo(0.5);
+    // HP は減らない（速度とサイズだけが変わる）
+    expect(red(battle)[0].maxHp).toBeCloseTo(UNIT_TYPES.clubber.hp);
   });
 
   it('複製には巨大化が引き継がれる', () => {
@@ -899,7 +901,10 @@ describe('ローグライト v2: ゲートの全員適用', () => {
       { id: 'giant_gate', level: 3, active: true },
     ]);
     expect(red(battle).length).toBe(4);
-    for (const u of red(battle)) expect(u.scale).toBeCloseTo(1.6);
+    for (const u of red(battle)) {
+      expect(u.scale).toBeCloseTo(1.8);
+      expect(u.knockbackResist).toBeLessThan(1);
+    }
   });
 
   it('ゲートはシナジーの数に入らない', () => {
@@ -913,7 +918,7 @@ describe('ローグライト v2: ゲートの全員適用', () => {
     for (const u of red(battle)) expect(u.grantedTags).not.toContain('giant');
   });
 
-  it('属性ゲートは重ねられ、レベルで持続が伸びる', () => {
+  it('属性ゲートは重ねられ、炎はレベルで燃焼ダメージが伸びる（持続は固定）', () => {
     const { battle, rules } = setup(1);
     battle.aiEnabled = true;
     battle.combat.damageListeners.push((e) => rules.onDamage(e));
@@ -924,8 +929,11 @@ describe('ローグライト v2: ゲートの全員適用', () => {
     const attacker = red(battle)[0];
     const enemy = battle.spawnUnit('giant', 1, 12, 4);
     enemy.takeDamage(1, enemy.chest, new Vector3(), 1 / 120, attacker);
-    expect(enemy.burnTimer).toBeCloseTo(2.5 * 2.5);
+    expect(enemy.burnTimer).toBeCloseTo(2.5);
+    expect(enemy.burnDamageMul).toBeCloseTo(4);
+    expect(enemy.burnMaxHpRatio).toBeCloseTo(0.005);
     expect(enemy.poisonTimer).toBeCloseTo(3);
+    expect(enemy.poisonStacks).toBe(1);
   });
 
   it('発動するゲートがなければ何も起きない', () => {
@@ -937,7 +945,11 @@ describe('ローグライト v2: ゲートの全員適用', () => {
 
   it('説明文はレベルの数値を出す', () => {
     expect(gateEffectText('multiplier_gate', 1)).toContain('50%');
-    expect(gateEffectText('giant_gate', 3)).toContain('1.6');
+    expect(gateEffectText('giant_gate', 3)).toContain('1.8');
+    expect(gateEffectText('shrink_gate', 0)).not.toContain('HP');
+    expect(gateEffectText('fire_gate', 1)).toContain('1.5');
+    expect(gateEffectText('thunder_gate', 2)).toContain('2 体');
+    expect(gateEffectText('venom_gate', 3)).toContain('7 重');
   });
 });
 

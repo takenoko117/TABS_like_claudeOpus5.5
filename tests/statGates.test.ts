@@ -18,7 +18,7 @@ describe('ステータスを上げる門', () => {
   const STAT_GATE_IDS = Object.keys(STAT_GATES) as FacilityTypeId[];
 
   it('すべて報酬に出て、4段階の効果と説明を持つ', () => {
-    expect(STAT_GATE_IDS.length).toBeGreaterThanOrEqual(7);
+    expect(STAT_GATE_IDS.length).toBeGreaterThanOrEqual(6);
     for (const id of STAT_GATE_IDS) {
       expect(GATE_TYPE_IDS).toContain(id);
       expect(ROGUE_RELIC_POOL.some((r) => r.id === id)).toBe(true);
@@ -39,7 +39,8 @@ describe('ステータスを上げる門', () => {
     expect(apply('haste_gate', 2).permAttackRateMul).toBeCloseTo(1.5);
     expect(apply('swift_gate', 0).permSpeedMul).toBeCloseTo(1.2);
     expect(apply('guard_gate', 3).permVulnerabilityMul).toBeCloseTo(0.5);
-    expect(apply('impact_gate', 1).knockbackMul).toBeCloseTo(1.6);
+    // 衝波の門は廃止済みで、所持していても効果を発揮しない
+    expect(apply('impact_gate', 1).knockbackMul).toBe(1);
 
     const { battle, rules, unit } = setup();
     const baseHp = unit.maxHp;

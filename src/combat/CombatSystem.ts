@@ -1,7 +1,6 @@
 import { J } from '../units/Skeleton';
 import { Vector3 } from 'three';
 import type { Facility } from '../facilities/Facility';
-import { MELEE_CLEAVE_DAMAGE } from '../facilities/FacilityTypes';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
 import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
 import { MOUTH_LASER_HEIGHT_TOLERANCE, MOUTH_LASER_PIERCE, MOUTH_LASER_RADIUS } from '../units/HayatoHead';
@@ -141,6 +140,8 @@ export class Arrow {
   gravityScale = 1.0;
   pierceLeft = 1;
   carveScale = 1.0;
+  /** 爆発する弾の爆発半径の倍率（防衛砲台 Lv4 など） */
+  blastRadiusMul = 1.0;
   spinAngle = 0;
   readonly hitUnitIds = new Set<number>();
 
@@ -335,7 +336,7 @@ export class CombatSystem {
     dt: number,
   ): void {
     const radius = attacker.meleeCleaveRadius;
-    const amount = damage * MELEE_CLEAVE_DAMAGE;
+    const amount = damage * attacker.meleeCleaveDamage;
     for (const u of units) {
       if (!u.alive || u === victim || u.team === attacker.team || !attacker.canHit(u)) continue;
       if (u.chest.pos.distanceToSquared(point) > radius * radius) continue;
@@ -619,8 +620,8 @@ export class CombatSystem {
     dt: number,
   ): void {
     if (a.projectileKind === 'bomb') {
-      this.applyRadialBlast(a.owner, pos, 2.8, a.damage, 8.8, 0.65, units, dt, 'explosion', facilities, a.team);
-      this.emitEffect({ kind: 'bomb_explosion', pos: pos.clone() });
+      this.applyRadialBlast(a.owner, pos, 2.8 * a.blastRadiusMul, a.damage, 8.8, 0.65, units, dt, 'explosion', facilities, a.team);
+      this.emitEffect({ kind: a.blastRadiusMul > 1 ? 'tank_explosion' : 'bomb_explosion', pos: pos.clone() });
     } else if (a.projectileKind === 'rocket') {
       this.applyRadialBlast(a.owner, pos, 3.4, a.damage, 9.8, 0.75, units, dt, 'explosion', facilities, a.team);
       this.emitEffect({ kind: 'rocket_explosion', pos: pos.clone() });

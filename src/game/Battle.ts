@@ -6,7 +6,7 @@ import {
   type FacilitySpawnOptions,
   type UnitTransform,
 } from '../facilities/Facility';
-import type { FacilityTypeId } from '../facilities/FacilityTypes';
+import { CANNON_MAX_LEVEL_BLAST_MUL, MAX_GATE_LEVEL, type FacilityTypeId } from '../facilities/FacilityTypes';
 import { PhysicsWorld, type ChasmSpec, type ObstacleCylinder, type PitSpec } from '../physics/PhysicsWorld';
 import { isMountType, isRiderType } from '../units/Mounting';
 import { PELVIS_HEIGHT } from '../units/Skeleton';
@@ -38,6 +38,12 @@ export interface BattleRules {
   onGatePassed?(battle: Battle, unit: Unit, gate: Facility): void;
   /** 複製・作り直しで新しいユニットが生まれたとき */
   onUnitDerived?(battle: Battle, unit: Unit, parent: Unit): void;
+  /** ユニットが死亡した瞬間（戦闘中のみ）。ユニットの追加・削除はせず、onStepEnd まで待つこと */
+  onUnitDied?(battle: Battle, unit: Unit): void;
+  /** 毎ステップの最後（勝敗判定の前）に呼ばれる。死亡時の復活・転生などをここで解決する */
+  onStepEnd?(battle: Battle, dt: number): void;
+  /** 召喚ポータルが呼び出せる兵種（null なら標準の雑兵） */
+  summonPoolFor?(team: Team): readonly UnitTypeId[] | null;
 }
 
 /** 開戦時に戦闘の前へ差し込む演出。続いている間は update が true を返す */
@@ -197,6 +203,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     next.permDamageMul *= t.damageMul ?? 1;
     next.permSpeedMul *= t.speedMul ?? 1;
     next.knockbackMul *= t.knockbackMul ?? 1;
+    next.knockbackResist *= t.knockbackResistMul ?? 1;
     if (t.tag && !next.grantedTags.includes(t.tag)) next.grantedTags.push(t.tag);
 
     // 元の個体は物理ワールドと描画から取り除き、同じ場所に新しい個体を入れる
@@ -209,6 +216,41 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.onUnitAdded?.(next);
     this.rules?.onUnitDerived?.(this, next, unit);
     return next;
+  }
+
+  /**
+   * 死亡したユニットを、同じ場所・同じ体格・同じ強化でよみがえらせる（輪廻転生の門）。
+   * 倒れた個体は取り除き、新しい個体を入れる。
+   */
+  reviveUnit(dead: Unit, hpRatio: number): Unit {
+    const x = dead.pelvis.pos.x;
+    const z = dead.pelvis.pos.z;
+    const groundY = this.world.getSlopeHeightAt(x, z);
+    const next = new Unit(this.world, dead.type, dead.team, new Vector3(x, groundY, z), dead.facing, {
+      scaleOverride: dead.scale,
+      hpOverride: Math.max(1, dead.maxHp),
+      splitGen: dead.splitGen,
+    });
+    next.context = this;
+    copyDerivedState(dead, next);
+    next.isClone = dead.isClone;
+    next.isBoss = dead.isBoss;
+    next.hp = Math.max(1, next.maxHp * hpRatio);
+    next.gateCooldown = 1.0;
+    dead.replacedBy = next;
+    this.removeUnit(dead);
+    this.units.push(next);
+    this.onUnitAdded?.(next);
+    this.rules?.onUnitDerived?.(this, next, dead);
+    return next;
+  }
+
+  onUnitDied(unit: Unit): void {
+    if (this.aiEnabled) this.rules?.onUnitDied?.(this, unit);
+  }
+
+  summonPoolFor(team: Team): readonly UnitTypeId[] | null {
+    return this.rules?.summonPoolFor?.(team) ?? null;
   }
 
   onGatePassed(unit: Unit, gate: Facility): void {
@@ -391,7 +433,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
       Math.sin(angle) * speed,
       (dz / dh) * Math.cos(angle) * speed,
     );
-    this.combat.fireCannonBall(facility.team, from, vel, 65 * facility.cannonDamageMul);
+    const ball = this.combat.fireCannonBall(facility.team, from, vel, 65 * facility.cannonDamageMul);
+    if (facility.relicLevel >= MAX_GATE_LEVEL) ball.blastRadiusMul = CANNON_MAX_LEVEL_BLAST_MUL;
   }
 
   emitEffect(effect: CombatEffectEvent): void {
@@ -458,6 +501,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.world.step(dt);
     this.combat.processContacts(this.world.contacts, dt, this.units);
     this.combat.updateArrows(dt, this.units, this.world.obstacles, this.facilities);
+    if (this.aiEnabled) this.rules?.onStepEnd?.(this, dt);
     if (!this.opening) this.time += dt;
   }
 
@@ -681,6 +725,9 @@ function copyDerivedState(from: Unit, to: Unit): void {
   to.permAttackRateMul = from.permAttackRateMul;
   to.elementInfusion = from.elementInfusion;
   to.levelHpMul = from.levelHpMul;
+  to.meleeCleaveDamage = from.meleeCleaveDamage;
+  to.knockbackResist = from.knockbackResist;
+  to.firstStrikeMul = from.firstStrikeMul;
   to.grantedTags = [...from.grantedTags];
   for (const id of from.gatesPassed) to.gatesPassed.add(id);
 }

@@ -3976,6 +3976,10 @@ export class GameApp {
       ];
       this.battle.rules = this.rogueRules;
       this.rogueRules.start(this.battle);
+      this.rogueRules.setRelics(
+        this.rogue.activeRelics,
+        this.rogue.cards.map((c) => c.id),
+      );
       const gates = this.rogue.activeGates;
       this.rogueGateSequence =
         gates.length > 0

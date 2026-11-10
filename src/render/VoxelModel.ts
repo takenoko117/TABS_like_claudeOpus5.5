@@ -6493,6 +6493,10 @@ export const GATE_TINTS: Partial<Record<FacilityTypeId, number>> = {
   swift_gate: 0xd8ff5c,
   guard_gate: 0xb0bccc,
   impact_gate: 0xe0c090,
+  rebirth_gate: 0x7ee0a8,
+  samsara_gate: 0xffe08a,
+  blast_gate: 0xff8a3d,
+  magnet_gate: 0xc48aff,
 };
 
 export function createFacilityMesh(typeId: FacilityTypeId, team: Team): Mesh {

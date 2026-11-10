@@ -10,7 +10,7 @@ import {
   MAX_GATE_LEVEL,
   RELIC_HP_BY_LEVEL,
   STAT_GATES,
-  TOTEM_HEAL_BY_LEVEL,
+  TOTEM_HEAL_RATIO_BY_LEVEL,
   TOTEM_RADIUS_BY_LEVEL,
   getGateOpeningWidth,
   getMarchGateOpeningWidth,
@@ -58,6 +58,8 @@ export interface UnitTransform {
   damageMul?: number;
   speedMul?: number;
   knockbackMul?: number;
+  /** 受ける吹き飛ばしの倍率（巨大化の門 Lv4 のノックバック耐性） */
+  knockbackResistMul?: number;
   tag?: string;
 }
 
@@ -92,6 +94,8 @@ export interface FacilityBattleContext {
   /** ユニットが門を通過したことを通知する（タグのシナジー再計算など） */
   onGatePassed?(unit: Unit, gate: Facility): void;
   fireFacilityCannon(facility: Facility, targetPos: Vector3, targetVel?: Vector3): void;
+  /** 召喚ポータル（最大レベル）が呼び出せる兵種。null なら標準の雑兵 */
+  summonPoolFor?(team: Team): readonly UnitTypeId[] | null;
   emitEffect(effect: any): void;
   playFacilitySound?(kind: string): void;
 }
@@ -399,8 +403,14 @@ export class Facility {
       this.actionTimer = BARRACKS_INTERVAL_BY_LEVEL[this.relicLevel];
 
       // 剣士と棍棒兵を交互、または時々槍兵を召喚
-      const spawnTypes: UnitTypeId[] = ['swordsman', 'clubber', 'swordsman', 'spearman'];
-      const typeId = spawnTypes[this.spawnerCycle % spawnTypes.length];
+      // 最大レベルでは、所持カードからランダムな兵種を召喚する
+      const pool = this.relicLevel >= MAX_GATE_LEVEL ? ctx.summonPoolFor?.(this.team) : null;
+      const spawnTypes: readonly UnitTypeId[] =
+        pool && pool.length > 0 ? pool : ['swordsman', 'clubber', 'swordsman', 'spearman'];
+      const typeId =
+        pool && pool.length > 0
+          ? spawnTypes[Math.floor(Math.random() * spawnTypes.length)]
+          : spawnTypes[this.spawnerCycle % spawnTypes.length];
       this.spawnerCycle++;
 
       // ポータルの前方 1.2m に召喚
@@ -435,9 +445,13 @@ export class Facility {
         u.damageMul = Math.max(u.damageMul, 1.45);
         u.speedMul = Math.max(u.speedMul, 1.35);
         u.hasBuff = true;
-        // HPの継続自動回復
-        u.heal(TOTEM_HEAL_BY_LEVEL[this.relicLevel] * dt);
+        // HPの継続自動回復（対象の最大HPに対する割合）
+        u.heal(u.maxHp * TOTEM_HEAL_RATIO_BY_LEVEL[this.relicLevel] * dt);
       }
+    }
+    // 最大レベルではトーテム自身も同じ割合で再生する
+    if (this.relicLevel >= MAX_GATE_LEVEL) {
+      this.hp = Math.min(this.maxHp, this.hp + this.maxHp * TOTEM_HEAL_RATIO_BY_LEVEL[this.relicLevel] * dt);
     }
 
     // 定期的な加護の光波エフェクト（1.6秒ごと）
@@ -502,7 +516,7 @@ export class Facility {
           if (u.scale > MIN_SHRINK_GATE_SCALE) {
             transforms.push([
               u,
-              { scaleMul: Math.max(0.6, MIN_SHRINK_GATE_SCALE / u.scale), hpMul: 0.8, speedMul: 1.5, tag: 'mobile' },
+              { scaleMul: Math.max(0.6, MIN_SHRINK_GATE_SCALE / u.scale), hpMul: 1, speedMul: 1.5, tag: 'mobile' },
             ]);
           }
           break;

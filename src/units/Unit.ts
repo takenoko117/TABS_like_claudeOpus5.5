@@ -1,7 +1,7 @@
 import { Vector3 } from 'three';
 import type { CombatSystem } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
-import { MELEE_CLEAVE_RADIUS_PER_RANGE } from '../facilities/FacilityTypes';
+import { MELEE_CLEAVE_DAMAGE, MELEE_CLEAVE_RADIUS_PER_RANGE } from '../facilities/FacilityTypes';
 import { DistanceConstraint } from '../physics/Constraint';
 import { PF_RECORD_CONTACT, Particle } from '../physics/Particle';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
@@ -28,6 +28,8 @@ export interface UnitContext {
   readonly combat: CombatSystem;
   fireArrow(owner: Unit, from: Vector3, velocity: Vector3): void;
   spawnSplitSlime(parent: Unit, x: number, z: number, splitGen: number): Unit;
+  /** ユニットが死亡したとき（レリックの転生・復活・爆発などに使う） */
+  onUnitDied?(unit: Unit): void;
 }
 
 const UP = new Vector3(0, 1, 0);
@@ -175,6 +177,12 @@ export class Unit {
   elementInfusion: 'fire' | 'shock' | 'poison' | null = null;
   /** ユニットレベルの HP 倍率（分裂で生まれる個体にも掛ける） */
   levelHpMul = 1;
+  /** 近接の巻き込みで周囲の敵に与えるダメージの割合 */
+  meleeCleaveDamage = MELEE_CLEAVE_DAMAGE;
+  /** 受ける吹き飛ばしの倍率（小さいほど吹き飛ばされにくい） */
+  knockbackResist = 1;
+  /** 戦闘中の最初の攻撃のダメージ倍率（当てると 1 に戻る） */
+  firstStrikeMul = 1;
 
   // 状態異常・特殊ギミック用プロパティ
   context: UnitContext | null = null;
@@ -183,6 +191,10 @@ export class Unit {
   /** 炎上残り時間（紅蓮ドラゴン） */
   burnTimer = 0;
   burnAttacker: Unit | null = null;
+  /** 燃焼の tick ダメージの倍率（炎の門のレベル） */
+  burnDamageMul = 1;
+  /** 燃焼の tick ごとに追加で受ける、自分の最大HPに対する割合 */
+  burnMaxHpRatio = 0;
   private burnTickTimer = 0;
   /** 毒残り時間（巨大アナコンダ） */
   poisonTimer = 0;
@@ -193,6 +205,8 @@ export class Unit {
   private earthquakeTimer = 0;
   private rageAuraTimer = 0;
   poisonAttacker: Unit | null = null;
+  /** 毒の重なり数（0 は重なりなしの通常の毒。tick ダメージがこの数倍になる） */
+  poisonStacks = 0;
   private poisonTickTimer = 0;
   /** 凍結硬直残り時間（永久凍土ブリザード） */
   freezeTimer = 0;
@@ -459,13 +473,14 @@ export class Unit {
       if (this.burnTickTimer <= 0) {
         this.burnTickTimer = 0.22;
         const attacker = this.burnAttacker ?? this;
+        const burnDamage = 4.5 * this.burnDamageMul + this.maxHp * this.burnMaxHpRatio;
         const killed = ctx.combat.withDamageKind('fire', () =>
-          this.takeDamage(4.5, this.chest, _tmp.set(0, 0.2, 0), dt, attacker),
+          this.takeDamage(burnDamage, this.chest, _tmp.set(0, 0.2, 0), dt, attacker),
         );
         ctx.combat.onHit?.({
           kind: 'magic',
           point: this.chest.pos.clone(),
-          damage: 4.5,
+          damage: burnDamage,
           attacker,
           victim: this,
           hitParticle: this.chest,
@@ -474,6 +489,9 @@ export class Unit {
         });
         if (!this.alive) return;
       }
+    } else if (this.burnDamageMul !== 1 || this.burnMaxHpRatio !== 0) {
+      this.burnDamageMul = 1;
+      this.burnMaxHpRatio = 0;
     }
 
     // 毒（巨大アナコンダ）の処理
@@ -483,13 +501,14 @@ export class Unit {
       if (this.poisonTickTimer <= 0) {
         this.poisonTickTimer = 0.28;
         const attacker = this.poisonAttacker ?? this;
+        const poisonDamage = 6.0 * Math.max(1, this.poisonStacks);
         const killed = ctx.combat.withDamageKind('poison', () =>
-          this.takeDamage(6.0, this.chest, _tmp.set(0, 0.1, 0), dt, attacker),
+          this.takeDamage(poisonDamage, this.chest, _tmp.set(0, 0.1, 0), dt, attacker),
         );
         ctx.combat.onHit?.({
           kind: 'magic',
           point: this.chest.pos.clone(),
-          damage: 6.0,
+          damage: poisonDamage,
           attacker,
           victim: this,
           hitParticle: this.chest,
@@ -498,6 +517,8 @@ export class Unit {
         });
         if (!this.alive) return;
       }
+    } else if (this.poisonStacks !== 0) {
+      this.poisonStacks = 0;
     }
 
     // 大鷲から落とされたユニットの着地衝撃判定
@@ -3309,13 +3330,22 @@ export class Unit {
         });
       }
     }
+    // 疾風の門 Lv4: 各ユニットの最初の攻撃（直接攻撃）だけダメージが上がる
+    if (attacker && attacker !== this && attacker.firstStrikeMul !== 1) {
+      const kind = this.context?.combat.currentDamageKind ?? 'physical';
+      if (kind === 'physical' || kind === 'explosion') {
+        amount *= attacker.firstStrikeMul;
+        attacker.firstStrikeMul = 1;
+      }
+    }
     const finalDamage = amount * this.vulnerabilityMul;
     const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
     if (creditsAttacker) attacker.damageDealt += Math.min(finalDamage, Math.max(0, this.hp));
     this.hp -= finalDamage;
     // 与える側の吹き飛ばし倍率（衝撃タグのシナジーや巨大化の門）
     const kbMul = attacker && attacker !== this ? attacker.knockbackMul : 1;
-    if (kbMul !== 1) dv = _kb.copy(dv).multiplyScalar(kbMul);
+    const kbTotal = kbMul * this.knockbackResist;
+    if (kbTotal !== 1) dv = _kb.copy(dv).multiplyScalar(kbTotal);
     this.hitFlash = 1;
     // 被弾で筋力が落ちてよろめく（巨人・戦象・ドラゴン・大蛇・バギーは強靭でよろめきにくい）
     const isSuperHeavy =
@@ -3363,6 +3393,8 @@ export class Unit {
     this.grabbedUnit = null;
     // かさね配置: 死んだら土台から外れて落ちる（乗り手側の解除は applyMountBinding でも検出する）
     this.mountedOn = null;
+
+    this.context?.onUnitDied?.(this);
 
     // おとり（デコイ）破壊時の藁破裂
     if (this.type.id === 'decoy' && this.context) {

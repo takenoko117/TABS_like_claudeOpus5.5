@@ -16,6 +16,10 @@ export type FacilityTypeId =
   | 'swift_gate'
   | 'guard_gate'
   | 'impact_gate'
+  | 'rebirth_gate'
+  | 'samsara_gate'
+  | 'blast_gate'
+  | 'magnet_gate'
   | 'terrain_wall'
   | 'terrain_slope'
   | 'terrain_pit';
@@ -37,6 +41,10 @@ export const FACILITY_TYPE_IDS: readonly FacilityTypeId[] = [
   'swift_gate',
   'guard_gate',
   'impact_gate',
+  'rebirth_gate',
+  'samsara_gate',
+  'blast_gate',
+  'magnet_gate',
   'terrain_wall',
   'terrain_slope',
   'terrain_pit',
@@ -217,6 +225,46 @@ export const FACILITY_TYPES: Readonly<Record<FacilityTypeId, FacilityType>> = {
     height: 2.8,
     relicOnly: true,
   },
+  rebirth_gate: {
+    id: 'rebirth_gate',
+    name: '転生の門',
+    description: '倒れた味方が、その場で分裂キングスライムに生まれ変わって戦い続ける（1体につき1回）。',
+    cost: 200,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  samsara_gate: {
+    id: 'samsara_gate',
+    name: '輪廻転生の門',
+    description: '出現してから猶予時間以内に倒れた味方は、何度でもその場で復活する。猶予は復活のたびに短くなる。',
+    cost: 300,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  blast_gate: {
+    id: 'blast_gate',
+    name: '爆裂の門',
+    description: '倒れた味方がその場で爆発し、最大HPに応じたダメージを周囲の敵に与える。',
+    cost: 200,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  magnet_gate: {
+    id: 'magnet_gate',
+    name: '磁力の門',
+    description: '戦闘中、一定間隔で敵全体を自軍の中心へ引き寄せる。大型の敵ほどずれにくい。',
+    cost: 200,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
   terrain_wall: {
     id: 'terrain_wall',
     name: '防壁ブロック（壁）',
@@ -270,7 +318,11 @@ export type GateTypeId =
   | 'vitality_gate'
   | 'swift_gate'
   | 'guard_gate'
-  | 'impact_gate';
+  | 'impact_gate'
+  | 'rebirth_gate'
+  | 'samsara_gate'
+  | 'blast_gate'
+  | 'magnet_gate';
 
 /** 門（通過した味方に効果を与える施設）の種類 */
 export const GATE_TYPE_IDS: readonly GateTypeId[] = [
@@ -287,7 +339,20 @@ export const GATE_TYPE_IDS: readonly GateTypeId[] = [
   'swift_gate',
   'guard_gate',
   'impact_gate',
+  'rebirth_gate',
+  'samsara_gate',
+  'blast_gate',
+  'magnet_gate',
 ];
+
+/**
+ * 戦闘中ずっと働く門（開戦時のゲート通過の演出では適用しない）。
+ * 衝波の門は廃止済みで、所持していても効果を発揮しない。
+ */
+export const PASSIVE_GATE_IDS: readonly FacilityTypeId[] = ['rebirth_gate', 'samsara_gate', 'blast_gate', 'magnet_gate'];
+
+/** 廃止したレリック（報酬に出ず、セーブを読み込むときに取り除く） */
+export const RETIRED_RELIC_IDS: readonly FacilityTypeId[] = ['impact_gate'];
 
 /** ステータスを上げる門が変える値 */
 export type GateStat = 'damage' | 'range' | 'attack_rate' | 'hp' | 'speed' | 'guard' | 'knockback';
@@ -300,20 +365,23 @@ export const STAT_GATES: Partial<Record<FacilityTypeId, { stat: GateStat; values
   vitality_gate: { stat: 'hp', values: [1.25, 1.5, 1.8, 2.2] },
   swift_gate: { stat: 'speed', values: [1.2, 1.4, 1.6, 1.85] },
   guard_gate: { stat: 'guard', values: [0.85, 0.72, 0.6, 0.5] },
-  impact_gate: { stat: 'knockback', values: [1.3, 1.6, 2, 2.5] },
 };
 
 /** 射程の倍率 +100% あたりの、近接攻撃が巻き込む半径（m） */
 export const MELEE_CLEAVE_RADIUS_PER_RANGE = 5;
 /** 巻き込まれた敵が受けるダメージの割合 */
 export const MELEE_CLEAVE_DAMAGE = 0.5;
+/** 遠撃の門 Lv4 で巻き込まれた敵が受けるダメージの割合 */
+export const MELEE_CLEAVE_DAMAGE_MAX_LEVEL = 0.75;
 
 /** 門のサイズ段階ごとの開口幅（m）。0=小門, 1=中門, 2=大門, 3=凱旋門 */
 export const GATE_OPENING_WIDTHS: readonly number[] = [1.7, 3.0, 5.0, 8.0];
 /** 加護のトーテムのレベルごとの効果半径（m） */
 export const TOTEM_RADIUS_BY_LEVEL: readonly number[] = [6.8, 8.5, 10.5, 13];
-/** 加護のトーテムのレベルごとの毎秒回復量 */
-export const TOTEM_HEAL_BY_LEVEL: readonly number[] = [7.5, 10, 13, 17];
+/** 加護のトーテムのレベルごとの毎秒回復量（対象の最大HPに対する割合） */
+export const TOTEM_HEAL_RATIO_BY_LEVEL: readonly number[] = [0.04, 0.06, 0.08, 0.1];
+/** 防衛砲台 Lv4 の砲弾の爆発半径の倍率 */
+export const CANNON_MAX_LEVEL_BLAST_MUL = 2;
 /** 防衛砲台のレベルごとの砲弾の威力倍率 */
 export const CANNON_DAMAGE_BY_LEVEL: readonly number[] = [1, 1.3, 1.7, 2.2];
 /** 召喚ポータルのレベルごとの召喚間隔（秒） */

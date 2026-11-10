@@ -7,15 +7,18 @@ import {
   CANNON_DAMAGE_BY_LEVEL,
   FACILITY_TYPES,
   MAX_GATE_LEVEL,
+  MELEE_CLEAVE_DAMAGE_MAX_LEVEL,
   MELEE_CLEAVE_RADIUS_PER_RANGE,
+  PASSIVE_GATE_IDS,
+  RETIRED_RELIC_IDS,
   STAT_GATES,
-  TOTEM_HEAL_BY_LEVEL,
+  TOTEM_HEAL_RATIO_BY_LEVEL,
   TOTEM_RADIUS_BY_LEVEL,
   isGateTypeId,
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
 import type { Unit } from '../units/Unit';
-import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
+import { UNIT_TYPES, UNIT_TYPE_LIST, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { Battle, BattleOpening, BattleRules } from './Battle';
 import { createSeededRng, generateEnemyLineupWithBudget } from './ChallengeMode';
 import type { DamageStats } from './DamageStats';
@@ -215,11 +218,76 @@ export const MAX_SYNERGY_BLASTS_PER_SECOND = 20;
 /** 群れ4種の攻撃ボーナスの最大スタック数（1スタック = +5%） */
 export const MAX_SWARM_STACKS = 10;
 
-/** 属性ゲートが攻撃に乗せる状態異常 */
+/** 属性ゲートが攻撃に乗せる状態異常。level はゲートのレベル（0 始まり） */
 export interface GateInfusion {
   element: 'fire' | 'shock' | 'poison';
-  durationMul: number;
+  level: number;
 }
+
+/** 炎の門: レベルごとの燃焼の tick ダメージの倍率 */
+export const GATE_FIRE_DAMAGE_MUL: readonly number[] = [1, 1.5, 2, 4];
+/** 炎の門: レベルごとに燃焼の tick に足す、対象の最大HPに対する割合 */
+export const GATE_FIRE_MAX_HP_RATIO: readonly number[] = [0, 0, 0, 0.005];
+/** 燃焼の持続時間（秒。レベルでは伸びない） */
+export const GATE_BURN_SECONDS = 2.5;
+/** 雷の門: レベルごとの感電の連鎖（ホップ）数 */
+export const GATE_SHOCK_HOPS: readonly number[] = [0, 1, 2, 3];
+/** 感電の持続時間（秒。レベルでは伸びない） */
+export const GATE_SHOCK_SECONDS = 0.6;
+/** 感電が跳ぶ距離（m） */
+export const SHOCK_CHAIN_RANGE = 4;
+/** 連鎖の最初の雷撃のダメージと、ホップごとの増幅率 */
+export const SHOCK_CHAIN_BASE_DAMAGE = 15;
+export const SHOCK_CHAIN_GROWTH = 1.5;
+/** 同じ兵が連鎖を起こせる間隔（秒。連射の兵で雷撃が際限なく出ないように） */
+export const SHOCK_CHAIN_COOLDOWN = 0.4;
+/** 毒の門: レベルごとの毒の重なり上限 */
+export const GATE_POISON_STACKS: readonly number[] = [1, 2, 3, 7];
+/** 毒の持続時間（秒。命中ごとに更新する） */
+export const GATE_POISON_SECONDS = 3;
+/** 転生の門: レベルごとの、転生するスライムの数 */
+export const REBIRTH_SLIME_COUNT: readonly number[] = [1, 2, 3, 5];
+/** 転生をやめる味方の数（スライムが増えすぎて重くならないように） */
+export const REBIRTH_ALLY_CAP = 150;
+/** 輪廻転生の門: レベルごとの猶予時間（秒）。[初回, 復活1回目, 2回目, 3回目以降] */
+export const SAMSARA_GRACE_SECONDS: readonly (readonly number[])[] = [
+  [15, 10, 6, 3],
+  [17, 12, 8, 4],
+  [19, 14, 10, 5],
+  [22, 17, 12, 7],
+];
+/** 輪廻転生の門で復活したときのHP（最大HPに対する割合） */
+export const SAMSARA_REVIVE_HP = 0.5;
+/** 爆裂の門: レベルごとの爆発ダメージ（死亡した兵の最大HPに対する割合）と半径（m） */
+export const BLAST_DAMAGE_RATIO: readonly number[] = [0.15, 0.22, 0.32, 0.5];
+export const BLAST_RADIUS: readonly number[] = [2.5, 3, 4, 5.5];
+/** 磁力の門: レベルごとのパルスの間隔（秒）と、引き寄せる速さ（m/s） */
+export const MAGNET_INTERVAL: readonly number[] = [7, 6, 5, 4];
+export const MAGNET_PULL_SPEED: readonly number[] = [5, 6, 7, 8.5];
+/** 磁力の門 Lv4 のパルスで付く感電（秒） */
+export const MAGNET_MAX_LEVEL_SHOCK = 0.3;
+
+/** 戦闘中ずっと働くレリックのレベル（持っていなければ -1） */
+interface PassiveRelicLevels {
+  rebirth: number;
+  samsara: number;
+  blast: number;
+  magnet: number;
+}
+
+/** 輪廻転生・転生の判定に使う、味方1体ごとの記録 */
+interface AllyLife {
+  /** 出現（戦闘開始時の配置・復活）した時刻 */
+  spawnTime: number;
+  /** 輪廻転生で復活した回数 */
+  revives: number;
+  /** 一度でも死亡したか（転生のスライムは初回の死亡でだけ出る） */
+  died: boolean;
+  /** 転生で生まれたスライム（転生しない） */
+  noRebirth: boolean;
+}
+
+const NO_PASSIVE: PassiveRelicLevels = { rebirth: -1, samsara: -1, blast: -1, magnet: -1 };
 
 interface MassProjectile {
   unit: Unit;
@@ -239,7 +307,15 @@ export class RogueliteRules implements BattleRules {
   readonly grantedByType = new Map<UnitTypeId, Set<TagId>>();
   /** 発動中の属性ゲート。後から出た兵（召喚・分裂・複製）も含めて自軍全員の攻撃に乗る */
   gateInfusions: GateInfusion[] = [];
+  /** 戦闘中ずっと働くレリック（転生・輪廻転生・爆裂・磁力）のレベル */
+  passive: PassiveRelicLevels = { ...NO_PASSIVE };
+  /** 召喚ポータル（最大レベル）が呼び出す兵種（所持カード） */
+  summonPool: UnitTypeId[] = [];
   swarmStacks = 0;
+  private readonly lives = new WeakMap<Unit, AllyLife>();
+  private pendingDeaths: Unit[] = [];
+  private magnetTimer = 0;
+  private readonly shockChainReady = new Map<number, number>();
   private battle: Battle | null = null;
   private readonly applied = new WeakMap<Unit, Set<string>>();
   private readonly mobileTimers = new Map<number, number>();
@@ -265,6 +341,10 @@ export class RogueliteRules implements BattleRules {
     this.swarmStacks = 0;
     this.grantedByType.clear();
     this.gateInfusions = [];
+    this.passive = { ...NO_PASSIVE };
+    this.pendingDeaths = [];
+    this.magnetTimer = 0;
+    this.shockChainReady.clear();
     this.mobileTimers.clear();
     this.extendedBurn.clear();
     this.extendedPoison.clear();
@@ -274,6 +354,34 @@ export class RogueliteRules implements BattleRules {
     this.blastsInWindow = 0;
     this.blastWindowStart = 0;
     this.recount(battle);
+  }
+
+  /**
+   * 発動中のレリックのうち、戦闘中ずっと働くもの（転生・輪廻転生・爆裂・磁力）を登録する。
+   * start の後に呼ぶ。summonPool は召喚ポータル（最大レベル）が呼び出す兵種。
+   */
+  setRelics(relics: readonly Pick<OwnedRelic, 'id' | 'level' | 'active'>[], summonPool: readonly UnitTypeId[] = []): void {
+    const levelOf = (id: FacilityTypeId) => {
+      const r = relics.find((x) => x.id === id && x.active);
+      return r ? gateLevelIndex(r.level) : -1;
+    };
+    this.passive = {
+      rebirth: levelOf('rebirth_gate'),
+      samsara: levelOf('samsara_gate'),
+      blast: levelOf('blast_gate'),
+      magnet: levelOf('magnet_gate'),
+    };
+    this.summonPool = [...summonPool];
+  }
+
+  summonPoolFor(team: Team): readonly UnitTypeId[] | null {
+    return team === this.team && this.summonPool.length > 0 ? this.summonPool : null;
+  }
+
+  private infusionLevel(element: GateInfusion['element']): number {
+    let level = -1;
+    for (const g of this.gateInfusions) if (g.element === element) level = Math.max(level, gateLevelIndex(g.level));
+    return level;
   }
 
   private recount(battle: Battle): void {
@@ -316,11 +424,185 @@ export class RogueliteRules implements BattleRules {
     this.recount(battle);
   }
 
-  onUnitDerived(_battle: Battle, unit: Unit, parent: Unit): void {
+  onUnitDerived(battle: Battle, unit: Unit, parent: Unit): void {
     // 親に適用済みのボーナスは強化値ごと引き継がれているので、二重に掛けない
     const parentDone = this.applied.get(parent);
     if (parentDone) this.applied.set(unit, new Set(parentDone));
     if (unit.team === this.team) this.applyStaticBonuses(unit);
+    if (unit.team === this.team && !this.lives.has(unit)) {
+      const pl = this.lives.get(parent);
+      if (parent.replacedBy === unit && pl) {
+        // 作り直し（巨大化・縮小）は同じ個体として記録を引き継ぐ
+        this.lives.set(unit, { ...pl });
+      } else {
+        // 複製・分裂は新しい個体。転生スライムが分裂した子も転生しない
+        this.lives.set(unit, {
+          spawnTime: battle.aiEnabled ? battle.time : 0,
+          revives: 0,
+          died: false,
+          noRebirth: Boolean(pl?.noRebirth && unit.type.id === 'slime'),
+        });
+      }
+    }
+  }
+
+  onUnitDied(_battle: Battle, unit: Unit): void {
+    if (unit.team !== this.team) return;
+    const p = this.passive;
+    if (p.rebirth < 0 && p.samsara < 0 && p.blast < 0) return;
+    if (!this.pendingDeaths.includes(unit)) this.pendingDeaths.push(unit);
+  }
+
+  /** 死亡した味方の転生・復活・爆発を解決する（勝敗判定の前） */
+  onStepEnd(battle: Battle): void {
+    if (this.pendingDeaths.length === 0) return;
+    const deaths = this.pendingDeaths;
+    this.pendingDeaths = [];
+    for (const dead of deaths) this.resolveAllyDeath(battle, dead);
+  }
+
+  private lifeOf(u: Unit, now: number): AllyLife {
+    let life = this.lives.get(u);
+    if (!life) this.lives.set(u, (life = { spawnTime: now, revives: 0, died: false, noRebirth: false }));
+    return life;
+  }
+
+  private resolveAllyDeath(battle: Battle, dead: Unit): void {
+    const p = this.passive;
+    const pos = dead.pelvis.pos.clone();
+    // 奈落に落ちた兵はその場に何も残らない
+    if (pos.y < -1) return;
+    const life = this.lifeOf(dead, battle.time);
+
+    if (p.blast >= 0) this.deathBlast(battle, dead, pos, p.blast);
+
+    const firstDeath = !life.died;
+    life.died = true;
+    if (p.samsara >= 0 && battle.units.includes(dead)) {
+      const grace = SAMSARA_GRACE_SECONDS[p.samsara][Math.min(life.revives, 3)];
+      if (battle.time - life.spawnTime <= grace) {
+        const next = battle.reviveUnit(dead, SAMSARA_REVIVE_HP);
+        this.lives.set(next, { spawnTime: battle.time, revives: life.revives + 1, died: true, noRebirth: life.noRebirth });
+        battle.emitEffect({ kind: 'portal_spawn', pos: new Vector3(pos.x, 0.4, pos.z), team: next.team });
+        battle.playFacilitySound('portal_spawn');
+      }
+    }
+    if (p.rebirth >= 0 && firstDeath && !life.noRebirth) this.rebirthSlimes(battle, dead, pos, p.rebirth);
+  }
+
+  /** 転生の門: 倒れた味方の場所にスライムを出す */
+  private rebirthSlimes(battle: Battle, dead: Unit, pos: Vector3, level: number): void {
+    const count = REBIRTH_SLIME_COUNT[level];
+    battle.emitEffect({ kind: 'slime_split', pos: pos.clone(), scale: 1, team: dead.team });
+    for (let i = 0; i < count; i++) {
+      if (battle.aliveCount(dead.team) >= REBIRTH_ALLY_CAP) break;
+      const angle = (i / count) * Math.PI * 2;
+      const r = count > 1 ? 0.7 : 0;
+      const x = Math.max(-21, Math.min(21, pos.x + Math.cos(angle) * r));
+      const z = Math.max(-15, Math.min(15, pos.z + Math.sin(angle) * r));
+      const slime = battle.spawnUnit('slime', dead.team, x, z, dead.facing);
+      slime.gateCooldown = 1.5;
+      this.lives.set(slime, { spawnTime: battle.time, revives: 0, died: false, noRebirth: true });
+      this.applyStaticBonuses(slime);
+      const pop = new Vector3(Math.cos(angle) * 2.2, 3.8, Math.sin(angle) * 2.2);
+      for (const j of slime.joints) j.addVelocity(pop, battle.fixedDt);
+    }
+  }
+
+  /** 爆裂の門: 倒れた味方がその場で爆発する（味方は巻き込まない） */
+  private deathBlast(battle: Battle, dead: Unit, pos: Vector3, level: number): void {
+    if (!this.allowBlast(battle.time)) return;
+    const radius = BLAST_RADIUS[level];
+    const damage = dead.maxHp * BLAST_DAMAGE_RATIO[level];
+    battle.emitEffect({ kind: radius >= 4 ? 'tank_explosion' : 'bomb_explosion', pos: pos.clone() });
+    this.withSource('爆裂の門', () =>
+      battle.combat.withDamageKind('explosion', () =>
+        battle.combat.applyRadialBlast(
+          null,
+          pos,
+          radius,
+          damage,
+          6 + radius * 1.5,
+          0.6,
+          battle.units,
+          battle.fixedDt,
+          'explosion',
+          battle.facilities,
+          this.team,
+        ),
+      ),
+    );
+  }
+
+  /** 磁力の門: 敵全体を自軍の重心へ引き寄せる（重い敵ほどずれにくい） */
+  private magnetPulse(battle: Battle, level: number, dt: number): void {
+    let cx = 0;
+    let cz = 0;
+    let n = 0;
+    for (const u of battle.units) {
+      if (!u.alive || u.team !== this.team) continue;
+      cx += u.pelvis.pos.x;
+      cz += u.pelvis.pos.z;
+      n++;
+    }
+    if (n === 0) return;
+    cx /= n;
+    cz /= n;
+    const speed = MAGNET_PULL_SPEED[level];
+    const dv = new Vector3();
+    for (const u of battle.units) {
+      if (!u.alive || u.team === this.team) continue;
+      const dx = cx - u.pelvis.pos.x;
+      const dz = cz - u.pelvis.pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.5) continue;
+      const v = Math.min(dist * 1.2, (speed * (u.isBoss ? 0.3 : 1)) / Math.max(1, u.massScale));
+      dv.set((dx / dist) * v, Math.min(1.5, v * 0.25), (dz / dist) * v);
+      for (const j of u.joints) j.addVelocity(dv, dt);
+      if (level >= MAX_GATE_LEVEL) u.shockTimer = Math.max(u.shockTimer, MAGNET_MAX_LEVEL_SHOCK);
+    }
+    battle.emitEffect({ kind: 'gravity_pull', pos: new Vector3(cx, 0.5, cz) });
+  }
+
+  /** 雷の門: 感電を近くの敵へ順に跳ばし、跳ぶほど強まる雷撃を浴びせる */
+  private chainShock(battle: Battle, attacker: Unit, first: Unit, hops: number): void {
+    const targets: Unit[] = [first];
+    const visited = new Set<number>([first.id]);
+    let cur = first;
+    for (let h = 0; h < hops; h++) {
+      let best: Unit | null = null;
+      let bestD2 = SHOCK_CHAIN_RANGE * SHOCK_CHAIN_RANGE;
+      for (const u of battle.units) {
+        if (!u.alive || u.team === this.team || visited.has(u.id) || u.shockTimer > 0) continue;
+        const d2 = u.pelvis.pos.distanceToSquared(cur.pelvis.pos);
+        if (d2 <= bestD2) {
+          bestD2 = d2;
+          best = u;
+        }
+      }
+      if (!best) break;
+      visited.add(best.id);
+      targets.push(best);
+      cur = best;
+    }
+    // 単体の敵には感電だけ（雷撃は連鎖したときにだけ出る）
+    if (targets.length < 2) return;
+    battle.emitEffect({ kind: 'lightning', points: targets.map((u) => u.chest.pos.clone()) });
+    let damage = SHOCK_CHAIN_BASE_DAMAGE;
+    this.withSource('雷の門: 連鎖', () =>
+      battle.combat.withDamageKind('shock', () => {
+        for (let i = 0; i < targets.length; i++, damage *= SHOCK_CHAIN_GROWTH) {
+          const u = targets[i];
+          if (!u.alive) continue;
+          if (i > 0) {
+            u.shockTimer = Math.max(u.shockTimer, GATE_SHOCK_SECONDS);
+            u.muscle = Math.min(u.muscle, 0.25);
+          }
+          const jolt = new Vector3((Math.random() - 0.5) * 2, 1.5, (Math.random() - 0.5) * 2);
+          u.takeDamage(damage, u.chest, jolt, battle.fixedDt, attacker.alive ? attacker : undefined);
+        }
+      }),
+    );
   }
 
   onStep(battle: Battle, dt: number): void {
@@ -332,9 +614,18 @@ export class RogueliteRules implements BattleRules {
     const shock2 = this.tier('shock') >= 2;
     const shock4 = this.tier('shock') >= 4;
 
+    if (this.passive.magnet >= 0) {
+      this.magnetTimer += dt;
+      if (this.magnetTimer >= MAGNET_INTERVAL[this.passive.magnet]) {
+        this.magnetTimer = 0;
+        this.magnetPulse(battle, this.passive.magnet, dt);
+      }
+    }
+
     for (const u of battle.units) {
       if (!u.alive) continue;
       if (u.team === this.team) {
+        if (!this.lives.has(u)) this.lives.set(u, { spawnTime: t, revives: 0, died: false, noRebirth: false });
         const tags = getUnitTags(u);
         if (mobile2 && tags.includes('mobile')) u.speedMul *= 1.4;
         if (swarmMul !== 1 && tags.includes('swarm')) u.damageMul *= swarmMul;
@@ -441,15 +732,25 @@ export class RogueliteRules implements BattleRules {
 
     // 属性ゲート: 攻撃に状態異常を乗せる
     if (direct && victim.alive) {
-      for (const { element, durationMul } of this.gateInfusions) {
+      for (const { element, level } of this.gateInfusions) {
+        const lv = gateLevelIndex(level);
         if (element === 'fire') {
-          victim.burnTimer = Math.max(victim.burnTimer, 2.5 * durationMul);
+          victim.burnTimer = Math.max(victim.burnTimer, GATE_BURN_SECONDS);
           victim.burnAttacker = attacker;
+          victim.burnDamageMul = Math.max(victim.burnDamageMul, GATE_FIRE_DAMAGE_MUL[lv]);
+          victim.burnMaxHpRatio = Math.max(victim.burnMaxHpRatio, GATE_FIRE_MAX_HP_RATIO[lv]);
         } else if (element === 'shock') {
-          victim.shockTimer = Math.max(victim.shockTimer, 0.6 * durationMul);
+          victim.shockTimer = Math.max(victim.shockTimer, GATE_SHOCK_SECONDS);
           victim.muscle = Math.min(victim.muscle, 0.25);
+          const hops = GATE_SHOCK_HOPS[lv];
+          const ready = this.shockChainReady.get(attacker.id) ?? 0;
+          if (hops > 0 && battle.time >= ready) {
+            this.shockChainReady.set(attacker.id, battle.time + SHOCK_CHAIN_COOLDOWN);
+            this.chainShock(battle, attacker, victim, hops);
+          }
         } else {
-          victim.poisonTimer = Math.max(victim.poisonTimer, 3 * durationMul);
+          victim.poisonStacks = Math.min(GATE_POISON_STACKS[lv], Math.max(1, victim.poisonStacks + 1));
+          victim.poisonTimer = Math.max(victim.poisonTimer, GATE_POISON_SECONDS);
           victim.poisonAttacker = attacker;
         }
       }
@@ -507,6 +808,33 @@ export class RogueliteRules implements BattleRules {
         if (u.pelvis.pos.distanceToSquared(pos) > 9) continue;
         u.burnTimer = Math.max(u.burnTimer, 3);
         u.burnAttacker = attacker;
+      }
+    }
+
+    // 毒の門 Lv4: 毒で倒れた敵は小爆発する
+    if (e.kind === 'poison' && this.infusionLevel('poison') >= MAX_GATE_LEVEL && this.chainDepth < MAX_CHAIN_DEPTH) {
+      if (this.allowBlast(battle.time)) {
+        this.chainDepth++;
+        try {
+          battle.emitEffect({ kind: 'bomb_explosion', pos: pos.clone() });
+          this.withSource('毒の門: 毒爆', () =>
+            battle.combat.applyRadialBlast(
+              attacker,
+              pos,
+              2.2,
+              30,
+              5,
+              0.5,
+              battle.units,
+              battle.fixedDt,
+              'explosion',
+              battle.facilities,
+              this.team,
+            ),
+          );
+        } finally {
+          this.chainDepth--;
+        }
       }
     }
 
@@ -895,15 +1223,18 @@ export const ROGUE_RELIC_POOL: ReadonlyArray<{ id: FacilityTypeId; rarity: Rarit
   { id: 'buff_totem', rarity: 'common' },
   { id: 'vitality_gate', rarity: 'common' },
   { id: 'swift_gate', rarity: 'common' },
-  { id: 'impact_gate', rarity: 'common' },
   { id: 'power_gate', rarity: 'rare' },
   { id: 'reach_gate', rarity: 'rare' },
   { id: 'haste_gate', rarity: 'rare' },
   { id: 'guard_gate', rarity: 'rare' },
-  { id: 'multiplier_gate', rarity: 'rare' },
   { id: 'giant_gate', rarity: 'rare' },
   { id: 'barracks', rarity: 'rare' },
   { id: 'cannon_tower', rarity: 'rare' },
+  { id: 'rebirth_gate', rarity: 'rare' },
+  { id: 'blast_gate', rarity: 'rare' },
+  { id: 'magnet_gate', rarity: 'rare' },
+  { id: 'multiplier_gate', rarity: 'legendary' },
+  { id: 'samsara_gate', rarity: 'legendary' },
 ];
 
 export type RewardKind = 'unit' | 'gold' | 'relic' | 'unit_slot';
@@ -1166,9 +1497,11 @@ export class RogueliteRun {
     return this.relics.filter((r) => r.active);
   }
 
-  /** 発動中のゲート */
+  /** 発動中のゲートのうち、開戦時の演出で全員に適用するもの（戦闘中ずっと働く門は含めない） */
   get activeGates(): OwnedRelic[] {
-    return this.activeRelics.filter((r) => isGateTypeId(r.id));
+    return this.activeRelics.filter(
+      (r) => isGateTypeId(r.id) && !PASSIVE_GATE_IDS.includes(r.id) && !RETIRED_RELIC_IDS.includes(r.id),
+    );
   }
 
   /** レリックを手に入れる。すでに持っていればレベルが上がる（枠に空きがあれば発動する） */
@@ -1345,7 +1678,8 @@ export class RogueliteRun {
     run.unitSlots = s.unitSlots;
     run.lossRewardPicks = s.lossRewardPicks;
     run.eliteRewardPicks = s.eliteRewardPicks ?? 0;
-    run.relics = s.relics.filter((r) => r.id in FACILITY_TYPES);
+    // 廃止したレリック（衝波の門など）は取り除く（返金はしない）
+    run.relics = s.relics.filter((r) => r.id in FACILITY_TYPES && !RETIRED_RELIC_IDS.includes(r.id));
     run.relicSlots = s.relicSlots;
     run.rerollsLeft = s.rerollsLeft;
     run.clearedRounds = s.clearedRounds;
@@ -1614,11 +1948,17 @@ export function relicDisplayName(r: Pick<OwnedRelic, 'id' | 'level'>): string {
 export function relicDescription(r: Pick<OwnedRelic, 'id' | 'level'>): string {
   if (isGateTypeId(r.id)) return gateEffectText(r.id, r.level);
   const lv = gateLevelIndex(r.level);
+  const max = lv >= MAX_GATE_LEVEL;
   if (r.id === 'buff_totem') {
-    return `半径 ${TOTEM_RADIUS_BY_LEVEL[lv]}m の味方の攻撃と移動速度を上げ、毎秒 ${TOTEM_HEAL_BY_LEVEL[lv]} 回復する`;
+    const heal = Math.round(TOTEM_HEAL_RATIO_BY_LEVEL[lv] * 100);
+    return `半径 ${TOTEM_RADIUS_BY_LEVEL[lv]}m の味方の攻撃と移動速度を上げ、毎秒 最大HPの ${heal}% を回復する${max ? '。トーテム自身も毎秒再生する' : ''}`;
   }
-  if (r.id === 'cannon_tower') return `接近する敵を砲撃する（威力 ×${CANNON_DAMAGE_BY_LEVEL[lv]}）`;
-  if (r.id === 'barracks') return `${BARRACKS_INTERVAL_BY_LEVEL[lv]} 秒ごとに味方の兵士を召喚する`;
+  if (r.id === 'cannon_tower') {
+    return `接近する敵を砲撃する（威力 ×${CANNON_DAMAGE_BY_LEVEL[lv]}）${max ? '。着弾が広範囲の爆発になる' : ''}`;
+  }
+  if (r.id === 'barracks') {
+    return `${BARRACKS_INTERVAL_BY_LEVEL[lv]} 秒ごとに${max ? '、所持カードからランダムな兵種' : '味方の兵士'}を召喚する`;
+  }
   return FACILITY_TYPES[r.id].description;
 }
 
@@ -1629,11 +1969,17 @@ export function relicDescription(r: Pick<OwnedRelic, 'id' | 'level'>): string {
 /** レベルごとの、増殖ゲートで複製される確率 */
 export const GATE_CLONE_CHANCE: readonly number[] = [0.25, 0.5, 0.75, 1];
 /** レベルごとの、巨大化ゲートの倍率 */
-export const GATE_GIANT_SCALE: readonly number[] = [1.15, 1.3, 1.45, 1.6];
+export const GATE_GIANT_SCALE: readonly number[] = [1.15, 1.3, 1.45, 1.8];
+/** 巨大化ゲート Lv4 で受ける吹き飛ばしの倍率（ノックバック耐性） */
+export const GATE_GIANT_MAX_LEVEL_KNOCKBACK_RESIST = 0.4;
 /** レベルごとの、縮小ゲートの移動速度倍率 */
-export const GATE_SHRINK_SPEED: readonly number[] = [1.2, 1.35, 1.5, 1.7];
-/** レベルごとの、属性ゲートの状態異常の持続倍率 */
-export const GATE_ELEMENT_DURATION: readonly number[] = [1, 1.5, 2, 2.5];
+export const GATE_SHRINK_SPEED: readonly number[] = [1.2, 1.35, 1.5, 2];
+/** レベルごとの、縮小ゲートの縮み方（体格の倍率） */
+export const GATE_SHRINK_SCALE: readonly number[] = [0.6, 0.6, 0.6, 0.5];
+/** 縮小ゲート Lv4 で縮められる体格の下限（通常より一段小さい） */
+export const GATE_SHRINK_MAX_LEVEL_MIN_SCALE = 0.38;
+/** 疾風の門 Lv4: 各ユニットの最初の攻撃のダメージ倍率 */
+export const SWIFT_MAX_LEVEL_FIRST_STRIKE = 2;
 
 const GATE_ELEMENTS: Partial<Record<FacilityTypeId, { element: GateInfusion['element']; label: string }>> = {
   fire_gate: { element: 'fire', label: '燃焼' },
@@ -1656,14 +2002,15 @@ function statGateText(id: FacilityTypeId, level: number): string | null {
       return `全員の攻撃力 +${percent}%`;
     case 'range': {
       const cleave = Math.round((value - 1) * MELEE_CLEAVE_RADIUS_PER_RANGE * 10) / 10;
-      return `全員の射程と爆発範囲 +${percent}%。近接攻撃は周囲 ${cleave}m の敵も半分のダメージで巻き込む`;
+      const share = level >= MAX_GATE_LEVEL ? `${Math.round(MELEE_CLEAVE_DAMAGE_MAX_LEVEL * 100)}% の` : '半分の';
+      return `全員の射程と爆発範囲 +${percent}%。近接攻撃は周囲 ${cleave}m の敵も${share}ダメージで巻き込む`;
     }
     case 'attack_rate':
       return `全員の攻撃頻度 +${percent}%`;
     case 'hp':
       return `全員の最大HP +${percent}%`;
     case 'speed':
-      return `全員の移動速度 +${percent}%`;
+      return `全員の移動速度 +${percent}%${level >= MAX_GATE_LEVEL ? `。各ユニットの最初の攻撃のダメージ ×${SWIFT_MAX_LEVEL_FIRST_STRIKE}` : ''}`;
     case 'guard':
       return `全員の受けるダメージ ${percent}%`;
     case 'knockback':
@@ -1677,10 +2024,39 @@ export function gateEffectText(id: FacilityTypeId, level: number): string {
   const statText = statGateText(id, lv);
   if (statText) return statText;
   if (id === 'multiplier_gate') return `全員が ${Math.round(GATE_CLONE_CHANCE[lv] * 100)}% の確率で複製される`;
-  if (id === 'giant_gate') return `全員が ${GATE_GIANT_SCALE[lv]} 倍に巨大化し、HP・攻撃・吹き飛ばしが上がる`;
-  if (id === 'shrink_gate') return `全員が縮んで弾に当たりにくくなり、移動速度 +${Math.round((GATE_SHRINK_SPEED[lv] - 1) * 100)}%（HP -20%）`;
-  const info = GATE_ELEMENTS[id];
-  return info ? `全員の攻撃に${info.label}を付ける（持続 ${GATE_ELEMENT_DURATION[lv]} 倍）` : '';
+  const max = lv >= MAX_GATE_LEVEL;
+  if (id === 'giant_gate') {
+    return `全員が ${GATE_GIANT_SCALE[lv]} 倍に巨大化し、HP・攻撃・吹き飛ばしが上がる${max ? '。吹き飛ばされにくくなる' : ''}`;
+  }
+  if (id === 'shrink_gate') {
+    return `全員が縮んで弾に当たりにくくなり、移動速度 +${Math.round((GATE_SHRINK_SPEED[lv] - 1) * 100)}%${max ? '。さらに一段小さくなる' : ''}`;
+  }
+  if (id === 'fire_gate') {
+    return `全員の攻撃に燃焼を付ける（燃焼ダメージ ${GATE_FIRE_DAMAGE_MUL[lv]} 倍${max ? `、さらに毎回 最大HPの ${GATE_FIRE_MAX_HP_RATIO[lv] * 100}%` : ''}）`;
+  }
+  if (id === 'thunder_gate') {
+    const hops = GATE_SHOCK_HOPS[lv];
+    return hops > 0
+      ? `全員の攻撃に感電を付ける。感電が近くの敵 ${hops} 体まで連鎖し、跳ぶほど雷撃が強まる`
+      : '全員の攻撃に感電を付ける（連鎖なし）';
+  }
+  if (id === 'venom_gate') {
+    return `全員の攻撃に毒を付ける。毒が ${GATE_POISON_STACKS[lv]} 重まで重なる${max ? '。毒で倒れた敵は小爆発する' : ''}`;
+  }
+  if (id === 'rebirth_gate') {
+    return `倒れた味方が、その場でスライム ${REBIRTH_SLIME_COUNT[lv]} 体に転生する（1体につき1回）`;
+  }
+  if (id === 'samsara_gate') {
+    const g = SAMSARA_GRACE_SECONDS[lv];
+    return `出現から ${g[0]} 秒以内に倒れた味方は HP50% で復活する。復活のたびに猶予が ${g[1]}→${g[2]}→${g[3]} 秒と短くなる`;
+  }
+  if (id === 'blast_gate') {
+    return `倒れた味方が爆発し、半径 ${BLAST_RADIUS[lv]}m の敵に最大HPの ${Math.round(BLAST_DAMAGE_RATIO[lv] * 100)}% のダメージ`;
+  }
+  if (id === 'magnet_gate') {
+    return `${MAGNET_INTERVAL[lv]} 秒ごとに敵全体を自軍の中心へ引き寄せる${max ? '。引き寄せた敵は一瞬しびれる' : ''}`;
+  }
+  return '';
 }
 
 /** 複製に体格の変化が引き継がれ、複製にも属性の光が付くよう、この順に適用する */
@@ -1693,7 +2069,6 @@ const GATE_APPLY_ORDER: readonly FacilityTypeId[] = [
   'vitality_gate',
   'swift_gate',
   'guard_gate',
-  'impact_gate',
   'multiplier_gate',
   'fire_gate',
   'thunder_gate',
@@ -1747,7 +2122,10 @@ export class RogueGateSequence implements BattleOpening {
     private readonly rng: () => number = Math.random,
     private readonly onFinished: (() => void) | null = null,
   ) {
-    const ordered = [...gates].sort((a, b) => GATE_APPLY_ORDER.indexOf(a.id) - GATE_APPLY_ORDER.indexOf(b.id));
+    // 廃止した門・戦闘中ずっと働く門は開戦時の演出に出さない
+    const ordered = gates
+      .filter((g) => GATE_APPLY_ORDER.includes(g.id))
+      .sort((a, b) => GATE_APPLY_ORDER.indexOf(a.id) - GATE_APPLY_ORDER.indexOf(b.id));
     this.stages = ordered.map((relic, i) => ({
       relic,
       facility: null,
@@ -1762,7 +2140,7 @@ export class RogueGateSequence implements BattleOpening {
     this.sweepSeconds = Math.min(GATE_SWEEP_MAX_SECONDS, budget / n);
     rules.gateInfusions = gates.flatMap((g) => {
       const info = GATE_ELEMENTS[g.id];
-      return info ? [{ element: info.element, durationMul: GATE_ELEMENT_DURATION[gateLevelIndex(g.level)] }] : [];
+      return info ? [{ element: info.element, level: gateLevelIndex(g.level) }] : [];
     });
   }
 
@@ -1802,10 +2180,11 @@ export class RogueGateSequence implements BattleOpening {
     const id = stage.relic.id;
     const lv = gateLevelIndex(stage.relic.level);
     if (id === 'shrink_gate') {
-      if (u.scale > MIN_SHRINK_GATE_SCALE) {
+      const minScale = lv >= MAX_GATE_LEVEL ? GATE_SHRINK_MAX_LEVEL_MIN_SCALE : MIN_SHRINK_GATE_SCALE;
+      if (u.scale > minScale) {
         this.battle.transformUnit(u, {
-          scaleMul: Math.max(0.6, MIN_SHRINK_GATE_SCALE / u.scale),
-          hpMul: 0.8,
+          scaleMul: Math.max(GATE_SHRINK_SCALE[lv], minScale / u.scale),
+          hpMul: 1,
           speedMul: GATE_SHRINK_SPEED[lv],
         });
       }
@@ -1817,6 +2196,7 @@ export class RogueGateSequence implements BattleOpening {
           hpMul: scale,
           damageMul: 1 + (scale - 1) * (0.35 / 0.6),
           knockbackMul: 1 + (scale - 1) * (0.5 / 0.6),
+          knockbackResistMul: lv >= MAX_GATE_LEVEL ? GATE_GIANT_MAX_LEVEL_KNOCKBACK_RESIST : 1,
         });
       }
     } else if (id === 'multiplier_gate') {
@@ -1830,6 +2210,8 @@ export class RogueGateSequence implements BattleOpening {
       }
     } else if (STAT_GATES[id]) {
       applyStatGate(u, id, lv);
+      if (lv >= MAX_GATE_LEVEL && id === 'reach_gate') u.meleeCleaveDamage = MELEE_CLEAVE_DAMAGE_MAX_LEVEL;
+      if (lv >= MAX_GATE_LEVEL && id === 'swift_gate') u.firstStrikeMul = SWIFT_MAX_LEVEL_FIRST_STRIKE;
     } else {
       const info = GATE_ELEMENTS[id];
       if (info) u.elementInfusion = info.element;
