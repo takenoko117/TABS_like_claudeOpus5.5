@@ -19,7 +19,7 @@ const STEP = 1 / 60;
 /** カードの更新間隔（秒） */
 const FRAME = 1 / 30;
 /** 共有レンダラーの描画サイズ（px）。各カードへはこの絵を縮小して写す */
-const RENDER_PX = 256;
+const RENDER_PX = 384;
 const FOV = 24;
 /** 正面やや右上から見下ろす向き */
 const VIEW_DIR = new Vector3(0.58, 0.3, 0.76).normalize();

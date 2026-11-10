@@ -2834,23 +2834,29 @@ export class GameApp {
     const fits = card.inDeck || run.fitsInDeck(id);
     const price = run.cardLevelPrice(id);
     const mul = getUnitLevelMul(card.level);
+    const slotCost = getUnitSlotCost(id);
     const upgrade =
       price === null
         ? '<span class="rogue-relic-max">強化MAX</span>'
         : `<button type="button" class="ctrl-btn deck-up" data-action="card-up" data-unit="${id}" ${run.gold >= price ? '' : 'disabled'}>強化 ${price}G<small>×${mul.toFixed(1)} → ×${getUnitLevelMul(card.level + 1).toFixed(1)}</small></button>`;
     return `
-      <div class="rogue-deck-card rarity-${unitRarity(id)}${card.inDeck ? ' in-deck' : ''}">
-        ${this.unitVoxelHtml(id)}
-        <div class="deck-card-body">
-          <div class="rogue-card-title">${UNIT_TYPES[id].name}</div>
-          <div class="deck-card-meta"><b>Lv${card.level}</b>／${ROGUE_MAX_UNIT_LEVEL} ・ 枠 ${getUnitSlotCost(id)} ・ ${getSquadSize(id)}人</div>
-          <div class="deck-card-meta">HP・攻撃 ×${mul.toFixed(1)}</div>
-          <div class="unit-tags">${this.rogueTagChips(id)}</div>
-          <div class="deck-card-btns">
-            <button type="button" class="ctrl-btn${card.inDeck ? ' active' : ''}" data-action="deck-toggle" data-unit="${id}" ${fits ? '' : 'disabled title="ユニット枠が足りません"'}>${card.inDeck ? '外す' : fits ? '入れる' : '枠不足'}</button>
-            ${upgrade}
+      <div class="rogue-deck-card slots-${slotCost} rarity-${unitRarity(id)}${card.inDeck ? ' in-deck' : ''}">
+        <div class="deck-card-slotbar" title="ユニット枠 ${slotCost}">${'<i></i>'.repeat(slotCost)}</div>
+        <div class="deck-card-stage">
+          ${this.unitVoxelHtml(id)}
+          <div class="deck-card-info">
+            <div class="deck-card-head">
+              <span class="rogue-card-title">${UNIT_TYPES[id].name}</span>
+              <button type="button" class="ctrl-btn deck-toggle${card.inDeck ? ' active' : ''}" data-action="deck-toggle" data-unit="${id}" ${fits ? '' : 'disabled title="ユニット枠が足りません"'}>${card.inDeck ? '外す' : fits ? '入れる' : '枠不足'}</button>
+            </div>
+            <div class="deck-card-meta"><b>Lv${card.level}</b><span class="deck-meta-extra">／${ROGUE_MAX_UNIT_LEVEL} ・ 枠 ${slotCost}</span> ・ ${getSquadSize(id)}人</div>
+          </div>
+          <div class="deck-card-info bottom">
+            <div class="deck-card-meta">HP・攻撃 ×${mul.toFixed(1)}</div>
+            <div class="unit-tags">${this.rogueTagChips(id)}</div>
           </div>
         </div>
+        <div class="deck-card-foot">${upgrade}</div>
       </div>`;
   }
 
@@ -2861,6 +2867,7 @@ export class GameApp {
     const scrollTop = this.elRogueModal?.querySelector('.rogue-modal-inner')?.scrollTop ?? 0;
     const deck = run.deck.map((c) => this.renderRogueDeckCard(run, c)).join('');
     const bench = run.bench.map((c) => this.renderRogueDeckCard(run, c)).join('');
+    const emptySlots = '<div class="deck-slot-empty">空き枠</div>'.repeat(Math.max(0, run.unitSlots - run.usedUnitSlots));
     const relicsFull = run.activeRelics.length >= run.relicSlots;
     const relicRows = run.relics
       .map((r, i) => {
@@ -2899,7 +2906,8 @@ export class GameApp {
         <span>デッキ（ユニット枠 ${run.usedUnitSlots}/${run.unitSlots}）</span>
         ${buyBtn('unit-slot', 'ユニット枠', run.unitSlotPrice)}
       </div>
-      <div class="rogue-deck-grid">${deck || '<div class="brief-hint">デッキが空です。控えから入れてください</div>'}</div>
+      <div class="rogue-deck-grid rogue-deck-board">${deck}${emptySlots}</div>
+      ${deck ? '' : '<div class="brief-hint">デッキが空です。控えから入れてください</div>'}
       ${bench ? `<div class="rogue-sell-title">控え</div><div class="rogue-deck-grid">${bench}</div>` : ''}
       ${tagRows ? `<div class="rogue-sell-title">シナジー</div><div class="tag-panel">${tagRows}</div>` : ''}
       <div class="rogue-sell-title rogue-relic-head">
@@ -2911,10 +2919,8 @@ export class GameApp {
         <button type="button" class="ctrl-btn" data-action="room-close">👀 戦場を見る</button>
         <button type="button" class="start-btn" data-action="room-fight" ${run.deck.length > 0 ? '' : 'disabled'}>⚔ 出撃</button>
       </div>
-    `);
-    const inner = this.elRogueModal?.querySelector('.rogue-modal-inner');
-    inner?.classList.add('rogue-war-room');
-    inner?.scrollTo({ top: scrollTop });
+    `, 'rogue-war-room');
+    this.elRogueModal?.querySelector('.rogue-modal-inner')?.scrollTo({ top: scrollTop });
   }
 
   /** 作戦室の操作後の共通処理（保存と表示更新） */
@@ -2993,9 +2999,9 @@ export class GameApp {
     this.syncUnitDetailOverlay();
   }
 
-  private showRogueModal(html: string): void {
+  private showRogueModal(html: string, innerClass = ''): void {
     if (!this.elRogueModal) return;
-    this.elRogueModal.innerHTML = `<div class="rogue-modal-inner">${html}</div>`;
+    this.elRogueModal.innerHTML = `<div class="rogue-modal-inner ${innerClass}">${html}</div>`;
     this.elRogueModal.classList.remove('hidden');
     this.unitPreviews ??= new UnitPreviews();
     this.unitPreviews.bind(this.elRogueModal);

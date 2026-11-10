@@ -2894,20 +2894,48 @@ body.on-title #btn-restore-hud {
   height: 56%;
 }
 
+/* 1列が1ユニット枠。カードは枠コストの数だけ列をまたぐ */
 .rogue-deck-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: dense;
   gap: 8px;
 }
 
-.rogue-deck-card {
-  display: flex;
-  gap: 8px;
+.rogue-deck-board {
   padding: 8px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 212, 59, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.deck-slot-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 214px;
+  border-radius: 10px;
+  border: 2px dashed rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.rogue-deck-card {
+  --model-size: 160px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
   border-radius: 10px;
   border: 2px solid rgba(255, 255, 255, 0.14);
   background: rgba(30, 36, 48, 0.92);
 }
+
+.rogue-deck-card.slots-2 { --model-size: 200px; grid-column: span 2; }
+.rogue-deck-card.slots-3 { --model-size: 240px; grid-column: span 3; }
+.rogue-deck-card.slots-4 { --model-size: 280px; grid-column: span 4; }
 
 .rogue-deck-card:not(.in-deck) {
   background: rgba(30, 36, 48, 0.55);
@@ -2916,29 +2944,93 @@ body.on-title #btn-restore-hud {
 .rogue-deck-card.rarity-rare { border-color: rgba(77, 171, 247, 0.7); }
 .rogue-deck-card.rarity-legendary { border-color: rgba(255, 168, 0, 0.9); }
 
-.deck-card-body {
+/* 占有している枠を1マスずつ示す */
+.deck-card-slotbar {
+  display: flex;
+  gap: 8px;
+  padding: 4px 4px 0;
+}
+
+.deck-card-slotbar i {
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 212, 59, 0.85);
+}
+
+.rogue-deck-card:not(.in-deck) .deck-card-slotbar i {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.deck-card-stage {
+  position: relative;
   display: flex;
   flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.deck-card-stage .unit-voxel {
+  width: min(var(--model-size), 100%);
+  height: auto;
+  aspect-ratio: 1;
+  background: none;
+}
+
+/* モデルの上に重ねる情報。ホバーでモデルが跳ねるよう操作は下へ通す */
+.deck-card-info {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
   flex-direction: column;
+  gap: 2px;
+  padding: 5px 6px 12px;
+  background: linear-gradient(to bottom, rgba(10, 14, 22, 0.72), rgba(10, 14, 22, 0));
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+}
+
+.deck-card-info.bottom {
+  top: auto;
+  bottom: 0;
+  padding: 12px 6px 5px;
+  background: linear-gradient(to top, rgba(10, 14, 22, 0.72), rgba(10, 14, 22, 0));
+}
+
+.deck-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 3px;
-  min-width: 0;
 }
 
 .deck-card-meta {
   font-size: 11.5px;
-  color: #ced4da;
+  color: #dee2e6;
 }
 
 .deck-card-meta b {
   color: #ffd43b;
 }
 
-.deck-card-btns {
+.deck-toggle {
+  padding: 2px 6px;
+  font-size: 11px;
+  text-shadow: none;
+  pointer-events: auto;
+}
+
+.deck-card-foot {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  margin-top: auto;
+  justify-content: center;
+  padding: 5px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.deck-up {
+  width: 100%;
 }
 
 .deck-up small {
@@ -2962,6 +3054,24 @@ body.on-title #btn-restore-hud {
 }
 
 @media (max-width: 640px) {
-  .rogue-deck-grid { grid-template-columns: 1fr; }
   .unit-voxel { width: 80px; height: 80px; }
+  .rogue-war-room { padding-left: 10px; padding-right: 10px; }
+  .rogue-deck-grid { gap: 4px; }
+  .rogue-deck-board { padding: 4px; }
+  .deck-card-slotbar { gap: 4px; }
+  .deck-slot-empty { min-height: 150px; }
+  .rogue-deck-card { --model-size: 96px; }
+  .rogue-deck-card.slots-2 { --model-size: 150px; }
+  .rogue-deck-card.slots-3 { --model-size: 180px; }
+  .rogue-deck-card.slots-4 { --model-size: 210px; }
+  .deck-card-stage { min-height: 130px; }
+  .rogue-deck-card .rogue-card-title { font-size: 12px; }
+  .rogue-deck-card .deck-card-meta { font-size: 10px; }
+  .deck-up { padding: 3px 2px; font-size: 11px; }
+  .deck-up small { font-size: 9px; white-space: nowrap; }
+  /* 1枠のカードは幅が狭いので、情報を絞ってモデルを見せる（倍率は強化ボタン、タグはシナジー欄にある） */
+  .slots-1 .deck-card-info { bottom: 0; padding: 4px 3px; background: linear-gradient(to bottom, rgba(10, 14, 22, 0.72), rgba(10, 14, 22, 0) 44px); }
+  .slots-1 .deck-card-info.bottom,
+  .slots-1 .deck-meta-extra { display: none; }
+  .slots-1 .deck-toggle { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); white-space: nowrap; }
 }
