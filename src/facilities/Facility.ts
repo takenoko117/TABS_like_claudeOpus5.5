@@ -9,6 +9,7 @@ import {
   GATE_HP_BY_LEVEL,
   MAX_GATE_LEVEL,
   RELIC_HP_BY_LEVEL,
+  STAT_GATES,
   TOTEM_HEAL_BY_LEVEL,
   TOTEM_RADIUS_BY_LEVEL,
   getGateOpeningWidth,
@@ -19,6 +20,38 @@ import {
 } from './FacilityTypes';
 
 /** 門を通過したユニットへの変身指示（巨大化・縮小）。Battle がユニットを作り直して適用する */
+/** ステータスを上げる門の効果を1体に適用する（そのほかの門では何もしない） */
+export function applyStatGate(unit: Unit, id: FacilityTypeId, level: number): void {
+  const gate = STAT_GATES[id];
+  if (!gate) return;
+  const value = gate.values[Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(level)))];
+  switch (gate.stat) {
+    case 'damage':
+      unit.permDamageMul *= value;
+      break;
+    case 'range':
+      unit.permRangeMul *= value;
+      break;
+    case 'attack_rate':
+      unit.permAttackRateMul *= value;
+      break;
+    case 'hp':
+      unit.maxHp *= value;
+      unit.hp *= value;
+      unit.levelHpMul *= value;
+      break;
+    case 'speed':
+      unit.permSpeedMul *= value;
+      break;
+    case 'guard':
+      unit.permVulnerabilityMul *= value;
+      break;
+    case 'knockback':
+      unit.knockbackMul *= value;
+      break;
+  }
+}
+
 export interface UnitTransform {
   scaleMul: number;
   hpMul: number;
@@ -343,6 +376,13 @@ export class Facility {
       case 'fire_gate':
       case 'thunder_gate':
       case 'venom_gate':
+      case 'power_gate':
+      case 'reach_gate':
+      case 'haste_gate':
+      case 'vitality_gate':
+      case 'swift_gate':
+      case 'guard_gate':
+      case 'impact_gate':
         this.updateGate(ctx);
         break;
       case 'cannon_tower':
@@ -474,6 +514,9 @@ export class Facility {
           break;
         case 'venom_gate':
           this.infuse(u, 'poison', 'poison');
+          break;
+        default:
+          applyStatGate(u, this.type.id, this.gateLevel);
           break;
       }
 

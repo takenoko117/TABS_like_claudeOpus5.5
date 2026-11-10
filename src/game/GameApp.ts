@@ -2774,7 +2774,17 @@ export class GameApp {
 
   /** カードに載せる動くボクセルモデル（用意できるまでは下のアイコンが見える） */
   private unitVoxelHtml(id: UnitTypeId, count = 1): string {
-    return `<span class="unit-voxel${count > 1 ? ' squad' : ''}" data-unit-preview="${id}" data-unit-count="${count}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span>`;
+    const badge = count > 1 ? `<span class="squad-count">×${count}</span>` : '';
+    return `<span class="unit-voxel${count > 1 ? ' squad' : ''}" data-unit-preview="${id}" data-unit-count="${count}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas>${badge}</span>`;
+  }
+
+  /** ゴールドやレリックのボクセルモデル（用意できるまでは fallback が見える） */
+  private propVoxelHtml(key: string, fallback: string): string {
+    return `<span class="unit-voxel prop-voxel" data-prop-preview="${key}">${fallback}<canvas aria-hidden="true"></canvas></span>`;
+  }
+
+  private relicVoxelHtml(id: FacilityTypeId): string {
+    return this.propVoxelHtml(`relic:${id}`, getFacilityIconSvg(id));
   }
 
   private rogueTagChips(id: UnitTypeId): string {
@@ -2790,8 +2800,10 @@ export class GameApp {
         const art = o.unitId
           ? this.unitVoxelHtml(o.unitId, getSquadSize(o.unitId))
           : o.relicId
-            ? `<div class="rogue-card-icon">${getFacilityIconSvg(o.relicId)}</div>`
-            : '';
+            ? this.relicVoxelHtml(o.relicId)
+            : o.kind === 'gold'
+              ? this.propVoxelHtml('gold', '<span class="unit-portrait-svg prop-fallback">💰</span>')
+              : '';
         return `
         <button type="button" class="rogue-card rarity-${o.rarity}" data-action="reward" data-index="${i}">
           <div class="rogue-card-rarity">${RARITY_LABELS[o.rarity]}</div>
@@ -2894,7 +2906,7 @@ export class GameApp {
             : `<button type="button" class="ctrl-btn" data-action="relic-up" data-index="${i}" ${run.gold >= price ? '' : 'disabled'} title="次のレベル: ${relicDescription({ id: r.id, level: r.level + 1 })}">強化 ${price}G</button>`;
         return `
           <div class="rogue-relic-row${r.active ? '' : ' off'}">
-            <div class="rogue-card-icon">${getFacilityIconSvg(r.id)}</div>
+            ${this.relicVoxelHtml(r.id)}
             <div class="rogue-relic-info">
               <b>${relicDisplayName(r)}</b>
               <small>${relicDescription(r)}</small>

@@ -1,12 +1,14 @@
 import { Vector3 } from 'three';
 import type { DamageEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
-import { MAX_GIANT_GATE_SCALE, MIN_SHRINK_GATE_SCALE } from '../facilities/Facility';
+import { MAX_GIANT_GATE_SCALE, MIN_SHRINK_GATE_SCALE, applyStatGate } from '../facilities/Facility';
 import {
   BARRACKS_INTERVAL_BY_LEVEL,
   CANNON_DAMAGE_BY_LEVEL,
   FACILITY_TYPES,
   MAX_GATE_LEVEL,
+  MELEE_CLEAVE_RADIUS_PER_RANGE,
+  STAT_GATES,
   TOTEM_HEAL_BY_LEVEL,
   TOTEM_RADIUS_BY_LEVEL,
   isGateTypeId,
@@ -821,6 +823,13 @@ export const ROGUE_RELIC_POOL: ReadonlyArray<{ id: FacilityTypeId; rarity: Rarit
   { id: 'thunder_gate', rarity: 'common' },
   { id: 'venom_gate', rarity: 'common' },
   { id: 'buff_totem', rarity: 'common' },
+  { id: 'vitality_gate', rarity: 'common' },
+  { id: 'swift_gate', rarity: 'common' },
+  { id: 'impact_gate', rarity: 'common' },
+  { id: 'power_gate', rarity: 'rare' },
+  { id: 'reach_gate', rarity: 'rare' },
+  { id: 'haste_gate', rarity: 'rare' },
+  { id: 'guard_gate', rarity: 'rare' },
   { id: 'multiplier_gate', rarity: 'rare' },
   { id: 'giant_gate', rarity: 'rare' },
   { id: 'barracks', rarity: 'rare' },
@@ -834,7 +843,7 @@ export interface RewardOption {
   rarity: Rarity;
   title: string;
   description: string;
-  /** 手に入れる（すでに持っていればレベルが上がる）兵種 */
+  /** 手に入れる兵種（持っている兵種は報酬に出ない） */
   unitId?: UnitTypeId;
   /** 手に入れる（すでに持っていればレベルが上がる）レリック */
   relicId?: FacilityTypeId;
@@ -1283,20 +1292,20 @@ export const RELIC_GRANTED_TAG: Partial<Record<FacilityTypeId, TagId>> = {
   venom_gate: 'poison',
 };
 
-/** 報酬で手に入れられる兵種か（枠に入らない兵種と、レベルが上限のカードは出さない） */
+/** 報酬で手に入れられる兵種か（すでに持っている兵種と、枠に入らない兵種は出さない） */
 function canOfferUnit(run: RogueliteRun, id: UnitTypeId): boolean {
-  return getUnitSlotCost(id) <= run.unitSlots && (run.card(id)?.level ?? 0) < ROGUE_MAX_UNIT_LEVEL;
+  return !run.ownsUnit(id) && getUnitSlotCost(id) <= run.unitSlots;
 }
 
-/** ユニットカードの報酬。すでに持っているカードならレベルが上がる */
-function unitOption(run: RogueliteRun, id: UnitTypeId): RewardOption {
-  const owned = run.card(id);
-  const title = UNIT_TYPES[id].name;
-  const base = { kind: 'unit' as const, rarity: unitRarity(id), unitId: id, title };
-  if (owned) {
-    return { ...base, description: `持っているカードのレベルが上がる: Lv${owned.level} → Lv${owned.level + 1}（無料）` };
-  }
-  return { ...base, description: `枠 ${getUnitSlotCost(id)} ・ ${getSquadSize(id)}人の部隊を手に入れる` };
+/** ユニットカードの報酬 */
+function unitOption(id: UnitTypeId): RewardOption {
+  return {
+    kind: 'unit',
+    rarity: unitRarity(id),
+    unitId: id,
+    title: UNIT_TYPES[id].name,
+    description: `枠 ${getUnitSlotCost(id)} ・ ${getSquadSize(id)}人の部隊を手に入れる`,
+  };
 }
 
 /** ユニットカードの報酬を1枚引く */
@@ -1311,7 +1320,7 @@ function pickUnitReward(run: RogueliteRun, rng: () => number, exclude: readonly 
   const weight = (id: UnitTypeId) =>
     costAffinity(id, run.round) * ((UNIT_TAGS[id] ?? []).some((t) => tags.has(t)) ? 2.5 : 1);
   const id = weightedPick(band.length > 0 ? band : candidates, weight, rng);
-  return id ? unitOption(run, id) : null;
+  return id ? unitOption(id) : null;
 }
 
 /** レリックの報酬を1枚引く。すでに持っているレリックならレベルが上がる */
@@ -1544,9 +1553,37 @@ function gateLevelIndex(level: number): number {
   return Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(level)));
 }
 
+/** ステータスを上げる門の効果の説明 */
+function statGateText(id: FacilityTypeId, level: number): string | null {
+  const gate = STAT_GATES[id];
+  if (!gate) return null;
+  const value = gate.values[level];
+  const percent = Math.round((value - 1) * 100);
+  switch (gate.stat) {
+    case 'damage':
+      return `全員の攻撃力 +${percent}%`;
+    case 'range': {
+      const cleave = Math.round((value - 1) * MELEE_CLEAVE_RADIUS_PER_RANGE * 10) / 10;
+      return `全員の射程と爆発範囲 +${percent}%。近接攻撃は周囲 ${cleave}m の敵も半分のダメージで巻き込む`;
+    }
+    case 'attack_rate':
+      return `全員の攻撃頻度 +${percent}%`;
+    case 'hp':
+      return `全員の最大HP +${percent}%`;
+    case 'speed':
+      return `全員の移動速度 +${percent}%`;
+    case 'guard':
+      return `全員の受けるダメージ ${percent}%`;
+    case 'knockback':
+      return `全員の攻撃の吹き飛ばし +${percent}%`;
+  }
+}
+
 /** ゲートの効果の説明 */
 export function gateEffectText(id: FacilityTypeId, level: number): string {
   const lv = gateLevelIndex(level);
+  const statText = statGateText(id, lv);
+  if (statText) return statText;
   if (id === 'multiplier_gate') return `全員が ${Math.round(GATE_CLONE_CHANCE[lv] * 100)}% の確率で複製される`;
   if (id === 'giant_gate') return `全員が ${GATE_GIANT_SCALE[lv]} 倍に巨大化し、HP・攻撃・吹き飛ばしが上がる`;
   if (id === 'shrink_gate') return `全員が縮んで弾に当たりにくくなり、移動速度 +${Math.round((GATE_SHRINK_SPEED[lv] - 1) * 100)}%（HP -20%）`;
@@ -1558,6 +1595,13 @@ export function gateEffectText(id: FacilityTypeId, level: number): string {
 const GATE_APPLY_ORDER: readonly FacilityTypeId[] = [
   'shrink_gate',
   'giant_gate',
+  'power_gate',
+  'reach_gate',
+  'haste_gate',
+  'vitality_gate',
+  'swift_gate',
+  'guard_gate',
+  'impact_gate',
   'multiplier_gate',
   'fire_gate',
   'thunder_gate',
@@ -1692,6 +1736,8 @@ export class RogueGateSequence implements BattleOpening {
           u.pelvis.pos.z + Math.sin(entry.cloneAngle) * dist,
         );
       }
+    } else if (STAT_GATES[id]) {
+      applyStatGate(u, id, lv);
     } else {
       const info = GATE_ELEMENTS[id];
       if (info) u.elementInfusion = info.element;

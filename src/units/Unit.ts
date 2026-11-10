@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
 import type { CombatSystem } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
+import { MELEE_CLEAVE_RADIUS_PER_RANGE } from '../facilities/FacilityTypes';
 import { DistanceConstraint } from '../physics/Constraint';
 import { PF_RECORD_CONTACT, Particle } from '../physics/Particle';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
@@ -156,6 +157,10 @@ export class Unit {
   permVulnerabilityMul = 1.0;
   /** 与える吹き飛ばしの倍率 */
   knockbackMul = 1.0;
+  /** 永続の射程・爆発範囲の倍率 */
+  permRangeMul = 1.0;
+  /** 永続の攻撃頻度の倍率 */
+  permAttackRateMul = 1.0;
   /** 増殖ゲートなどで生まれた複製体か */
   isClone = false;
   /** ボスとして強化された個体か（HP数値を常に表示する） */
@@ -1517,8 +1522,13 @@ export class Unit {
   }
 
   /** 遠距離攻撃の射程（ヤマムロンの強化モードで 5 倍） */
-  private get attackRange(): number {
-    return this.type.range * (this.yamamuronEnraged ? YAMAMURON_RAGE_RANGE_MUL : 1);
+  get attackRange(): number {
+    return this.type.range * this.permRangeMul * (this.yamamuronEnraged ? YAMAMURON_RAGE_RANGE_MUL : 1);
+  }
+
+  /** 近接攻撃が当たった敵の周囲を巻き込む半径（m） */
+  get meleeCleaveRadius(): number {
+    return Math.max(0, this.permRangeMul - 1) * MELEE_CLEAVE_RADIUS_PER_RANGE;
   }
 
   /** ハヤトの照準を目標へ寄せ、顔を目標に向ける（blend = 1 で即座に合わせる） */
@@ -1544,7 +1554,7 @@ export class Unit {
 
   /** 攻撃の進行速度の倍率（ヤマムロンの強化モードで 2 倍） */
   private get attackRateMul(): number {
-    return this.yamamuronEnraged ? YAMAMURON_RAGE_ATTACK_RATE : 1;
+    return this.permAttackRateMul * (this.yamamuronEnraged ? YAMAMURON_RAGE_ATTACK_RATE : 1);
   }
 
   /** 噴火の着弾狙い点。強化モードでは最寄りの敵を含めて最大 3 体を同時に狙う */
@@ -1791,7 +1801,7 @@ export class Unit {
         // 目標の足元〜腰の高さを狙って俯角を付け、地上歩兵への直撃と地面の延焼ゾーン生成を両立する
         let baseX = this.forward.x;
         let baseZ = this.forward.z;
-        let horiz = this.type.range * 0.75;
+        let horiz = this.attackRange * 0.75;
         let aimY = 0.2;
         if (t && t.alive) {
           const tx = t.pelvis.pos.x - from.x;

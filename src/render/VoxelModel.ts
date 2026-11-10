@@ -30,7 +30,7 @@ import {
   Vector3,
 } from 'three';
 import type { ProjectileKind } from '../combat/CombatSystem';
-import type { FacilityTypeId } from '../facilities/FacilityTypes';
+import { isGateTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Particle } from '../physics/Particle';
 import { buildAwakenedJewel, buildAwakenedMountain } from './YamamuronAwakenedModel';
 import {
@@ -6036,15 +6036,7 @@ export function buildGatePylonGrids(team: Team): {
 export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { grid: VoxelGrid; voxelSize: number } {
   const gateEnergy = GATE_TINTS[typeId] ?? 0x66ccff;
   // ローグライトの門は増殖ゲートと同じ形を使い、エネルギーの色だけを変える
-  if (
-    typeId === 'giant_gate' ||
-    typeId === 'shrink_gate' ||
-    typeId === 'fire_gate' ||
-    typeId === 'thunder_gate' ||
-    typeId === 'venom_gate'
-  ) {
-    typeId = 'multiplier_gate';
-  }
+  if (isGateTypeId(typeId)) typeId = 'multiplier_gate';
   const teamCol = TEAM_COLORS[team];
   const primary = teamCol.shirt;
   const accent = teamCol.accent;
@@ -6494,6 +6486,13 @@ export const GATE_TINTS: Partial<Record<FacilityTypeId, number>> = {
   fire_gate: 0xff6a3d,
   thunder_gate: 0xfff06a,
   venom_gate: 0x8fe36a,
+  power_gate: 0xff3b3b,
+  reach_gate: 0x5b8cff,
+  haste_gate: 0x66ffe0,
+  vitality_gate: 0xff9ec4,
+  swift_gate: 0xd8ff5c,
+  guard_gate: 0xb0bccc,
+  impact_gate: 0xe0c090,
 };
 
 export function createFacilityMesh(typeId: FacilityTypeId, team: Team): Mesh {

@@ -3,6 +3,7 @@ import {
   Box3,
   DirectionalLight,
   Mesh,
+  type Object3D,
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
@@ -12,6 +13,7 @@ import {
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Unit } from '../units/Unit';
 import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
+import { createRewardPropMesh } from './RewardVoxelModels';
 import { VoxelCharacterVisual } from './VoxelModel';
 
 /** 物理の刻み（秒） */
@@ -28,6 +30,18 @@ const MAX_WALK_SPEED = 1.8;
 const SETTLE_STEPS = 45;
 /** 跳ねると地響きになる大きさ */
 const MAX_HOP_SCALE = 1.6;
+
+/** ゴールドやレリックの揺れの速さと振れ幅、触れたときの回転の速さ（ラジアン毎秒） */
+const PROP_SWAY_SPEED = 0.9;
+const PROP_SWAY_ANGLE = 0.4;
+const PROP_SPIN_SPEED = 9;
+
+/** モデルの表示先。兵種は data-unit-preview、ゴールドやレリックは data-prop-preview */
+const PREVIEW_SELECTOR = '[data-unit-preview], [data-prop-preview]';
+
+function previewKey(host: HTMLElement): string {
+  return host.dataset.unitPreview ?? host.dataset.propPreview ?? '';
+}
 
 const _center = new Vector3();
 
@@ -111,14 +125,15 @@ export class UnitPreviewActor {
 }
 
 interface PreviewModel {
-  actor: UnitPreviewActor;
-  visual: VoxelCharacterVisual;
+  object: Object3D;
   center: Vector3;
   distance: number;
+  advance(dt: number): void;
+  kick(): void;
 }
 
 interface PreviewSlot {
-  id: UnitTypeId;
+  id: string;
   host: HTMLElement;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -180,7 +195,7 @@ export class UnitPreviews {
   private failed = false;
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(FOV, 1, 0.1, 300);
-  private readonly models = new Map<UnitTypeId, PreviewModel>();
+  private readonly models = new Map<string, PreviewModel>();
   private readonly still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   private slots: PreviewSlot[] = [];
   private root: HTMLElement | null = null;
@@ -214,7 +229,7 @@ export class UnitPreviews {
     this.root = root;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.slots = [];
-    for (const host of root.querySelectorAll<HTMLElement>('[data-unit-preview]')) {
+    for (const host of root.querySelectorAll<HTMLElement>(PREVIEW_SELECTOR)) {
       const canvas = host.querySelector('canvas');
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) continue;
@@ -226,12 +241,13 @@ export class UnitPreviews {
       canvas.width = Math.round(cssW * scale);
       canvas.height = Math.round(cssH * scale);
       const placements = layoutSquad(count, canvas.width, canvas.height);
-      this.slots.push({ id: host.dataset.unitPreview as UnitTypeId, host, canvas, ctx, placements });
-      if (this.models.has(host.dataset.unitPreview as UnitTypeId)) host.classList.add('ready');
+      const id = previewKey(host);
+      this.slots.push({ id, host, canvas, ctx, placements });
+      if (this.models.has(id)) host.classList.add('ready');
     }
     root.onpointerover = (e) => {
-      const host = (e.target as HTMLElement).closest<HTMLElement>('[data-unit-preview]');
-      if (host && !host.contains(e.relatedTarget as Node | null)) this.kick(host.dataset.unitPreview as UnitTypeId);
+      const host = (e.target as HTMLElement).closest<HTMLElement>(PREVIEW_SELECTOR);
+      if (host && !host.contains(e.relatedTarget as Node | null)) this.kick(previewKey(host));
     };
     // 開いた瞬間に絵が出るよう、すでに作ってあるモデルはすぐ描く
     this.frameTimer = FRAME;
@@ -244,26 +260,67 @@ export class UnitPreviews {
   }
 
   /** モデルを跳ねさせて反応を見せる */
-  kick(id: UnitTypeId): void {
-    this.models.get(id)?.actor.hop();
+  kick(id: string): void {
+    this.models.get(id)?.kick();
   }
 
-  private createModel(id: UnitTypeId): PreviewModel {
+  /** 枠に収まる距離を、実際に見えている形から決める */
+  private frame(object: Object3D): Pick<PreviewModel, 'center' | 'distance'> {
+    object.updateMatrixWorld(true);
+    const box = new Box3();
+    object.traverseVisible((o) => {
+      if (o instanceof Mesh) box.expandByObject(o);
+    });
+    object.visible = false;
+    const center = box.getCenter(new Vector3());
+    const radius = Math.max(0.6, box.getSize(_center).length() / 2);
+    return { center, distance: (radius * 1.12) / Math.sin((FOV / 2) * (Math.PI / 180)) };
+  }
+
+  private createUnitModel(id: UnitTypeId): PreviewModel {
     const actor = new UnitPreviewActor(id, this.still);
     const visual = new VoxelCharacterVisual(actor.unit);
     visual.sync();
     this.scene.add(visual.group);
+    return {
+      object: visual.group,
+      ...this.frame(visual.group),
+      advance: (dt) => {
+        actor.advance(dt);
+        visual.sync();
+      },
+      kick: () => actor.hop(),
+    };
+  }
 
-    // 枠に収まる距離を、実際に見えている形から決める
-    visual.group.updateMatrixWorld(true);
-    const box = new Box3();
-    visual.group.traverseVisible((o) => {
-      if (o instanceof Mesh) box.expandByObject(o);
-    });
-    visual.group.visible = false;
-    const center = box.getCenter(new Vector3());
-    const radius = Math.max(0.6, box.getSize(_center).length() / 2);
-    return { actor, visual, center, distance: (radius * 1.12) / Math.sin((FOV / 2) * (Math.PI / 180)) };
+  /** ゴールドやレリックのモデル。正面をカメラへ向けて左右にゆっくり揺らし、触れると1回転する */
+  private createPropModel(key: string): PreviewModel {
+    const mesh = createRewardPropMesh(key);
+    this.scene.add(mesh);
+    const framing = this.frame(mesh);
+    const facing = Math.atan2(VIEW_DIR.x, VIEW_DIR.z);
+    let time = Math.random() * 6;
+    let spin = 0;
+    const pose = () => {
+      mesh.rotation.y = facing + (this.still ? 0 : Math.sin(time * PROP_SWAY_SPEED) * PROP_SWAY_ANGLE) + spin;
+    };
+    pose();
+    return {
+      object: mesh,
+      ...framing,
+      advance: (dt) => {
+        time += dt;
+        if (spin > 0) spin = Math.max(0, spin - dt * PROP_SPIN_SPEED);
+        pose();
+      },
+      kick: () => {
+        if (!this.still && spin === 0) spin = Math.PI * 2;
+      },
+    };
+  }
+
+  private createModel(id: string): PreviewModel {
+    return id in UNIT_TYPES ? this.createUnitModel(id as UnitTypeId) : this.createPropModel(id);
   }
 
   /** 毎フレーム呼ぶ */
@@ -284,7 +341,7 @@ export class UnitPreviews {
     }
 
     const view = this.root?.querySelector('.rogue-modal-inner')?.getBoundingClientRect();
-    const drawn = new Set<UnitTypeId>();
+    const drawn = new Set<string>();
     for (const slot of this.slots) {
       const model = this.models.get(slot.id);
       if (!model) continue;
@@ -292,13 +349,12 @@ export class UnitPreviews {
       if (view && (rect.bottom < view.top || rect.top > view.bottom)) continue;
       if (!drawn.has(slot.id)) {
         drawn.add(slot.id);
-        model.actor.advance(dt);
-        model.visual.sync();
-        model.visual.group.visible = true;
+        model.advance(dt);
+        model.object.visible = true;
         this.camera.position.copy(model.center).addScaledVector(VIEW_DIR, model.distance);
         this.camera.lookAt(model.center);
         renderer.render(this.scene, this.camera);
-        model.visual.group.visible = false;
+        model.object.visible = false;
         // 同じ兵種のカードが複数あれば同じ絵を写す
         for (const s of this.slots) {
           if (s.id !== slot.id) continue;

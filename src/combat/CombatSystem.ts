@@ -1,6 +1,7 @@
 import { J } from '../units/Skeleton';
 import { Vector3 } from 'three';
 import type { Facility } from '../facilities/Facility';
+import { MELEE_CLEAVE_DAMAGE } from '../facilities/FacilityTypes';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
 import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
 import { MOUTH_LASER_HEIGHT_TOLERANCE, MOUTH_LASER_PIERCE, MOUTH_LASER_RADIUS } from '../units/HayatoHead';
@@ -253,7 +254,7 @@ export class CombatSystem {
   }
 
   /** 物理ステップで記録された接触を処理し、ダメージとノックバックを適用する */
-  processContacts(contacts: readonly Contact[], dt: number): void {
+  processContacts(contacts: readonly Contact[], dt: number, units: readonly Unit[] = []): void {
     for (const c of contacts) {
       const aWeapon = (c.a.flags & PF_RECORD_CONTACT) !== 0;
       const bWeapon = (c.b.flags & PF_RECORD_CONTACT) !== 0;
@@ -285,7 +286,7 @@ export class CombatSystem {
           victim.type.id === 'buggy')
           ? 1.35
           : 1.0;
-      let damage = spec.damage * speedFactor * antiBeastMul * (isTip ? 1 : 0.65);
+      let damage = spec.damage * attacker.damageMul * speedFactor * antiBeastMul * (isTip ? 1 : 0.65);
 
       // 盾兵の正面ガード判定（盾粒子への接触、または正面からの近接攻撃を軽減）
       const hitShield = other === victim.shieldParticle;
@@ -317,6 +318,39 @@ export class CombatSystem {
         attacker,
         victim,
         hitParticle: other,
+        impulse: _dir.clone(),
+        killed,
+      });
+      if (attacker.meleeCleaveRadius > 0) this.applyMeleeCleave(attacker, victim, c.point, damage, units, dt);
+    }
+  }
+
+  /** 攻撃範囲が広がった近接攻撃で、当たった敵の周囲も巻き込む */
+  private applyMeleeCleave(
+    attacker: Unit,
+    victim: Unit,
+    point: Vector3,
+    damage: number,
+    units: readonly Unit[],
+    dt: number,
+  ): void {
+    const radius = attacker.meleeCleaveRadius;
+    const amount = damage * MELEE_CLEAVE_DAMAGE;
+    for (const u of units) {
+      if (!u.alive || u === victim || u.team === attacker.team || !attacker.canHit(u)) continue;
+      if (u.chest.pos.distanceToSquared(point) > radius * radius) continue;
+      _dir.subVectors(u.chest.pos, point);
+      _dir.y = Math.max(_dir.y, 0.2);
+      _dir.normalize().multiplyScalar(2.5 / Math.pow(u.massScale, 0.6));
+      const killed = u.takeDamage(amount, u.chest, _dir, dt, attacker);
+      attacker.registerHit(u, 0.4);
+      this.onHit?.({
+        kind: 'melee',
+        point: u.chest.pos.clone(),
+        damage: amount,
+        attacker,
+        victim: u,
+        hitParticle: u.chest,
         impulse: _dir.clone(),
         killed,
       });
@@ -467,7 +501,7 @@ export class CombatSystem {
   /** 重力術師のブラックホール球を発射する */
   spawnGravityOrb(owner: Unit, from: Vector3, targetPos: Vector3): void {
     const dir = new Vector3().subVectors(targetPos, from);
-    const dist = clamp(dir.length(), 2.5, owner.type.range);
+    const dist = clamp(dir.length(), 2.5, owner.attackRange);
     if (dir.lengthSq() > 1e-6) dir.normalize();
     else dir.copy(owner.forward);
     const speed = owner.type.projectile?.speed ?? 9;
@@ -509,6 +543,7 @@ export class CombatSystem {
     teamOverride?: Team,
   ): number {
     let hitCount = 0;
+    radius *= attacker?.permRangeMul ?? 1;
     const r2 = radius * radius;
     const attackerTeam = teamOverride ?? attacker?.team ?? 0;
     const dmgMul = (attacker?.damageMul ?? 1.0) * this.projectileDamageMultiplier;
@@ -1404,7 +1439,7 @@ export class CombatSystem {
   /** 拒絶神ゼルエルの帯状リボンカッター */
   executeZeruelCutter(owner: Unit, forwardDir: Vector3, units: readonly Unit[], facilities: readonly Facility[], dt: number): void {
     const from = owner.chest.pos.clone();
-    const reach = owner.type.range;
+    const reach = owner.attackRange;
     this.emitEffect({ kind: 'zeruel_ribbon', from, dir: forwardDir.clone(), reach, scale: owner.scale });
     // 前方広範囲〜長大な直線範囲の敵を高速両断（上空の飛行ユニットも両断）
     const fwdH = new Vector3(forwardDir.x, 0, forwardDir.z).normalize();

@@ -960,6 +960,20 @@ export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
       return gateIconSvg('#fff06a', '雷');
     case 'venom_gate':
       return gateIconSvg('#8fe36a', '毒');
+    case 'power_gate':
+      return gateIconSvg('#ff3b3b', '攻');
+    case 'reach_gate':
+      return gateIconSvg('#5b8cff', '遠');
+    case 'haste_gate':
+      return gateIconSvg('#66ffe0', '連');
+    case 'vitality_gate':
+      return gateIconSvg('#ff9ec4', '命');
+    case 'swift_gate':
+      return gateIconSvg('#d8ff5c', '速');
+    case 'guard_gate':
+      return gateIconSvg('#b0bccc', '守');
+    case 'impact_gate':
+      return gateIconSvg('#e0c090', '衝');
 
     case 'cannon_tower':
       // 防衛キャノン砲台: 円柱石積みタワーと突き出る大砲

@@ -453,7 +453,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     // ユニットの更新（バフが適用された状態で移動・攻撃を実行）
     for (const u of this.units) u.update(dt, this);
     this.world.step(dt);
-    this.combat.processContacts(this.world.contacts, dt);
+    this.combat.processContacts(this.world.contacts, dt, this.units);
     this.combat.updateArrows(dt, this.units, this.world.obstacles, this.facilities);
     if (!this.opening) this.time += dt;
   }
@@ -674,6 +674,8 @@ function copyDerivedState(from: Unit, to: Unit): void {
   to.permSpeedMul = from.permSpeedMul;
   to.permVulnerabilityMul = from.permVulnerabilityMul;
   to.knockbackMul = from.knockbackMul;
+  to.permRangeMul = from.permRangeMul;
+  to.permAttackRateMul = from.permAttackRateMul;
   to.elementInfusion = from.elementInfusion;
   to.levelHpMul = from.levelHpMul;
   to.grantedTags = [...from.grantedTags];

@@ -9,6 +9,13 @@ export type FacilityTypeId =
   | 'fire_gate'
   | 'thunder_gate'
   | 'venom_gate'
+  | 'power_gate'
+  | 'reach_gate'
+  | 'haste_gate'
+  | 'vitality_gate'
+  | 'swift_gate'
+  | 'guard_gate'
+  | 'impact_gate'
   | 'terrain_wall'
   | 'terrain_slope'
   | 'terrain_pit';
@@ -23,6 +30,13 @@ export const FACILITY_TYPE_IDS: readonly FacilityTypeId[] = [
   'fire_gate',
   'thunder_gate',
   'venom_gate',
+  'power_gate',
+  'reach_gate',
+  'haste_gate',
+  'vitality_gate',
+  'swift_gate',
+  'guard_gate',
+  'impact_gate',
   'terrain_wall',
   'terrain_slope',
   'terrain_pit',
@@ -133,6 +147,76 @@ export const FACILITY_TYPES: Readonly<Record<FacilityTypeId, FacilityType>> = {
     height: 2.8,
     relicOnly: true,
   },
+  power_gate: {
+    id: 'power_gate',
+    name: '剛力の門',
+    description: '通過した味方の攻撃力を上げる門。',
+    cost: 180,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  reach_gate: {
+    id: 'reach_gate',
+    name: '遠撃の門',
+    description: '通過した味方の射程と爆発範囲を広げる門。近接攻撃は当たった敵の周囲も巻き込む。',
+    cost: 180,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  haste_gate: {
+    id: 'haste_gate',
+    name: '連撃の門',
+    description: '通過した味方の攻撃頻度を上げる門。',
+    cost: 180,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  vitality_gate: {
+    id: 'vitality_gate',
+    name: '生命の門',
+    description: '通過した味方の最大HPを上げる門。',
+    cost: 160,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  swift_gate: {
+    id: 'swift_gate',
+    name: '疾風の門',
+    description: '通過した味方の移動速度を上げる門。',
+    cost: 150,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  guard_gate: {
+    id: 'guard_gate',
+    name: '守護の門',
+    description: '通過した味方が受けるダメージを減らす門。',
+    cost: 180,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
+  impact_gate: {
+    id: 'impact_gate',
+    name: '衝波の門',
+    description: '通過した味方の攻撃の吹き飛ばしを強める門。',
+    cost: 150,
+    hp: 300,
+    radius: 1.3,
+    height: 2.8,
+    relicOnly: true,
+  },
   terrain_wall: {
     id: 'terrain_wall',
     name: '防壁ブロック（壁）',
@@ -172,15 +256,57 @@ export const COMBAT_FACILITY_TYPE_LIST: readonly FacilityType[] = FACILITY_TYPE_
   (f) => !f.isTerrain,
 );
 
+/** 門（通過した味方に効果を与える施設）の種類ID */
+export type GateTypeId =
+  | 'multiplier_gate'
+  | 'giant_gate'
+  | 'shrink_gate'
+  | 'fire_gate'
+  | 'thunder_gate'
+  | 'venom_gate'
+  | 'power_gate'
+  | 'reach_gate'
+  | 'haste_gate'
+  | 'vitality_gate'
+  | 'swift_gate'
+  | 'guard_gate'
+  | 'impact_gate';
+
 /** 門（通過した味方に効果を与える施設）の種類 */
-export const GATE_TYPE_IDS: readonly FacilityTypeId[] = [
+export const GATE_TYPE_IDS: readonly GateTypeId[] = [
   'multiplier_gate',
   'giant_gate',
   'shrink_gate',
   'fire_gate',
   'thunder_gate',
   'venom_gate',
+  'power_gate',
+  'reach_gate',
+  'haste_gate',
+  'vitality_gate',
+  'swift_gate',
+  'guard_gate',
+  'impact_gate',
 ];
+
+/** ステータスを上げる門が変える値 */
+export type GateStat = 'damage' | 'range' | 'attack_rate' | 'hp' | 'speed' | 'guard' | 'knockback';
+
+/** ステータスを上げる門の効果。values はレベルごとの倍率 */
+export const STAT_GATES: Partial<Record<FacilityTypeId, { stat: GateStat; values: readonly number[] }>> = {
+  power_gate: { stat: 'damage', values: [1.2, 1.4, 1.65, 2] },
+  reach_gate: { stat: 'range', values: [1.2, 1.4, 1.6, 1.85] },
+  haste_gate: { stat: 'attack_rate', values: [1.15, 1.3, 1.5, 1.75] },
+  vitality_gate: { stat: 'hp', values: [1.25, 1.5, 1.8, 2.2] },
+  swift_gate: { stat: 'speed', values: [1.2, 1.4, 1.6, 1.85] },
+  guard_gate: { stat: 'guard', values: [0.85, 0.72, 0.6, 0.5] },
+  impact_gate: { stat: 'knockback', values: [1.3, 1.6, 2, 2.5] },
+};
+
+/** 射程の倍率 +100% あたりの、近接攻撃が巻き込む半径（m） */
+export const MELEE_CLEAVE_RADIUS_PER_RANGE = 5;
+/** 巻き込まれた敵が受けるダメージの割合 */
+export const MELEE_CLEAVE_DAMAGE = 0.5;
 
 /** 門のサイズ段階ごとの開口幅（m）。0=小門, 1=中門, 2=大門, 3=凱旋門 */
 export const GATE_OPENING_WIDTHS: readonly number[] = [1.7, 3.0, 5.0, 8.0];
@@ -201,8 +327,8 @@ export const GATE_HP_BY_LEVEL: readonly number[] = [300, 450, 650, 900];
 /** 門の最大サイズ段階 */
 export const MAX_GATE_LEVEL = GATE_OPENING_WIDTHS.length - 1;
 
-export function isGateTypeId(id: FacilityTypeId): boolean {
-  return GATE_TYPE_IDS.includes(id);
+export function isGateTypeId(id: FacilityTypeId): id is GateTypeId {
+  return (GATE_TYPE_IDS as readonly FacilityTypeId[]).includes(id);
 }
 
 /** 進軍門（ローグライトの門）のサイズ段階ごとの帯の幅（m） */

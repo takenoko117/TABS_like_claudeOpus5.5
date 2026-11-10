@@ -398,6 +398,17 @@ describe('ローグライト: ランの進行', () => {
     }
   });
 
+  it('持っている兵種は報酬に出ない', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const run = new RogueliteRun(seed, ROGUE_STARTERS[seed % 3]);
+      run.round = 1 + (seed % 14);
+      run.unitSlots = 12;
+      for (const option of generateRewardOptions(run, createSeededRng(seed))) {
+        if (option.unitId) expect(run.ownsUnit(option.unitId)).toBe(false);
+      }
+    }
+  });
+
   it('持っているカードやレリックの報酬はレベルが上がる', () => {
     const run = new RogueliteRun(3, ROGUE_STARTERS[0]);
     applyReward(run, { kind: 'unit', rarity: 'common', title: '', description: '', unitId: 'clubber' });
