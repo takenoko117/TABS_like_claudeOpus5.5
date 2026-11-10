@@ -6,6 +6,7 @@ import {
   JACKPOT_REWARDS,
   JackpotDropTracker,
   applyJackpotReward,
+  collectUnopenedChests,
   jackpotHpDropScale,
   rollJackpot,
   type ChestTier,
@@ -129,6 +130,15 @@ describe('ボーナス: 効果', () => {
     const enemy = battle.spawnUnit('giant', 1, 5, 0);
     return { battle, ally, enemy, run: new RogueliteRun(1) };
   };
+
+  it('開けなかった宝箱は1個200Gで回収される', () => {
+    const run = new RogueliteRun(1);
+    const gold = run.gold;
+    expect(collectUnopenedChests(run, 3)).toBe(600);
+    expect(run.gold).toBe(gold + 600);
+    expect(collectUnopenedChests(run, 0)).toBe(0);
+    expect(run.gold).toBe(gold + 600);
+  });
 
   it('ゴールド・引き直しはランに残る', () => {
     const { battle, run } = setup();

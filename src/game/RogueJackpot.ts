@@ -16,6 +16,8 @@ export const JACKPOT_RARITY_WEIGHTS: readonly number[] = [58, 28, 11, 3];
 export const JACKPOT_MAX_DROPS: Readonly<Record<RogueRoundKind, number>> = { normal: 3, elite: 4, boss: 6 };
 /** 宝箱が出たあと、次が出るまでの戦闘時間（秒） */
 export const JACKPOT_DROP_COOLDOWN = 3.5;
+/** 開けないまま戦闘が終わった宝箱1個のゴールド */
+export const JACKPOT_UNOPENED_CHEST_GOLD = 200;
 const BASE_DROP_CHANCE = 0.22;
 const DROP_CHANCE_PER_MISS = 0.12;
 /** 自軍の残りHPがこの割合以上だと、宝箱はほぼ出ない */
@@ -150,6 +152,13 @@ export function rollJackpot(tier: ChestTier, ctx: JackpotRollContext): JackpotRe
 
 function emitAllyEffect(battle: Battle, u: Unit): void {
   battle.emitEffect({ kind: 'gate_multiply', pos: new Vector3(u.pelvis.pos.x, 0.6, u.pelvis.pos.z), team: u.team });
+}
+
+/** 戦闘終了時に残っていた宝箱を、1個あたり JACKPOT_UNOPENED_CHEST_GOLD のゴールドとして回収する。増えた額を返す */
+export function collectUnopenedChests(run: Pick<RogueliteRun, 'gold'>, count: number): number {
+  const gold = count * JACKPOT_UNOPENED_CHEST_GOLD;
+  run.gold += gold;
+  return gold;
 }
 
 /** 報酬をランと戦場へ適用する */

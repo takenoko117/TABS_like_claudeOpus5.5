@@ -31,10 +31,10 @@ export interface ReelStrip {
 const REEL_PLANE_Z = 3.4;
 const _ray = new Vector3();
 
-const VOXEL = 0.2;
-const W = 16;
-const D = 11;
-const BODY_H = 8;
+export const VOXEL = 0.2;
+export const W = 16;
+export const D = 11;
+export const BODY_H = 8;
 const LID_H = 5;
 const CAMERA_Z = 11;
 const FOV = 36;
@@ -47,12 +47,12 @@ const OPEN_ANGLE = -2.0;
 const SETTLED_Y = -2.95;
 
 const WOOD = [0x7a4a22, 0x8b5628, 0x6c3f1c];
-const TRIM_COLORS = [0xc8803a, 0xe4edf7, 0xffcf33];
-const BEAM_COLORS = [0xffb066, 0xbfe0ff, 0xfff0a0];
+export const TRIM_COLORS = [0xc8803a, 0xe4edf7, 0xffcf33];
+export const BEAM_COLORS = [0xffb066, 0xbfe0ff, 0xfff0a0];
 const GEM_COLORS = [0xff4d6d, 0x4dabf7, 0xb197fc, 0x69db7c, 0xffffff];
 const GOLD = 0xffcf33;
 
-interface Voxel {
+export interface Voxel {
   x: number;
   y: number;
   z: number;
@@ -87,7 +87,7 @@ function isBand(x: number): boolean {
   return x === 3 || x === 4 || x === W - 5 || x === W - 4;
 }
 
-function bodyVoxels(): Voxel[] {
+export function bodyVoxels(): Voxel[] {
   const list: Voxel[] = [];
   for (let x = 0; x < W; x++) {
     for (let y = 0; y < BODY_H; y++) {
@@ -120,7 +120,7 @@ function lidHeight(z: number): number {
 }
 
 /** フタは蝶番（奥の上端）を原点にした座標で作る */
-function lidVoxels(): Voxel[] {
+export function lidVoxels(): Voxel[] {
   const list: Voxel[] = [];
   for (let x = 0; x < W; x++) {
     for (let z = 0; z < D; z++) {
@@ -137,7 +137,7 @@ function lidVoxels(): Voxel[] {
   return list;
 }
 
-function buildMesh(voxels: readonly Voxel[], offset: { x: number; y: number; z: number }): { mesh: InstancedMesh; trim: number[] } {
+export function buildMesh(voxels: readonly Voxel[], offset: { x: number; y: number; z: number }): { mesh: InstancedMesh; trim: number[] } {
   const geo = new BoxGeometry(VOXEL * 0.97, VOXEL * 0.97, VOXEL * 0.97);
   const mesh = new InstancedMesh(geo, new MeshLambertMaterial(), voxels.length);
   const trim: number[] = [];

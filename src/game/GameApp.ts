@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
 import { JackpotRoulette } from '../ui/JackpotRoulette';
+import { DroppedChests, type DroppedChest } from '../render/DroppedChests';
 import { setVoxelText, type VoxelTextOptions } from '../ui/VoxelText';
 import { UnitPreviews } from '../render/UnitPreviews';
 import { WarRoomFx } from '../ui/WarRoomFx';
@@ -17,8 +18,8 @@ import {
   JACKPOT_MAX_DROPS,
   JackpotDropTracker,
   applyJackpotReward,
+  collectUnopenedChests,
   rollJackpot,
-  type ChestTier,
   type JackpotReward,
 } from './RogueJackpot';
 import type { Facility } from '../facilities/Facility';
@@ -508,7 +509,10 @@ export class GameApp {
   /** 敵の撃破で出るボーナスのルーレット */
   private readonly jackpot = new JackpotRoulette();
   private jackpotTracker = new JackpotDropTracker(0);
-  private jackpotQueue: Array<{ tier: ChestTier; origin: { x: number; y: number } }> = [];
+  /** 敵が戦場に落とした宝箱（SceneView の初回利用時に作る） */
+  private droppedChestsField: DroppedChests | null = null;
+  /** 開けずに戦闘が終わった宝箱の個数と、回収したゴールド */
+  private jackpotCollected = { count: 0, gold: 0 };
   /** 戦闘開始時点の自軍ユニットの最大HP合計（宝箱ドロップ率のHP連動用） */
   private jackpotAllyMaxHpTotal = 0;
   private jackpotRewards: JackpotReward[] = [];
@@ -1903,6 +1907,10 @@ export class GameApp {
     const groundHit = new Vector3();
 
     dom.addEventListener('pointermove', (e) => {
+      if (this.droppedChestsField) {
+        const onChest = e.pointerType !== 'touch' && this.mode === 'battle' && this.droppedChestsField.pick(e.clientX, e.clientY) !== null;
+        dom.style.cursor = onChest ? 'pointer' : '';
+      }
       if (this.mode !== 'placement' || this.touchEraseMode || e.pointerType === 'touch' || this.playStyle === 'roguelite') {
         this.view.updatePlacementGhost(null, 0, null, false);
         return;
@@ -1942,6 +1950,11 @@ export class GameApp {
       const moved = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
       if (moved <= 8 && e.button === 0 && this.skipRogueGateSequence()) return;
       if (moved <= 8 && this.mode === 'battle' && e.button === 0) {
+        const chest = this.droppedChestsField?.pick(e.clientX, e.clientY);
+        if (chest) {
+          this.openDroppedChest(chest);
+          return;
+        }
         const hit = this.view.screenToGround(e.clientX, e.clientY, groundHit);
         if (hit) this.toggleFollowNearestUnit(hit.x, hit.z);
         return;
@@ -2689,8 +2702,16 @@ export class GameApp {
     return aliveCost(0) > aliveCost(1);
   }
 
+  private get droppedChests(): DroppedChests {
+    this.droppedChestsField ??= new DroppedChests(this.view.scene, this.view.camera, this.view.renderer.domElement, () =>
+      this.sound.playJackpotReelStop(0),
+    );
+    return this.droppedChestsField;
+  }
+
   private resetJackpot(): void {
-    this.jackpotQueue = [];
+    this.droppedChests.clear();
+    this.jackpotCollected = { count: 0, gold: 0 };
     this.jackpotRewards = [];
     this.jackpot.clearChips();
   }
@@ -2705,7 +2726,7 @@ export class GameApp {
     return Math.max(0, Math.min(1, current / this.jackpotAllyMaxHpTotal));
   }
 
-  /** 敵の撃破で宝箱が出るかを決め、出たら次のフレームで演出を始める */
+  /** 敵の撃破で宝箱が出るかを決め、出たら倒した敵の位置に落とす */
   private onRogueEnemyKilled(victim: Unit, pos: Vector3): void {
     if (this.mode !== 'battle' || this.onTitleScreen || !this.rogue) return;
     const tier = this.jackpotTracker.onKill(
@@ -2715,34 +2736,32 @@ export class GameApp {
       this.currentAllyHpRatio(),
     );
     if (tier === null) return;
-    const ndc = pos.clone().project(this.view.camera);
-    this.jackpotQueue.push({
-      tier,
-      origin: { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight },
-    });
+    this.droppedChests.spawn(pos, tier);
+    this.sound.playJackpotCoin();
   }
 
-  /** ボーナス演出を進める。待っている宝箱があれば戦闘を止めて開ける */
-  private updateJackpot(realDt: number): void {
-    if (this.jackpot.active) {
-      this.jackpot.update(realDt);
-      return;
-    }
-    const next = this.jackpotQueue.shift();
-    const run = this.rogue;
-    if (!next || !run) return;
-    const rewards = rollJackpot(next.tier, {
-      rng: Math.random,
-      battleActive: this.battle.aliveCount(0) > 0 && this.battle.aliveCount(1) > 0,
-    });
+  /** 戦場の宝箱を開ける。戦闘を止めてボーナス演出へ進む */
+  private openDroppedChest(chest: DroppedChest): void {
+    if (!this.rogue || this.jackpot.active || this.battle.result() !== null) return;
+    const ndc = chest.position.clone().project(this.view.camera);
+    const origin = { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight };
+    this.droppedChests.remove(chest);
+    const rewards = rollJackpot(chest.tier, { rng: Math.random, battleActive: true });
     this.view.addCameraShake(0.3);
     this.jackpot.play({
-      tier: next.tier,
+      tier: chest.tier,
       rewards,
-      origin: next.origin,
+      origin,
       sound: this.sound,
       onFinished: () => this.applyJackpotRewards(rewards),
     });
+  }
+
+  /** 戦場の宝箱を動かす。ローグライトの戦闘から離れたら片付ける */
+  private updateDroppedChests(realDt: number): void {
+    if (!this.droppedChestsField) return;
+    if (this.mode !== 'battle' || this.onTitleScreen || this.playStyle !== 'roguelite') this.droppedChestsField.clear();
+    else this.droppedChestsField.update(realDt);
   }
 
   private applyJackpotRewards(rewards: readonly JackpotReward[]): void {
@@ -2762,6 +2781,9 @@ export class GameApp {
     if (!run) return;
     const won = this.resolveRogueWin(res);
     const stats = this.battleStats;
+    const unopened = this.droppedChests.collectAll();
+    this.jackpotCollected = { count: unopened, gold: collectUnopenedChests(run, unopened) };
+    if (unopened > 0) this.sound.playJackpotCoin();
     const report = this.renderBattleReport() + this.renderJackpotReport();
     this.jackpot.clearChips();
 
@@ -2823,9 +2845,11 @@ export class GameApp {
 
   /** この戦闘で宝箱から得た報酬の一覧 */
   private renderJackpotReport(): string {
-    if (this.jackpotRewards.length === 0) return '';
+    const { count, gold } = this.jackpotCollected;
+    const collected = count > 0 ? `<div class="challenge-score-row"><span>📦 未開封の宝箱 ${count}個</span><b>+${gold.toLocaleString()}G</b></div>` : '';
+    if (this.jackpotRewards.length === 0) return collected;
     const items = this.jackpotRewards.map((r) => `${r.icon} ${r.detail}`).join('<br>');
-    return `<div class="challenge-score-row"><span>🎰 ボーナス ${this.jackpotRewards.length}個</span><b>${items}</b></div>`;
+    return `<div class="challenge-score-row"><span>🎰 ボーナス ${this.jackpotRewards.length}個</span><b>${items}</b></div>${collected}`;
   }
 
   /** ラウンドごとの与ダメージの成長曲線（SVG） */
@@ -4276,7 +4300,8 @@ export class GameApp {
   tick(realDt: number): void {
     this.updateAdaptiveQuality(realDt);
     if (this.finishSlowMoTimer > 0) this.finishSlowMoTimer -= realDt;
-    if (this.mode === 'battle' && this.playStyle === 'roguelite') this.updateJackpot(realDt);
+    if (this.jackpot.active) this.jackpot.update(realDt);
+    this.updateDroppedChests(realDt);
     if (!this.paused && !this.jackpot.active) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
@@ -4294,8 +4319,8 @@ export class GameApp {
 
     if (this.mode === 'battle') {
       const res = this.battle.result();
-      // 決着の一撃で宝箱が出たら、開け終わってから結果へ進む
-      if (res !== null && this.announcedResult === null && !this.jackpot.active && this.jackpotQueue.length === 0) {
+      // 開封の演出中に決着したら、演出が終わってから結果へ進む
+      if (res !== null && this.announcedResult === null && !this.jackpot.active) {
         this.announcedResult = res;
         // 友人対戦・サンドボックスは誰かの勝利なので、1 人用モードの負けだけ敗北音にする
         if (this.isSoloPlayStyle() && res !== 0) this.sound.playDefeat();
