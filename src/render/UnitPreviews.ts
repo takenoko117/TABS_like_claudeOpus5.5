@@ -122,6 +122,52 @@ interface PreviewSlot {
   host: HTMLElement;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
+  placements: SquadPlacement[];
+}
+
+/** 部隊の1体を描く位置（キャンバスの座標） */
+export interface SquadPlacement {
+  x: number;
+  y: number;
+  size: number;
+}
+
+/** 隣の個体と重ねてよい下限の間隔（1体の大きさに対する比） */
+const MIN_STEP_X = 0.62;
+const MIN_STEP_Y = 0.4;
+/** 場所に余裕があるときの間隔の上限 */
+const MAX_STEP_X = 0.9;
+const MAX_STEP_Y = 0.6;
+const MAX_SQUAD_ROWS = 4;
+
+/**
+ * count 体を幅 w・高さ h に並べる。1体が最も大きくなる列数を選ぶ。
+ * 奥の列から順に返すので、この順に描けば手前の個体が上に重なる。
+ */
+export function layoutSquad(count: number, w: number, h: number): SquadPlacement[] {
+  const n = Math.max(1, Math.floor(count));
+  let rows = 1;
+  let size = 0;
+  for (let r = 1; r <= Math.min(n, MAX_SQUAD_ROWS); r++) {
+    const cols = Math.ceil(n / r);
+    const s = Math.min(w / (1 + (cols - 1) * MIN_STEP_X), h / (1 + (r - 1) * MIN_STEP_Y));
+    if (s > size) {
+      size = s;
+      rows = r;
+    }
+  }
+  const cols = Math.ceil(n / rows);
+  const stepX = cols > 1 ? Math.min(size * MAX_STEP_X, (w - size) / (cols - 1)) : 0;
+  const stepY = rows > 1 ? Math.min(size * MAX_STEP_Y, (h - size) / (rows - 1)) : 0;
+  const top = (h - size - (rows - 1) * stepY) / 2;
+  const placements: SquadPlacement[] = [];
+  for (let r = 0; r < rows; r++) {
+    // 端数は手前の列に回す
+    const inRow = Math.floor(n / rows) + (r >= rows - (n % rows) ? 1 : 0);
+    const left = (w - size - (inRow - 1) * stepX) / 2;
+    for (let i = 0; i < inRow; i++) placements.push({ x: left + i * stepX, y: top + r * stepY, size });
+  }
+  return placements;
 }
 
 /**
@@ -172,9 +218,15 @@ export class UnitPreviews {
       const canvas = host.querySelector('canvas');
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) continue;
-      const css = Math.max(1, host.clientWidth);
-      canvas.width = canvas.height = Math.min(RENDER_PX, Math.round(css * dpr));
-      this.slots.push({ id: host.dataset.unitPreview as UnitTypeId, host, canvas, ctx });
+      const cssW = Math.max(1, host.clientWidth);
+      const cssH = Math.max(1, host.clientHeight);
+      const count = Number(host.dataset.unitCount) || 1;
+      // 1体だけなら元の絵より細かくしても意味がない
+      const scale = count > 1 ? dpr : Math.min(dpr, RENDER_PX / Math.max(cssW, cssH));
+      canvas.width = Math.round(cssW * scale);
+      canvas.height = Math.round(cssH * scale);
+      const placements = layoutSquad(count, canvas.width, canvas.height);
+      this.slots.push({ id: host.dataset.unitPreview as UnitTypeId, host, canvas, ctx, placements });
       if (this.models.has(host.dataset.unitPreview as UnitTypeId)) host.classList.add('ready');
     }
     root.onpointerover = (e) => {
@@ -251,7 +303,7 @@ export class UnitPreviews {
         for (const s of this.slots) {
           if (s.id !== slot.id) continue;
           s.ctx.clearRect(0, 0, s.canvas.width, s.canvas.height);
-          s.ctx.drawImage(renderer.domElement, 0, 0, s.canvas.width, s.canvas.height);
+          for (const p of s.placements) s.ctx.drawImage(renderer.domElement, p.x, p.y, p.size, p.size);
         }
       }
     }

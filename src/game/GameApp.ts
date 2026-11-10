@@ -2774,8 +2774,8 @@ export class GameApp {
   }
 
   /** カードに載せる動くボクセルモデル（用意できるまでは下のアイコンが見える） */
-  private unitVoxelHtml(id: UnitTypeId): string {
-    return `<span class="unit-voxel" data-unit-preview="${id}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span>`;
+  private unitVoxelHtml(id: UnitTypeId, count = 1): string {
+    return `<span class="unit-voxel${count > 1 ? ' squad' : ''}" data-unit-preview="${id}" data-unit-count="${count}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span>`;
   }
 
   private rogueTagChips(id: UnitTypeId): string {
@@ -2789,7 +2789,7 @@ export class GameApp {
       .map((o, i) => {
         const tags = o.unitId ? `<div class="unit-tags">${this.rogueTagChips(o.unitId)}</div>` : '';
         const art = o.unitId
-          ? this.unitVoxelHtml(o.unitId)
+          ? this.unitVoxelHtml(o.unitId, getSquadSize(o.unitId))
           : o.relicId
             ? `<div class="rogue-card-icon">${getFacilityIconSvg(o.relicId)}</div>`
             : '';
@@ -2843,7 +2843,7 @@ export class GameApp {
       <div class="rogue-deck-card slots-${slotCost} rarity-${unitRarity(id)}${card.inDeck ? ' in-deck' : ''}">
         <div class="deck-card-slotbar" title="ユニット枠 ${slotCost}">${'<i></i>'.repeat(slotCost)}</div>
         <div class="deck-card-stage">
-          ${this.unitVoxelHtml(id)}
+          ${this.unitVoxelHtml(id, getSquadSize(id))}
           <div class="deck-card-info">
             <div class="deck-card-head">
               <span class="rogue-card-title">${UNIT_TYPES[id].name}</span>

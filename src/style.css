@@ -2976,6 +2976,18 @@ body.on-title #btn-restore-hud {
   background: none;
 }
 
+/* 複数人の部隊はカードの幅いっぱいに並べる */
+.deck-card-stage .unit-voxel.squad {
+  width: 100%;
+  height: var(--model-size);
+  aspect-ratio: auto;
+}
+
+.rogue-card .unit-voxel.squad {
+  width: 100%;
+  height: 120px;
+}
+
 /* モデルの上に重ねる情報。ホバーでモデルが跳ねるよう操作は下へ通す */
 .deck-card-info {
   position: absolute;
