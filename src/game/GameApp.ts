@@ -76,6 +76,7 @@ import {
   getSquadSize,
   getUnitLevelMul,
   getUnitSlotCost,
+  orderDeckBoard,
   ROGUE_MAX_UNIT_LEVEL,
   type RogueCard,
 } from './RogueliteMode';
@@ -2865,9 +2866,19 @@ export class GameApp {
     const run = this.rogue;
     if (!run || run.ended || this.mode !== 'placement') return;
     const scrollTop = this.elRogueModal?.querySelector('.rogue-modal-inner')?.scrollTop ?? 0;
-    const deck = run.deck.map((c) => this.renderRogueDeckCard(run, c)).join('');
+    const emptyCount = Math.max(0, run.unitSlots - run.usedUnitSlots);
+    const deckFull = emptyCount === 0;
+    // 空き枠は1マスのカードとして一緒に詰める
+    const deckCosts = [...run.deck.map((c) => getUnitSlotCost(c.id)), ...Array<number>(emptyCount).fill(1)];
+    const deckOrder = orderDeckBoard(deckCosts);
+    const deck = deckOrder
+      .map((i) => (i < run.deck.length ? this.renderRogueDeckCard(run, run.deck[i]) : '<div class="deck-slot-empty">空き枠</div>'))
+      .join('');
+    // 盤面と同じ順で、カードごとに枠をひとまとめにして見せる
+    const deckGauge = deckOrder
+      .map((i) => (i < run.deck.length ? `<span>${'<i></i>'.repeat(deckCosts[i])}</span>` : '<span><i class="free"></i></span>'))
+      .join('');
     const bench = run.bench.map((c) => this.renderRogueDeckCard(run, c)).join('');
-    const emptySlots = '<div class="deck-slot-empty">空き枠</div>'.repeat(Math.max(0, run.unitSlots - run.usedUnitSlots));
     const relicsFull = run.activeRelics.length >= run.relicSlots;
     const relicRows = run.relics
       .map((r, i) => {
@@ -2903,11 +2914,12 @@ export class GameApp {
         ${this.renderEnemyChips(this.savedLineup.filter((r) => r.team === 1))}
       </div>
       <div class="rogue-sell-title rogue-relic-head">
-        <span>デッキ（ユニット枠 ${run.usedUnitSlots}/${run.unitSlots}）</span>
+        <span>デッキ（ユニット枠 ${run.usedUnitSlots}/${run.unitSlots}）${deckFull ? '<b class="deck-full-badge">満杯</b>' : ''}</span>
         ${buyBtn('unit-slot', 'ユニット枠', run.unitSlotPrice)}
       </div>
-      <div class="rogue-deck-grid rogue-deck-board">${deck}${emptySlots}</div>
-      ${deck ? '' : '<div class="brief-hint">デッキが空です。控えから入れてください</div>'}
+      <div class="deck-gauge${deckFull ? ' is-full' : ''}" aria-hidden="true">${deckGauge}</div>
+      <div class="rogue-deck-grid">${deck}</div>
+      ${run.deck.length ? '' : '<div class="brief-hint">デッキが空です。控えから入れてください</div>'}
       ${bench ? `<div class="rogue-sell-title">控え</div><div class="rogue-deck-grid">${bench}</div>` : ''}
       ${tagRows ? `<div class="rogue-sell-title">シナジー</div><div class="tag-panel">${tagRows}</div>` : ''}
       <div class="rogue-sell-title rogue-relic-head">

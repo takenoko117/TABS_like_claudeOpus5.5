@@ -2902,11 +2902,43 @@ body.on-title #btn-restore-hud {
   gap: 8px;
 }
 
-.rogue-deck-board {
-  padding: 8px;
-  border-radius: 10px;
-  border: 2px solid rgba(255, 212, 59, 0.35);
-  background: rgba(0, 0, 0, 0.35);
+/* ユニット枠の埋まり具合。カードごとにまとめ、まとまりの間を空ける */
+.deck-gauge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+
+.deck-gauge span {
+  display: flex;
+  gap: 2px;
+}
+
+.deck-gauge i {
+  width: 18px;
+  height: 10px;
+  border-radius: 2px;
+  background: #ffd43b;
+}
+
+.deck-gauge i.free {
+  background: none;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.deck-gauge.is-full i {
+  box-shadow: 0 0 5px rgba(255, 212, 59, 0.6);
+}
+
+.deck-full-badge {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: #ffd43b;
+  color: #1a1a1a;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .deck-slot-empty {
@@ -3069,7 +3101,6 @@ body.on-title #btn-restore-hud {
   .unit-voxel { width: 80px; height: 80px; }
   .rogue-war-room { padding-left: 10px; padding-right: 10px; }
   .rogue-deck-grid { gap: 4px; }
-  .rogue-deck-board { padding: 4px; }
   .deck-card-slotbar { gap: 4px; }
   .deck-slot-empty { min-height: 150px; }
   .rogue-deck-card { --model-size: 96px; }

@@ -611,6 +611,22 @@ export function getUnitSlotCost(id: UnitTypeId): number {
   return cost <= 150 ? 1 : cost <= 450 ? 2 : cost <= 900 ? 3 : 4;
 }
 
+/**
+ * デッキ盤面の表示順（costs の添字の並び）を決める。
+ * 段の余りができるだけ出ないよう、大きいカードから順に段へ詰める。cost が同じものは渡した順を保つ。
+ */
+export function orderDeckBoard(costs: readonly number[], columns = 4): number[] {
+  const sorted = costs.map((cost, index) => ({ cost, index })).sort((a, b) => b.cost - a.cost);
+  const rows: { free: number; items: number[] }[] = [];
+  for (const { cost, index } of sorted) {
+    let row = rows.find((r) => r.free >= cost);
+    if (!row) rows.push((row = { free: columns, items: [] }));
+    row.free -= cost;
+    row.items.push(index);
+  }
+  return rows.flatMap((r) => r.items);
+}
+
 /** カード1枚で出撃する部隊の人数 */
 export function getSquadSize(id: UnitTypeId): number {
   const size = Math.round((getUnitSlotCost(id) * ROGUE_SQUAD_SLOT_VALUE) / UNIT_TYPES[id].cost);
