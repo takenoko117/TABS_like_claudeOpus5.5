@@ -4315,7 +4315,6 @@ export class GameApp {
       this.battle.units,
       labelDt,
       this.mode === 'battle' && this.view.showHpBars,
-      isFacilityTypeId(this.selectedId) ? undefined : this.selectedId,
     );
   }
 

@@ -13,14 +13,12 @@ export const DAMAGE_NUMBER_MODE_LABELS: Readonly<Record<DamageNumberMode, string
 
 /** 同時に出すダメージ数字の上限 */
 export const MAX_DAMAGE_LABELS = 60;
-/** 同時に出す HP の数字の上限 */
-export const MAX_HP_LABELS = 40;
+/** 同時に出す HP の数字の上限（HP バーの上限に合わせる） */
+export const MAX_HP_LABELS = 400;
 /** この時間内の同じユニット・同じ種類のダメージは1つの数字に合算する（秒） */
 export const DAMAGE_MERGE_WINDOW = 0.3;
 /** この値以上の一撃は特大表示にする */
 export const HUGE_HIT_THRESHOLD = 300;
-/** HP の数字を常に出す体格のしきい値（巨体） */
-export const BIG_UNIT_SCALE = 1.9;
 
 const LABEL_LIFE = 0.95;
 
@@ -175,9 +173,8 @@ export class DamageOverlay {
    * 毎フレームの更新。
    * @param dt 数字の経過時間（スロー観戦中は短くなり、数字が長く残る）
    * @param showHpNumbers HP の数字を表示するか（配置フェーズや HP バー非表示の設定では出さない）
-   * @param selectedTypeId 傷ついたときに HP の数字を出す兵種（選択中の兵種）
    */
-  update(units: readonly Unit[], dt: number, showHpNumbers: boolean, selectedTypeId?: string): void {
+  update(units: readonly Unit[], dt: number, showHpNumbers: boolean): void {
     const rect = this.root.getBoundingClientRect();
     this.width = Math.max(1, rect.width);
     this.height = Math.max(1, rect.height);
@@ -202,22 +199,22 @@ export class DamageOverlay {
       l.el.style.transform = `translate(${_proj.x}px, ${_proj.y}px) translate(-50%, -50%) scale(${pop.toFixed(2)})`;
     }
 
-    // HP バー本体は SceneView が描くので、ここでは巨体・ボス・選択中の兵種の HP の数字だけを重ねる
+    // HP バー本体は SceneView が描くので、ここでは全ユニットの HP の数字だけを重ねる
     let used = 0;
     if (showHpNumbers) {
       for (const u of units) {
         if (used >= MAX_HP_LABELS) break;
         if (!u.alive) continue;
-        const isBig = u.scale >= BIG_UNIT_SCALE || u.isBoss;
-        const isSelected = selectedTypeId !== undefined && u.type.id === selectedTypeId;
-        if (!isBig && !(isSelected && u.hp < u.maxHp - 0.5)) continue;
         _proj.set(u.chest.pos.x, u.chest.pos.y + 0.72 * u.scale + 0.25, u.chest.pos.z);
         if (!this.project(_proj)) continue;
         const el = this.getHpLabel(used++);
         el.style.display = 'block';
-        el.className = `hp-number team-${u.team}${u.isBoss ? ' boss' : ''}`;
+        // 数が多いので、変わらない className と文字は書き換えない
+        const className = `hp-number team-${u.team}${u.isBoss ? ' boss' : ''}`;
+        if (el.className !== className) el.className = className;
         el.style.transform = `translate(${_proj.x}px, ${_proj.y}px) translate(-50%, -135%)`;
-        el.textContent = `${formatDamage(Math.max(0, u.hp))} / ${formatDamage(u.maxHp)}`;
+        const text = `${formatDamage(Math.max(0, u.hp))} / ${formatDamage(u.maxHp)}`;
+        if (el.textContent !== text) el.textContent = text;
       }
     }
     for (let i = used; i < this.hpLabels.length; i++) this.hpLabels[i].style.display = 'none';
