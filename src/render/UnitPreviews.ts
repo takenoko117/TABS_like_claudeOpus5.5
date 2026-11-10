@@ -28,8 +28,11 @@ const VIEW_DIR = new Vector3(0.58, 0.3, 0.76).normalize();
 /** 歩く速さの上限（速い兵種が足踏みだけで暴れないように） */
 const MAX_WALK_SPEED = 1.8;
 const SETTLE_STEPS = 45;
-/** 跳ねると地響きになる大きさ */
-const MAX_HOP_SCALE = 1.6;
+/** 普段の体の向き。マウスを乗せるとカメラの方へ振り向く */
+const IDLE_FACING = -0.3;
+const CAMERA_FACING = Math.atan2(VIEW_DIR.x, VIEW_DIR.z);
+/** 振り向きの速さ（1秒あたりの追従率） */
+const TURN_RATE = 9;
 
 /** ゴールドやレリックの揺れの速さと振れ幅、触れたときの回転の速さ（ラジアン毎秒） */
 const PROP_SWAY_SPEED = 0.9;
@@ -51,18 +54,19 @@ export class UnitPreviewActor {
   readonly world = new PhysicsWorld();
   private swingTimer: number;
   private accumulator = 0;
+  private looking = false;
 
   constructor(
     readonly id: UnitTypeId,
     private readonly still = false,
   ) {
-    this.unit = new Unit(this.world, UNIT_TYPES[id], 0, new Vector3(0, 0, 0), 0);
+    this.unit = new Unit(this.world, UNIT_TYPES[id], 0, new Vector3(0, 0, 0), IDLE_FACING);
     this.swingTimer = 1.5 + Math.random() * 3.5;
     for (let i = 0; i < SETTLE_STEPS; i++) this.step(STEP);
   }
 
   private get walkSpeed(): number {
-    return this.still ? 0 : Math.min(MAX_WALK_SPEED, UNIT_TYPES[this.id].speed * 0.5) * Math.max(0.6, this.unit.scale * 0.6);
+    return this.still || this.looking ? 0 : Math.min(MAX_WALK_SPEED, UNIT_TYPES[this.id].speed * 0.5) * Math.max(0.6, this.unit.scale * 0.6);
   }
 
   /** 攻撃の構えから振り抜きまでを1回行う */
@@ -72,18 +76,20 @@ export class UnitPreviewActor {
     this.unit.phaseTime = 0;
   }
 
-  /** その場で跳ねる（巨体はかわりに攻撃の動きだけ） */
-  hop(): void {
-    if (this.still) return;
-    this.swing();
-    if (this.unit.scale > MAX_HOP_SCALE) return;
-    const jump = new Vector3(0, 3.2, 0);
-    for (const p of this.unit.joints) p.addVelocity(jump, 1);
+  /** true の間は足を止めてカメラの方を向く */
+  setLooking(looking: boolean): void {
+    this.looking = looking;
+  }
+
+  private updateFacing(dt: number): void {
+    const target = this.looking ? CAMERA_FACING : IDLE_FACING;
+    this.unit.facing += (target - this.unit.facing) * (1 - Math.exp(-TURN_RATE * dt));
   }
 
   private updateAttack(dt: number): void {
     const u = this.unit;
     if (u.attackPhase === 'none') {
+      if (this.looking) return;
       this.swingTimer -= dt;
       if (this.swingTimer <= 0) {
         this.swingTimer = 2.5 + Math.random() * 4;
@@ -102,6 +108,7 @@ export class UnitPreviewActor {
   }
 
   private step(dt: number): void {
+    this.updateFacing(dt);
     this.updateAttack(dt);
     this.unit.previewStep(dt, this.walkSpeed);
     this.world.step(dt);
@@ -138,6 +145,7 @@ interface PreviewModel {
   distance: number;
   advance(dt: number): void;
   kick(): void;
+  setHovered(hovered: boolean): void;
 }
 
 interface PreviewSlot {
@@ -208,6 +216,7 @@ export class UnitPreviews {
   private slots: PreviewSlot[] = [];
   private root: HTMLElement | null = null;
   private frameTimer = 0;
+  private hoveredId: string | null = null;
 
   constructor() {
     this.scene.add(new AmbientLight(0xffffff, 1.5));
@@ -235,6 +244,7 @@ export class UnitPreviews {
   /** root の中の [data-unit-preview] をモデルの表示先にする */
   bind(root: HTMLElement): void {
     this.root = root;
+    this.setHovered(null);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.slots = [];
     for (const host of root.querySelectorAll<HTMLElement>(PREVIEW_SELECTOR)) {
@@ -255,21 +265,36 @@ export class UnitPreviews {
     }
     root.onpointerover = (e) => {
       const host = (e.target as HTMLElement).closest<HTMLElement>(PREVIEW_SELECTOR);
-      if (host && !host.contains(e.relatedTarget as Node | null)) this.kick(previewKey(host));
+      if (host && !host.contains(e.relatedTarget as Node | null)) this.setHovered(previewKey(host));
+    };
+    root.onpointerout = (e) => {
+      const host = (e.target as HTMLElement).closest<HTMLElement>(PREVIEW_SELECTOR);
+      if (host && !host.contains(e.relatedTarget as Node | null)) this.setHovered(null);
     };
     // 開いた瞬間に絵が出るよう、すでに作ってあるモデルはすぐ描く
     this.frameTimer = FRAME;
   }
 
   unbind(): void {
-    if (this.root) this.root.onpointerover = null;
+    this.setHovered(null);
+    if (this.root) {
+      this.root.onpointerover = null;
+      this.root.onpointerout = null;
+    }
     this.root = null;
     this.slots = [];
   }
 
-  /** モデルを跳ねさせて反応を見せる */
+  /** モデルに反応させる（ゴールドなどの回転） */
   kick(id: string): void {
     this.models.get(id)?.kick();
+  }
+
+  private setHovered(id: string | null): void {
+    if (id === this.hoveredId) return;
+    if (this.hoveredId) this.models.get(this.hoveredId)?.setHovered(false);
+    this.hoveredId = id;
+    if (id) this.models.get(id)?.setHovered(true);
   }
 
   /** 枠に収まる距離を、実際に見えている形から決める */
@@ -297,7 +322,8 @@ export class UnitPreviews {
         actor.advance(dt);
         visual.sync();
       },
-      kick: () => actor.hop(),
+      kick: () => actor.swing(),
+      setHovered: (hovered) => actor.setLooking(hovered),
     };
   }
 
@@ -309,6 +335,9 @@ export class UnitPreviews {
     const facing = Math.atan2(VIEW_DIR.x, VIEW_DIR.z);
     let time = Math.random() * 6;
     let spin = 0;
+    const kick = () => {
+      if (!this.still && spin === 0) spin = Math.PI * 2;
+    };
     const pose = () => {
       mesh.rotation.y = facing + (this.still ? 0 : Math.sin(time * PROP_SWAY_SPEED) * PROP_SWAY_ANGLE) + spin;
     };
@@ -321,8 +350,9 @@ export class UnitPreviews {
         if (spin > 0) spin = Math.max(0, spin - dt * PROP_SPIN_SPEED);
         pose();
       },
-      kick: () => {
-        if (!this.still && spin === 0) spin = Math.PI * 2;
+      kick,
+      setHovered: (hovered) => {
+        if (hovered) kick();
       },
     };
   }

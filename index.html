@@ -232,18 +232,14 @@
     <!-- ローグライトの戦闘 HUD（戦場を広く使うため、左パネルの代わりに浮かせて置く） -->
     <div id="rogue-hud" class="rogue-hud hidden">
       <nav class="rg-rail" aria-label="メニュー">
-        <button type="button" data-rail="menu" title="メニューを開く／閉じる (Tab)" aria-label="メニュー">
+        <button type="button" id="rg-menu-btn" data-rail="menu" title="メニュー" aria-label="メニュー" aria-expanded="false" aria-controls="rg-menu">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
         </button>
-        <button type="button" data-rail="settings" title="音量と描画品質の設定" aria-label="設定">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.600l-2.100 2.100M7.700 16.300l-2.100 2.100" /></svg>
-        </button>
-        <button type="button" data-rail="quit" title="ランを終了してスコアを確定" aria-label="ランを終了">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4M6 5h11l-2.500 3.500L17 12H6" /></svg>
-        </button>
-        <button type="button" data-rail="title" title="タイトル画面へ戻る" aria-label="タイトルへ">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7M6.500 9.500V20h11V9.500" /></svg>
-        </button>
+        <div id="rg-menu" class="rg-menu hidden">
+          <button type="button" data-rail="settings" title="音量と描画品質の設定"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.600l-2.100 2.100M7.700 16.300l-2.100 2.100" /></svg><span>設定</span></button>
+          <button type="button" data-rail="quit" title="ランを終了してスコアを確定"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4M6 5h11l-2.500 3.500L17 12H6" /></svg><span>終了</span></button>
+          <button type="button" data-rail="title" title="タイトル画面へ戻る"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7M6.500 9.500V20h11V9.500" /></svg><span>ホームに戻る</span></button>
+        </div>
       </nav>
       <div id="rg-pill" class="rg-pill" role="status"></div>
       <div id="rg-context" class="rg-context hidden"></div>

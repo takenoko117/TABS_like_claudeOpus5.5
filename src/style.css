@@ -3629,6 +3629,11 @@ body.war-room-open #coach { display: none !important; }
 
 .wr-enemy {
   display: flex;
+  width: 100%;
+  color: var(--text);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: help;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -3802,7 +3807,7 @@ body.war-room-open #coach { display: none !important; }
 .wr-card-art {
   position: relative;
   display: block;
-  height: 112px;
+  height: 178px;
   overflow: hidden;
   border-radius: 0;
   background: radial-gradient(circle at 50% 65%, rgba(125, 180, 255, 0.16), rgba(255, 255, 255, 0.02) 72%);
@@ -3811,7 +3816,7 @@ body.war-room-open #coach { display: none !important; }
 .wr-card-art .unit-voxel,
 .wr-card-art .unit-voxel.squad {
   width: 100%;
-  height: 112px;
+  height: 178px;
   margin: 0;
   background: none;
 }
@@ -3832,6 +3837,38 @@ body.war-room-open #coach { display: none !important; }
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
+
+/* 枠やステータスはモデルに重ねて、カードの高さを節約する */
+.wr-art-info {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.wr-art-info .slot-cost {
+  padding: 1px 6px;
+  background: rgba(7, 11, 22, 0.72);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.wr-art-info .slot-cost b { color: var(--gold); }
+
+@media (max-width: 1200px) {
+  .wr-art-info .slot-cost { padding: 0 3px; font-size: 10px; }
+  .wr-card-art .wr-lv { top: auto; bottom: 6px; }
+}
+.reward-art { position: relative; }
+.reward-card .wr-art-info { top: auto; bottom: 6px; }
 
 /* 押すとどちらへ動くかは、触れたときだけ見せる */
 .wr-move {
@@ -4264,19 +4301,16 @@ body.rogue-mode .team-panel.blue .hp-fill { background: var(--enemy); }
 .rg-rail {
   position: absolute;
   top: 14px;
-  bottom: 14px;
   left: 12px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
   width: 56px;
-  padding: 8px;
+  padding: 6px;
   border-radius: 0;
   border: 1px solid var(--panel-line);
   background: var(--hud-glass);
 }
 
-.rg-rail button {
+.rg-rail > button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4290,12 +4324,10 @@ body.rogue-mode .team-panel.blue .hp-fill { background: var(--enemy); }
   transition: background 0.12s, color 0.12s;
 }
 
-.rg-rail button:hover {
+.rg-rail > button:hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text);
 }
-
-.rg-rail button:last-child { margin-top: auto; }
 
 .rg-rail svg,
 .rg-pause svg {
@@ -4556,8 +4588,8 @@ body.rogue-mode .team-panel.blue .hp-fill { background: var(--enemy); }
   .wr-mode { display: none; }
   .wr-head { grid-template-columns: 1fr; }
   .wr-status { justify-content: space-between; }
-  .rg-rail { top: auto; bottom: 72px; flex-direction: row; width: auto; height: 56px; }
-  .rg-rail button:last-child { margin-top: 0; }
+  .rg-rail { top: auto; bottom: 72px; }
+  .rg-menu { top: auto; bottom: 0; }
   body.rogue-battle .top-hud { left: 8px; right: 8px; top: 64px; }
   body.rogue-battle .side-panel { left: 8px; top: 64px; }
   .rg-pill { gap: 10px; padding: 8px 14px; font-size: 12px; }
@@ -4568,7 +4600,7 @@ body.rogue-mode .team-panel.blue .hp-fill { background: var(--enemy); }
   .wr-col { padding: 16px; }
   .wr-card-art,
   .wr-card-art .unit-voxel,
-  .wr-card-art .unit-voxel.squad { height: 104px; }
+  .wr-card-art .unit-voxel.squad { height: 146px; }
   .wr-cta { padding: 14px 44px; font-size: 20px; }
   .reward-art,
   .reward-card .reward-art .unit-voxel,
@@ -4833,21 +4865,30 @@ kbd { border-width: 2px; }
 /* ユニット枠のゲージ。現在の枠数で等分し、アイコンを横に積む */
 .deck-gauge {
   display: grid;
-  grid-template-columns: repeat(var(--slots), minmax(0, 1fr));
+  --cell: 68px;
+  grid-template-columns: repeat(var(--slots), minmax(0, var(--cell)));
   gap: 6px;
 }
 
 .gauge-unit,
 .gauge-free {
   display: flex;
-  height: 60px;
+  aspect-ratio: var(--span, 1) / 1;
+  align-self: start;
   min-width: 0;
 }
 
+/* 上から光が当たった金枠の台座 */
 .gauge-unit {
-  border: 2px solid #ffd43b;
-  background: linear-gradient(to bottom, #ffe066, #f59f00);
-  box-shadow: inset 0 0 0 1px rgba(122, 74, 0, 0.5), 2px 2px 0 rgba(0, 0, 0, 0.5);
+  border: 2px solid #1b2238;
+  background: #46557a;
+  box-shadow:
+    inset 0 0 0 2px #f0bb3c,
+    inset 3px 3px 0 1px #ffe9a8,
+    inset -3px -3px 0 1px #9a6410,
+    inset 0 18px 18px -8px rgba(255, 255, 255, 0.28),
+    inset 0 -16px 16px -8px rgba(5, 8, 20, 0.6),
+    4px 4px 0 rgba(0, 0, 0, 0.55);
 }
 
 .gauge-unit i {
@@ -4859,12 +4900,13 @@ kbd { border-width: 2px; }
   overflow: hidden;
 }
 
-.gauge-unit i + i { border-left: 2px dotted rgba(122, 74, 0, 0.7); }
+.gauge-unit i + i { border-left: 2px solid rgba(240, 187, 60, 0.75); }
 
 .gauge-unit svg {
   width: 100%;
-  max-width: 56px;
   height: 100%;
+  padding: 7px;
+  filter: drop-shadow(2px 3px 0 rgba(5, 8, 20, 0.55));
 }
 
 .gauge-free {
@@ -4881,7 +4923,7 @@ kbd { border-width: 2px; }
   height: 90%;
 }
 
-.deck-gauge.is-full .gauge-unit { box-shadow: inset 0 0 0 1px rgba(122, 74, 0, 0.5), 0 0 10px rgba(255, 212, 59, 0.7); }
+.deck-gauge.is-full .gauge-unit { outline: 2px solid rgba(255, 212, 59, 0.65); }
 
 /* ---- カード（本体を押すと移動、下のボタンで強化） ---- */
 .wr-card {
@@ -5106,7 +5148,7 @@ kbd { border-width: 2px; }
   .room-action { min-height: 56px; padding: 0 12px; font-size: 16px; gap: 6px; }
   .room-action.sortie { font-size: 22px; }
   .room-action .room-icon { width: 34px; height: 34px; }
-  .gauge-unit, .gauge-free { height: 44px; }
+  .deck-gauge { --cell: 48px; }
   .room-gold .unit-voxel.prop-voxel { width: 40px; height: 40px; }
   .room-gold-value { font-size: 28px; }
 }
@@ -5114,9 +5156,110 @@ kbd { border-width: 2px; }
 @media (max-height: 760px) {
   .room-action { min-height: 56px; }
   .room-action.sortie { font-size: 26px; }
-  .gauge-unit, .gauge-free { height: 48px; }
+  .deck-gauge { --cell: 52px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .rg-heart { animation: none; }
 }
+
+/* ---- 残機ハート（HUD の上に重ねる） ---- */
+.rogue-heart-canvas {
+  position: fixed;
+  z-index: 20;
+  display: none;
+  pointer-events: none;
+}
+
+.rg-heart-slot {
+  display: inline-block;
+  flex: none;
+  width: 72px;
+  height: 21px;
+  margin: 0 4px;
+  vertical-align: middle;
+}
+
+@media (min-width: 900px) and (min-height: 560px) {
+  body.rogue-mode .phase-badge {
+    gap: 8px;
+    padding: 11px 24px;
+    font-size: 20px;
+  }
+
+  body.rogue-mode .phase-badge svg { width: 22px; height: 22px; }
+
+  .rg-pill { padding: 12px 28px; font-size: 19px; }
+  .rg-pill b { font-size: 25px; }
+  .rg-time { min-width: 120px; }
+
+  .rg-heart-slot { width: 124px; height: 36px; }
+}
+
+/* ---- 戦闘中のメニュー ---- */
+.rg-menu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 176px;
+  padding: 6px;
+  border: 2px solid var(--panel-line);
+  background: var(--panel);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+}
+
+.rg-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rg-menu button:hover,
+.rg-menu button:focus-visible { background: rgba(255, 255, 255, 0.12); }
+
+/* ---- 次の敵の詳細 ---- */
+.wr-enemy-detail {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(340px, calc(100vw - 20px));
+  padding: 14px;
+  border: 2px solid var(--panel-line);
+  background: var(--panel);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-family: var(--font-ui);
+  pointer-events: none;
+}
+
+.wed-head { display: flex; align-items: center; gap: 12px; }
+
+.wed-icon {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  padding: 4px;
+  border: 1px solid;
+}
+
+.wed-icon svg { width: 100%; height: 100%; }
+.wed-name { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.wed-name b { font-size: 17px; font-weight: 800; }
+.wed-name small { color: var(--sub); font-size: 12px; }
+.wed-stats { display: flex; flex-wrap: wrap; gap: 5px; }
+.wed-desc { margin: 0; color: var(--sub); font-size: 13px; line-height: 1.55; }

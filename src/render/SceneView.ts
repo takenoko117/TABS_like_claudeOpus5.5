@@ -158,9 +158,14 @@ export class SceneView {
   /** 一体表示用マテリアル（色はジオメトリの頂点色に焼き込み済み。alive/lost はジオメトリ差し替えで切り替える） */
   private readonly rogueHeartMat = new MeshBasicMaterial({
     vertexColors: true,
-    depthTest: false,
-    transparent: true,
   });
+  /** ハートは HUD パネルより手前に出すため、専用の透明キャンバスへ描く */
+  private readonly rogueHeartScene = new Scene();
+  private readonly rogueHeartCamera = new PerspectiveCamera(20, 1, 0.1, 10);
+  private rogueHeartRenderer: WebGLRenderer | null = null;
+  private rogueHeartOverlayKey = '';
+  private rogueHeartSlotFound = false;
+  private rogueHeartOverlay = { left: 0, top: 0, width: 1, height: 1, pxPerUnit: 1 };
   /** ハートのジオメトリ一式（全ハートで共有） */
   private rogueHeartGeos: {
     full: BufferGeometry;
@@ -408,7 +413,7 @@ export class SceneView {
     // 残機ハートはカメラの子にして、カメラを回しても画面左上に固定表示する
     this.scene.add(this.camera);
     this.rogueHeartGroup.visible = false;
-    this.camera.add(this.rogueHeartGroup);
+    this.rogueHeartScene.add(this.rogueHeartGroup);
   }
 
   /** ステージ固有のビジュアル環境（背景色・フォグ・床テクスチャ・環境光・天候）を適用する */
@@ -3283,6 +3288,7 @@ export class SceneView {
   /** 残機ハート表示の ON/OFF（ローグライトモードのときだけ ON にする） */
   setRogueHeartsVisible(visible: boolean): void {
     this.rogueHeartGroup.visible = visible;
+    if (!visible && this.rogueHeartRenderer) this.rogueHeartRenderer.domElement.style.display = 'none';
   }
 
   /**
@@ -3349,7 +3355,7 @@ export class SceneView {
     heart.left.rotation.set(0, 0, 0);
     heart.right.rotation.set(0, 0, 0);
     heart.group.scale.setScalar(1);
-    heart.group.rotation.set(0, 0, 0);
+    heart.group.rotation.set(HEART_TILT_X, HEART_TILT_Y, 0);
   }
 
   /** ハートのメッシュ一式を（最大ライフ数ぶん）構築する */
@@ -3376,7 +3382,7 @@ export class SceneView {
 
     for (let i = 0; i < maxLives; i++) {
       const group = new Group();
-      const halfMat = new MeshBasicMaterial({ vertexColors: true, depthTest: false, transparent: true });
+      const halfMat = new MeshBasicMaterial({ vertexColors: true, transparent: true });
       const full = new Mesh(fullGeo, this.rogueHeartMat);
       full.renderOrder = 999;
       const left = new Mesh(leftGeo, halfMat);
@@ -3401,25 +3407,82 @@ export class SceneView {
     }
   }
 
-  /** ハートを画面左上に横並び配置する（カメラ子座標系で、毎フレーム再計算して追従を保証する） */
-  private layoutRogueHearts(): void {
-    const dist = 2.4;
-    const halfH = Math.tan(((this.camera.fov * Math.PI) / 180) * 0.5) * dist;
-    const halfW = halfH * this.camera.aspect;
-    const w = 9 * 0.03;
-    const h = 8 * 0.03;
-    const gap = 0.055;
-    for (let i = 0; i < this.rogueHearts.length; i++) {
+  /** HUD の .rg-heart-slot に合わせてハートを並べる。置き場所がなければ false */
+  private layoutRogueHearts(): boolean {
+    const slot = [...document.querySelectorAll<HTMLElement>('.rg-heart-slot')]
+      .map((el) => el.getBoundingClientRect())
+      .find((r) => r.width > 0);
+    if (!slot) return false;
+    const n = this.rogueHearts.length;
+    const heartPx = slot.width / (n + (n - 1) * HEART_GAP_RATIO);
+    const pxPerUnit = heartPx / HEART_WORLD_WIDTH;
+    const width = Math.ceil(slot.width + HEART_CANVAS_MARGIN_X * 2);
+    const height = Math.ceil(slot.height + HEART_CANVAS_MARGIN_TOP + HEART_CANVAS_MARGIN_BOTTOM);
+    const left = slot.left - HEART_CANVAS_MARGIN_X;
+    const top = slot.top - HEART_CANVAS_MARGIN_TOP;
+    this.rogueHeartOverlay = { left, top, width, height, pxPerUnit };
+    for (let i = 0; i < n; i++) {
       const heart = this.rogueHearts[i];
-      heart.basePos.set(-halfW + 0.1 + w / 2 + i * (w + gap), halfH - 0.21 - h / 2, -dist);
+      const cx = HEART_CANVAS_MARGIN_X + heartPx / 2 + i * heartPx * (1 + HEART_GAP_RATIO);
+      const cy = HEART_CANVAS_MARGIN_TOP + slot.height / 2;
+      heart.basePos.set((cx - width / 2) / pxPerUnit, (height / 2 - cy) / pxPerUnit, -HEART_CAMERA_DIST);
       if (heart.state !== 'breaking') heart.group.position.copy(heart.basePos);
     }
+    return true;
+  }
+
+  private ensureRogueHeartRenderer(): WebGLRenderer | null {
+    if (this.rogueHeartRenderer) return this.rogueHeartRenderer;
+    try {
+      const renderer = new WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setClearColor(0x000000, 0);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.domElement.className = 'rogue-heart-canvas';
+      document.body.appendChild(renderer.domElement);
+      this.rogueHeartRenderer = renderer;
+    } catch {
+      return null;
+    }
+    return this.rogueHeartRenderer;
+  }
+
+  private renderRogueHearts(): void {
+    if (!this.rogueHeartGroup.visible || this.rogueHearts.length === 0) return;
+    const renderer = this.ensureRogueHeartRenderer();
+    if (!renderer) return;
+    const canvas = renderer.domElement;
+    canvas.style.display = this.rogueHeartSlotFound ? 'block' : 'none';
+    if (!this.rogueHeartSlotFound) return;
+    const { left, top, width, height, pxPerUnit } = this.rogueHeartOverlay;
+    const key = `${left}|${top}|${width}|${height}|${pxPerUnit}`;
+    if (key !== this.rogueHeartOverlayKey) {
+      this.rogueHeartOverlayKey = key;
+      renderer.setSize(width, height);
+      canvas.style.left = `${left}px`;
+      canvas.style.top = `${top}px`;
+      this.rogueHeartCamera.aspect = width / height;
+      this.rogueHeartCamera.fov = (2 * Math.atan(height / pxPerUnit / 2 / HEART_CAMERA_DIST) * 180) / Math.PI;
+      this.rogueHeartCamera.updateProjectionMatrix();
+    }
+    renderer.render(this.rogueHeartScene, this.rogueHeartCamera);
+  }
+
+  /** HUD 上の位置に見えるワールド座標（カメラの少し前） */
+  private heartBurstWorldPos(heart: RogueHeartVisual): Vector3 {
+    const o = this.rogueHeartOverlay;
+    const x = o.left + o.width / 2 + heart.basePos.x * o.pxPerUnit;
+    const y = o.top + o.height / 2 - heart.basePos.y * o.pxPerUnit;
+    const ray = new Vector3((x / window.innerWidth) * 2 - 1, 1 - (y / window.innerHeight) * 2, 0.5)
+      .unproject(this.camera)
+      .sub(this.camera.position)
+      .normalize();
+    return ray.multiplyScalar(HEART_CAMERA_DIST).add(this.camera.position);
   }
 
   /** ハートのアニメーション進行（renderFrame から毎フレーム呼ぶ） */
   private updateRogueHearts(dt: number): void {
     if (!this.rogueHeartGroup.visible || this.rogueHearts.length === 0) return;
-    this.layoutRogueHearts();
+    this.rogueHeartSlotFound = this.layoutRogueHearts();
     const shakeDur = 0.22;
     const fallDur = 0.75;
     for (const heart of this.rogueHearts) {
@@ -3442,8 +3505,7 @@ export class SceneView {
             heart.right.visible = true;
             heart.halfMat.opacity = 1;
             // 赤いボクセル破片を散らす（ワールド座標へ変換してから既存のドロップ機構へ）
-            const world = new Vector3();
-            heart.group.getWorldPosition(world);
+            const world = this.heartBurstWorldPos(heart);
             const colors = [0xef3e57, 0xdd2a47, 0xff92a5, 0xa81c34];
             for (let k = 0; k < 16; k++) {
               const vel = new Vector3(
@@ -3500,6 +3562,7 @@ export class SceneView {
     this.syncFacilities(battle, realDt);
     this.syncArrows(battle.combat.arrows);
     this.updateRogueHearts(realDt);
+    this.renderRogueHearts();
     this.updateDroppedVoxels(realDt);
     this.updateKawariLogs(realDt);
     this.updateFxAndDynamicVisuals(battle, realDt);
@@ -3520,6 +3583,17 @@ export class SceneView {
     }
   }
 }
+
+const HEART_WORLD_WIDTH = 9 * 0.03;
+const HEART_GAP_RATIO = 0.16;
+const HEART_CAMERA_DIST = 2.4;
+/** 立体に見せるための傾き */
+const HEART_TILT_X = 0.22;
+const HEART_TILT_Y = -0.32;
+/** 割れたハートが落ちる分の余白（px） */
+const HEART_CANVAS_MARGIN_X = 70;
+const HEART_CANVAS_MARGIN_TOP = 24;
+const HEART_CANVAS_MARGIN_BOTTOM = 110;
 
 const _hpPos = new Vector3();
 const _hpRight = new Vector3();

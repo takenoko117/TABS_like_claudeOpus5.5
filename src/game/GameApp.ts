@@ -514,6 +514,8 @@ export class GameApp {
   private jackpotRewards: JackpotReward[] = [];
   private readonly elRoguePanel: HTMLElement | null;
   private readonly elRogueModal: HTMLElement | null;
+  private elEnemyDetail: HTMLElement | null = null;
+  private enemyDetailPinned: string | null = null;
   private rogueTagKey = '';
   /** カードの中で動くボクセルモデル（最初に開いたときに作る） */
   private unitPreviews: UnitPreviews | null = null;
@@ -1140,9 +1142,11 @@ export class GameApp {
     document.querySelector('.rg-rail')?.addEventListener('click', (ev) => {
       const action = (ev.target as HTMLElement).closest<HTMLElement>('[data-rail]')?.dataset.rail;
       if (action === 'menu') {
-        this.sidePanelVisible = !this.sidePanelVisible;
-        this.syncSidePanelUI();
-      } else if (action === 'settings') {
+        this.setRogueMenuOpen(document.getElementById('rg-menu')?.classList.contains('hidden') ?? false);
+        return;
+      }
+      if (action) this.setRogueMenuOpen(false);
+      if (action === 'settings') {
         document.getElementById('btn-settings')?.click();
       } else if (action === 'quit') {
         this.confirmQuitRogue();
@@ -1150,6 +1154,10 @@ export class GameApp {
         this.showTitleScreen();
       }
     });
+    document.addEventListener('click', (ev) => {
+      if (!(ev.target as HTMLElement).closest?.('.rg-rail')) this.setRogueMenuOpen(false);
+    });
+    this.bindEnemyDetailPopup();
     this.syncSpeedButtons();
 
     // キーボードショートカット（Space: 戦闘開始/配置完了OK/戻る、R: 配置に戻る、1〜9: 兵種選択、Tab: メニュー開閉、H: 全UI開閉、Esc: 詳細閉じる）
@@ -2861,9 +2869,9 @@ export class GameApp {
     return this.propVoxelHtml(`relic:${id}`, getFacilityIconSvg(id));
   }
 
-  /** 「枠：アイコン×2」の表示 */
+  /** 「枠アイコン：×2」の表示 */
   private rogueSlotCostHtml(id: UnitTypeId): string {
-    return `<span class="slot-cost">枠：<span class="slot-cost-icon">${getUnitIconSvg(id)}</span>×${getUnitSlotCost(id)}</span>`;
+    return `<span class="slot-cost">枠<span class="slot-cost-icon">${getUnitIconSvg(id)}</span>：×${getUnitSlotCost(id)}</span>`;
   }
 
   private rogueTagChips(id: UnitTypeId): string {
@@ -2905,10 +2913,10 @@ export class GameApp {
         return `
         <button type="button" class="rogue-card reward-card rarity-${o.rarity}" data-action="reward" data-index="${i}">
           <span class="reward-rarity">${RARITY_LABELS[o.rarity]}</span>
-          <div class="reward-art">${art}</div>
+          <div class="reward-art">${art}${o.unitId ? `<span class="wr-art-info">${this.rogueSlotCostHtml(o.unitId)}</span>` : ''}</div>
           <div class="rogue-card-title">${o.title}</div>
           ${tags}
-          <div class="rogue-card-desc">${o.unitId ? `${this.rogueSlotCostHtml(o.unitId)} ・ ` : ''}${o.description}</div>
+          <div class="rogue-card-desc">${o.description}</div>
           ${hint ? `<div class="reward-hint">${hint}</div>` : ''}
           <span class="reward-key" aria-hidden="true">${i + 1}</span>
         </button>`;
@@ -2969,6 +2977,11 @@ export class GameApp {
     return `<span class="rg-hearts" role="img" aria-label="ライフ ${lives}/${ROGUE_MAX_LIVES}">${hearts}</span>`;
   }
 
+  /** ボクセルのハートを重ねて表示する HUD 上の場所 */
+  private rogueHeartSlotHtml(lives: number): string {
+    return `<span class="rg-heart-slot" role="img" aria-label="ライフ ${lives}/${ROGUE_MAX_LIVES}"></span>`;
+  }
+
   /** ヘッダーのラウンド進行（到達済み・現在・エリート・ボスを描き分ける） */
   private renderRogueRoundNodes(run: RogueliteRun): string {
     return Array.from({ length: ROGUE_FINAL_ROUND }, (_, i) => {
@@ -3003,23 +3016,89 @@ export class GameApp {
       if (e.facilityId) facilities.set(e.facilityId, (facilities.get(e.facilityId) ?? 0) + 1);
       else if (e.typeId) units.set(e.typeId, (units.get(e.typeId) ?? 0) + 1);
     }
-    const card = (icon: string, theme: { bg: string; border: string }, name: string, desc: string, count: number) => `
-      <div class="wr-enemy">
+    const card = (detailId: string, icon: string, theme: { bg: string; border: string }, name: string, desc: string, count: number) => `
+      <button type="button" class="wr-enemy" data-enemy-detail="${detailId}" data-enemy-count="${count}" aria-label="${name}の詳細">
         <span class="wr-enemy-tile" style="background:${theme.bg};border-color:${theme.border}">${icon}</span>
         <span class="wr-enemy-text"><b>${name}</b><small>${desc}</small></span>
         <span class="wr-enemy-count">×${count}</span>
-      </div>`;
+      </button>`;
     const unitCards = [...units.entries()]
       .sort((a, b) => UNIT_TYPES[b[0]].cost - UNIT_TYPES[a[0]].cost)
       .map(([id, count]) => {
         const u = UNIT_TYPES[id];
-        return card(getUnitIconSvg(id), CATEGORY_THEME_COLORS[u.category], u.name, u.description, count);
+        return card(id, getUnitIconSvg(id), CATEGORY_THEME_COLORS[u.category], u.name, u.description, count);
       });
     const facilityCards = [...facilities.entries()].map(([id, count]) => {
       const f = FACILITY_TYPES[id];
-      return card(getFacilityIconSvg(id), CATEGORY_THEME_COLORS.facility, f.name, f.description, count);
+      return card(id, getFacilityIconSvg(id), CATEGORY_THEME_COLORS.facility, f.name, f.description, count);
     });
     return [...unitCards, ...facilityCards].join('');
+  }
+
+  private setRogueMenuOpen(open: boolean): void {
+    document.getElementById('rg-menu')?.classList.toggle('hidden', !open);
+    document.getElementById('rg-menu-btn')?.setAttribute('aria-expanded', String(open));
+  }
+
+  /** 次の敵の行にホバーで詳細を出し、クリックで固定／解除する */
+  private bindEnemyDetailPopup(): void {
+    const rowOf = (t: EventTarget | null) => (t as HTMLElement | null)?.closest?.<HTMLElement>('[data-enemy-detail]') ?? null;
+    this.elRogueModal?.addEventListener('pointerover', (ev) => {
+      const row = rowOf(ev.target);
+      if (row && ev.pointerType !== 'touch' && !this.enemyDetailPinned) this.showEnemyDetail(row);
+    });
+    this.elRogueModal?.addEventListener('pointerout', (ev) => {
+      const row = rowOf(ev.target);
+      if (row && !row.contains(ev.relatedTarget as Node | null) && !this.enemyDetailPinned) this.hideEnemyDetail();
+    });
+    document.addEventListener('click', (ev) => {
+      const row = rowOf(ev.target);
+      const id = row?.dataset.enemyDetail ?? null;
+      if (!row || id === this.enemyDetailPinned) {
+        this.hideEnemyDetail();
+        return;
+      }
+      this.showEnemyDetail(row);
+      this.enemyDetailPinned = id;
+    });
+  }
+
+  private showEnemyDetail(row: HTMLElement): void {
+    const id = row.dataset.enemyDetail as UnitTypeId | FacilityTypeId;
+    const d = getPlaceableDetail(id);
+    this.enemyDetailPinned = null;
+    if (!this.elEnemyDetail) {
+      this.elEnemyDetail = document.createElement('div');
+      this.elEnemyDetail.className = 'wr-enemy-detail';
+      this.elEnemyDetail.setAttribute('role', 'tooltip');
+      document.body.appendChild(this.elEnemyDetail);
+    }
+    const el = this.elEnemyDetail;
+    const pills = d.statPills
+      .map((p) => `<span class="${p.className}" title="${p.title}">${p.iconSvg ?? ''}<span>${p.value}</span></span>`)
+      .join('');
+    const tags = isFacilityTypeId(id) ? '' : `<div class="unit-tags">${this.rogueTagChips(id)}</div>`;
+    el.innerHTML = `
+      <div class="wed-head">
+        <span class="wed-icon" style="background:${d.theme.bg};border-color:${d.theme.border}">${d.iconSvg}</span>
+        <span class="wed-name"><b>${d.name}</b><small>${d.categoryIcon} ${d.categoryLabel}</small></span>
+        <span class="wr-enemy-count">×${row.dataset.enemyCount}</span>
+      </div>
+      <div class="wed-stats">${pills}</div>
+      ${tags}
+      <p class="wed-desc">${d.description}</p>`;
+    el.classList.remove('hidden');
+    const rect = row.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    const margin = 10;
+    const left = rect.right + margin + box.width <= window.innerWidth ? rect.right + margin : Math.max(margin, rect.left - margin - box.width);
+    el.style.left = `${left}px`;
+    el.style.top = `${Math.max(margin, Math.min(rect.top, window.innerHeight - box.height - margin))}px`;
+  }
+
+  private hideEnemyDetail(): void {
+    this.enemyDetailPinned = null;
+    this.elEnemyDetail?.classList.add('hidden');
   }
 
   /** 作戦室のカード1枚。カードを押すとデッキと控えを行き来し、下のボタンで強化する */
@@ -3043,22 +3122,22 @@ export class GameApp {
       .join(' ');
     const upgrade =
       price === null
-        ? `<span class="wr-card-up is-max">強化MAX<small>HP・攻撃 ×${mul.toFixed(1)}</small></span>`
-        : `<button type="button" class="wr-card-up${run.gold >= price ? ' can-buy' : ''}" data-action="card-up" data-unit="${id}" ${run.gold >= price ? '' : 'disabled'}>強化 ${price.toLocaleString()}G<small>Lv${card.level} → ${card.level + 1}：×${mul.toFixed(1)} → ×${getUnitLevelMul(card.level + 1).toFixed(1)}</small></button>`;
+        ? `<span class="wr-card-up is-max">強化MAX<small>ステータス：×${mul.toFixed(1)}</small></span>`
+        : `<button type="button" class="wr-card-up${run.gold >= price ? ' can-buy' : ''}" data-action="card-up" data-unit="${id}" ${run.gold >= price ? '' : 'disabled'}>強化 ${price.toLocaleString()}G<small>ステータス：×${mul.toFixed(1)} → ×${getUnitLevelMul(card.level + 1).toFixed(1)}</small></button>`;
     return `
       <div class="${classes}" data-flip="card:${id}">
         <button type="button" class="wr-card-main" data-action="deck-toggle" data-unit="${id}" aria-label="${moveLabel}" title="${moveLabel}">
           <span class="wr-card-art">
             ${this.unitVoxelHtml(id, squad)}
             <span class="wr-lv">Lv${card.level}</span>
+            <span class="wr-art-info">
+              ${this.rogueSlotCostHtml(id)}
+              <span class="slot-cost">ステータス：<b>×${mul.toFixed(1)}</b></span>
+              <span class="slot-cost">人数：×${squad}</span>
+            </span>
             <span class="wr-move">${moveHint}</span>
           </span>
           <span class="wr-card-name">${name}</span>
-          <span class="wr-card-chips">
-            <span class="wr-chip">${squad}体</span>
-            <span class="wr-chip">枠 ${getUnitSlotCost(id)}</span>
-            <span class="wr-chip mul">×${mul.toFixed(1)}</span>
-          </span>
         </button>
         ${upgrade}
       </div>`;
@@ -3069,7 +3148,7 @@ export class GameApp {
     const units = run.deck
       .map((c) => {
         const cost = getUnitSlotCost(c.id);
-        return `<span class="gauge-unit" style="grid-column: span ${cost}" data-flip="gauge:${c.id}" title="${UNIT_TYPES[c.id].name}">${`<i>${getUnitIconSvg(c.id)}</i>`.repeat(cost)}</span>`;
+        return `<span class="gauge-unit" style="grid-column: span ${cost}; --span: ${cost}" data-flip="gauge:${c.id}" title="${UNIT_TYPES[c.id].name}">${`<i>${getUnitIconSvg(c.id)}</i>`.repeat(cost)}</span>`;
       })
       .join('');
     const free = Array.from(
@@ -3356,6 +3435,7 @@ export class GameApp {
 
   private showRogueModal(html: string, innerClass = ''): void {
     if (!this.elRogueModal) return;
+    this.hideEnemyDetail();
     this.elRogueModal.innerHTML = `<div class="rogue-modal-inner ${innerClass}">${html}</div>`;
     this.elRogueModal.classList.remove('hidden');
     this.rogueModalKind = innerClass === 'rogue-war-room' ? 'room' : innerClass === 'rogue-rewards' ? 'rewards' : 'starter';
@@ -3530,7 +3610,7 @@ export class GameApp {
   private formatRogueBadge(): string {
     const run = this.rogue;
     if (!run) return '🎲 ローグライト ｜ スターター部隊を選んでください';
-    const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}</b> ${'❤'.repeat(run.lives)}`;
+    const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}</b> ${this.rogueHeartSlotHtml(run.lives)}`;
     if (this.mode === 'placement') {
       return `${head} ｜ ゴールド ${COST_ICON_SVG} <b>${run.gold}</b> G ｜ 全軍 <b>${this.battle.aliveCount(0)}</b> 体 ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
     }
@@ -3771,7 +3851,6 @@ export class GameApp {
       this.jackpotAllyMaxHpTotal = this.rogueAllyMaxHpTotal();
       this.resetJackpot();
       this.jackpotTracker = new JackpotDropTracker(JACKPOT_MAX_DROPS[this.rogue.roundKind]);
-      this.view.setRogueHeartsVisible(false);
     }
     this.battleStats.reset();
     this.damageOverlay.clear();
@@ -4149,7 +4228,7 @@ export class GameApp {
       if (pill) {
         pill.innerHTML = `
           <span class="rg-round">ROUND <b>${run.round}</b> / ${ROGUE_FINAL_ROUND}</span>
-          ${this.rogueHeartsHtml(run.lives)}
+          ${this.rogueHeartSlotHtml(run.lives)}
           <span class="rg-time${!decided && remain <= 10 ? ' low' : ''}">${decided ? '決着' : `残り <b>${Math.ceil(remain)}</b> 秒`}</span>`;
       }
       const context = document.getElementById('rg-context');

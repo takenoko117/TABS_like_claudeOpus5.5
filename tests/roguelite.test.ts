@@ -1069,8 +1069,10 @@ describe('ローグライト v3: カードのボクセルモデル', () => {
     const { UnitPreviewActor } = await import('../src/render/UnitPreviews');
     for (const ut of UNIT_TYPE_LIST) {
       const actor = new UnitPreviewActor(ut.id);
-      actor.hop();
-      for (let i = 0; i < 90; i++) actor.advance(1 / 30);
+      actor.setLooking(true);
+      for (let i = 0; i < 45; i++) actor.advance(1 / 30);
+      actor.setLooking(false);
+      for (let i = 0; i < 45; i++) actor.advance(1 / 30);
       for (const p of actor.world.particles) {
         expect([ut.id, Number.isFinite(p.pos.x + p.pos.y + p.pos.z)]).toEqual([ut.id, true]);
         expect(Math.abs(p.pos.x)).toBeLessThan(40);
