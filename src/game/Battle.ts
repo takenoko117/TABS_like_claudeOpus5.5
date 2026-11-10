@@ -13,6 +13,7 @@ import { PELVIS_HEIGHT } from '../units/Skeleton';
 import { Unit, type UnitContext } from '../units/Unit';
 import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { StageHazardConfig } from './ArcadeStages';
+import { BATTLE_FIELD_WALLS } from '../physics/PhysicsWorld';
 
 export type BattleResult = Team | 'draw' | null;
 
@@ -49,7 +50,7 @@ export interface BattleOpening {
  * 物理ワールド・ユニット・施設・戦闘システムを固定タイムステップで進める。
  */
 export class Battle implements UnitContext, FacilityBattleContext {
-  readonly world = new PhysicsWorld();
+  readonly world = new PhysicsWorld(BATTLE_FIELD_WALLS);
   readonly units: Unit[] = [];
   readonly facilities: Facility[] = [];
   readonly combat = new CombatSystem();
@@ -292,6 +293,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.world.pits = config.pits ? [...config.pits] : [];
     this.world.slopes = [];
     this.world.arenaBounds = config.arenaBounds ? { ...config.arenaBounds } : null;
+    // 浮島アリーナは外周の奈落へ落とすのが遊びなので壁を置かない
+    this.world.fieldWalls = config.arenaBounds ? null : BATTLE_FIELD_WALLS;
     this.world.gravity.set(0, -9.81 * (config.gravityScale ?? 1.0), 0);
     this.timeLimitSeconds = config.timeLimitSeconds ?? null;
     this.baseDamageMul = config.damageMultiplier ?? 1.0;

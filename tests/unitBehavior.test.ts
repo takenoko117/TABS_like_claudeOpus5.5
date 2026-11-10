@@ -454,6 +454,8 @@ describe('兵種固有の不具合の回帰テスト', () => {
     /** ヤマムロンと、静止した不死身の敵 count 体を横一列に並べる */
     function setupYamamuron(count: number, enemyX = 0): { battle: DiagBattle; fuji: Unit; dummies: Unit[] } {
       const battle = new DiagBattle();
+      // 射程や突進の検証で戦場より遠くまで使うため、見えない壁を外す
+      battle.world.fieldWalls = null;
       const fuji = battle.spawnUnit('yamamuron', 0, -15, 0);
       const dummies: Unit[] = [];
       for (let i = 0; i < count; i++) {

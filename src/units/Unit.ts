@@ -581,7 +581,7 @@ export class Unit {
     }
 
     // 炎上中はパニックでランダム方向に走る（土台に乗っている間は走らない）
-    if (!this.mountedOn && this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant') {
+    if (!this.mountedOn && this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant' && this.type.id !== 'angel_zeruel') {
       const panicAngle = this.facing + Math.sin(this.walkPhase * 2.5) * 1.2;
       this.desiredFacing = panicAngle;
       this.moveDir.set(Math.sin(panicAngle), 0, Math.cos(panicAngle));

@@ -58,6 +58,24 @@ export interface SlopeSpec {
   rightZ: number;
 }
 
+/** 戦場を囲む見えない壁（原点中心の矩形。高さは無限） */
+export interface FieldWalls {
+  maxX: number;
+  maxZ: number;
+}
+
+/** 通常の戦場の壁。配置枠（±22 / ±16）の少し外側に置く */
+export const BATTLE_FIELD_WALLS: Readonly<FieldWalls> = { maxX: 25, maxZ: 19 };
+
+/** 壁の反発係数 */
+const WALL_RESTITUTION = 0.5;
+/** これ未満の速さでの接触は跳ね返さない（歩いて触れただけのユニットを弾かない） */
+const WALL_MIN_IMPACT_SPEED = 2.5;
+/** 跳ね返り速度の下限（弱い衝突でも壁に張り付かないように） */
+const WALL_MIN_BOUNCE_SPEED = 1.5;
+/** 跳ね返り速度の上限（強烈なノックバックでも反対側まで飛ばないように） */
+const WALL_MAX_BOUNCE_SPEED = 10;
+
 const _va = new Vector3();
 const _vb = new Vector3();
 
@@ -92,6 +110,13 @@ export class PhysicsWorld {
   slopes: SlopeSpec[] = [];
   /** 戦場外周（|x|>arenaMaxX または |z|>arenaMaxZ）を奈落とする浮島アリーナ設定 */
   arenaBounds: { maxX: number; maxZ: number } | null = null;
+
+  /** 戦場を囲む見えない壁（null なら壁なし） */
+  fieldWalls: Readonly<FieldWalls> | null;
+
+  constructor(fieldWalls: Readonly<FieldWalls> | null = null) {
+    this.fieldWalls = fieldWalls;
+  }
 
   private readonly contactPool: Contact[] = [];
   private readonly hash = new SpatialHash(0.5, 1024);
@@ -140,14 +165,17 @@ export class PhysicsWorld {
   step(dt: number): void {
     this.contacts.length = 0;
     this.integrate(dt);
+    this.solveFieldWalls(dt);
     for (let it = 0; it < this.iterations; it++) {
       const cs = this.constraints;
       for (let i = 0; i < cs.length; i++) cs[i].solve();
       this.solveGround(false);
       if (this.obstacles.length > 0) this.solveObstacles();
+      this.solveFieldWalls(dt);
     }
     if (this.collisionsEnabled) this.solveParticleCollisions(dt);
     if (this.obstacles.length > 0) this.solveObstacles();
+    this.solveFieldWalls(dt);
     // 最後に摩擦付きで地面判定を行う
     this.solveGround(true);
   }
@@ -285,6 +313,33 @@ export class PhysicsWorld {
         if (p.prev.y > p.pos.y) p.prev.y = p.pos.y;
       }
     }
+  }
+
+  /** 見えない壁の外へ出た粒子を内側へ戻し、勢いがあれば跳ね返す */
+  private solveFieldWalls(dt: number): void {
+    const walls = this.fieldWalls;
+    if (!walls) return;
+    for (const p of this.particles) {
+      if (p.invMass === 0) continue;
+      this.bounceOffWall(p, 'x', walls.maxX - p.radius, dt);
+      this.bounceOffWall(p, 'z', walls.maxZ - p.radius, dt);
+    }
+  }
+
+  private bounceOffWall(p: Particle, axis: 'x' | 'z', limit: number, dt: number): void {
+    const coord = p.pos[axis];
+    if (Math.abs(coord) <= limit) return;
+    const side = coord > 0 ? 1 : -1;
+    const wall = side * limit;
+    // Verlet の暗黙速度のうち、壁へ向かう成分
+    const impact = (side * (coord - p.prev[axis])) / dt;
+    p.pos[axis] = wall;
+    if (impact <= 0) return;
+    const bounce =
+      impact < WALL_MIN_IMPACT_SPEED
+        ? 0
+        : Math.min(WALL_MAX_BOUNCE_SPEED, Math.max(WALL_MIN_BOUNCE_SPEED, impact * WALL_RESTITUTION));
+    p.prev[axis] = wall + side * bounce * dt;
   }
 
   /** 円柱障害物（石柱など）との押し出し判定 */
