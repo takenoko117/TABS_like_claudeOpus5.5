@@ -2907,7 +2907,7 @@ export class GameApp {
           : o.relicId
             ? this.relicVoxelHtml(o.relicId)
             : o.kind === 'gold'
-              ? '<span class="reward-coin" aria-hidden="true"><i>G</i></span>'
+              ? this.propVoxelHtml('gold', '<span class="unit-portrait-svg prop-fallback">💰</span>')
               : `<span class="reward-slot-art" aria-hidden="true">${UNIT_SLOT_ICON_SVG}</span>`;
         const hint = this.rogueRewardHint(run, o);
         return `

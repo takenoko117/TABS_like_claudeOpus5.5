@@ -3350,30 +3350,6 @@ kbd {
   background: none;
 }
 
-.reward-coin {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 132px;
-  height: 132px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, #fff6cf, var(--gold) 52%, #b47d14);
-  box-shadow: inset 0 -8px 16px rgba(120, 70, 0, 0.45), 0 12px 30px rgba(245, 196, 81, 0.4);
-}
-
-.reward-coin i {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  border: 4px solid rgba(140, 90, 10, 0.55);
-  color: #7a4f08;
-  font: 900 54px/1 var(--font-ui);
-  font-style: normal;
-}
-
 .reward-slot-art .room-icon {
   width: 128px;
   height: 128px;
@@ -4570,8 +4546,6 @@ body.rogue-mode .team-panel.blue .hp-fill { background: var(--enemy); }
   .reward-card .reward-art .unit-voxel,
   .reward-card .reward-art .unit-voxel.squad,
   .reward-card .reward-art .unit-voxel.prop-voxel { height: 130px; }
-  .reward-coin { width: 100px; height: 100px; }
-  .reward-coin i { width: 72px; height: 72px; font-size: 40px; }
   .rg-rank { display: none; }
   .rg-hint { display: none; }
 }
