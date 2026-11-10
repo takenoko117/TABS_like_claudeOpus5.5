@@ -4,6 +4,7 @@ import type { Facility } from '../facilities/Facility';
 import { DistanceConstraint } from '../physics/Constraint';
 import { PF_RECORD_CONTACT, Particle } from '../physics/Particle';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import { HAYATO_HOVER_MUL, hayatoMouthPos } from './HayatoHead';
 import { mountSeatRise } from './Mounting';
 import { J, JOINTS, JOINT_COUNT, PELVIS_HEIGHT, SKELETON_CONSTRAINTS } from './Skeleton';
 import type { Team, UnitType } from './UnitTypes';
@@ -39,6 +40,9 @@ const SHURIKEN_GRAVITY_SCALE = 0.25;
 /** ホンゴンの旋律結界が 1 体につき吸収できる遠距離ダメージの累計 */
 export const HONGON_RANGED_BARRIER = 1000;
 /** ヤマムロン強化モード: 発動するHP割合・攻撃頻度倍率・同時攻撃数 */
+/** ハヤトの口レーザーのダメージ判定の間隔（秒） */
+const MOUTH_LASER_TICK = 0.1;
+const _mouthAim = new Vector3();
 const YAMAMURON_RAGE_HP_RATIO = 0.5;
 const YAMAMURON_RAGE_ATTACK_RATE = 2;
 const YAMAMURON_RAGE_MAX_TARGETS = 3;
@@ -272,6 +276,8 @@ export class Unit {
         ? 1.05
         : type.id === 'deoxys'
         ? 1.45
+        : type.id === 'hayato'
+        ? HAYATO_HOVER_MUL
         : 1.0;
     const origin = new Vector3(groundPos.x, groundPos.y + PELVIS_HEIGHT * s * hoverMul, groundPos.z);
     for (let i = 0; i < JOINT_COUNT; i++) {
@@ -608,7 +614,7 @@ export class Unit {
       let mz = dz / Math.max(0.001, dist);
 
       // 飛行ユニット以外は奈落（一本橋ステージ）や石柱を迂回する
-      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys';
+      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys' || this.type.id === 'hayato';
       if (!isFlyer) {
         const chasm = ctx.world.chasm;
         if (chasm) {
@@ -759,6 +765,7 @@ export class Unit {
       st === 'piano_performance' ||
       st === 'dragon_twister' ||
       st === 'psychic' ||
+      st === 'mouth_laser' ||
       st === 'zeruel_cutter'
     ) {
       return this.attackRange;
@@ -808,6 +815,7 @@ export class Unit {
       st === 'piano_performance' ||
       st === 'dragon_twister' ||
       st === 'psychic' ||
+      st === 'mouth_laser' ||
       st === 'zeruel_cutter'
     ) {
       return this.attackRange;
@@ -858,6 +866,8 @@ export class Unit {
     } else if (id === 'deoxys') {
       this.psychicPulseTimer = 0.05;
       this.psychicFinished = false;
+    } else if (id === 'hayato') {
+      ctx.combat.emitEffect({ kind: 'mouth_laser_charge', pos: this.head.pos.clone() });
     }
   }
 
@@ -883,6 +893,7 @@ export class Unit {
           this.type.id === 'zaisan' ||
           this.type.id === 'lightspeed_ant' ||
           this.type.id === 'deoxys' ||
+          this.type.id === 'hayato' ||
           this.type.category === 'divine'
         ? 0.16
         : 0.3;
@@ -930,6 +941,10 @@ export class Unit {
         pos: this.chest.pos.clone().addScaledVector(this.forward, 0.3 * this.scale),
         progress: this.phaseTime / ty.windup,
       });
+    }
+
+    if (ty.style === 'mouth_laser' && this.attackPhase === 'windup') {
+      this.aimMouthLaser(1);
     }
 
     if (ty.style === 'ramiel_beam' && this.attackPhase === 'windup') {
@@ -1092,6 +1107,15 @@ export class Unit {
         this.chest.addVelocity(recoil, dt);
         this.pelvis.addVelocity(recoil, dt);
       }
+      return;
+    }
+    if (st === 'mouth_laser') {
+      this.aimMouthLaser(1);
+      this.subAttackTimer = MOUTH_LASER_TICK;
+      this.fireMouthLaser(ctx, dt, true);
+      const recoil = this.forward.clone().multiplyScalar(-1.2);
+      this.pelvis.addVelocity(recoil, dt);
+      this.chest.addVelocity(recoil, dt);
       return;
     }
     if (st === 'ramiel_beam') {
@@ -1497,6 +1521,27 @@ export class Unit {
     return this.type.range * (this.yamamuronEnraged ? YAMAMURON_RAGE_RANGE_MUL : 1);
   }
 
+  /** ハヤトの照準を目標へ寄せ、顔を目標に向ける（blend = 1 で即座に合わせる） */
+  private aimMouthLaser(blend: number): void {
+    const t = this.target;
+    const fac = this.targetFacility;
+    if (t && t.alive) {
+      this.laserAimPos.lerp(t.chest.pos, blend);
+    } else if (fac && fac.alive) {
+      this.laserAimPos.lerp(_mouthAim.copy(fac.pos).setY(fac.height * 0.5), blend);
+    } else if (this.laserAimPos.lengthSq() < 0.01) {
+      this.laserAimPos.copy(this.pelvis.pos).addScaledVector(this.forward, this.attackRange);
+    }
+    const dx = this.laserAimPos.x - this.pelvis.pos.x;
+    const dz = this.laserAimPos.z - this.pelvis.pos.z;
+    if (dx * dx + dz * dz > 1e-3) this.desiredFacing = Math.atan2(dx, dz);
+  }
+
+  private fireMouthLaser(ctx: UnitContext, dt: number, isInitial: boolean): void {
+    const from = hayatoMouthPos(new Vector3(), this.pelvis.pos, this.forward, this.scale);
+    ctx.combat.fireMouthLaser(this, from, this.laserAimPos.clone(), ctx.units, ctx.facilities ?? [], dt, isInitial);
+  }
+
   /** 攻撃の進行速度の倍率（ヤマムロンの強化モードで 2 倍） */
   private get attackRateMul(): number {
     return this.yamamuronEnraged ? YAMAMURON_RAGE_ATTACK_RATE : 1;
@@ -1712,6 +1757,13 @@ export class Unit {
           dt,
           false,
         );
+      }
+    } else if (st === 'mouth_laser') {
+      this.aimMouthLaser(Math.min(1, dt * 5));
+      this.subAttackTimer -= dt;
+      if (this.subAttackTimer <= 0) {
+        this.subAttackTimer = MOUTH_LASER_TICK;
+        this.fireMouthLaser(ctx, dt, false);
       }
     } else if (st === 'ramiel_beam') {
       if (t && t.alive) {
@@ -2503,7 +2555,7 @@ export class Unit {
   /** 常時浮遊している兵種か */
   get isFlying(): boolean {
     const id = this.type.id;
-    return id === 'giant_eagle' || id === 'dragon' || id === 'angel_ramiel' || id === 'angel_sahaquiel' || id === 'angel_zeruel' || id === 'deoxys';
+    return id === 'giant_eagle' || id === 'dragon' || id === 'angel_ramiel' || id === 'angel_sahaquiel' || id === 'angel_zeruel' || id === 'deoxys' || id === 'hayato';
   }
 
   private applyMuscles(dt: number): void {
@@ -2567,6 +2619,8 @@ export class Unit {
             ? 0.85 + Math.sin(this.phaseTime * 42.0) * 0.06
             : 0;
         targetH = 2.7 + chargeLift + Math.sin(this.walkPhase * 1.2) * 0.12;
+      } else if (this.type.id === 'hayato') {
+        targetH = PELVIS_HEIGHT * s * HAYATO_HOVER_MUL + Math.sin(this.walkPhase * 0.7) * 0.07;
       } else if (this.type.id === 'angel_zeruel') {
         targetH = PELVIS_HEIGHT * s * 1.05 + Math.sin(this.walkPhase * 0.9) * 0.22;
       } else if (this.type.id === 'angel_sahaquiel') {
@@ -2707,7 +2761,7 @@ export class Unit {
       lp[i].set(p[0], p[1], p[2]);
     }
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys';
+    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys' || this.type.id === 'hayato';
     // 歩行・羽ばたきサイクル
     const w = isFlyer ? 1.0 : clamp(speedH / (1.2 * s), 0, 1);
     const phaseRate = isFlyer ? 9.5 : (Math.PI * 2 * speedH) / (1.0 * s);

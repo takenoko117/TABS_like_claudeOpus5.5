@@ -1241,6 +1241,39 @@ export class SoundManager {
         osc.stop(t + 0.3);
         break;
       }
+      case 'mouth_laser_charge': {
+        if (!this.throttle('hayato_chg', 200)) return;
+        // 口を開けながら高まっていく唸り
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, t);
+        osc.frequency.exponentialRampToValueAtTime(980, t + 0.85);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.exponentialRampToValueAtTime(0.16, t + 0.7);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.92);
+        break;
+      }
+      case 'mouth_laser': {
+        if (!this.throttle('hayato_beam', e.isInitial ? 60 : 120)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        const dur = e.isInitial ? 0.4 : 0.13;
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(e.isInitial ? 1500 : 880 + Math.random() * 120, t);
+        osc.frequency.exponentialRampToValueAtTime(e.isInitial ? 300 : 640, t + dur);
+        g.gain.setValueAtTime(e.isInitial ? 0.26 : 0.07, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + dur + 0.02);
+        break;
+      }
       case 'ramiel_beam': {
         const isInit = e.isInitial !== false;
         if (!this.throttle('ram_beam', isInit ? 80 : 130)) return;

@@ -485,7 +485,7 @@ describe('ローグライト v3: カードと部隊', () => {
       ['giant_eagle', 2, 3], ['samurai', 2, 3], ['archmage', 2, 3], ['rocket_soldier', 2, 3], ['sniper', 2, 2],
       ['slime', 2, 2], ['gravimancer', 2, 2], ['buggy', 2, 2], ['minigunner', 2, 2], ['hongon', 2, 2],
       ['satellite_soldier', 2, 2], ['zaisan', 2, 2], ['sezain', 2, 1], ['anaconda', 2, 1],
-      ['deoxys', 3, 2], ['giant', 3, 2], ['warelephant', 3, 1], ['dragon', 3, 1], ['angel_sachiel', 3, 1],
+      ['deoxys', 3, 2], ['hayato', 3, 2], ['giant', 3, 2], ['warelephant', 3, 1], ['dragon', 3, 1], ['angel_sachiel', 3, 1],
       ['giant_tank', 4, 1], ['giant_robot', 4, 1], ['angel_ramiel', 4, 1], ['yamamuron', 4, 1],
       ['angel_sahaquiel', 4, 1], ['angel_zeruel', 4, 1],
     ];

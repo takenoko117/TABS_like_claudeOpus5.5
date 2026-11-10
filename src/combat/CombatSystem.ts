@@ -3,6 +3,7 @@ import { Vector3 } from 'three';
 import type { Facility } from '../facilities/Facility';
 import { PF_RECORD_CONTACT, type Particle } from '../physics/Particle';
 import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
+import { MOUTH_LASER_HEIGHT_TOLERANCE, MOUTH_LASER_PIERCE, MOUTH_LASER_RADIUS } from '../units/HayatoHead';
 import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
@@ -86,6 +87,8 @@ export type CombatEffectEvent =
   | { kind: 'at_field'; pos: Vector3; scale: number; dir?: Vector3 }
   | { kind: 'ramiel_charge'; pos: Vector3; aim?: Vector3; progress: number }
   | { kind: 'ramiel_beam'; from: Vector3; to: Vector3; isInitial?: boolean }
+  | { kind: 'mouth_laser_charge'; pos: Vector3 }
+  | { kind: 'mouth_laser'; from: Vector3; to: Vector3; team: Team; isInitial: boolean }
   | { kind: 'sachiel_pile'; from: Vector3; to: Vector3 }
   | { kind: 'sachiel_cross'; pos: Vector3 }
   | { kind: 'zeruel_charge'; pos: Vector3; progress: number }
@@ -1224,6 +1227,68 @@ export class CombatSystem {
       gravityScale,
       life: 6.0,
     });
+  }
+
+  /** ハヤトの口レーザー。照準の先まで一直線に貫通し、線上の敵と施設に当たる */
+  fireMouthLaser(
+    owner: Unit,
+    from: Vector3,
+    to: Vector3,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+    isInitial: boolean,
+  ): void {
+    this.emitEffect({ kind: 'mouth_laser', from: from.clone(), to: to.clone(), team: owner.team, isInitial });
+
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const distH = Math.hypot(dx, dz);
+    const dirX = distH > 0.001 ? dx / distH : owner.forward.x;
+    const dirZ = distH > 0.001 ? dz / distH : owner.forward.z;
+    const reach = distH + MOUTH_LASER_PIERCE;
+    const beamY = (along: number): number => from.y + ((to.y - from.y) * along) / Math.max(1, distH);
+    /** 線上にあれば 真上から見た距離 を、外れていれば null を返す */
+    const offBeam = (px: number, py: number, pz: number, along0 = -0.5): number | null => {
+      const rx = px - from.x;
+      const rz = pz - from.z;
+      const along = rx * dirX + rz * dirZ;
+      if (along < along0 || along > reach) return null;
+      if (Math.abs(py - beamY(along)) > MOUTH_LASER_HEIGHT_TOLERANCE) return null;
+      return Math.abs(-dirZ * rx + dirX * rz);
+    };
+
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const off = offBeam(u.chest.pos.x, u.chest.pos.y, u.chest.pos.z);
+      if (off === null || off > MOUTH_LASER_RADIUS + u.bodyRadius * 0.6) continue;
+      const base = isInitial ? 38 + Math.random() * 6 : 11 + Math.random() * 3;
+      const dmg = u.absorbRangedDamage(base * owner.damageMul);
+      if (dmg <= 0) continue;
+      const impulse = new Vector3(dirX, 0.25, dirZ).multiplyScalar(isInitial ? 6.5 : 1.4);
+      u.takeDamage(dmg, u.chest, impulse, dt, owner, true);
+      this.onHit?.({
+        kind: 'magic',
+        point: u.chest.pos.clone(),
+        damage: dmg,
+        attacker: owner,
+        victim: u,
+        hitParticle: u.chest,
+        impulse,
+        killed: !u.alive,
+        carveScale: 1,
+      });
+    }
+
+    for (const f of facilities) {
+      if (!f.alive || f.isTerrain || f.team === owner.team) continue;
+      const off = offBeam(f.pos.x, Math.min(f.height * 0.5, from.y), f.pos.z, -f.radius);
+      if (off === null || off > f.radius + MOUTH_LASER_RADIUS) continue;
+      const facDmg = (isInitial ? 44 : 13) * owner.damageMul;
+      const killed = f.takeDamage(facDmg, owner);
+      this.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: facDmg });
+      if (killed) this.emitEffect({ kind: 'facility_destroy', pos: f.pos.clone(), team: f.team, radius: f.radius });
+    }
   }
 
   /** 幾何神ラミエルの超極太・広範囲・高威力加粒子砲レーザー照射 */

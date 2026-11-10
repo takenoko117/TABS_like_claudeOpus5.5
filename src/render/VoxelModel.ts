@@ -46,6 +46,16 @@ import {
   DRAGON_RIG,
   type DragonPartSpec,
 } from './DragonModel';
+import { getHayatoHeadGeometry } from './HayatoHeadModel';
+import {
+  HAYATO_HEAD_HEIGHT,
+  HAYATO_HEAD_RISE,
+  HAYATO_HOVER_MUL,
+  HAYATO_MOUTH_Y,
+  HAYATO_MOUTH_Z,
+  hayatoHeadCenter,
+  MOUTH_LASER_PIERCE,
+} from '../units/HayatoHead';
 import { J } from '../units/Skeleton';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, type Team, type UnitType, type UnitTypeId, type WeaponKind } from '../units/UnitTypes';
@@ -3194,6 +3204,14 @@ const ELEMENT_GLOW: Readonly<Record<'fire' | 'shock' | 'poison', readonly [numbe
   poison: [0.1, 0.32, 0.06],
 };
 
+/** ハヤトの口レーザーの太さ（scale 1 あたりの半径。白熱芯・光・外周の順） */
+const HAYATO_BEAM_RADII = [0.05, 0.13, 0.26] as const;
+const _hayatoCenter = new Vector3();
+const _hayatoMouth = new Vector3();
+const _hayatoQ = new Quaternion();
+const _hayatoAxisX = new Vector3(1, 0, 0);
+const _hayatoAxisZ = new Vector3(0, 0, 1);
+
 export class VoxelCharacterVisual {
   readonly group = new Group();
   private readonly material: MeshLambertMaterial;
@@ -3211,6 +3229,15 @@ export class VoxelCharacterVisual {
   /** ブレス時の火炎ジェット（外炎・内炎・白熱芯の 3 層コーン）と口元の発光球 */
   private dragonJet: Mesh[] = [];
   private dragonMouthGlow: Mesh | null = null;
+  /** ハヤトの顔（ローポリ 1 メッシュ）。口の開閉はモーフターゲット 0 番 */
+  private hayatoHead: Mesh | null = null;
+  private hayatoMouthOpen = 0;
+  private readonly hayatoSeed = Math.random() * 10;
+  /** 口レーザーの 3 層（白熱芯・陣営色の光・外周の淡い光） */
+  private readonly hayatoBeam: Mesh[] = [];
+  private hayatoMouthGlow: Mesh | null = null;
+  /** 顔の下で浮力を生む陣営色の輪（敵味方の見分けも兼ねる） */
+  private hayatoRing: Mesh | null = null;
   /** ヤマムロン強化モードのオーラ（外炎コーン・内炎コーン・地面の輪・昇る光輪） */
   private readonly yamamuronAura: Mesh[] = [];
   /** 胴体と頭が強化形態のモデルに差し替わっているか */
@@ -3379,6 +3406,54 @@ export class VoxelCharacterVisual {
       );
       this.dragonMouthGlow.visible = false;
       this.group.add(this.dragonMouthGlow);
+    }
+
+    if (unit.type.id === 'hayato') {
+      this.material.flatShading = true;
+      this.material.needsUpdate = true;
+      const head = new Mesh(getHayatoHeadGeometry(), this.material);
+      head.castShadow = true;
+      head.morphTargetInfluences = [0];
+      this.group.add(head);
+      this.hayatoHead = head;
+
+      const glow = TEAM_COLORS[unit.team].shirt;
+      const beamLayers = [
+        { color: 0xffffff, opacity: 1 },
+        { color: glow, opacity: 0.75 },
+        { color: glow, opacity: 0.28 },
+      ];
+      for (const layer of beamLayers) {
+        // 高さ 1・半径 1 の筒を、毎フレーム長さと太さに合わせて拡大する
+        const geom = new CylinderGeometry(1, 1, 1, 10, 1, true);
+        geom.translate(0, 0.5, 0);
+        const beam = new Mesh(
+          geom,
+          new MeshBasicMaterial({
+            color: layer.color,
+            transparent: true,
+            opacity: layer.opacity,
+            blending: AdditiveBlending,
+            depthWrite: false,
+            side: DoubleSide,
+          }),
+        );
+        beam.visible = false;
+        beam.frustumCulled = false;
+        this.group.add(beam);
+        this.hayatoBeam.push(beam);
+      }
+      this.hayatoMouthGlow = new Mesh(
+        new SphereGeometry(1, 12, 10),
+        new MeshBasicMaterial({ color: 0xfff4d6, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false }),
+      );
+      this.hayatoMouthGlow.visible = false;
+      this.group.add(this.hayatoMouthGlow);
+      this.hayatoRing = new Mesh(
+        new TorusGeometry(0.3 * HAYATO_HEAD_HEIGHT * s, 0.022 * HAYATO_HEAD_HEIGHT * s, 6, 12),
+        new MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.85 }),
+      );
+      this.group.add(this.hayatoRing);
     }
 
     if (unit.type.id === 'yamamuron') {
@@ -3800,6 +3875,11 @@ export class VoxelCharacterVisual {
     }
     if (u.type.id === 'angel_ramiel') {
       this.syncRamiel();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'hayato') {
+      this.syncHayato();
       this.updateMaterialStatus();
       return;
     }
@@ -4850,6 +4930,102 @@ export class VoxelCharacterVisual {
    * 幾何神ラミエル: 多ポリゴン鏡面反射キラキラボディ＆超豪華タメ変形・3D超極太レーザー演出。
    * ボクセルメッシュは完全に非表示とし、鏡面テクスチャと環境反射を持つ多面体結晶をアニメーションさせる。
    */
+  /** 攻撃の段階から、今の口の開き具合（0〜1）の目標を求める */
+  private hayatoMouthTarget(time: number): number {
+    const u = this.unit;
+    if (!u.alive) return 0.6;
+    if (u.attackPhase === 'windup') return Math.min(1, u.phaseTime / Math.max(0.05, u.type.windup * 0.45));
+    if (u.attackPhase === 'strike') return 0.92 + Math.sin(time * 38) * 0.08;
+    if (u.attackPhase === 'recover') return Math.max(0, 1 - u.phaseTime / Math.max(0.05, u.type.recover));
+    // 待機中はときどき口をパクパクさせる
+    const chatter = Math.sin(time * 0.9 + this.hayatoSeed) > 0.7;
+    return chatter ? Math.abs(Math.sin(time * 9)) * 0.5 : 0;
+  }
+
+  private syncHayato(): void {
+    const head = this.hayatoHead;
+    if (!head) return;
+    const u = this.unit;
+    const s = u.scale;
+    const size = HAYATO_HEAD_HEIGHT * s;
+    const time = performance.now() * 0.001;
+
+    hayatoHeadCenter(_hayatoCenter, u.pelvis.pos, s);
+    _fwd.copy(u.forward).normalize();
+    if (u.alive) {
+      _up.copy(UP);
+    } else {
+      // 倒れたら物理の胴体の傾きに合わせて転がり、地面にめり込まないようにする
+      _up.subVectors(u.chest.pos, u.pelvis.pos).normalize();
+      if (u.pelvis.pos.y > -0.2) _hayatoCenter.y = Math.max(_hayatoCenter.y, size * 0.42);
+    }
+    _right.crossVectors(_up, _fwd);
+    if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+    _right.normalize();
+    _up.crossVectors(_fwd, _right).normalize();
+
+    // 見えないボクセルも顔の位置に置いておき、被弾の破片が顔から飛ぶようにする
+    for (const part of Object.values(this.parts)) {
+      placeBasisPart(part.mesh, _hayatoCenter, _right, _up, _fwd);
+      part.mesh.visible = false;
+    }
+
+    this.hayatoMouthOpen += (this.hayatoMouthTarget(time) - this.hayatoMouthOpen) * 0.4;
+    const mouth = this.hayatoMouthOpen;
+    head.morphTargetInfluences![0] = mouth;
+
+    // 溜めでのけぞり、照射中は小刻みに震える。普段は写真のように少し首をかしげる
+    const windup = u.attackPhase === 'windup' ? Math.min(1, u.phaseTime / Math.max(0.05, u.type.windup)) : 0;
+    const striking = u.alive && u.attackPhase === 'strike';
+    const pitch = -0.2 * windup + (striking ? 0.05 + Math.sin(time * 47) * 0.015 : 0);
+    const roll = u.alive ? 0.09 + Math.sin(time * 1.1 + this.hayatoSeed) * 0.05 : 0;
+    _basisMat.makeBasis(_right, _up, _fwd);
+    head.position.copy(_hayatoCenter);
+    head.quaternion
+      .setFromRotationMatrix(_basisMat)
+      .multiply(_hayatoQ.setFromAxisAngle(_hayatoAxisX, pitch))
+      .multiply(_hayatoQ.setFromAxisAngle(_hayatoAxisZ, roll));
+    head.scale.setScalar(size);
+
+    // 口の位置（閉じているときの唇の線から、全開の位置まで動く）
+    _hayatoMouth
+      .set(0, (-0.2 + (HAYATO_MOUTH_Y + 0.2) * mouth) * size, (0.42 + (HAYATO_MOUTH_Z - 0.42) * mouth) * size)
+      .applyQuaternion(head.quaternion)
+      .add(_hayatoCenter);
+
+    if (this.hayatoRing) {
+      this.hayatoRing.visible = u.alive;
+      this.hayatoRing.position.set(_hayatoCenter.x, _hayatoCenter.y - 0.62 * size, _hayatoCenter.z);
+      this.hayatoRing.rotation.set(Math.PI / 2, 0, time * 1.6);
+    }
+
+    const glow = this.hayatoMouthGlow;
+    if (glow) {
+      const charging = u.alive && u.attackPhase === 'windup';
+      glow.visible = charging || striking;
+      glow.position.copy(_hayatoMouth);
+      glow.scale.setScalar(size * (striking ? 0.13 + Math.sin(time * 40) * 0.012 : 0.03 + 0.09 * windup));
+    }
+
+    for (const beam of this.hayatoBeam) beam.visible = striking;
+    if (striking) {
+      if (u.laserAimPos.lengthSq() > 0.01) _dir.subVectors(u.laserAimPos, _hayatoMouth);
+      else _dir.copy(_fwd).multiplyScalar(8);
+      const aimDist = Math.max(0.5, _dir.length());
+      _dir.divideScalar(aimDist);
+      // 照準の先へ突き抜けるが、下向きなら地面で止める
+      let length = aimDist + MOUTH_LASER_PIERCE;
+      if (_dir.y < -0.001) length = Math.min(length, _hayatoMouth.y / -_dir.y);
+      const pulse = 1 + Math.sin(time * 52) * 0.12;
+      HAYATO_BEAM_RADII.forEach((radius, i) => {
+        const beam = this.hayatoBeam[i];
+        beam.position.copy(_hayatoMouth);
+        beam.quaternion.setFromUnitVectors(UP, _dir);
+        beam.scale.set(radius * s * pulse, length, radius * s * pulse);
+      });
+    }
+  }
+
   private syncRamiel(): void {
     const u = this.unit;
     const s = u.scale;
@@ -5601,7 +5777,8 @@ export class VoxelCharacterVisual {
       }
     }
     this.material.dispose();
-    for (const m of [...this.dragonJet, ...this.yamamuronAura, ...(this.dragonMouthGlow ? [this.dragonMouthGlow] : [])]) {
+    const hayatoFx = [...this.hayatoBeam, ...(this.hayatoMouthGlow ? [this.hayatoMouthGlow] : []), ...(this.hayatoRing ? [this.hayatoRing] : [])];
+    for (const m of [...this.dragonJet, ...this.yamamuronAura, ...hayatoFx, ...(this.dragonMouthGlow ? [this.dragonMouthGlow] : [])]) {
       m.geometry.dispose();
       (m.material as MeshBasicMaterial).dispose();
     }
@@ -5731,6 +5908,17 @@ export class VoxelCharacterVisual {
 export function createPreviewGhost(type: UnitType, team: Team): Group {
   const s = type.scale;
   const g = new Group();
+  if (type.id === 'hayato') {
+    const ghostHead = new Mesh(
+      getHayatoHeadGeometry().clone(),
+      new MeshLambertMaterial({ vertexColors: true, flatShading: true, transparent: true, opacity: 0.75 }),
+    );
+    ghostHead.scale.setScalar(HAYATO_HEAD_HEIGHT * s);
+    ghostHead.position.y = (0.96 * HAYATO_HOVER_MUL + HAYATO_HEAD_RISE) * s;
+    g.add(ghostHead);
+    g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+    return g;
+  }
   if (type.id === 'angel_ramiel') {
     const ghostMirrorMat = new MeshPhysicalMaterial({
       color: 0xa5f3fc,

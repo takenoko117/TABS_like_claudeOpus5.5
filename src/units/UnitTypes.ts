@@ -42,7 +42,8 @@ export type AttackStyle =
   | 'eruption'
   | 'piano_performance'
   | 'dragon_twister'
-  | 'psychic';
+  | 'psychic'
+  | 'mouth_laser';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical' | 'divine';
@@ -122,7 +123,8 @@ export type UnitTypeId =
   | 'hongon'
   | 'zaisan'
   | 'lightspeed_ant'
-  | 'deoxys';
+  | 'deoxys'
+  | 'hayato';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -1030,6 +1032,27 @@ giant_robot: {
     strikeImpulse: 0,
     look: { skin: 0xee5a24, hair: null, helmet: null, hood: null, armor: 0x00d2d3, beard: null },
   },
+  hayato: {
+    id: 'hayato',
+    name: 'ハヤト',
+    category: 'mythical',
+    description: '巨大な顔だけで宙に浮かぶ謎の男。大きく口を開けてエネルギーを溜め、口から敵を貫通するレーザーを照射し続ける。',
+    cost: 480,
+    scale: 1.4,
+    massMul: 1.2,
+    hp: 520,
+    speed: 2.0,
+    style: 'mouth_laser',
+    weapon: null,
+    projectile: null,
+    range: 17,
+    windup: 0.9,
+    strike: 1.2,
+    recover: 0.4,
+    cooldown: 1.6,
+    strikeImpulse: 0,
+    look: { skin: 0xf0c39c, hair: 0x17151a, helmet: null, hood: null, armor: null, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -1068,4 +1091,5 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.zaisan,
   UNIT_TYPES.lightspeed_ant,
   UNIT_TYPES.deoxys,
+  UNIT_TYPES.hayato,
 ];

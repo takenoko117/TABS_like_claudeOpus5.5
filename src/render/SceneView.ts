@@ -2018,6 +2018,26 @@ export class SceneView {
         }
         break;
       }
+      case 'mouth_laser_charge':
+        break;
+      case 'mouth_laser': {
+        const glow = TEAM_COLORS[e.team].shirt;
+        const dir = new Vector3().subVectors(e.to, e.from).normalize();
+        // 本体の光線はモデル側で描くので、ここでは口元と着弾点の火花だけを出す
+        const sparks = e.isInitial ? 26 : 5;
+        for (let i = 0; i < sparks; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 9, 2 + Math.random() * 6, (Math.random() - 0.5) * 9);
+          this.pushFxParticle(e.to.clone(), vel, i % 2 === 0 ? 0xffffff : glow, 0.16, 0.32, 5);
+        }
+        if (e.isInitial) {
+          for (let i = 0; i < 16; i++) {
+            const ang = (i / 16) * Math.PI * 2;
+            const radial = new Vector3(Math.cos(ang) * dir.z, Math.sin(ang), -Math.cos(ang) * dir.x);
+            this.pushFxParticle(e.from.clone().addScaledVector(dir, 0.3), radial.multiplyScalar(5.5), i % 2 === 0 ? 0xffffff : glow, 0.16, 0.3, 0);
+          }
+        }
+        break;
+      }
       case 'ramiel_beam': {
         const isInit = e.isInitial !== false;
         const dir = new Vector3().subVectors(e.to, e.from);

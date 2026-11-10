@@ -825,6 +825,17 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <polyline points="28.5,14 31,10 35,9.5" fill="none" stroke="#fef08a" stroke-width="1.3" stroke-linecap="round"/>
       </svg>`;
 
+    case 'hayato':
+      return `<svg viewBox="0 0 48 48" class="unit-icon-svg" fill="none">
+        <polygon points="24,3 37,8 41,20 39,32 32,43 24,46 16,43 9,32 7,20 11,8" fill="#e9b782"/>
+        <polygon points="24,3 37,8 41,20 39,30 34,17 27,13 21,14 14,17 9,30 7,20 11,8" fill="#17151a"/>
+        <path d="M13,20 L21,17 M28,15 L36,19" stroke="#201a18" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="17" cy="23" rx="4" ry="3.2" fill="#fbfbf6"/><circle cx="17" cy="22.3" r="1.9" fill="#1a1210"/>
+        <ellipse cx="31" cy="23" rx="4" ry="3.2" fill="#fbfbf6"/><circle cx="31" cy="22.3" r="1.9" fill="#1a1210"/>
+        <polygon points="24,22 28,30 20,30" fill="#c48a57"/>
+        <ellipse cx="24" cy="37" rx="7" ry="5.5" fill="#54161a" stroke="#b05a4c" stroke-width="1.4"/>
+        <rect x="19" y="32.8" width="10" height="2.2" fill="#fbf6e8"/>
+      </svg>`;
     case 'deoxys':
       // デオキシス: 三叉の角状突起・白いフェイスマスク・胸の紫クリスタルコア・DNA二重螺旋腕
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">

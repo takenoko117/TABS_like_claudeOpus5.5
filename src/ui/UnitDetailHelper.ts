@@ -39,6 +39,7 @@ export function getAttackDamageDisplay(ut: UnitType): string {
   if (ut.id === 'buggy') return '35 (突撃)';
   if (ut.id === 'lightspeed_ant') return '9 (光速噛みつき)';
   if (ut.id === 'deoxys') return '16-48 (サイコキネシス拘束・吹き飛ばし)';
+  if (ut.id === 'hayato') return '12 × 照射 (貫通口レーザー)';
   return '-';
 }
 
