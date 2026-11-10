@@ -113,6 +113,14 @@ export class UnitPreviewActor {
       p.prev.x -= x;
       p.prev.z -= z;
     }
+    // 床を抜けて落ち続けると絵が空になるので、落ちたら地面の高さへ戻して落下を止める
+    if (this.unit.pelvis.pos.y < -0.5) {
+      const lowest = Math.min(...this.world.particles.map((p) => p.pos.y));
+      for (const p of this.world.particles) {
+        p.pos.y -= lowest;
+        p.prev.y = p.pos.y;
+      }
+    }
   }
 
   advance(dt: number): void {

@@ -717,6 +717,21 @@ describe('ローグライト: 敗北のルール', () => {
     expect(lost.pendingRewards!.some((o) => o.kind === 'unit_slot')).toBe(false);
   });
 
+  it('エリートの勝利後は報酬の3択を3回受け取れ、ユニット枠は1回目だけ出る', () => {
+    const run = new RogueliteRun(5);
+    run.round = 5;
+    run.recordWin(1, 0, 0);
+    expect(run.eliteRewardPicks).toBe(3);
+    expect(run.pendingRewards!.some((o) => o.kind === 'unit_slot')).toBe(true);
+    run.chooseReward(null);
+    expect(run.pendingRewards!.some((o) => o.kind === 'unit_slot')).toBe(false);
+    run.chooseReward(null);
+    expect(run.pendingRewards?.length).toBe(3);
+    run.chooseReward(null);
+    expect(run.pendingRewards).toBeNull();
+    expect(run.eliteRewardPicks).toBe(0);
+  });
+
   it('最終ラウンドで負けてもラウンドは進まず、同じボスに再挑戦する', () => {
     const run = new RogueliteRun(5);
     run.round = ROGUE_FINAL_ROUND;

@@ -590,6 +590,8 @@ export const ROGUE_MAX_SQUAD_SIZE = 8;
 export const ROGUE_LOSS_GOLD_MUL = 2;
 /** 敗北後に報酬の3択を受け取れる回数（勝利は1回） */
 export const ROGUE_LOSS_REWARD_PICKS = 2;
+/** エリートラウンドの勝利後に報酬の3択を受け取れる回数 */
+export const ROGUE_ELITE_REWARD_PICKS = 3;
 /** 敗北後の報酬で、ユニットのレア度の重みに掛ける倍率 [コモン, レア, レジェンド] */
 export const ROGUE_LOSS_RARITY_MUL: readonly [number, number, number] = [0.5, 1.5, 3];
 /** ユニット枠の初回価格と、枠が増えるごとに上がる額 */
@@ -852,9 +854,9 @@ export interface RewardOption {
 
 /** ラウンドごとのレア度の出やすさ [コモン, レア, レジェンド] */
 export function getRarityWeights(round: number): [number, number, number] {
-  if (round <= 4) return [75, 23, 2];
-  if (round <= 9) return [55, 37, 8];
-  return [40, 45, 15];
+  if (round <= 4) return [52, 36, 12];
+  if (round <= 9) return [34, 42, 24];
+  return [20, 42, 38];
 }
 
 /** 敗北後の報酬でのユニットのレア度の出やすさ [コモン, レア, レジェンド] */
@@ -925,6 +927,7 @@ export interface RogueRunState {
   cards: RogueCard[];
   unitSlots: number;
   lossRewardPicks: number;
+  eliteRewardPicks?: number;
   relics: OwnedRelic[];
   relicSlots: number;
   rerollsLeft: number;
@@ -949,6 +952,8 @@ export class RogueliteRun {
   /** 現在の連敗数（勝利でリセット） */
   /** 敗北後の報酬の3択を、あと何回受け取れるか */
   lossRewardPicks = 0;
+  /** エリート勝利後に残っている報酬の3択の回数（今出ている3択を含む） */
+  eliteRewardPicks = 0;
   relics: OwnedRelic[] = [];
   relicSlots = ROGUE_START_RELIC_SLOTS;
   rerollsLeft = ROGUE_START_REROLLS;
@@ -1157,6 +1162,7 @@ export class RogueliteRun {
     this.score += gained;
     this.clearedRounds++;
     this.lossRewardPicks = 0;
+    this.eliteRewardPicks = this.roundKind === 'elite' ? ROGUE_ELITE_REWARD_PICKS : 0;
     this.gold += getRogueWinBonus(this.round);
     this.history.push({ round: this.round, won: true, damage, maxHit });
     if (this.round >= ROGUE_FINAL_ROUND) {
@@ -1175,6 +1181,7 @@ export class RogueliteRun {
     this.history.push({ round: this.round, won: false, damage, maxHit });
     this.pendingRewards = null;
     this.lossRewardPicks = 0;
+    this.eliteRewardPicks = 0;
     if (this.lives <= 0) {
       this.endReason = 'defeat';
       return 0;
@@ -1197,6 +1204,7 @@ export class RogueliteRun {
     this.round = Math.min(ROGUE_FINAL_ROUND, this.round + 1);
     this.pendingRewards = null;
     this.lossRewardPicks = 0;
+    this.eliteRewardPicks = 0;
     this.gold += getRogueRoundIncome(this.round);
   }
 
@@ -1224,7 +1232,8 @@ export class RogueliteRun {
       applyReward(this, option);
     }
     this.lossRewardPicks = Math.max(0, this.lossRewardPicks - 1);
-    this.pendingRewards = this.lossRewardPicks > 0 ? this.drawRewards() : null;
+    this.eliteRewardPicks = Math.max(0, this.eliteRewardPicks - 1);
+    this.pendingRewards = this.lossRewardPicks > 0 || this.eliteRewardPicks > 0 ? this.drawRewards() : null;
   }
 
   toState(): RogueRunState {
@@ -1237,6 +1246,7 @@ export class RogueliteRun {
       cards: this.cards.map((c) => ({ ...c })),
       unitSlots: this.unitSlots,
       lossRewardPicks: this.lossRewardPicks,
+      eliteRewardPicks: this.eliteRewardPicks,
       relics: this.relics.map((r) => ({ ...r })),
       relicSlots: this.relicSlots,
       rerollsLeft: this.rerollsLeft,
@@ -1258,6 +1268,7 @@ export class RogueliteRun {
     run.cards = s.cards.filter((c) => c.id in UNIT_TYPES).map((c) => ({ ...c }));
     run.unitSlots = s.unitSlots;
     run.lossRewardPicks = s.lossRewardPicks;
+    run.eliteRewardPicks = s.eliteRewardPicks ?? 0;
     run.relics = s.relics.filter((r) => r.id in FACILITY_TYPES);
     run.relicSlots = s.relicSlots;
     run.rerollsLeft = s.rerollsLeft;
@@ -1386,7 +1397,7 @@ const REWARD_RELIC_CHANCE = 0.55;
 
 /**
  * 3択の報酬を作る。1・2枠目はユニットカード、3枠目はレリックかゴールド。
- * エリートラウンドの勝利後は3枠目がユニット枠に固定される。
+ * エリートラウンドの勝利後は3回選べ、その1回目だけ3枠目がユニット枠に固定される。
  */
 export function generateRewardOptions(run: RogueliteRun, rng: () => number): RewardOption[] {
   const options: RewardOption[] = [];
@@ -1398,7 +1409,9 @@ export function generateRewardOptions(run: RogueliteRun, rng: () => number): Rew
     options.push(option);
   }
   const third =
-    (run.roundKind === 'elite' && run.lossRewardPicks === 0 ? unitSlotReward(run) : null) ??
+    (run.roundKind === 'elite' && run.lossRewardPicks === 0 && run.eliteRewardPicks !== 1 && run.eliteRewardPicks !== 2
+      ? unitSlotReward(run)
+      : null) ??
     (rng() < REWARD_RELIC_CHANCE ? pickRelicReward(run, rng) : null) ??
     goldReward(run);
   options.push(third);

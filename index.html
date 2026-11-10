@@ -204,7 +204,7 @@
         <div id="preset-buttons" class="btn-group"></div>
       </div>
 
-      <div class="panel-section">
+      <div id="speed-section" class="panel-section">
         <div class="section-label">ゲーム速度</div>
         <div id="speed-buttons" class="btn-group"></div>
       </div>
@@ -228,6 +228,34 @@
     </aside>
 
     <div id="pause-indicator" class="pause-indicator hidden">⏸ 一時停止中（P で再開）</div>
+
+    <!-- ローグライトの戦闘 HUD（戦場を広く使うため、左パネルの代わりに浮かせて置く） -->
+    <div id="rogue-hud" class="rogue-hud hidden">
+      <nav class="rg-rail" aria-label="メニュー">
+        <button type="button" data-rail="menu" title="メニューを開く／閉じる (Tab)" aria-label="メニュー">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
+        <button type="button" data-rail="settings" title="音量と描画品質の設定" aria-label="設定">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.600l-2.100 2.100M7.700 16.300l-2.100 2.100" /></svg>
+        </button>
+        <button type="button" data-rail="quit" title="ランを終了してスコアを確定" aria-label="ランを終了">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4M6 5h11l-2.500 3.500L17 12H6" /></svg>
+        </button>
+        <button type="button" data-rail="title" title="タイトル画面へ戻る" aria-label="タイトルへ">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7M6.500 9.500V20h11V9.500" /></svg>
+        </button>
+      </nav>
+      <div id="rg-pill" class="rg-pill" role="status"></div>
+      <div id="rg-context" class="rg-context hidden"></div>
+      <div id="rg-rank" class="rg-rank hidden" aria-label="ダメージランキング"></div>
+      <div id="rg-hint" class="rg-hint"></div>
+      <div class="rg-speed">
+        <button id="rg-pause" type="button" class="rg-pause" title="一時停止 (P)" aria-label="一時停止" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg>
+        </button>
+        <div id="rg-speed-seg" class="rg-seg" role="group" aria-label="ゲーム速度"></div>
+      </div>
+    </div>
 
     <!-- 音量・描画品質の設定 -->
     <section id="settings-panel" class="settings-panel hidden" aria-label="設定">
@@ -263,6 +291,9 @@
 
     <!-- ローグライトのスターター選択・報酬選択 -->
     <div id="rogue-modal" class="rogue-modal hidden" role="dialog" aria-label="ローグライト"></div>
+
+    <!-- 画面内の確認ダイアログ -->
+    <div id="confirm-dialog" class="confirm-dialog hidden" role="alertdialog" aria-modal="true"></div>
 
     <!-- 勝敗リザルトバナー -->
     <div id="result-banner" class="result-banner hidden">
