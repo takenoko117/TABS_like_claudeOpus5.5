@@ -22,6 +22,8 @@ import {
   TD_ENEMY_BASE_HP,
   TD_PLAYER_BASE_HP,
   TD_START_MONEY,
+  TD_START_PLAYER_CANNONS,
+  TD_BASE_PRICE_START,
   TDRun,
   xpForKill,
   xpForLevel,
@@ -124,9 +126,12 @@ describe('タワーディフェンスの計算式', () => {
 });
 
 describe('タワーディフェンスのラン', () => {
-  it('開始時は初期レリックなし、スターターの全ユニットが出撃でき、両軍の基地がある', () => {
+  it('開始時は加護のトーテムと城の砲台2基があり、スターターの全ユニットが出撃でき、両軍の基地がある', () => {
     const { battle, td } = setup();
-    expect(td.run.relics).toHaveLength(0);
+    expect(td.run.relics.map((r) => r.id)).toEqual(['buff_totem']);
+    expect(battle.facilities.filter((f) => f.type.id === 'buff_totem' && f.team === 0)).toHaveLength(1);
+    expect(td.playerCannons).toHaveLength(TD_START_PLAYER_CANNONS);
+    expect(td.basePrice).toBe(TD_BASE_PRICE_START);
     expect(td.run.cards.map((c) => c.id)).toEqual([...ROGUE_STARTERS[0].units]);
     for (const c of td.run.cards) expect(td.deployBlock(battle, c.id)).toBeNull();
     expect(td.money).toBe(TD_START_MONEY);
@@ -309,11 +314,11 @@ describe('タワーディフェンスのラン', () => {
     const { battle, td } = setup();
     td.run.gold = 99999;
     const mine = () => battle.facilities.filter((f) => f.type.id === 'cannon_tower' && f.team === 0);
-    expect(mine()).toHaveLength(0);
+    expect(mine()).toHaveLength(TD_START_PLAYER_CANNONS);
     td.upgradeBase();
     td.upgradeBase();
-    expect(mine()).toHaveLength(2);
-    expect(td.playerCannons).toHaveLength(2);
+    expect(mine()).toHaveLength(TD_START_PLAYER_CANNONS + 2);
+    expect(td.playerCannons).toHaveLength(TD_START_PLAYER_CANNONS + 2);
   });
 
   it('エリートは数が多く、反撃部隊にも毎回エリートが混ざる', () => {
@@ -330,6 +335,8 @@ describe('タワーディフェンスのラン', () => {
     td.run.gold = 99999;
     while (td.upgradeBase());
     expect(td.basePrice).toBeNull();
+    // 置き場所が足りて、強化のたびに砲台が増えている
+    expect(td.playerCannons).toHaveLength(TD_START_PLAYER_CANNONS + td.baseLevel - 1);
     expect(td.baseLevel).toBeGreaterThan(1);
   });
 

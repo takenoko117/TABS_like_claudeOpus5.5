@@ -98,6 +98,12 @@ export const TD_REROLL_PRICE_STEP = 50;
 export const TD_BASE_REGEN: readonly number[] = [0, 1, 2.5, 4, 6, 8];
 export const TD_BASE_HP_STEP = 0.25;
 export const TD_BASE_PRICE_STEP = 400;
+/** 城強化の最初の1段の価格（序盤から気軽に上げられるように安くする） */
+export const TD_BASE_PRICE_START = 50;
+/** 開始時から自軍の城に置かれている砲台の数（エリアコントロールのため、城の近くは自軍が有利） */
+export const TD_START_PLAYER_CANNONS = 2;
+/** 開始時から置かれているレリック（加護のトーテム） */
+export const TD_START_RELICS: readonly FacilityTypeId[] = ['buff_totem'];
 
 /** Wave 1 の敵予算（ローグライトの同ラウンド1戦ぶんに対する割合） */
 export const TD_WAVE_BUDGET_RATIO = 0.55;
@@ -131,6 +137,8 @@ export const TD_PLAYER_CANNON_POSITIONS: ReadonlyArray<{ x: number; z: number }>
   { x: -21, z: -11 },
   { x: -21, z: 11 },
   { x: -23.8, z: 0 },
+  { x: -23.8, z: -8 },
+  { x: -23.8, z: 8 },
 ];
 
 /** 宝箱の出る確率（撃破1体ごと）と、次が出るまでの時間 */
@@ -341,8 +349,8 @@ export class TDRun {
   constructor(seed: number, starter: RogueStarter, rng?: () => number) {
     this.rng = rng ?? createSeededRng(seed);
     this.run = new RogueliteRun(seed, starter);
-    // スターターの初期レリックは持たない
-    this.run.relics = [];
+    // スターターの初期レリックは持たず、城の近くを守る加護のトーテムを最初から置く
+    this.run.relics = TD_START_RELICS.map((id) => ({ id, level: 0, active: true }));
     this.run.unitSlots = TD_UNLIMITED_SLOTS;
     this.run.relicSlots = TD_UNLIMITED_SLOTS;
     for (const c of this.run.cards) c.inDeck = true;
@@ -385,6 +393,7 @@ export class TDRun {
     this.lastEnemyBaseHp = this.enemyBase.hp;
     this.battleRef = battle;
     this.updateEnemyCannons(battle);
+    for (let i = 0; i < TD_START_PLAYER_CANNONS; i++) this.addPlayerCannon(0);
     battle.rules = new TDBattleRules(this);
     battle.preferCloserFacility = true;
     this.rules.start(battle);
@@ -783,7 +792,8 @@ export class TDRun {
 
   /** 基地強化を1段上げる価格。上限なら null */
   get basePrice(): number | null {
-    return this.baseLevel >= TD_BASE_REGEN.length ? null : TD_BASE_PRICE_STEP * this.baseLevel;
+    if (this.baseLevel >= TD_BASE_REGEN.length) return null;
+    return TD_BASE_PRICE_START + TD_BASE_PRICE_STEP * (this.baseLevel - 1);
   }
 
   /** 基地強化: 最大 HP が増え（増えたぶん回復もする）、自動回復が速くなる */
@@ -797,14 +807,17 @@ export class TDRun {
     base.maxHp += add;
     base.hp += add;
     // 城の砲台を1基足す（段が上がるほど強い砲台）
-    const pos = TD_PLAYER_CANNON_POSITIONS[this.playerCannons.length];
-    if (pos && this.battleRef) {
-      const level = Math.min(MAX_GATE_LEVEL, this.baseLevel - 2);
-      this.playerCannons.push(
-        this.battleRef.spawnFacility('cannon_tower', 0, pos.x, pos.z, Math.PI / 2, { relicLevel: level, invulnerable: true }),
-      );
-    }
+    this.addPlayerCannon(Math.min(MAX_GATE_LEVEL, this.baseLevel - 1));
     return true;
+  }
+
+  /** 自軍の城に砲台を1基置く（置き場所が埋まっていたら置かない） */
+  private addPlayerCannon(level: number): void {
+    const pos = TD_PLAYER_CANNON_POSITIONS[this.playerCannons.length];
+    if (!pos || !this.battleRef) return;
+    this.playerCannons.push(
+      this.battleRef.spawnFacility('cannon_tower', 0, pos.x, pos.z, Math.PI / 2, { relicLevel: level, invulnerable: true }),
+    );
   }
 
   // ---- 決着 ----

@@ -111,7 +111,7 @@ import {
 } from './RogueliteMode';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
 import { TDRun, xpForKill } from './RealtimeTDMode';
-import { RealtimeTDHud } from '../ui/RealtimeTDHud';
+import { RealtimeTDHud, isTDTutorialDone, markTDTutorialDone } from '../ui/RealtimeTDHud';
 import {
   CATEGORY_ICONS,
   CATEGORY_THEME_COLORS,
@@ -2497,9 +2497,19 @@ export class GameApp {
     this.battle.beginCombat();
     this.tdHud.reset();
     this.tdHud.show();
-    this.tdHud.announce('WAVE 1', 'wave');
     this.syncPhaseUI();
-    this.sound.playBattleStart();
+    const begin = () => {
+      if (this.td !== td) return;
+      this.tdHud.announce('WAVE 1', 'wave');
+      this.sound.playBattleStart();
+    };
+    // 初めてのプレイでは、あそびかたを見せてから始める（見ている間は止まる・スキップ可）
+    if (!isTDTutorialDone()) {
+      this.tdHud.showTutorial(() => {
+        markTDTutorialDone();
+        begin();
+      });
+    } else begin();
   }
 
   private get xpOrbs(): XpOrbs {
@@ -2579,6 +2589,10 @@ export class GameApp {
 
   /** タワーディフェンス中のキー操作 */
   private handleTDKey(e: KeyboardEvent): void {
+    if (this.tdHud.handleTutorialKey(e.code)) {
+      e.preventDefault();
+      return;
+    }
     if (e.code.startsWith('Digit')) {
       const d = Number(e.code.replace('Digit', ''));
       // 強化を選んでいる間は 1〜3 で選ぶ。それ以外は 1〜9 が 1〜9 枚目、0 が 10 枚目を出撃

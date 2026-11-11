@@ -3,7 +3,9 @@ import {
   getDeployCooldown,
   getDeployCost,
   levelForTotalXp,
+  TD_BASE_PRICE_START,
   TD_DURATION_SECONDS,
+  TD_START_PLAYER_CANNONS,
   TD_WAVE_COUNT,
   xpForLevel,
   type DeployBlock,
@@ -24,6 +26,7 @@ import type { JackpotReward } from '../game/RogueJackpot';
 import { UnitPreviews } from '../render/UnitPreviews';
 import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
 import { getFacilityIconSvg, getUnitIconSvg } from './UnitIcons';
+import { setVoxelText, type VoxelTextOptions } from './VoxelText';
 
 /** HUD から GameApp に頼む操作 */
 export interface TDHudHost {
@@ -81,6 +84,92 @@ function relicVoxel(id: FacilityTypeId): string {
 
 const GOLD_VOXEL = propVoxel('gold', '<span class="td-emoji">💰</span>');
 
+/** 簡易チュートリアルの1ページ */
+export interface TDTutorialPage {
+  /** ボクセル文字で出す見出し */
+  title: string;
+  /** 見出しの上に出す小さなラベル */
+  tag: string;
+  /** 動くボクセルモデル（data-prop-preview のキー: 'gold' か 'relic:施設ID'） */
+  model: string;
+  /** ページの色（ポップな色分け） */
+  color: string;
+  lines: string[];
+}
+
+export const TD_TUTORIAL_PAGES: readonly TDTutorialPage[] = [
+  {
+    tag: 'ゲームの目標',
+    title: '10分以内に敵の城を破壊せよ！',
+    model: 'relic:hq',
+    color: '#ffb52e',
+    lines: [
+      '右の端にあるのが敵の城、左の端が自分の城。',
+      '下のカードをタップすると、城から部隊が出撃するぞ。',
+      '自分の城を壊されたら負け！',
+    ],
+  },
+  {
+    tag: 'つよくなる',
+    title: '敵を倒して経験値をためよう！',
+    model: 'gold',
+    color: '#46d17a',
+    lines: [
+      '倒した敵から経験値のオーブが飛んでくる。',
+      'レベルアップしたら3つの強化から1つを選んで、自軍をパワーアップ！',
+    ],
+  },
+  {
+    tag: 'ちゅうい',
+    title: '城を攻撃すると反撃を食らうぞ！',
+    model: 'relic:cannon_tower',
+    color: '#ff5a6e',
+    lines: [
+      '敵の城を削るたびに、強い反撃部隊が飛び出してくる。',
+      '自軍が育つまではガマン。攻めるタイミングに注意しよう！',
+    ],
+  },
+  {
+    tag: 'エリアコントロール',
+    title: '戦闘エリアをおさえて有利に戦おう！',
+    model: 'relic:buff_totem',
+    color: '#4aa8ff',
+    lines: [
+      `自分の城の近くには、加護のトーテムと砲台${TD_START_PLAYER_CANNONS}基が最初から置いてある。`,
+      'まずは城の近くで迎え撃って、経験値をためるのがおすすめ。',
+      `城強化（最初は${TD_BASE_PRICE_START}G）で砲台がどんどん増えるぞ！`,
+    ],
+  },
+];
+
+const TUTORIAL_STORAGE_KEY = 'exblocks_td_tutorial_done_v1';
+
+/** あそびかたを一度見た（またはスキップした）か */
+export function isTDTutorialDone(): boolean {
+  try {
+    return localStorage.getItem(TUTORIAL_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markTDTutorialDone(): void {
+  try {
+    localStorage.setItem(TUTORIAL_STORAGE_KEY, '1');
+  } catch {
+    // 保存できない環境では次回も表示する
+  }
+}
+
+const TUTORIAL_TITLE_VOXEL: VoxelTextOptions = {
+  height: 32,
+  maxCell: 3,
+  depth: 3,
+  bold: true,
+  wrap: true,
+  maxWidth: () => Math.min(560, window.innerWidth - 72),
+};
+
 function esc(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
@@ -110,6 +199,9 @@ export class RealtimeTDHud {
   private gainTimer = 0;
   private levelUpTimer = 0;
   private choiceOpen = false;
+  private readonly elTutorial: HTMLElement;
+  private tutorialPage = -1;
+  private tutorialOnClose: (() => void) | null = null;
 
   constructor(private readonly host: TDHudHost) {
     this.root = document.createElement('div');
@@ -129,6 +221,7 @@ export class RealtimeTDHud {
       <div class="td-tools">
         <button type="button" class="td-btn td-auto" data-td="auto" title="クールタイムが明けたカードを自動で出撃させる">AUTO</button>
         <button type="button" class="td-btn" data-td="pause" title="一時停止 (P)">⏸</button>
+        <button type="button" class="td-btn" data-td="howto" title="あそびかた（見ている間は止まる）">？</button>
         <button type="button" class="td-btn" data-td="settings" title="設定（開いている間は止まる）">⚙</button>
         <button type="button" class="td-btn" data-td="retire" title="リタイアしてタイトルへ">🏳</button>
       </div>
@@ -137,6 +230,7 @@ export class RealtimeTDHud {
       <div class="td-choice hidden" role="dialog" aria-label="強化を選ぶ"></div>
       <div class="td-bar"></div>
       <div class="td-modal hidden"></div>
+      <div class="td-tutorial hidden" role="dialog" aria-label="あそびかた"></div>
     `;
     document.body.appendChild(this.root);
     this.elTop = this.root.querySelector('.td-top')!;
@@ -148,6 +242,7 @@ export class RealtimeTDHud {
     this.elLevelUp = this.root.querySelector('.td-levelup')!;
     this.elChoice = this.root.querySelector('.td-choice')!;
     this.elModal = this.root.querySelector('.td-modal')!;
+    this.elTutorial = this.root.querySelector('.td-tutorial')!;
     this.renderTop();
     this.root.addEventListener('click', (e) => this.onClick(e));
   }
@@ -171,6 +266,7 @@ export class RealtimeTDHud {
     document.body.classList.remove('td-mode');
     this.closeChoice();
     this.hideModal();
+    this.closeTutorial(false);
   }
 
   get isChoiceOpen(): boolean {
@@ -219,7 +315,11 @@ export class RealtimeTDHud {
 
   update(realDt: number): void {
     const td = this.host.getRun();
-    if (!td) return;
+    if (!td) {
+      // スターター選択中にあそびかたを開いたときもモデルを動かす
+      if (this.isTutorialOpen) this.previews.update(realDt);
+      return;
+    }
     this.consumeEvents(td);
     if (this.announceTimer > 0) {
       this.announceTimer -= realDt;
@@ -501,7 +601,7 @@ export class RealtimeTDHud {
     this.choiceOpen = false;
     this.elChoice.classList.add('hidden');
     this.elChoice.innerHTML = '';
-    this.host.setHold(false);
+    this.host.setHold(this.isTutorialOpen);
     this.bindPreviews();
   }
 
@@ -580,6 +680,19 @@ export class RealtimeTDHud {
     if (d.starter !== undefined) {
       const starter = ROGUE_STARTERS.find((s) => s.id === d.starter);
       if (starter) this.host.startRun(starter);
+      return;
+    }
+    if (d.td === 'tut-next') return this.stepTutorial(1);
+    if (d.td === 'tut-prev') return this.stepTutorial(-1);
+    if (d.td === 'tut-skip') return this.closeTutorial(true);
+    if (d.td === 'howto') {
+      this.host.playClick();
+      this.showTutorial();
+      return;
+    }
+    if (d.tutPage !== undefined) {
+      this.tutorialPage = Number(d.tutPage);
+      this.renderTutorial();
       return;
     }
     if (d.td === 'title') return this.host.toTitle();
@@ -670,10 +783,13 @@ export class RealtimeTDHud {
     ).join('');
     this.showModal(`
       <h2>🏰 タワーディフェンス</h2>
-      <p class="td-lead">城から部隊を出撃させ、10分間耐えながら敵軍の城を破壊せよ。敵の城を削るとお金が入るが、削るたびに強い反撃部隊が出てくる。</p>
+      <p class="td-lead">10分以内に敵の城を破壊せよ！ 敵を倒して経験値をため、自軍を強化しよう。敵の城を攻撃すると反撃を食らうので、攻めるタイミングに注意。</p>
       <h3>スターターを選ぶ</h3>
       <div class="td-starters">${cards}</div>
-      <div class="td-modal-actions"><button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button></div>
+      <div class="td-modal-actions">
+        <button type="button" class="td-btn" data-td="howto">❓ あそびかた</button>
+        <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
+      </div>
     `);
   }
 
@@ -695,6 +811,93 @@ export class RealtimeTDHud {
         <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
       </div>
     `);
+  }
+
+  // ---- あそびかた（簡易チュートリアル） ----
+
+  get isTutorialOpen(): boolean {
+    return this.tutorialPage >= 0;
+  }
+
+  /** あそびかたを最初のページから見せる。戦闘中は見ている間止める。onClose は閉じたとき（スキップ含む）に呼ぶ */
+  showTutorial(onClose?: () => void): void {
+    this.tutorialOnClose = onClose ?? null;
+    this.tutorialPage = 0;
+    this.host.setHold(true);
+    this.elTutorial.classList.remove('hidden');
+    this.renderTutorial();
+  }
+
+  /** あそびかたを開いている間のキー操作。扱ったら true */
+  handleTutorialKey(code: string): boolean {
+    if (!this.isTutorialOpen) return false;
+    if (code === 'Enter' || code === 'Space' || code === 'ArrowRight') this.stepTutorial(1);
+    else if (code === 'ArrowLeft') this.stepTutorial(-1);
+    else if (code === 'Escape') this.closeTutorial(true);
+    return true;
+  }
+
+  private stepTutorial(delta: number): void {
+    const next = this.tutorialPage + delta;
+    if (next >= TD_TUTORIAL_PAGES.length) {
+      this.closeTutorial(true);
+      return;
+    }
+    this.tutorialPage = Math.max(0, next);
+    this.host.playClick();
+    this.renderTutorial();
+  }
+
+  private renderTutorial(): void {
+    const index = this.tutorialPage;
+    const page = TD_TUTORIAL_PAGES[index];
+    if (!page) return;
+    const last = index === TD_TUTORIAL_PAGES.length - 1;
+    const model = page.model === 'gold' ? GOLD_VOXEL : relicVoxel(page.model.slice('relic:'.length) as FacilityTypeId);
+    const dots = TD_TUTORIAL_PAGES.map(
+      (_, i) =>
+        `<button type="button" class="td-tut-dot${i === index ? ' on' : ''}" data-tut-page="${i}" aria-label="${i + 1}ページ目"></button>`,
+    ).join('');
+    const prev = index > 0 ? '<button type="button" class="td-btn" data-td="tut-prev">◀ もどる</button>' : '';
+    this.elTutorial.innerHTML = `
+      <div class="td-tut-card" style="--tut-color: ${page.color}">
+        <div class="td-tut-cubes" aria-hidden="true">${'<i></i>'.repeat(6)}</div>
+        <div class="td-tut-head">
+          <span class="td-tut-tag">${esc(page.tag)}</span>
+          <span class="td-tut-count">${index + 1} / ${TD_TUTORIAL_PAGES.length}</span>
+        </div>
+        <div class="td-tut-model">${model}</div>
+        <h2 class="td-tut-title"></h2>
+        <ul class="td-tut-lines">${page.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+        <div class="td-tut-dots">${dots}</div>
+        <div class="td-tut-actions">
+          <button type="button" class="td-btn td-tut-skip" data-td="tut-skip">スキップ ⏭</button>
+          <span class="td-tut-spacer"></span>
+          ${prev}
+          <button type="button" class="td-btn primary td-tut-next" data-td="tut-next">${last ? 'たたかう！ ⚔' : 'つぎへ ▶'}</button>
+        </div>
+      </div>
+    `;
+    const title = this.elTutorial.querySelector<HTMLElement>('.td-tut-title')!;
+    setVoxelText(title, page.title, TUTORIAL_TITLE_VOXEL);
+    this.bindPreviews();
+    this.previews.kick(page.model);
+  }
+
+  /** あそびかたを閉じる。notify なら閉じたことを知らせる（スキップも含む） */
+  closeTutorial(notify: boolean): void {
+    if (!this.isTutorialOpen) return;
+    this.tutorialPage = -1;
+    this.elTutorial.classList.add('hidden');
+    this.elTutorial.innerHTML = '';
+    this.host.setHold(this.choiceOpen);
+    this.bindPreviews();
+    const done = this.tutorialOnClose;
+    this.tutorialOnClose = null;
+    if (notify) {
+      this.host.playClick();
+      done?.();
+    }
   }
 
   private showModal(html: string): void {
