@@ -81,6 +81,9 @@ export interface FacilitySpawnOptions {
   hp?: number;
 }
 
+/** この射程以上の兵の攻撃を遠距離攻撃として扱う（侍・大鷲などの踏み込み攻撃は近接のまま） */
+export const RANGED_ATTACKER_MIN_RANGE = 6;
+
 /** 進軍門が配置位置まで滑る時間（秒） */
 export const GATE_MARCH_DURATION = 1.4;
 /** 巨大化の門で到達できる体格の上限 */
@@ -160,6 +163,8 @@ export class Facility {
   readonly invulnerable: boolean;
   /** 自分の効果を発揮しない（見た目だけ） */
   readonly inert: boolean;
+  /** 遠距離攻撃（射程 RANGED_ATTACKER_MIN_RANGE 以上の兵）から受けるダメージの倍率 */
+  rangedDamageMul = 1;
 
   constructor(
     typeId: FacilityTypeId,
@@ -353,6 +358,9 @@ export class Facility {
   /** ダメージを受ける。地形ブロックは無敵（破壊不可） */
   takeDamage(damage: number, attacker?: Unit): boolean {
     if (!this.alive || this.isTerrain || this.invulnerable) return false;
+    if (attacker && this.rangedDamageMul !== 1 && attacker.type.range >= RANGED_ATTACKER_MIN_RANGE) {
+      damage *= this.rangedDamageMul;
+    }
     const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
     if (creditsAttacker) attacker.damageDealt += Math.min(damage, this.hp);
     this.hp = Math.max(0, this.hp - damage);

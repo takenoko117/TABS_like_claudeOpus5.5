@@ -104,6 +104,10 @@ export const TD_BASE_PRICE_START = 50;
 export const TD_START_PLAYER_CANNONS = 2;
 /** 開始時から置かれているレリック（加護のトーテム） */
 export const TD_START_RELICS: readonly FacilityTypeId[] = ['buff_totem'];
+/** 倒れた兵が戦場に残る秒数（過ぎたら消して処理を軽くする） */
+export const TD_CORPSE_SECONDS = 4;
+/** 城が遠距離攻撃から受けるダメージの倍率（戦闘エリアの取り合いを主役にする） */
+export const TD_BASE_RANGED_DAMAGE_MUL = 0.5;
 
 /** Wave 1 の敵予算（ローグライトの同ラウンド1戦ぶんに対する割合） */
 export const TD_WAVE_BUDGET_RATIO = 0.55;
@@ -340,6 +344,8 @@ export class TDRun {
   private relicFacilities: Facility[] = [];
   /** 門をくぐる資格のある兵（出撃した兵と、その複製・作り直し） */
   private readonly deployed = new WeakSet<Unit>();
+  /** 倒れた兵が倒れた時刻（死体を消すため） */
+  private readonly deadSince = new WeakMap<Unit, number>();
   private lastChestTime = -Infinity;
   endReason: TDEndReason | null = null;
   /** Wave の開始・反撃など、画面に出す知らせ */
@@ -390,6 +396,8 @@ export class TDRun {
   setup(battle: Battle): void {
     this.playerBase = battle.spawnFacility('hq', 0, TD_PLAYER_BASE_X, 0, Math.PI / 2, { hp: TD_PLAYER_BASE_HP });
     this.enemyBase = battle.spawnFacility('hq', 1, TD_ENEMY_BASE_X, 0, -Math.PI / 2, { hp: TD_ENEMY_BASE_HP });
+    this.playerBase.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
+    this.enemyBase.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
     this.lastEnemyBaseHp = this.enemyBase.hp;
     this.battleRef = battle;
     this.updateEnemyCannons(battle);
@@ -479,8 +487,24 @@ export class TDRun {
     this.flushQueue(battle);
     this.updateGates(battle);
     this.trackEnemyBase();
+    this.clearCorpses(battle);
     this.run.round = getWaveRound(this.wave);
     if (this.autoDeploy) this.autoDeployReady(battle);
+  }
+
+  /** 倒れてから TD_CORPSE_SECONDS 秒たった兵を戦場から消す（長期戦で死体がたまって重くなるのを防ぐ） */
+  private clearCorpses(battle: Battle): void {
+    const expired: Unit[] = [];
+    for (const u of battle.units) {
+      if (u.alive) continue;
+      const since = this.deadSince.get(u);
+      if (since === undefined) this.deadSince.set(u, this.time);
+      else if (this.time - since >= TD_CORPSE_SECONDS) expired.push(u);
+    }
+    for (const u of expired) {
+      this.deadSince.delete(u);
+      battle.removeUnit(u);
+    }
   }
 
   private addMoney(amount: number, capped: boolean): void {

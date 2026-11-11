@@ -24,6 +24,8 @@ import {
   TD_START_MONEY,
   TD_START_PLAYER_CANNONS,
   TD_BASE_PRICE_START,
+  TD_BASE_RANGED_DAMAGE_MUL,
+  TD_CORPSE_SECONDS,
   TDRun,
   xpForKill,
   xpForLevel,
@@ -344,5 +346,34 @@ describe('タワーディフェンスのラン', () => {
     const { battle, td } = setup();
     const rewards = td.openChest(battle, 2);
     expect(rewards.length).toBe(5);
+  });
+
+  it('倒れた兵はしばらくすると戦場から消える', () => {
+    const { battle, td } = setup();
+    const u = battle.spawnUnit('decoy', 1, 0, 30);
+    u.die();
+    td.step(battle, 0.1);
+    expect(battle.units.includes(u)).toBe(true);
+    td.step(battle, TD_CORPSE_SECONDS - 0.5);
+    expect(battle.units.includes(u)).toBe(true);
+    td.step(battle, 1);
+    expect(battle.units.includes(u)).toBe(false);
+  });
+
+  it('城は遠距離攻撃のダメージを半分しか受けない（近接はそのまま）', () => {
+    const { battle, td } = setup();
+    const base = td.enemyBase!;
+    const archer = battle.spawnUnit('archer', 0, 0, 20);
+    const sword = battle.spawnUnit('swordsman', 0, 0, -20);
+    const hp = base.hp;
+    base.takeDamage(100, archer);
+    expect(base.hp).toBeCloseTo(hp - 100 * TD_BASE_RANGED_DAMAGE_MUL);
+    base.takeDamage(100, sword);
+    expect(base.hp).toBeCloseTo(hp - 100 * TD_BASE_RANGED_DAMAGE_MUL - 100);
+    const player = td.playerBase!;
+    const enemyArcher = battle.spawnUnit('archer', 1, 0, 25);
+    const php = player.hp;
+    player.takeDamage(80, enemyArcher);
+    expect(player.hp).toBeCloseTo(php - 80 * TD_BASE_RANGED_DAMAGE_MUL);
   });
 });
