@@ -404,7 +404,7 @@ export class RealtimeTDHud {
           '城強化',
           td.baseLevel,
           td.basePrice,
-          `城強化 Lv${td.baseLevel}：最大HP ${Math.round(base?.maxHp ?? 0).toLocaleString()}・自動回復 ${td.baseRegen}/秒。上げると最大HPと自動回復が増える`,
+          `城強化 Lv${td.baseLevel}：最大HP ${Math.round(base?.maxHp ?? 0).toLocaleString()}・自動回復 ${td.baseRegen}/秒・砲台 ${td.playerCannons.length}基。上げると最大HPと自動回復が増え、城に砲台が1基増える`,
           can(td.basePrice) && !!base?.alive,
         );
       this.bindPreviews();

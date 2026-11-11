@@ -3,7 +3,14 @@ import { Battle } from '../src/game/Battle';
 import {
   getDeployCooldown,
   getDeployCost,
+  getCounterEliteCount,
+  getEnemyCannonCount,
   getEnemyTimeMul,
+  getWaveEliteCount,
+  TD_ALWAYS_ELITE_FROM_WAVE,
+  TD_ELITE_WAVES,
+  TD_ENEMY_CANNON_INTERVAL,
+  TD_ENEMY_CANNON_POSITIONS,
   getWaveAt,
   getWaveBudget,
   getWaveRound,
@@ -60,16 +67,16 @@ describe('タワーディフェンスの計算式', () => {
     expect(getWaveRound(1)).toBe(1);
     expect(getWaveRound(20)).toBe(29);
     for (let w = 2; w <= 20; w++) {
-      if ([6, 11, 16].includes(w)) continue; // エリートの直後は割増がなくなるので除く
+      if (TD_ELITE_WAVES.includes(w - 1)) continue; // エリートの直後は割増がなくなるので除く
       expect(getWaveBudget(w)).toBeGreaterThanOrEqual(getWaveBudget(w - 1));
     }
-    expect(getWaveBudget(5)).toBeGreaterThan(getWaveBudget(4));
+    expect(getWaveBudget(3)).toBeGreaterThan(getWaveBudget(2));
   });
 
   it('敵は時間とともに強くなり、10分を過ぎると急に強くなる', () => {
     expect(getEnemyTimeMul(0)).toBe(1);
-    expect(getEnemyTimeMul(TD_DURATION_SECONDS)).toBeCloseTo(1.4);
-    expect(getEnemyTimeMul(TD_DURATION_SECONDS + 60) - getEnemyTimeMul(TD_DURATION_SECONDS)).toBeCloseTo(0.15);
+    expect(getEnemyTimeMul(TD_DURATION_SECONDS)).toBeCloseTo(1.7);
+    expect(getEnemyTimeMul(TD_DURATION_SECONDS + 60) - getEnemyTimeMul(TD_DURATION_SECONDS)).toBeCloseTo(0.2);
   });
 
   it('敵の兵種は予算を超えない', () => {
@@ -284,6 +291,38 @@ describe('タワーディフェンスのラン', () => {
     expect(base.hp).toBeGreaterThan(base.maxHp - 50);
     advance(battle, 10);
     expect(base.hp).toBeLessThanOrEqual(base.maxHp);
+  });
+
+  it('敵の城には砲台が常設され、時間で増える（壊れない）', () => {
+    const { battle, td } = setup();
+    const enemyCannons = () => battle.facilities.filter((f) => f.type.id === 'cannon_tower' && f.team === 1);
+    expect(enemyCannons()).toHaveLength(1);
+    expect(getEnemyCannonCount(TD_ENEMY_CANNON_INTERVAL * 3)).toBe(4);
+    td.time = TD_ENEMY_CANNON_INTERVAL * 3 - 0.01;
+    advance(battle, 0.5);
+    expect(enemyCannons()).toHaveLength(4);
+    expect(enemyCannons()[0].takeDamage(99999)).toBe(false);
+    expect(getEnemyCannonCount(99999)).toBe(TD_ENEMY_CANNON_POSITIONS.length);
+  });
+
+  it('城強化で自軍の城に砲台が1基ずつ増える', () => {
+    const { battle, td } = setup();
+    td.run.gold = 99999;
+    const mine = () => battle.facilities.filter((f) => f.type.id === 'cannon_tower' && f.team === 0);
+    expect(mine()).toHaveLength(0);
+    td.upgradeBase();
+    td.upgradeBase();
+    expect(mine()).toHaveLength(2);
+    expect(td.playerCannons).toHaveLength(2);
+  });
+
+  it('エリートは数が多く、反撃部隊にも毎回エリートが混ざる', () => {
+    expect(getWaveEliteCount(3)).toBe(1);
+    expect(getWaveEliteCount(18)).toBe(4);
+    expect(getWaveEliteCount(TD_ALWAYS_ELITE_FROM_WAVE)).toBe(1);
+    expect(getWaveEliteCount(1)).toBe(0);
+    expect(getCounterEliteCount(1)).toBeGreaterThanOrEqual(1);
+    expect(getCounterEliteCount(9)).toBeGreaterThan(getCounterEliteCount(1));
   });
 
   it('基地強化は上限まで上げると買えなくなる', () => {

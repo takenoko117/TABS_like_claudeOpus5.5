@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import type { Facility } from '../facilities/Facility';
-import { FACILITY_TYPES, isGateTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
+import { FACILITY_TYPES, isGateTypeId, MAX_GATE_LEVEL, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Unit } from '../units/Unit';
 import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
 import type { Battle, BattleResult, BattleRules } from './Battle';
@@ -41,7 +41,12 @@ export const TD_DURATION_SECONDS = 600;
 export const TD_WAVE_SECONDS = 30;
 export const TD_WAVE_COUNT = 20;
 /** エリートが出る Wave */
-export const TD_ELITE_WAVES: readonly number[] = [5, 10, 15];
+export const TD_ELITE_WAVES: readonly number[] = [3, 6, 9, 12, 15, 18];
+/** この Wave 以降は、エリート Wave でなくてもエリートが1体出る */
+export const TD_ALWAYS_ELITE_FROM_WAVE = 8;
+/** 時間で湧く増援の間隔（秒）と、1回の予算（その Wave の予算に対する割合） */
+export const TD_TRICKLE_SECONDS = 10;
+export const TD_TRICKLE_RATIO = 0.12;
 
 export const TD_PLAYER_BASE_X = -22;
 export const TD_ENEMY_BASE_X = 22;
@@ -83,7 +88,6 @@ export const TD_COUNTER_STEP = 0.1;
 /** 反撃の節目ごとのボーナス */
 export const TD_COUNTER_BONUS_MONEY = 100;
 /** 反撃部隊にエリートが混ざる節目（減った割合） */
-const TD_COUNTER_ELITE_STEPS: readonly number[] = [5, 8];
 
 /** 撃破で入る経験値（敵のコストに対する割合） */
 export const TD_XP_PER_COST = 0.1;
@@ -96,14 +100,38 @@ export const TD_BASE_HP_STEP = 0.25;
 export const TD_BASE_PRICE_STEP = 400;
 
 /** Wave 1 の敵予算（ローグライトの同ラウンド1戦ぶんに対する割合） */
-export const TD_WAVE_BUDGET_RATIO = 0.36;
-/** Wave ごとに増える割合（Wave 20 で 0.36 + 0.29 = 0.65） */
-export const TD_WAVE_BUDGET_RATIO_STEP = 0.015;
+export const TD_WAVE_BUDGET_RATIO = 0.55;
+/** Wave ごとに増える割合（Wave 20 で 0.55 + 0.57 = 1.12） */
+export const TD_WAVE_BUDGET_RATIO_STEP = 0.03;
 /** Wave の頭にまとめて出す割合 */
 const TD_WAVE_BURST_RATIO = 0.6;
 /** 最終ボスの HP 倍率 */
 export const TD_BOSS_HP_MUL = 2;
-export const TD_ELITE_HP_MUL = 2;
+export const TD_ELITE_HP_MUL = 4;
+/** エリートの攻撃倍率 */
+export const TD_ELITE_DAMAGE_MUL = 1.5;
+
+/** 敵の城の砲台（常設・壊れない）。この間隔で1基ずつ増え、後から置くものほどレベルが高い */
+export const TD_ENEMY_CANNON_INTERVAL = 60;
+export const TD_ENEMY_CANNON_LEVEL_SECONDS = 120;
+export const TD_ENEMY_CANNON_POSITIONS: ReadonlyArray<{ x: number; z: number }> = [
+  { x: 23.8, z: -4 },
+  { x: 23.8, z: 4 },
+  { x: 21, z: -11 },
+  { x: 21, z: 11 },
+  { x: 23.8, z: -8 },
+  { x: 23.8, z: 8 },
+  { x: 17, z: -12.5 },
+  { x: 17, z: 12.5 },
+];
+/** 城強化で自軍の城に置く砲台（Lv2 から1段ごとに1基） */
+export const TD_PLAYER_CANNON_POSITIONS: ReadonlyArray<{ x: number; z: number }> = [
+  { x: -23.8, z: -4 },
+  { x: -23.8, z: 4 },
+  { x: -21, z: -11 },
+  { x: -21, z: 11 },
+  { x: -23.8, z: 0 },
+];
 
 /** 宝箱の出る確率（撃破1体ごと）と、次が出るまでの時間 */
 const TD_CHEST_CHANCE = 0.035;
@@ -145,11 +173,11 @@ export function getWaveBudget(wave: number): number {
   return Math.round(base * ratio * elite);
 }
 
-/** 経過時間による敵の HP・攻撃の倍率（10分で ×1.4、以降は急に上がる） */
+/** 経過時間による敵の HP・攻撃の倍率（10分で ×1.7、以降は急に上がる） */
 export function getEnemyTimeMul(seconds: number): number {
   const min = Math.max(0, seconds) / 60;
   const over = Math.max(0, min - TD_DURATION_SECONDS / 60);
-  return 1 + 0.04 * Math.min(min, TD_DURATION_SECONDS / 60) + 0.15 * over;
+  return 1 + 0.07 * Math.min(min, TD_DURATION_SECONDS / 60) + 0.2 * over;
 }
 
 /** レベル lv から次のレベルに必要な経験値 */
@@ -181,14 +209,30 @@ export function getWaveAt(seconds: number): number {
 
 /** 反撃部隊の強さ（ラウンド換算）。何段目の反撃かで決まり、序盤に削っても強い部隊が出る */
 export function getCounterRound(wave: number, step: number): number {
-  return Math.min(30, Math.max(getWaveRound(wave), 2 + step));
+  return Math.min(30, Math.max(getWaveRound(wave) + 2, 3 + 2 * step));
 }
 
 /** 反撃部隊の予算 */
 export function getCounterBudget(wave: number, step: number): number {
   const r = getCounterRound(wave, step) - 1;
   const roundBudget = 500 + 180 * r + 14 * r * r;
-  return Math.round(Math.max(getWaveBudget(wave), roundBudget * 0.35) * (0.5 + 0.08 * step));
+  return Math.round(Math.max(getWaveBudget(wave), roundBudget * 0.5) * (1 + 0.15 * step));
+}
+
+/** 反撃部隊に混ざるエリートの数 */
+export function getCounterEliteCount(step: number): number {
+  return 1 + Math.floor(step / 3);
+}
+
+/** エリート Wave に出るエリートの数（エリート Wave 以外でも TD_ALWAYS_ELITE_FROM_WAVE 以降は1体） */
+export function getWaveEliteCount(wave: number): number {
+  if (TD_ELITE_WAVES.includes(wave)) return 1 + Math.floor(wave / 6);
+  return wave >= TD_ALWAYS_ELITE_FROM_WAVE ? 1 : 0;
+}
+
+/** その時刻に敵の城に置かれている砲台の数 */
+export function getEnemyCannonCount(seconds: number): number {
+  return Math.min(TD_ENEMY_CANNON_POSITIONS.length, Math.floor(Math.max(0, seconds) / TD_ENEMY_CANNON_INTERVAL) + 1);
 }
 
 /** 資金供給力のレベル（1始まり）を上げる価格。上限なら null */
@@ -238,7 +282,7 @@ export type DeployBlock = 'cooldown' | 'money' | 'full' | 'not_owned' | 'ended';
 interface SpawnOrder {
   id: UnitTypeId;
   at: number;
-  kind: 'normal' | 'elite' | 'boss';
+  kind: 'normal' | 'counter' | 'elite' | 'boss';
 }
 
 export type TDEndReason = 'clear' | 'defeat' | 'quit';
@@ -253,6 +297,12 @@ export class TDRun {
   wavesStarted = 0;
   bossSpawned = false;
   private overtimeTimer = 0;
+  private trickleTimer = 0;
+  private battleRef: Battle | null = null;
+  /** 敵の城の砲台 */
+  readonly enemyCannons: Facility[] = [];
+  /** 城強化で置いた自軍の砲台 */
+  readonly playerCannons: Facility[] = [];
   readonly cooldowns = new Map<UnitTypeId, number>();
   level = 1;
   xp = 0;
@@ -333,6 +383,8 @@ export class TDRun {
     this.playerBase = battle.spawnFacility('hq', 0, TD_PLAYER_BASE_X, 0, Math.PI / 2, { hp: TD_PLAYER_BASE_HP });
     this.enemyBase = battle.spawnFacility('hq', 1, TD_ENEMY_BASE_X, 0, -Math.PI / 2, { hp: TD_ENEMY_BASE_HP });
     this.lastEnemyBaseHp = this.enemyBase.hp;
+    this.battleRef = battle;
+    this.updateEnemyCannons(battle);
     battle.rules = new TDBattleRules(this);
     battle.preferCloserFacility = true;
     this.rules.start(battle);
@@ -395,6 +447,14 @@ export class TDRun {
       this.startWave(this.wavesStarted + 1);
     }
     if (!this.bossSpawned && this.time >= TD_DURATION_SECONDS) this.startFinalBoss();
+    // 時間で湧く増援
+    this.trickleTimer += dt;
+    if (!this.bossSpawned && this.trickleTimer >= TD_TRICKLE_SECONDS) {
+      this.trickleTimer -= TD_TRICKLE_SECONDS;
+      const wave = Math.max(1, this.wave);
+      this.queueEnemies(pickWaveEnemies(getWaveRound(wave), getWaveBudget(wave) * TD_TRICKLE_RATIO, this.rng), this.time, 2);
+    }
+    this.updateEnemyCannons(battle);
     if (this.bossSpawned) {
       // 延長戦: 最終 Wave の強さで湧き続ける
       this.overtimeTimer += dt;
@@ -437,9 +497,10 @@ export class TDRun {
     this.queueEnemies(ids.slice(0, burst), start, 3);
     this.queueEnemies(ids.slice(burst), start + 3, TD_WAVE_SECONDS - 4);
     const elite = TD_ELITE_WAVES.includes(wave);
-    if (elite) {
-      const id = this.pickStrongUnit(getWaveRound(wave) + 3);
-      if (id) this.queue.push({ id, at: start + 1, kind: 'elite' });
+    const eliteCount = getWaveEliteCount(wave);
+    for (let i = 0; i < eliteCount; i++) {
+      const id = this.pickStrongUnit(getWaveRound(wave) + 4);
+      if (id) this.queue.push({ id, at: start + 1 + i * 2, kind: 'elite' });
     }
     this.events.push({ kind: elite ? 'elite' : 'wave', value: wave });
   }
@@ -488,12 +549,16 @@ export class TDRun {
     const u = battle.spawnUnit(order.id, 1, x, z, -Math.PI / 2);
     const mul = getEnemyTimeMul(this.time);
     let hpMul = mul;
-    if (order.kind === 'elite') hpMul *= TD_ELITE_HP_MUL;
+    let dmgMul = mul;
+    if (order.kind === 'elite') {
+      hpMul *= TD_ELITE_HP_MUL;
+      dmgMul *= TD_ELITE_DAMAGE_MUL;
+    }
     if (order.kind === 'boss') hpMul *= TD_BOSS_HP_MUL;
-    if (order.kind !== 'normal') u.isBoss = true;
+    if (order.kind === 'elite' || order.kind === 'boss') u.isBoss = true;
     u.maxHp *= hpMul;
     u.hp = u.maxHp;
-    u.permDamageMul *= mul;
+    u.permDamageMul *= dmgMul;
     return u;
   }
 
@@ -517,13 +582,29 @@ export class TDRun {
   /** 反撃部隊を出す。基地が削れるほど強い */
   private launchCounter(step: number): void {
     const round = getCounterRound(this.wave, step);
-    this.queueEnemies(pickWaveEnemies(round, getCounterBudget(this.wave, step), this.rng, 1), this.time, 2);
-    if (TD_COUNTER_ELITE_STEPS.includes(step)) {
+    // 反撃部隊は湧きの上限を無視して一気に出る
+    for (const id of pickWaveEnemies(round, getCounterBudget(this.wave, step), this.rng, 2)) {
+      this.queue.push({ id, at: this.time + this.rng() * 2, kind: 'counter' });
+    }
+    const elites = getCounterEliteCount(step);
+    for (let i = 0; i < elites; i++) {
       const id = this.pickStrongUnit(round + 5);
-      if (id) this.queue.push({ id, at: this.time + 0.5, kind: 'elite' });
+      if (id) this.queue.push({ id, at: this.time + 0.5 + i * 0.6, kind: 'elite' });
     }
     this.addMoney(TD_COUNTER_BONUS_MONEY, false);
     this.events.push({ kind: 'counter', value: step });
+  }
+
+  /** 敵の城の砲台を時間に合わせて増やす */
+  private updateEnemyCannons(battle: Battle): void {
+    const want = getEnemyCannonCount(this.time);
+    while (this.enemyCannons.length < want) {
+      const pos = TD_ENEMY_CANNON_POSITIONS[this.enemyCannons.length];
+      const level = Math.min(MAX_GATE_LEVEL, Math.floor(this.time / TD_ENEMY_CANNON_LEVEL_SECONDS));
+      this.enemyCannons.push(
+        battle.spawnFacility('cannon_tower', 1, pos.x, pos.z, -Math.PI / 2, { relicLevel: level, invulnerable: true }),
+      );
+    }
   }
 
   /** 出撃した兵が基地出口の門を越えたら、その門の効果を掛ける */
@@ -715,6 +796,14 @@ export class TDRun {
     const add = TD_PLAYER_BASE_HP * TD_BASE_HP_STEP;
     base.maxHp += add;
     base.hp += add;
+    // 城の砲台を1基足す（段が上がるほど強い砲台）
+    const pos = TD_PLAYER_CANNON_POSITIONS[this.playerCannons.length];
+    if (pos && this.battleRef) {
+      const level = Math.min(MAX_GATE_LEVEL, this.baseLevel - 2);
+      this.playerCannons.push(
+        this.battleRef.spawnFacility('cannon_tower', 0, pos.x, pos.z, Math.PI / 2, { relicLevel: level, invulnerable: true }),
+      );
+    }
     return true;
   }
 
