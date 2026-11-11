@@ -1,0 +1,249 @@
+import { describe, expect, it } from 'vitest';
+import { Battle } from '../src/game/Battle';
+import {
+  getDeployCooldown,
+  getDeployCost,
+  getEnemyTimeMul,
+  getWaveAt,
+  getWaveBudget,
+  getWaveRound,
+  pickWaveEnemies,
+  TD_ALLY_CAP,
+  TD_COUNTER_BONUS_MONEY,
+  TD_DURATION_SECONDS,
+  TD_ENEMY_BASE_HP,
+  TD_PLAYER_BASE_HP,
+  TD_START_MONEY,
+  TD_START_UNIT_SLOTS,
+  TDRun,
+  xpForLevel,
+} from '../src/game/RealtimeTDMode';
+import { ROGUE_STARTERS, getSquadSize, getUnitSlotCost } from '../src/game/RogueliteMode';
+import { createSeededRng } from '../src/game/ChallengeMode';
+import { FACILITY_TYPE_LIST } from '../src/facilities/FacilityTypes';
+import { UNIT_TYPES } from '../src/units/UnitTypes';
+
+function setup(seed = 1): { battle: Battle; td: TDRun } {
+  const battle = new Battle();
+  battle.configureStage();
+  const td = new TDRun(seed, ROGUE_STARTERS[0], createSeededRng(seed));
+  td.setup(battle);
+  battle.beginCombat();
+  return { battle, td };
+}
+
+function advance(battle: Battle, seconds: number): void {
+  const steps = Math.round(seconds / battle.fixedDt);
+  for (let i = 0; i < steps; i++) battle.step(battle.fixedDt);
+}
+
+describe('タワーディフェンスの計算式', () => {
+  it('クールタイムと出撃コストは枠コストで決まる', () => {
+    expect(getDeployCooldown('clubber')).toBe(5);
+    expect(getDeployCost('clubber')).toBe(120);
+    const big = getUnitSlotCost('giant_tank');
+    expect(big).toBe(4);
+    expect(getDeployCooldown('giant_tank')).toBe(30);
+    expect(getDeployCost('giant_tank')).toBe(480);
+  });
+
+  it('Wave は30秒ごとに進み、20 で止まる', () => {
+    expect(getWaveAt(0)).toBe(1);
+    expect(getWaveAt(29.9)).toBe(1);
+    expect(getWaveAt(30)).toBe(2);
+    expect(getWaveAt(599)).toBe(20);
+    expect(getWaveAt(900)).toBe(20);
+  });
+
+  it('Wave をローグライトのラウンドに読み替え、敵予算は増えていく', () => {
+    expect(getWaveRound(1)).toBe(1);
+    expect(getWaveRound(20)).toBe(29);
+    for (let w = 2; w <= 20; w++) {
+      if ([6, 11, 16].includes(w)) continue; // エリートの直後は割増がなくなるので除く
+      expect(getWaveBudget(w)).toBeGreaterThanOrEqual(getWaveBudget(w - 1));
+    }
+    expect(getWaveBudget(5)).toBeGreaterThan(getWaveBudget(4));
+  });
+
+  it('敵は時間とともに強くなり、10分を過ぎると急に強くなる', () => {
+    expect(getEnemyTimeMul(0)).toBe(1);
+    expect(getEnemyTimeMul(TD_DURATION_SECONDS)).toBeCloseTo(1.4);
+    expect(getEnemyTimeMul(TD_DURATION_SECONDS + 60) - getEnemyTimeMul(TD_DURATION_SECONDS)).toBeCloseTo(0.15);
+  });
+
+  it('敵の兵種は予算を超えない', () => {
+    const rng = createSeededRng(3);
+    for (const wave of [1, 8, 20]) {
+      const budget = getWaveBudget(wave);
+      const ids = pickWaveEnemies(getWaveRound(wave), budget, rng);
+      const total = ids.reduce((s, id) => s + UNIT_TYPES[id].cost, 0);
+      expect(ids.length).toBeGreaterThan(0);
+      expect(total).toBeLessThanOrEqual(budget);
+    }
+  });
+
+  it('必要経験値はレベルとともに増える', () => {
+    expect(xpForLevel(2)).toBeGreaterThan(xpForLevel(1));
+    expect(xpForLevel(10)).toBeGreaterThan(xpForLevel(5));
+  });
+
+  it('基地はパレットや施設一覧に出ない', () => {
+    expect(FACILITY_TYPE_LIST.some((f) => f.id === 'hq')).toBe(false);
+  });
+});
+
+describe('タワーディフェンスのラン', () => {
+  it('開始時は初期レリックなし、ユニット枠4、両軍の基地がある', () => {
+    const { battle, td } = setup();
+    expect(td.run.relics).toHaveLength(0);
+    expect(td.run.unitSlots).toBe(TD_START_UNIT_SLOTS);
+    expect(td.run.deck.map((c) => c.id)).toEqual([...ROGUE_STARTERS[0].units]);
+    expect(td.money).toBe(TD_START_MONEY);
+    expect(td.playerBase?.maxHp).toBe(TD_PLAYER_BASE_HP);
+    expect(td.enemyBase?.maxHp).toBe(TD_ENEMY_BASE_HP);
+    expect(battle.facilities.filter((f) => f.type.id === 'hq')).toHaveLength(2);
+  });
+
+  it('出撃するとお金を払い、部隊が出て、クールタイムに入る', () => {
+    const { battle, td } = setup();
+    const spawned = td.deploy(battle, 'clubber');
+    expect(spawned).toHaveLength(getSquadSize('clubber'));
+    expect(td.money).toBe(TD_START_MONEY - getDeployCost('clubber'));
+    expect(td.deployBlock(battle, 'clubber')).toBe('cooldown');
+    expect(td.deploy(battle, 'clubber')).toHaveLength(0);
+    advance(battle, getDeployCooldown('clubber') + 0.1);
+    expect(td.deployBlock(battle, 'clubber')).toBeNull();
+  });
+
+  it('お金が足りなければ出撃できず、時間で貯まる', () => {
+    const { battle, td } = setup();
+    td.run.gold = 50;
+    expect(td.deployBlock(battle, 'spearman')).toBe('money');
+    advance(battle, 13);
+    expect(td.money).toBeGreaterThanOrEqual(150);
+    expect(td.deployBlock(battle, 'spearman')).toBeNull();
+  });
+
+  it('自軍の同時数が上限なら出撃できない', () => {
+    const { battle, td } = setup();
+    for (let i = 0; i < TD_ALLY_CAP; i++) battle.spawnUnit('decoy', 0, -10, (i % 20) - 10);
+    td.run.gold = 1000;
+    expect(td.deployBlock(battle, 'clubber')).toBe('full');
+  });
+
+  it('控えのカードは出撃できない', () => {
+    const { battle, td } = setup();
+    td.toggleDeck(battle, 'archer');
+    expect(td.deployBlock(battle, 'archer')).toBe('not_in_deck');
+  });
+
+  it('時間とともに Wave が始まり、敵が湧く', () => {
+    const { battle, td } = setup();
+    advance(battle, 4);
+    expect(td.wavesStarted).toBe(1);
+    expect(battle.aliveCount(1)).toBeGreaterThan(0);
+    expect(td.events.some((e) => e.kind === 'wave' && e.value === 1)).toBe(true);
+  });
+
+  it('敵を倒すと経験値とお金が入り、レベルアップで選択権がたまる', () => {
+    const { battle, td } = setup();
+    const victim = battle.spawnUnit('giant', 1, 10, 0);
+    const before = td.money;
+    td.onEnemyKilled(victim);
+    expect(td.money).toBeGreaterThan(before);
+    expect(td.level).toBeGreaterThan(1);
+    expect(td.choices).toBe(td.level - 1);
+    const options = td.currentOptions();
+    expect(options).not.toBeNull();
+    expect(options!.length).toBe(3);
+    const choices = td.choices;
+    td.choose(battle, 0);
+    expect(td.choices).toBe(choices - 1);
+  });
+
+  it('レリックを手に入れると基地の出口に門が置かれ、出撃した兵がくぐると効果が掛かる', () => {
+    const { battle, td } = setup();
+    td.run.gainRelic('power_gate');
+    td.rebuildRelics(battle);
+    const gate = battle.facilities.find((f) => f.type.id === 'power_gate');
+    expect(gate).toBeDefined();
+    expect(gate!.invulnerable).toBe(true);
+    const [u] = td.deploy(battle, 'swordsman');
+    const before = u.permDamageMul;
+    // 門の先へ運ぶ
+    for (const j of u.joints) j.pos.x += gate!.pos.x - u.pelvis.pos.x + 1;
+    advance(battle, 0.05);
+    expect(u.gatesPassed.has(gate!.id)).toBe(true);
+    expect(u.permDamageMul).toBeGreaterThan(before);
+  });
+
+  it('門は攻撃を受けない', () => {
+    const { battle, td } = setup();
+    td.run.gainRelic('fire_gate');
+    td.rebuildRelics(battle);
+    const gate = battle.facilities.find((f) => f.type.id === 'fire_gate')!;
+    expect(gate.takeDamage(9999)).toBe(false);
+    expect(gate.alive).toBe(true);
+  });
+
+  it('敵基地を削るとお金が入り、10%ごとに反撃部隊が出る', () => {
+    const { battle, td } = setup();
+    const base = td.enemyBase!;
+    const before = td.money;
+    const enemiesBefore = battle.aliveCount(1);
+    base.takeDamage(base.maxHp * 0.25);
+    advance(battle, 3);
+    expect(td.counters).toBe(2);
+    expect(td.money).toBeGreaterThan(before + 2 * TD_COUNTER_BONUS_MONEY);
+    expect(td.events.filter((e) => e.kind === 'counter')).toHaveLength(2);
+    expect(battle.aliveCount(1)).toBeGreaterThan(enemiesBefore);
+  });
+
+  it('自軍の基地が壊れたら負け、敵の基地が壊れたら勝ち', () => {
+    const { battle, td } = setup();
+    expect(battle.result()).toBeNull();
+    td.enemyBase!.takeDamage(TD_ENEMY_BASE_HP * 2);
+    expect(battle.result()).toBe(0);
+
+    const second = setup(2);
+    second.td.playerBase!.takeDamage(TD_PLAYER_BASE_HP * 2);
+    expect(second.battle.result()).toBe(1);
+  });
+
+  it('敵兵より敵基地のほうが近い兵は、基地を攻撃する', () => {
+    const { battle, td } = setup();
+    battle.spawnUnit('swordsman', 0, 17, 0);
+    battle.spawnUnit('decoy', 1, -14, 0);
+    const hp = td.enemyBase!.hp;
+    advance(battle, 4);
+    expect(td.enemyBase!.hp).toBeLessThan(hp);
+  });
+
+  it('ユニットが全滅しても決着しない', () => {
+    const { battle } = setup();
+    expect(battle.aliveCount(0)).toBe(0);
+    expect(battle.result()).toBeNull();
+  });
+
+  it('作戦室で財布・基地の修理と強化を買える', () => {
+    const { td } = setup();
+    td.run.gold = 5000;
+    const income = td.walletIncome;
+    expect(td.buyWallet()).toBe(true);
+    expect(td.walletIncome).toBeGreaterThan(income);
+    const base = td.playerBase!;
+    expect(td.repairBase()).toBe(false); // 満タンなら修理できない
+    base.hp = base.maxHp / 2;
+    expect(td.repairBase()).toBe(true);
+    expect(base.hp).toBeCloseTo(base.maxHp * 0.75);
+    const max = base.maxHp;
+    expect(td.fortifyBase()).toBe(true);
+    expect(base.maxHp).toBeGreaterThan(max);
+  });
+
+  it('宝箱を開けると中身がその場で適用される', () => {
+    const { battle, td } = setup();
+    const rewards = td.openChest(battle, 2);
+    expect(rewards.length).toBe(5);
+  });
+});

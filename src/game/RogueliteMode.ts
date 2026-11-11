@@ -314,6 +314,8 @@ export class RogueliteRules implements BattleRules {
   /** 召喚ポータル（最大レベル）が呼び出す兵種（所持カード） */
   summonPool: UnitTypeId[] = [];
   swarmStacks = 0;
+  /** シナジーを数える兵種（null なら戦場の自軍の兵種で数える。タワーディフェンスはデッキの兵種を入れる） */
+  tagSource: readonly UnitTypeId[] | null = null;
   private readonly lives = new WeakMap<Unit, AllyLife>();
   private pendingDeaths: Unit[] = [];
   private magnetTimer = 0;
@@ -386,8 +388,25 @@ export class RogueliteRules implements BattleRules {
     return level;
   }
 
+  /** 戦闘の途中で出撃した味方に、発動中のシナジーの常時ボーナスを掛ける */
+  onAllySpawned(battle: Battle, unit: Unit): void {
+    if (unit.team !== this.team) return;
+    this.battle = battle;
+    if (!this.lives.has(unit)) {
+      this.lives.set(unit, { spawnTime: battle.time, revives: 0, died: false, noRebirth: false });
+    }
+    this.applyStaticBonuses(unit);
+  }
+
+  /** シナジーを数え直す（デッキを組み替えたときなど） */
+  refreshTags(battle: Battle): void {
+    this.recount(battle);
+  }
+
   private recount(battle: Battle): void {
-    const ids = battle.units.filter((u) => u.team === this.team).map((u) => u.type.id);
+    const ids = this.tagSource
+      ? [...this.tagSource]
+      : battle.units.filter((u) => u.team === this.team).map((u) => u.type.id);
     this.tagCounts = countTags(ids, this.grantedByType);
     for (const u of battle.units) if (u.team === this.team && u.alive) this.applyStaticBonuses(u);
   }
@@ -2277,45 +2296,7 @@ export class RogueGateSequence implements BattleOpening {
   private enchant(stage: GateStage, entry: PendingEnchant): void {
     const u = entry.unit;
     if (!u.alive) return;
-    const id = stage.relic.id;
-    const lv = gateLevelIndex(stage.relic.level);
-    if (id === 'shrink_gate') {
-      const minScale = lv >= MAX_GATE_LEVEL ? GATE_SHRINK_MAX_LEVEL_MIN_SCALE : MIN_SHRINK_GATE_SCALE;
-      if (u.scale > minScale) {
-        this.battle.transformUnit(u, {
-          scaleMul: Math.max(GATE_SHRINK_SCALE[lv], minScale / u.scale),
-          hpMul: 1,
-          speedMul: GATE_SHRINK_SPEED[lv],
-        });
-      }
-    } else if (id === 'giant_gate') {
-      if (u.scale < MAX_GIANT_GATE_SCALE) {
-        const scale = GATE_GIANT_SCALE[lv];
-        this.battle.transformUnit(u, {
-          scaleMul: Math.min(scale, MAX_GIANT_GATE_SCALE / u.scale),
-          hpMul: scale,
-          damageMul: 1 + (scale - 1) * (0.35 / 0.6),
-          knockbackMul: 1 + (scale - 1) * (0.5 / 0.6),
-          knockbackResistMul: lv >= MAX_GATE_LEVEL ? GATE_GIANT_MAX_LEVEL_KNOCKBACK_RESIST : 1,
-        });
-      }
-    } else if (id === 'multiplier_gate') {
-      if (entry.cloneAngle !== null) {
-        const dist = Math.max(0.9, u.scale * 0.8);
-        this.battle.spawnCloneUnit(
-          u,
-          u.pelvis.pos.x + Math.cos(entry.cloneAngle) * dist,
-          u.pelvis.pos.z + Math.sin(entry.cloneAngle) * dist,
-        );
-      }
-    } else if (STAT_GATES[id]) {
-      applyStatGate(u, id, lv);
-      if (lv >= MAX_GATE_LEVEL && id === 'reach_gate') u.meleeCleaveDamage = MELEE_CLEAVE_DAMAGE_MAX_LEVEL;
-      if (lv >= MAX_GATE_LEVEL && id === 'swift_gate') u.firstStrikeMul = SWIFT_MAX_LEVEL_FIRST_STRIKE;
-    } else {
-      const info = GATE_ELEMENTS[id];
-      if (info) u.elementInfusion = info.element;
-    }
+    applyGateEnchant(this.battle, stage.relic, u, entry.cloneAngle);
     if (stage.effects < MAX_GATE_EFFECTS) {
       stage.effects++;
       this.battle.emitEffect({
@@ -2387,6 +2368,75 @@ export class RogueGateSequence implements BattleOpening {
     }
     this.finish();
   }
+}
+
+/** 門の効果を1体に適用する。cloneAngle は増殖ゲートで複製するときの向き（複製しないなら null） */
+export function applyGateEnchant(
+  battle: Battle,
+  relic: Pick<OwnedRelic, 'id' | 'level'>,
+  u: Unit,
+  cloneAngle: number | null,
+): void {
+  if (!u.alive) return;
+  const id = relic.id;
+  const lv = gateLevelIndex(relic.level);
+  const entry = { cloneAngle };
+  if (id === 'shrink_gate') {
+    const minScale = lv >= MAX_GATE_LEVEL ? GATE_SHRINK_MAX_LEVEL_MIN_SCALE : MIN_SHRINK_GATE_SCALE;
+    if (u.scale > minScale) {
+      battle.transformUnit(u, {
+        scaleMul: Math.max(GATE_SHRINK_SCALE[lv], minScale / u.scale),
+        hpMul: 1,
+        speedMul: GATE_SHRINK_SPEED[lv],
+      });
+    }
+  } else if (id === 'giant_gate') {
+    if (u.scale < MAX_GIANT_GATE_SCALE) {
+      const scale = GATE_GIANT_SCALE[lv];
+      battle.transformUnit(u, {
+        scaleMul: Math.min(scale, MAX_GIANT_GATE_SCALE / u.scale),
+        hpMul: scale,
+        damageMul: 1 + (scale - 1) * (0.35 / 0.6),
+        knockbackMul: 1 + (scale - 1) * (0.5 / 0.6),
+        knockbackResistMul: lv >= MAX_GATE_LEVEL ? GATE_GIANT_MAX_LEVEL_KNOCKBACK_RESIST : 1,
+      });
+    }
+  } else if (id === 'multiplier_gate') {
+    if (entry.cloneAngle !== null) {
+      const dist = Math.max(0.9, u.scale * 0.8);
+      battle.spawnCloneUnit(
+        u,
+        u.pelvis.pos.x + Math.cos(entry.cloneAngle) * dist,
+        u.pelvis.pos.z + Math.sin(entry.cloneAngle) * dist,
+      );
+    }
+  } else if (STAT_GATES[id]) {
+    applyStatGate(u, id, lv);
+    if (lv >= MAX_GATE_LEVEL && id === 'reach_gate') u.meleeCleaveDamage = MELEE_CLEAVE_DAMAGE_MAX_LEVEL;
+    if (lv >= MAX_GATE_LEVEL && id === 'swift_gate') u.firstStrikeMul = SWIFT_MAX_LEVEL_FIRST_STRIKE;
+  } else {
+    const info = GATE_ELEMENTS[id];
+    if (info) u.elementInfusion = info.element;
+  }
+}
+
+/** 増殖ゲートの抽選。複製するなら向き（ラジアン）、しないなら null */
+export function rollGateCloneAngle(relic: Pick<OwnedRelic, 'id' | 'level'>, rng: () => number): number | null {
+  if (relic.id !== 'multiplier_gate') return null;
+  return rng() < GATE_CLONE_CHANCE[gateLevelIndex(relic.level)] ? rng() * Math.PI * 2 : null;
+}
+
+/** 発動中の門のうち、属性（炎・雷・毒）を付けるもの */
+export function gateInfusionsFor(gates: readonly Pick<OwnedRelic, 'id' | 'level'>[]): GateInfusion[] {
+  return gates.flatMap((g) => {
+    const info = GATE_ELEMENTS[g.id];
+    return info ? [{ element: info.element, level: gateLevelIndex(g.level) }] : [];
+  });
+}
+
+/** 開戦時の演出で適用する門か（戦闘中ずっと働く門と廃止した門は除く） */
+export function isEnchantGate(id: FacilityTypeId): boolean {
+  return GATE_APPLY_ORDER.includes(id);
 }
 
 /** 発動中のゲートを、演出なしで自軍全員へ適用する */

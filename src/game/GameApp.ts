@@ -109,6 +109,8 @@ import {
   type RogueCard,
 } from './RogueliteMode';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
+import { TDRun } from './RealtimeTDMode';
+import { RealtimeTDHud } from '../ui/RealtimeTDHud';
 import {
   CATEGORY_ICONS,
   CATEGORY_THEME_COLORS,
@@ -467,7 +469,7 @@ const SPEED_OPTIONS: ReadonlyArray<{ label: string; scale: number; pause?: boole
 ];
 
 export type GameMode = 'placement' | 'battle';
-export type PlayStyle = 'arcade' | 'sandbox' | 'versus' | 'challenge' | 'roguelite';
+export type PlayStyle = 'arcade' | 'sandbox' | 'versus' | 'challenge' | 'roguelite' | 'td';
 
 const DAMAGE_MODE_STORAGE_KEY = 'tabs_voxel_damage_numbers_v1';
 
@@ -564,6 +566,13 @@ export class GameApp {
   private rogueRankAt = 0;
   /** 開戦時のゲート演出（スキップに使う） */
   private rogueGateSequence: RogueGateSequence | null = null;
+
+  /** 進行中（または直前）のタワーディフェンスのラン */
+  td: TDRun | null = null;
+  private tdStarter: RogueStarter | null = null;
+  private tdHudField: RealtimeTDHud | null = null;
+  /** 設定を開いたことで止めたか（閉じたら再開する） */
+  private tdPausedForSettings = false;
 
   /** ダメージ数字・HPバーのオーバーレイ */
   readonly damageOverlay: DamageOverlay;
@@ -681,6 +690,9 @@ export class GameApp {
       if (this.playStyle === 'roguelite') {
         this.rogueRules.onDamage(e);
         if (e.killed && e.victim.team !== 0) this.onRogueEnemyKilled(e.victim, e.pos);
+      } else if (this.playStyle === 'td' && this.td) {
+        this.td.rules.onDamage(e);
+        if (e.killed && e.victim.team !== 0) this.onTDEnemyKilled(e.victim, e.pos);
       }
     });
     this.battle.combat.onHit = (e) => {
@@ -822,8 +834,9 @@ export class GameApp {
     for (const [style, panelId] of modes) {
       document.getElementById(panelId)?.classList.toggle('hidden', this.playStyle !== style);
     }
-    // ローグライトの戦闘ルールはローグライトのときだけ有効にする
+    // ローグライトの戦闘ルールはローグライトのときだけ有効にする（タワーディフェンスはランの開始時に設定する）
     this.battle.rules = this.playStyle === 'roguelite' ? this.rogueRules : null;
+    if (this.playStyle !== 'td') this.tdHudField?.hide();
     if (this.playStyle !== 'roguelite') this.hideRogueModal();
     // 残機ハートはローグライトモードのときだけ表示する
     this.view.setRogueHeartsVisible(this.playStyle === 'roguelite');
@@ -1220,6 +1233,10 @@ export class GameApp {
       ) {
         return;
       }
+      if (this.playStyle === 'td') {
+        this.handleTDKey(e);
+        return;
+      }
       if (e.code === 'Escape') {
         if (this.view.isFollowingUnit) {
           this.view.setFollowedUnit(null);
@@ -1287,6 +1304,7 @@ export class GameApp {
     else if (style === 'versus') this.enterVersusMode(this.versus.playerCount, true);
     else if (style === 'sandbox') this.loadPreset(PRESETS[0]);
     else if (style === 'roguelite') this.enterRogueliteMode();
+    else if (style === 'td') this.enterTDMode();
     else this.enterChallengeMode();
   }
 
@@ -1304,6 +1322,10 @@ export class GameApp {
     this.syncSpeedButtons();
     this.setTutorialStep(null);
     this.tutorial = null;
+    this.tdHudField?.hide();
+    if (this.playStyle === 'td') this.battle.rules = null;
+    this.td = null;
+    this.tdPausedForSettings = false;
     document.body.classList.add('on-title');
     document.getElementById('title-screen')?.classList.remove('hidden');
     this.titleLogo ??= new TitleLogo3D(document.querySelector<HTMLElement>('.title-logo')!);
@@ -1434,7 +1456,10 @@ export class GameApp {
     hpBars.checked = this.settings.showHpBars;
 
     toggle.addEventListener('click', () => panel.classList.toggle('hidden'));
-    document.getElementById('btn-settings-close')?.addEventListener('click', () => panel.classList.add('hidden'));
+    document.getElementById('btn-settings-close')?.addEventListener('click', () => {
+      panel.classList.add('hidden');
+      this.resumeAfterTDSettings();
+    });
 
     music.addEventListener('input', () => {
       this.settings.musicVolume = Number(music.value) / 100;
@@ -2377,7 +2402,170 @@ export class GameApp {
 
   /** プレイヤーが赤軍だけを操作し、解放済みの兵種だけを使うモードか */
   private isSoloPlayStyle(): boolean {
-    return this.playStyle === 'arcade' || this.playStyle === 'challenge' || this.playStyle === 'roguelite';
+    return (
+      this.playStyle === 'arcade' ||
+      this.playStyle === 'challenge' ||
+      this.playStyle === 'roguelite' ||
+      this.playStyle === 'td'
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // タワーディフェンス
+  // ---------------------------------------------------------------
+
+  private get tdHud(): RealtimeTDHud {
+    this.tdHudField ??= new RealtimeTDHud({
+      battle: this.battle,
+      getRun: () => this.td,
+      isPaused: () => this.paused,
+      togglePause: () => this.setPaused(!this.paused),
+      openSettings: () => this.openTDSettings(),
+      playClick: () => this.sound.playPlace(),
+      playDeploy: () => this.sound.playPlace(),
+      playDenied: () => this.sound.playDenied(),
+      playLevelUp: () => this.sound.playPurchase(),
+      startRun: (starter) => this.startTDRun(starter),
+      retire: () => this.confirmRetireTD(),
+      toTitle: () => this.showTitleScreen(),
+      retry: () => {
+        if (this.tdStarter) this.startTDRun(this.tdStarter);
+        else this.enterTDMode();
+      },
+    });
+    return this.tdHudField;
+  }
+
+  /** タワーディフェンスを開く（スターター選択から） */
+  enterTDMode(): void {
+    this.playStyle = 'td';
+    this.syncModePanels();
+    this.td = null;
+    this.prepareTDField();
+    this.tdHud.reset();
+    this.tdHud.show();
+    this.tdHud.showStarterSelect();
+  }
+
+  /** 空の戦場にする */
+  private prepareTDField(): void {
+    this.mode = 'placement';
+    this.announcedResult = null;
+    this.hideResultBanner();
+    this.battle.rules = null;
+    this.battle.configureStage({});
+    this.view.clearDebris();
+    this.damageOverlay.clear();
+    this.savedLineup = [];
+    this.clearedBackup = [];
+    this.view.setStageTheme(undefined);
+    this.view.setPlacementGuidesVisible(false);
+    this.view.setFollowedUnit(null);
+    this.droppedChestsField?.clear();
+    this.syncPhaseUI();
+  }
+
+  /** スターターを選んでランを始める。戦闘はすぐに始まり、止まらない */
+  private startTDRun(starter: RogueStarter): void {
+    this.tdStarter = starter;
+    this.prepareTDField();
+    const td = new TDRun(Math.floor(Math.random() * 0x7fffffff), starter);
+    this.td = td;
+    td.setup(this.battle);
+    this.playerRoster = [];
+    this.paused = false;
+    this.timeScale = 1;
+    this.syncSpeedButtons();
+    this.mode = 'battle';
+    this.battle.beginCombat();
+    this.tdHud.reset();
+    this.tdHud.show();
+    this.tdHud.announce('WAVE 1', 'wave');
+    this.syncPhaseUI();
+    this.sound.playBattleStart();
+  }
+
+  private onTDEnemyKilled(victim: Unit, pos: Vector3): void {
+    if (this.mode !== 'battle' || this.onTitleScreen || !this.td) return;
+    const tier = this.td.onEnemyKilled(victim);
+    if (tier === null) return;
+    this.droppedChests.spawn(pos, tier);
+    this.sound.playJackpotCoin();
+  }
+
+  private handleTDBattleEnd(res: Exclude<BattleResult, null>): void {
+    const td = this.td;
+    if (!td) return;
+    const won = res === 0;
+    td.finish(won ? 'clear' : 'defeat');
+    this.tdHud.setRoomOpen(false);
+    // 決着のスローモーションが終わってからリザルトを出す
+    window.setTimeout(() => {
+      if (this.td === td && this.playStyle === 'td') this.tdHud.showResult(td, won);
+    }, 2200);
+  }
+
+  private confirmRetireTD(): void {
+    const td = this.td;
+    if (!td || td.ended) {
+      this.showTitleScreen();
+      return;
+    }
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.showConfirm('リタイアしてタイトルに戻りますか？', 'リタイア', () => {
+      td.finish('quit');
+      this.showTitleScreen();
+    });
+    // キャンセルしたら元の状態に戻す
+    const dialog = document.getElementById('confirm-dialog');
+    const restore = () => {
+      if (!dialog || !dialog.classList.contains('hidden')) return;
+      observer.disconnect();
+      if (this.td === td && !td.ended) this.setPaused(wasPaused);
+    };
+    const observer = new MutationObserver(restore);
+    if (dialog) observer.observe(dialog, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  /** 設定を開く。開いている間は止める */
+  private openTDSettings(): void {
+    const panel = document.getElementById('settings-panel');
+    if (!panel) return;
+    const open = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !open);
+    if (open && !this.paused) {
+      this.tdPausedForSettings = true;
+      this.setPaused(true);
+    } else if (!open) {
+      this.resumeAfterTDSettings();
+    }
+  }
+
+  private resumeAfterTDSettings(): void {
+    if (!this.tdPausedForSettings) return;
+    this.tdPausedForSettings = false;
+    if (this.playStyle === 'td') this.setPaused(false);
+  }
+
+  /** タワーディフェンス中のキー操作 */
+  private handleTDKey(e: KeyboardEvent): void {
+    if (e.code.startsWith('Digit')) {
+      const n = Number(e.code.replace('Digit', '')) - 1;
+      if (n < 0) return;
+      if (this.tdHud.chooseIndex(n)) return;
+      this.tdHud.deployIndex(n);
+    } else if (e.code === 'KeyP') {
+      this.setPaused(!this.paused);
+    } else if (e.code === 'KeyF') {
+      this.cycleFastForward();
+    } else if (e.code === 'KeyW' || e.code === 'Tab') {
+      e.preventDefault();
+      this.tdHud.setRoomOpen(!this.tdHud.isRoomOpen);
+    } else if (e.code === 'Escape') {
+      if (this.view.isFollowingUnit) this.view.setFollowedUnit(null);
+      else if (this.tdHud.isRoomOpen) this.tdHud.setRoomOpen(false);
+    }
   }
 
   /** チャレンジの新しいランを開始する */
@@ -2927,6 +3115,16 @@ export class GameApp {
 
   /** 戦場の宝箱を開ける。戦闘を止めてボーナス演出へ進む */
   private openDroppedChest(chest: DroppedChest): void {
+    if (this.playStyle === 'td') {
+      // タワーディフェンスは時間を止めず、中身をその場で適用する
+      if (!this.td || this.battle.result() !== null) return;
+      this.droppedChests.remove(chest);
+      const rewards = this.td.openChest(this.battle, chest.tier);
+      this.tdHud.showChestRewards(rewards);
+      this.sound.playJackpotCoin();
+      this.view.addCameraShake(0.2);
+      return;
+    }
     if (!this.rogue || this.jackpotBusy || this.battle.result() !== null) return;
     const ndc = chest.position.clone().project(this.view.camera);
     const origin = { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight };
@@ -2949,7 +3147,8 @@ export class GameApp {
   /** 戦場の宝箱を動かす。ローグライトの戦闘から離れたら片付ける */
   private updateDroppedChests(realDt: number): void {
     if (!this.droppedChestsField) return;
-    if (this.mode !== 'battle' || this.onTitleScreen || this.playStyle !== 'roguelite') this.droppedChestsField.clear();
+    const chestMode = this.playStyle === 'roguelite' || this.playStyle === 'td';
+    if (this.mode !== 'battle' || this.onTitleScreen || !chestMode) this.droppedChestsField.clear();
     else this.droppedChestsField.update(realDt);
   }
 
@@ -4684,6 +4883,7 @@ export class GameApp {
     }
 
     if (this.isRogueModalOpen()) this.unitPreviews?.update(realDt);
+    if (this.playStyle === 'td' && !this.onTitleScreen) this.tdHud.update(realDt);
 
     if (this.onTitleScreen) {
       this.updateTitleDemo(realDt);
@@ -4847,6 +5047,11 @@ export class GameApp {
 
     if (this.playStyle === 'roguelite') {
       this.handleRogueBattleEnd(res);
+      return;
+    }
+
+    if (this.playStyle === 'td') {
+      this.handleTDBattleEnd(res);
       return;
     }
 

@@ -52,6 +52,8 @@ export interface UnitContext {
   spawnSplitSlime(parent: Unit, x: number, z: number, splitGen: number): Unit;
   /** ユニットが死亡したとき（レリックの転生・復活・爆発などに使う） */
   onUnitDied?(unit: Unit): void;
+  /** 敵の施設のほうが敵兵より近ければ施設を狙う（タワーディフェンスの基地攻め） */
+  readonly preferCloserFacility?: boolean;
 }
 
 const UP = new Vector3(0, 1, 0);
@@ -640,6 +642,18 @@ export class Unit {
         this.targetFacility = this.findNearestEnemyFacility(ctx.facilities);
       } else {
         this.targetFacility = null;
+        if (this.target && ctx.facilities && ctx.preferCloserFacility) {
+          const fac = this.findNearestEnemyFacility(ctx.facilities);
+          const p = this.pelvis.pos;
+          if (fac) {
+            const facGap = Math.max(0, Math.hypot(fac.pos.x - p.x, fac.pos.z - p.z) - fac.radius);
+            const unitDist = Math.hypot(this.target.pelvis.pos.x - p.x, this.target.pelvis.pos.z - p.z);
+            if (facGap < unitDist) {
+              this.target = null;
+              this.targetFacility = fac;
+            }
+          }
+        }
       }
       this.retargetTimer = 0.4 + Math.random() * 0.4;
     }
@@ -883,7 +897,7 @@ export class Unit {
     let bestD = Infinity;
     const p = this.pelvis.pos;
     for (const f of facilities) {
-      if (!f.alive || f.isTerrain || f.team === this.team) continue;
+      if (!f.alive || f.isTerrain || f.invulnerable || f.team === this.team) continue;
       const d = (f.pos.x - p.x) ** 2 + (f.pos.z - p.z) ** 2;
       if (d < bestD) {
         bestD = d;

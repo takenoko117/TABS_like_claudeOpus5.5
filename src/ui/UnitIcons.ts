@@ -911,6 +911,16 @@ function gateIconSvg(color: string, label: string): string {
 
 export function getFacilityIconSvg(facilityId: FacilityTypeId): string {
   switch (facilityId) {
+    case 'hq':
+      // 基地: 城壁と塔
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="4" y="14" width="28" height="18" fill="#5b5f6a" stroke="#2e3138" stroke-width="1"/>
+        <rect x="3" y="8" width="8" height="24" fill="#686c78"/>
+        <rect x="25" y="8" width="8" height="24" fill="#686c78"/>
+        <rect x="14" y="22" width="8" height="10" fill="#2a1d14"/>
+        <rect x="17" y="2" width="1.5" height="12" fill="#d9d3c3"/>
+        <polygon points="18.5,2 26,4.5 18.5,7" fill="#e0473a"/>
+      </svg>`;
     case 'barracks':
       // 召喚ポータル: 古代の石柱と渦巻く魔力コア
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">

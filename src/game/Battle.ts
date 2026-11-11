@@ -46,6 +46,8 @@ export interface BattleRules {
   onStepEnd?(battle: Battle, dt: number): void;
   /** 召喚ポータルが呼び出せる兵種（null なら標準の雑兵） */
   summonPoolFor?(team: Team): readonly UnitTypeId[] | null;
+  /** 勝敗判定を差し替える（undefined を返すと標準の判定。null なら決着前） */
+  resolveResult?(battle: Battle): BattleResult | undefined;
 }
 
 /** 開戦時に戦闘の前へ差し込む演出。続いている間は update が true を返す */
@@ -77,6 +79,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   timeLimitSeconds: number | null = null;
   /** ステージ限定ルール: 基本攻撃力倍率補正 */
   baseDamageMul = 1.0;
+  /** 敵の施設のほうが敵兵より近ければ施設を狙う（タワーディフェンス） */
+  preferCloserFacility = false;
   /** ステージ限定ルール: 基本移動速度倍率補正 */
   baseSpeedMul = 1.0;
   /** ステージ固有状態異常（31面〜） */
@@ -363,6 +367,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.baseDamageMul = config.damageMultiplier ?? 1.0;
     this.baseSpeedMul = config.speedMultiplier ?? 1.0;
     this.hazardConfig = config.hazard ?? null;
+    this.preferCloserFacility = false;
   }
 
   /** 戦闘を開始する。配置中に進んだ時間は制限時間に含めない */
@@ -726,6 +731,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
 
   /** 勝敗判定（2〜4陣営対応。決着前は null） */
   result(): BattleResult {
+    const custom = this.rules?.resolveResult?.(this);
+    if (custom !== undefined) return custom;
     const allTeams: readonly Team[] = [0, 1, 2, 3];
     const aliveTeams = allTeams.filter((t) => this.isTeamAlive(t));
 

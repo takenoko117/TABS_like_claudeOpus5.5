@@ -73,6 +73,12 @@ export interface FacilitySpawnOptions {
   enchantWidth?: number;
   /** 門以外のレリックのレベル（0 始まり） */
   relicLevel?: number;
+  /** 攻撃を受けず、敵の標的にもならない（タワーディフェンスの基地出口の門やレリック） */
+  invulnerable?: boolean;
+  /** 自分の効果を発揮しない見た目だけの施設（門の効果をモード側で処理するとき） */
+  inert?: boolean;
+  /** 耐久力を指定する（省略すると種類とレベルで決まる） */
+  hp?: number;
 }
 
 /** 進軍門が配置位置まで滑る時間（秒） */
@@ -150,6 +156,10 @@ export class Facility {
   marchOpacity = 0.9;
   /** 門以外のレリックのレベル（0 始まり） */
   readonly relicLevel: number;
+  /** 攻撃を受けず、敵の標的にもならない */
+  readonly invulnerable: boolean;
+  /** 自分の効果を発揮しない（見た目だけ） */
+  readonly inert: boolean;
 
   constructor(
     typeId: FacilityTypeId,
@@ -170,8 +180,11 @@ export class Facility {
     this.marchHomeX = x;
     this.enchantWidth = this.isGate ? (opts?.enchantWidth ?? null) : null;
     this.relicLevel = this.isGate ? 0 : Math.max(0, Math.min(MAX_GATE_LEVEL, Math.floor(opts?.relicLevel ?? 0)));
-    this.hp = this.isGate ? GATE_HP_BY_LEVEL[this.gateLevel] : this.type.hp * RELIC_HP_BY_LEVEL[this.relicLevel];
+    this.hp =
+      opts?.hp ?? (this.isGate ? GATE_HP_BY_LEVEL[this.gateLevel] : this.type.hp * RELIC_HP_BY_LEVEL[this.relicLevel]);
     this.maxHp = this.hp;
+    this.invulnerable = Boolean(opts?.invulnerable);
+    this.inert = Boolean(opts?.inert);
 
     // 前方向・右方向ベクトル
     this.forward.set(Math.sin(facing), 0, Math.cos(facing));
@@ -339,7 +352,7 @@ export class Facility {
 
   /** ダメージを受ける。地形ブロックは無敵（破壊不可） */
   takeDamage(damage: number, attacker?: Unit): boolean {
-    if (!this.alive || this.isTerrain) return false;
+    if (!this.alive || this.isTerrain || this.invulnerable) return false;
     const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
     if (creditsAttacker) attacker.damageDealt += Math.min(damage, this.hp);
     this.hp = Math.max(0, this.hp - damage);
@@ -365,7 +378,7 @@ export class Facility {
     if (this.hitFlash > 0) {
       this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
     }
-    if (!this.alive) return;
+    if (!this.alive || this.inert) return;
 
     switch (this.type.id) {
       case 'barracks':

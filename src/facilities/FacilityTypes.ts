@@ -20,6 +20,7 @@ export type FacilityTypeId =
   | 'samsara_gate'
   | 'blast_gate'
   | 'magnet_gate'
+  | 'hq'
   | 'terrain_wall'
   | 'terrain_slope'
   | 'terrain_pit';
@@ -65,6 +66,8 @@ export interface FacilityType {
   isTerrain?: boolean;
   /** ローグライトのレリック専用の施設（アーケード・チャレンジの兵種バーと敵編成には出さない） */
   relicOnly?: boolean;
+  /** 特定のモード専用の施設（配置パレットや施設の一覧には出さない） */
+  modeOnly?: boolean;
 }
 
 /** 施設・地形ブロックの一覧定義 */
@@ -265,6 +268,16 @@ export const FACILITY_TYPES: Readonly<Record<FacilityTypeId, FacilityType>> = {
     height: 2.8,
     relicOnly: true,
   },
+  hq: {
+    id: 'hq',
+    name: '基地',
+    description: 'タワーディフェンスモードの本拠地。破壊されると負けになる。',
+    cost: 1000,
+    hp: 5000,
+    radius: 2.4,
+    height: 4.2,
+    modeOnly: true,
+  },
   terrain_wall: {
     id: 'terrain_wall',
     name: '防壁ブロック（壁）',
@@ -297,7 +310,7 @@ export const FACILITY_TYPES: Readonly<Record<FacilityTypeId, FacilityType>> = {
   },
 };
 
-export const FACILITY_TYPE_LIST: readonly FacilityType[] = Object.values(FACILITY_TYPES);
+export const FACILITY_TYPE_LIST: readonly FacilityType[] = Object.values(FACILITY_TYPES).filter((f) => !f.modeOnly);
 
 /** 防衛施設（地形ブロックを除く）の一覧 */
 export const COMBAT_FACILITY_TYPE_LIST: readonly FacilityType[] = FACILITY_TYPE_LIST.filter(

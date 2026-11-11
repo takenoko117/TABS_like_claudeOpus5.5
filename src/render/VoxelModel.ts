@@ -6450,6 +6450,49 @@ export function buildFacilityVoxelGrid(typeId: FacilityTypeId, team: Team): { gr
       return { grid: g, voxelSize };
     }
 
+    case 'hq': {
+      // 基地: 石の城壁に四隅の塔、中央の天守と旗
+      const sx = 36;
+      const sy = 34;
+      const sz = 36;
+      const voxelSize = 0.13;
+      const g = new VoxelGrid(sx, sy, sz);
+      const stone = [0x5b5f6a, 0x686c78, 0x52565f];
+      const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, col: (x: number, y: number, z: number) => number) => {
+        for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) g.set(x, y, z, col(x, y, z));
+      };
+      const stoneAt = (x: number, y: number, z: number) => stone[(x * 7 + y * 3 + z * 5) % 3];
+      // 土台と城壁
+      box(1, 0, 1, 34, 1, 34, () => 0x3a3d46);
+      box(3, 2, 3, 32, 12, 32, (x, y, z) => (y === 12 ? primary : stoneAt(x, y, z)));
+      // 城壁の上の凹凸
+      for (let i = 3; i <= 32; i += 3) {
+        box(i, 13, 3, i, 14, 3, stoneAt);
+        box(i, 13, 32, i, 14, 32, stoneAt);
+        box(3, 13, i, 3, 14, i, stoneAt);
+        box(32, 13, i, 32, 14, i, stoneAt);
+      }
+      // 四隅の塔
+      for (const [tx, tz] of [
+        [1, 1],
+        [28, 1],
+        [1, 28],
+        [28, 28],
+      ]) {
+        box(tx, 2, tz, tx + 6, 20, tz + 6, (x, y, z) => (y % 6 === 0 ? accent : stoneAt(x, y, z)));
+        box(tx + 1, 21, tz + 1, tx + 5, 22, tz + 5, () => primary);
+        box(tx + 2, 23, tz + 2, tx + 4, 24, tz + 4, () => primary);
+      }
+      // 中央の天守
+      box(11, 13, 11, 24, 24, 24, (x, y, z) => (y === 24 ? primary : stoneAt(x, y, z)));
+      box(13, 25, 13, 22, 27, 22, () => primary);
+      // 旗
+      box(17, 28, 17, 18, 33, 18, () => 0xd9d3c3);
+      box(19, 30, 17, 23, 33, 18, () => accent);
+      // 正面の門（+X 側が前）
+      box(32, 2, 14, 32, 8, 21, () => 0x2a1d14);
+      return { grid: g, voxelSize };
+    }
     case 'terrain_wall': {
       // 防壁ブロック（壁）: 横幅約3.0m・高さ2.6mの重厚な石造り城壁・銃眼（クレネル）付き
       const sx = 32;
