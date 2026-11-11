@@ -3749,6 +3749,25 @@ body.war-room-open #coach { display: none !important; }
   font-variant-numeric: tabular-nums;
 }
 
+/* 敵ユニットのレベル表示 */
+.wr-enemy-lv,
+.wr-enemy-summary-lv {
+  color: #ffb84d;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.wr-enemy-summary-lv b {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.wr-enemy-lv.is-max,
+.wr-enemy-summary-lv.is-max {
+  color: #ff5a5a;
+}
+
 .wr-enemy-summary-hint {
   width: 100%;
   color: var(--sub);

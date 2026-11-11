@@ -1036,13 +1036,54 @@ export function isRogueHardMode(round: number): boolean {
   return round >= ROGUE_HARD_START_ROUND;
 }
 
-/** ラウンドの敵予算（エリートは +15%、ハードモードはさらに +25%） */
-export function getRogueEnemyBudget(round: number): number {
+/** 敵予算全体に掛ける倍率（自軍は強化を重ねられるため、敵の物量を底上げする） */
+export const ROGUE_ENEMY_BUDGET_MUL = 2;
+
+/** 倍率を掛ける前の敵予算（エリートは +15%、ハードモードはさらに +25%）。出せる兵種の上限の基準にも使う */
+function getRogueBaseEnemyBudget(round: number): number {
   const r = Math.max(1, round) - 1;
   const base = 500 + 180 * r + 14 * r * r;
   const eliteMul = ROGUE_ELITE_ROUNDS.includes(round) ? 1.15 : 1;
   const hardMul = isRogueHardMode(round) ? ROGUE_HARD_BUDGET_MUL : 1;
-  return Math.round((base * eliteMul * hardMul) / 50) * 50;
+  return base * eliteMul * hardMul;
+}
+
+/** ラウンドの敵予算（基準予算 × ROGUE_ENEMY_BUDGET_MUL） */
+export function getRogueEnemyBudget(round: number): number {
+  return Math.round((getRogueBaseEnemyBudget(round) * ROGUE_ENEMY_BUDGET_MUL) / 50) * 50;
+}
+
+/** 通常ラウンドで敵ユニット1体がレベルアップしている確率（ラウンドが進むほど上がる） */
+export function getRogueEnemyLevelUpChance(round: number): number {
+  return Math.min(0.85, Math.max(0, round - 1) * 0.035);
+}
+
+/** 通常ラウンドで強化された敵ユニットがなれる最大レベル（1〜7面 Lv2、8〜14面 Lv3、15〜21面 Lv4、22面〜 Lv5） */
+export function getRogueEnemyMaxLevel(round: number): number {
+  return Math.min(ROGUE_MAX_UNIT_LEVEL, 2 + Math.floor(Math.max(0, round - 1) / 7));
+}
+
+/** エリート戦・ボス戦（5の倍数の面）は敵ユニットが全員フル強化で登場する */
+export function isRogueFullPowerEnemyRound(round: number): boolean {
+  return getRogueRoundKind(round) !== 'normal';
+}
+
+/** 敵編成のユニットにレベルを付ける（シード固定で決定的） */
+function applyRogueEnemyLevels(lineup: VersusPlacedRecord[], round: number, seed: number): void {
+  if (isRogueFullPowerEnemyRound(round)) {
+    for (const r of lineup) if (r.typeId) r.level = ROGUE_MAX_UNIT_LEVEL;
+    return;
+  }
+  const chance = getRogueEnemyLevelUpChance(round);
+  if (chance <= 0) return;
+  const maxLevel = getRogueEnemyMaxLevel(round);
+  const rng = createSeededRng(Math.imul(seed ^ 0x2c1b3c6d, 31) + round * 7919);
+  for (const r of lineup) {
+    if (!r.typeId) continue;
+    if (rng() >= chance) continue;
+    // 2〜maxLevel の間で、後半ほど高いレベルに寄る
+    r.level = 2 + Math.floor(Math.sqrt(rng()) * (maxLevel - 1));
+  }
 }
 
 export type RogueRoundKind = 'normal' | 'elite' | 'boss';
@@ -1069,7 +1110,7 @@ export const ROGUE_ENEMY_UNIT_COST_RATIO = 0.3;
 
 /** そのラウンドの敵に出せる兵種 */
 export function getRogueEnemyPool(round: number): UnitTypeId[] {
-  const cap = Math.max(150, getRogueEnemyBudget(round) * ROGUE_ENEMY_UNIT_COST_RATIO);
+  const cap = Math.max(150, getRogueBaseEnemyBudget(round) * ROGUE_ENEMY_UNIT_COST_RATIO);
   return ROGUE_ENEMY_POOL.filter((id) => UNIT_TYPES[id].cost <= cap);
 }
 
@@ -1085,9 +1126,11 @@ export function generateRogueEnemyLineup(round: number, seed: number): VersusPla
   const isHard = isRogueHardMode(round);
 
   if (!isBoss && !isHard) {
-    return generateEnemyLineupWithBudget(round, seed ^ 0x5bd1e995, pool, budget, {
+    const lineup = generateEnemyLineupWithBudget(round, seed ^ 0x5bd1e995, pool, budget, {
       facilityStartRound: 6,
     });
+    applyRogueEnemyLevels(lineup, round, seed);
+    return lineup;
   }
 
   const forcedUnits: UnitTypeId[] = [];
@@ -1137,6 +1180,7 @@ export function generateRogueEnemyLineup(round: number, seed: number): VersusPla
     const boss = lineup.find((r) => r.typeId === bossId);
     if (boss) boss.boss = true;
   }
+  applyRogueEnemyLevels(lineup, round, seed);
   return lineup;
 }
 

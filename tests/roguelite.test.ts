@@ -318,11 +318,41 @@ describe('ローグライト: 進軍門', () => {
 });
 
 describe('ローグライト: ランの進行', () => {
-  it('敵予算は式どおりに増え、エリートは15%多い', () => {
-    expect(getRogueEnemyBudget(1)).toBe(500);
-    expect(getRogueEnemyBudget(4)).toBe(Math.round((500 + 540 + 126) / 50) * 50);
-    expect(getRogueEnemyBudget(5)).toBe(Math.round(((500 + 720 + 224) * 1.15) / 50) * 50);
+  it('敵予算は式どおりに増え（全体2倍）、エリートは15%多い', () => {
+    expect(getRogueEnemyBudget(1)).toBe(1000);
+    expect(getRogueEnemyBudget(4)).toBe(Math.round(((500 + 540 + 126) * 2) / 50) * 50);
+    expect(getRogueEnemyBudget(5)).toBe(Math.round(((500 + 720 + 224) * 1.15 * 2) / 50) * 50);
     expect(getRogueEnemyBudget(15)).toBeGreaterThan(getRogueEnemyBudget(14));
+  });
+
+  it('敵ユニットはラウンドが進むほど強化されやすく、エリート・ボス戦は全員フル強化', async () => {
+    const { getRogueEnemyLevelUpChance, ROGUE_MAX_UNIT_LEVEL } = await import('../src/game/RogueliteMode');
+    expect(getRogueEnemyLevelUpChance(1)).toBe(0);
+    expect(getRogueEnemyLevelUpChance(12)).toBeGreaterThan(getRogueEnemyLevelUpChance(4));
+    // 1面は強化なし
+    expect(generateRogueEnemyLineup(1, 3).every((r) => !r.level || r.level === 1)).toBe(true);
+    // 強化ユニットの割合は後半ほど増える
+    const leveledRatio = (round: number) => {
+      let units = 0;
+      let leveled = 0;
+      for (let s = 1; s <= 20; s++) {
+        for (const r of generateRogueEnemyLineup(round, s)) {
+          if (!r.typeId) continue;
+          units++;
+          if ((r.level ?? 1) > 1) leveled++;
+        }
+      }
+      return leveled / units;
+    };
+    expect(leveledRatio(14)).toBeGreaterThan(leveledRatio(3));
+    // 5・10・15面（エリート・ボス）はユニット全員が最大レベル
+    for (const round of [5, 10, 15, 20, 25, 30]) {
+      const units = generateRogueEnemyLineup(round, 11).filter((r) => r.typeId);
+      expect(units.length).toBeGreaterThan(0);
+      expect(units.every((r) => r.level === ROGUE_MAX_UNIT_LEVEL)).toBe(true);
+    }
+    // 通常ラウンドは最大レベル未満（序盤）
+    expect(generateRogueEnemyLineup(4, 11).every((r) => (r.level ?? 1) <= 2)).toBe(true);
   });
 
   it('敵編成は同じシードなら同じで、予算を超えない', () => {

@@ -103,6 +103,7 @@ import {
   RogueGateSequence,
   getSquadSize,
   getUnitLevelMul,
+  ROGUE_MAX_UNIT_LEVEL,
   getUnitSlotCost,
   ROGUE_ELITE_ROUNDS,
   type RogueCard,
@@ -3308,24 +3309,45 @@ export class GameApp {
   }
 
   /** 作戦室の左カラム。敵の兵種を1枚ずつのカードで並べる */
-  private renderRogueEnemyCards(enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId }>): string {
+  private renderRogueEnemyCards(
+    enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId; level?: number }>,
+  ): string {
     const units = new Map<UnitTypeId, number>();
+    const unitLevels = new Map<UnitTypeId, { min: number; max: number }>();
     const facilities = new Map<FacilityTypeId, number>();
     for (const e of enemies) {
       if (e.facilityId) facilities.set(e.facilityId, (facilities.get(e.facilityId) ?? 0) + 1);
-      else if (e.typeId) units.set(e.typeId, (units.get(e.typeId) ?? 0) + 1);
+      else if (e.typeId) {
+        units.set(e.typeId, (units.get(e.typeId) ?? 0) + 1);
+        const lv = e.level ?? 1;
+        const cur = unitLevels.get(e.typeId);
+        unitLevels.set(e.typeId, cur ? { min: Math.min(cur.min, lv), max: Math.max(cur.max, lv) } : { min: lv, max: lv });
+      }
     }
-    const card = (detailId: string, icon: string, theme: { bg: string; border: string }, name: string, desc: string, count: number) => `
+    const card = (
+      detailId: string,
+      icon: string,
+      theme: { bg: string; border: string },
+      name: string,
+      desc: string,
+      count: number,
+      lvLabel = '',
+    ) => `
       <button type="button" class="wr-enemy" data-enemy-detail="${detailId}" data-enemy-count="${count}" aria-label="${name}の詳細">
         <span class="wr-enemy-tile" style="background:${theme.bg};border-color:${theme.border}">${icon}</span>
-        <span class="wr-enemy-text"><b>${name}</b><small>${desc}</small></span>
+        <span class="wr-enemy-text"><b>${name}${lvLabel}</b><small>${desc}</small></span>
         <span class="wr-enemy-count">×${count}</span>
       </button>`;
     const unitCards = [...units.entries()]
       .sort((a, b) => UNIT_TYPES[b[0]].cost - UNIT_TYPES[a[0]].cost)
       .map(([id, count]) => {
         const u = UNIT_TYPES[id];
-        return card(id, getUnitIconSvg(id), CATEGORY_THEME_COLORS[u.category], u.name, u.description, count);
+        const lv = unitLevels.get(id) ?? { min: 1, max: 1 };
+        const lvText = lv.max <= 1 ? '' : lv.min === lv.max ? `Lv${lv.max}` : `Lv${lv.min}〜${lv.max}`;
+        const lvLabel = lvText
+          ? ` <span class="wr-enemy-lv${lv.max >= ROGUE_MAX_UNIT_LEVEL ? ' is-max' : ''}">${lvText}</span>`
+          : '';
+        return card(id, getUnitIconSvg(id), CATEGORY_THEME_COLORS[u.category], u.name, u.description, count, lvLabel);
       });
     const facilityCards = [...facilities.entries()].map(([id, count]) => {
       const f = FACILITY_TYPES[id];
@@ -3335,7 +3357,11 @@ export class GameApp {
   }
 
   /** 作戦室の「次の敵」のサマリ。コストの高い3体のアイコン、残りの体数、合計コストだけを出す */
-  private renderRogueEnemySummary(enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId }>): string {
+  private renderRogueEnemySummary(
+    enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId; level?: number }>,
+  ): string {
+    const leveled = enemies.filter((e) => e.typeId && (e.level ?? 1) > 1);
+    const allMax = leveled.length > 0 && enemies.every((e) => !e.typeId || (e.level ?? 1) >= ROGUE_MAX_UNIT_LEVEL);
     const items = enemies
       .map((e) => {
         if (e.facilityId) {
@@ -3364,6 +3390,13 @@ export class GameApp {
         <span class="wr-enemy-summary-icons">${top}</span>
         ${rest > 0 ? `<span class="wr-enemy-summary-rest">他 <b>${rest}</b> 体</span>` : ''}
         <span class="wr-enemy-summary-cost">合計コスト <b>${total.toLocaleString()}</b></span>
+        ${
+          allMax
+            ? `<span class="wr-enemy-summary-lv is-max">全員フル強化 <b>Lv${ROGUE_MAX_UNIT_LEVEL}</b></span>`
+            : leveled.length > 0
+              ? `<span class="wr-enemy-summary-lv">強化ユニット <b>${leveled.length}</b> 体</span>`
+              : ''
+        }
         <span class="wr-enemy-summary-hint">▼ タップで全て表示</span>
       </button>`;
   }
