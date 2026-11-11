@@ -1279,6 +1279,82 @@ export class SoundManager {
         osc.stop(t + 0.92);
         break;
       }
+      case 'tanimon_reach': {
+        if (!this.throttle('tanimon_reach', 60)) return;
+        // 腕が伸びる「ビュン」
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(260, t);
+        osc.frequency.exponentialRampToValueAtTime(900, t + 0.14);
+        g.gain.setValueAtTime(0.14, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.17);
+        break;
+      }
+      case 'tanimon_grab': {
+        if (!this.throttle('tanimon_grab', 60)) return;
+        // 頭をつかむ「ガシッ」
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.06);
+        g.gain.setValueAtTime(0.16, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.08);
+        break;
+      }
+      case 'tanimon_impact': {
+        if (!this.throttle('tanimon_impact', 50)) return;
+        // 激突の重い衝撃音。連鎖が続くほど音程を上げる
+        const pitch = 1 + Math.min(8, e.chain - 1) * 0.08;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(130 * pitch, t);
+        osc.frequency.exponentialRampToValueAtTime(34, t + 0.24);
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.27);
+        const crack = ctx.createOscillator();
+        const cg = ctx.createGain();
+        crack.type = 'sawtooth';
+        crack.frequency.setValueAtTime(520 * pitch, t);
+        crack.frequency.exponentialRampToValueAtTime(120, t + 0.09);
+        cg.gain.setValueAtTime(0.18, t);
+        cg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        crack.connect(cg);
+        cg.connect(this.masterGain);
+        crack.start(t);
+        crack.stop(t + 0.11);
+        break;
+      }
+      case 'tanimon_leap': {
+        if (!this.throttle('tanimon_leap', 120)) return;
+        // 大跳躍の「ビョーン」
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(520, t + 0.35);
+        g.gain.setValueAtTime(0.16, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.42);
+        break;
+      }
       case 'mouth_laser': {
         if (!this.throttle('hayato_beam', e.isInitial ? 60 : 120)) return;
         const osc = ctx.createOscillator();

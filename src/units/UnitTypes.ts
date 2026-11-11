@@ -43,7 +43,8 @@ export type AttackStyle =
   | 'piano_performance'
   | 'dragon_twister'
   | 'psychic'
-  | 'mouth_laser';
+  | 'mouth_laser'
+  | 'grab_chain';
 
 export type WeaponKind = 'sword' | 'club' | 'spear' | 'bigclub' | 'axe' | 'staff' | 'katana' | 'tusks';
 export type UnitCategory = 'standard' | 'magic' | 'modern' | 'japanese' | 'animal' | 'mythical' | 'divine';
@@ -124,7 +125,8 @@ export type UnitTypeId =
   | 'zaisan'
   | 'lightspeed_ant'
   | 'deoxys'
-  | 'hayato';
+  | 'hayato'
+  | 'tanimon';
 
 export const CATEGORY_LABELS: Readonly<Record<UnitCategory, string>> = {
   standard: '基本兵種',
@@ -1053,6 +1055,28 @@ giant_robot: {
     strikeImpulse: 0,
     look: { skin: 0xf0c39c, hair: 0x17151a, helmet: null, hood: null, armor: null, beard: null },
   },
+  tanimon: {
+    id: 'tanimon',
+    name: 'タニモン',
+    category: 'standard',
+    description:
+      '丸太のように太い剛腕を持つ兵士。間合いの敵の頭へ腕を伸ばしてつかみ、自分の体を引き寄せて激突する。近くに敵がいる限り次々とつかんで連鎖し、いなくなると勢いのまま大跳躍して戦場の端まで飛んでいく。',
+    cost: 700,
+    scale: 1.1,
+    massMul: 1.3,
+    hp: 760,
+    speed: 2.5,
+    style: 'grab_chain',
+    weapon: null,
+    projectile: null,
+    range: 8.5,
+    windup: 0.2,
+    strike: 0.7,
+    recover: 0.5,
+    cooldown: 1.4,
+    strikeImpulse: 0,
+    look: { skin: 0xd9a57a, hair: 0x2b1d14, helmet: 0x5b6b3a, hood: null, armor: null, beard: null },
+  },
 };
 
 export const UNIT_TYPE_LIST: readonly UnitType[] = [
@@ -1092,4 +1116,5 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.lightspeed_ant,
   UNIT_TYPES.deoxys,
   UNIT_TYPES.hayato,
+  UNIT_TYPES.tanimon,
 ];

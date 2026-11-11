@@ -48,6 +48,14 @@ import {
 } from './DragonModel';
 import { getHayatoHeadGeometry } from './HayatoHeadModel';
 import {
+  getTanimonFistGeometry,
+  getTanimonForearmGeometry,
+  getTanimonUpperArmGeometry,
+  placeTanimonFist,
+  placeTanimonSegment,
+  tanimonStretchThickness,
+} from './TanimonArmModel';
+import {
   HAYATO_HEAD_HEIGHT,
   HAYATO_HEAD_RISE,
   HAYATO_HOVER_MUL,
@@ -3206,6 +3214,16 @@ const ELEMENT_GLOW: Readonly<Record<'fire' | 'shock' | 'poison', readonly [numbe
 
 /** ハヤトの口レーザーの太さ（scale 1 あたりの半径。白熱芯・光・外周の順） */
 const HAYATO_BEAM_RADII = [0.05, 0.13, 0.26] as const;
+/** タニモンの片腕（上腕・前腕・こぶし） */
+interface TanimonArm {
+  upper: Mesh;
+  fore: Mesh;
+  fist: Mesh;
+}
+const _tanShoulder = new Vector3();
+const _tanElbow = new Vector3();
+const _tanHand = new Vector3();
+const _tanDir = new Vector3();
 const _hayatoCenter = new Vector3();
 const _hayatoMouth = new Vector3();
 const _hayatoQ = new Quaternion();
@@ -3238,6 +3256,8 @@ export class VoxelCharacterVisual {
   private hayatoMouthGlow: Mesh | null = null;
   /** 顔の下で浮力を生む陣営色の輪（敵味方の見分けも兼ねる） */
   private hayatoRing: Mesh | null = null;
+  /** タニモンのローポリの剛腕（ボクセルの腕の代わりに表示する） */
+  private tanimonArms: { l: TanimonArm; r: TanimonArm } | null = null;
   /** ヤマムロン強化モードのオーラ（外炎コーン・内炎コーン・地面の輪・昇る光輪） */
   private readonly yamamuronAura: Mesh[] = [];
   /** 胴体と頭が強化形態のモデルに差し替わっているか */
@@ -3454,6 +3474,24 @@ export class VoxelCharacterVisual {
         new MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.85 }),
       );
       this.group.add(this.hayatoRing);
+    }
+
+    if (unit.type.id === 'tanimon') {
+      this.material.flatShading = true;
+      this.material.needsUpdate = true;
+      const make = (geom: BufferGeometry): Mesh => {
+        const m = new Mesh(geom, this.material);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        this.group.add(m);
+        return m;
+      };
+      const arm = (): TanimonArm => ({
+        upper: make(getTanimonUpperArmGeometry(unit.team)),
+        fore: make(getTanimonForearmGeometry()),
+        fist: make(getTanimonFistGeometry()),
+      });
+      this.tanimonArms = { l: arm(), r: arm() };
     }
 
     if (unit.type.id === 'yamamuron') {
@@ -3923,6 +3961,7 @@ export class VoxelCharacterVisual {
     placeLimb(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos);
     placeLimb(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos);
     placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
+    if (this.tanimonArms) this.syncTanimonArms(this.tanimonArms);
 
     // 近接武器・右手武器（右前腕が破壊されたら非表示）
     if (this.weaponMesh) {
@@ -3952,6 +3991,47 @@ export class VoxelCharacterVisual {
     }
 
     this.updateMaterialStatus();
+  }
+
+  /**
+   * タニモンの剛腕を置く。ボクセルの腕は当たり判定と部位破壊のために残し、表示だけ差し替える。
+   * 右腕は攻撃中、敵の頭（unit.tanimonHand）まで前腕を伸ばす。伸びるほど前腕は細くなる。
+   */
+  private syncTanimonArms(arms: { l: TanimonArm; r: TanimonArm }): void {
+    const u = this.unit;
+    const P = u.joints;
+    const s = u.scale;
+    for (const id of ['upperArmL', 'forearmL', 'upperArmR', 'forearmR'] as const) this.parts[id].mesh.visible = false;
+    for (const isR of [false, true]) {
+      const arm = isR ? arms.r : arms.l;
+      const side = isR ? 1 : -1;
+      const upperPart = this.parts[isR ? 'upperArmR' : 'upperArmL'];
+      const forePart = this.parts[isR ? 'forearmR' : 'forearmL'];
+      // 太い腕が胴にめり込まないよう、肩・肘・手を体の外へずらす
+      _tanShoulder.copy(P[isR ? J.ShoulderR : J.ShoulderL].pos).addScaledVector(u.rightDir, side * 0.07 * s);
+      _tanShoulder.y -= 0.02 * s;
+      _tanElbow.copy(P[isR ? J.ElbowR : J.ElbowL].pos).addScaledVector(u.rightDir, side * 0.06 * s);
+      const reach = isR ? u.tanimonReach : 0;
+      if (reach > 0.001) {
+        // こぶしの中心が頭に重なるよう、手首はつかむ点の少し手前に置く
+        _tanDir.subVectors(u.tanimonHand, _tanElbow);
+        const len = _tanDir.length();
+        _tanHand.copy(u.tanimonHand);
+        if (len > 1e-4) _tanHand.addScaledVector(_tanDir, (-0.09 * s) / len);
+      } else {
+        _tanHand.copy(P[isR ? J.HandR : J.HandL].pos).addScaledVector(u.rightDir, side * 0.05 * s);
+      }
+      arm.upper.visible = !upperPart.destroyed;
+      arm.fore.visible = !upperPart.destroyed && !forePart.destroyed;
+      arm.fist.visible = arm.fore.visible;
+      // 節の +X は右腕で体の外側を向くので、左腕は左右反転して置く
+      placeTanimonSegment(arm.upper, _tanShoulder, _tanElbow, u.forward, s, !isR);
+      const foreLen = _tanElbow.distanceTo(_tanHand);
+      placeTanimonSegment(arm.fore, _tanElbow, _tanHand, u.forward, s * tanimonStretchThickness(foreLen, s), !isR);
+      _tanDir.subVectors(_tanHand, _tanElbow);
+      // つかむ手は大きく開いて見えるよう、伸ばしている間だけ大きくする
+      placeTanimonFist(arm.fist, _tanHand, _tanDir, u.forward, s * (1 + 0.45 * reach), !isR);
+    }
   }
 
   /** ドラゴンが火炎ブレスを 1 発吐いたことを通知する（火炎ジェットの向き・表示時間を更新） */

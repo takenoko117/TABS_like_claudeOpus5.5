@@ -836,6 +836,23 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <ellipse cx="24" cy="37" rx="7" ry="5.5" fill="#54161a" stroke="#b05a4c" stroke-width="1.4"/>
         <rect x="19" y="32.8" width="10" height="2.2" fill="#fbf6e8"/>
       </svg>`;
+    case 'tanimon':
+      // タニモン: 鉄帽の兵士と、肩から盛り上がった巨大な剛腕（右腕は前へ伸ばしてつかむ）
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="12" y="22" width="11" height="11" fill="#c8372d"/>
+        <rect x="13" y="11" width="9" height="11" fill="#d9a57a"/>
+        <path d="M11.5,11 L12.5,6.5 L22.5,6.5 L23.5,11 Z" fill="#5b6b3a"/>
+        <rect x="11" y="10.5" width="13" height="1.6" fill="#46542c"/>
+        <rect x="14.5" y="14" width="1.6" height="1.6" fill="#1a1210"/>
+        <rect x="19" y="14" width="1.6" height="1.6" fill="#1a1210"/>
+        <rect x="15.5" y="18.5" width="4" height="1" fill="#8a5a3c"/>
+        <polygon points="12,22 4,21 1.5,26 3,32 8,34 11,29 12,25" fill="#d9a57a" stroke="#8a5a3c" stroke-width="0.8"/>
+        <polygon points="5,23 9,22.5 8,27 4.5,27" fill="#e8bb92"/>
+        <polygon points="23,21 29,19.5 33,15 35.5,16.5 34,21.5 29,25 23,26" fill="#d9a57a" stroke="#8a5a3c" stroke-width="0.8"/>
+        <polygon points="31.5,11 35.5,12.5 35.5,17 31,17 30,13.5" fill="#d9a57a" stroke="#8a5a3c" stroke-width="0.8"/>
+        <rect x="22.5" y="21" width="3" height="4.5" fill="#c8372d"/>
+        <rect x="9.5" y="21.5" width="3" height="4" fill="#c8372d"/>
+      </svg>`;
     case 'deoxys':
       // デオキシス: 三叉の角状突起・白いフェイスマスク・胸の紫クリスタルコア・DNA二重螺旋腕
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">

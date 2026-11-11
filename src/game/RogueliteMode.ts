@@ -162,6 +162,7 @@ export const UNIT_TAGS: Readonly<Record<UnitTypeId, readonly TagId[]>> = {
   lightspeed_ant: ['swarm', 'mobile'],
   deoxys: ['impact'],
   hayato: ['ranged'],
+  tanimon: ['impact', 'mobile'],
 };
 
 /** シナジーの段階（0 = なし, 2 = 2種ボーナス, 4 = 4種ボーナス） */

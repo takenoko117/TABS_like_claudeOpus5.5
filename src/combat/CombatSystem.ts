@@ -89,6 +89,10 @@ export type CombatEffectEvent =
   | { kind: 'ramiel_beam'; from: Vector3; to: Vector3; isInitial?: boolean }
   | { kind: 'mouth_laser_charge'; pos: Vector3 }
   | { kind: 'mouth_laser'; from: Vector3; to: Vector3; team: Team; isInitial: boolean }
+  | { kind: 'tanimon_reach'; pos: Vector3 }
+  | { kind: 'tanimon_grab'; pos: Vector3; team: Team }
+  | { kind: 'tanimon_impact'; pos: Vector3; scale: number; chain: number }
+  | { kind: 'tanimon_leap'; pos: Vector3; dir: Vector3 }
   | { kind: 'sachiel_pile'; from: Vector3; to: Vector3 }
   | { kind: 'sachiel_cross'; pos: Vector3 }
   | { kind: 'zeruel_charge'; pos: Vector3; progress: number }

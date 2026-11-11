@@ -3,7 +3,7 @@ import type { CombatSystem } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
 import { MELEE_CLEAVE_DAMAGE, MELEE_CLEAVE_RADIUS_PER_RANGE } from '../facilities/FacilityTypes';
 import { DistanceConstraint } from '../physics/Constraint';
-import { PF_RECORD_CONTACT, Particle } from '../physics/Particle';
+import { PF_NO_COLLIDE, PF_RECORD_CONTACT, Particle } from '../physics/Particle';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { HAYATO_HOVER_MUL, hayatoMouthPos } from './HayatoHead';
 import { mountSeatRise } from './Mounting';
@@ -46,6 +46,24 @@ export const HONGON_RANGED_BARRIER = 1000;
 /** ハヤトの口レーザーのダメージ判定の間隔（秒） */
 const MOUTH_LASER_TICK = 0.1;
 const _mouthAim = new Vector3();
+/** タニモン: 引き寄せの速さ・1 回の激突の基本ダメージ・連鎖の上限・大跳躍 */
+const TANIMON_PULL_SPEED = 22;
+export const TANIMON_DAMAGE = 150;
+export const TANIMON_MAX_CHAIN = 12;
+/** 連鎖ごとのダメージ上昇（1 体目は等倍、上限 1.6 倍） */
+const TANIMON_CHAIN_DAMAGE_STEP = 0.1;
+const TANIMON_LEAP_UP_SPEED = 8.5;
+const TANIMON_LEAP_MIN = 4;
+const TANIMON_LEAP_MAX = 36;
+/** 大跳躍の着地点を壁（落下死の場外）から離す距離 */
+const TANIMON_WALL_MARGIN = 2.5;
+const TANIMON_ARENA_MARGIN = 4;
+/** 被弾でこれより筋力が落ちると攻撃が途切れる */
+const TANIMON_MIN_MUSCLE = 0.12;
+/** 大跳躍の踏み切りから、他のユニットをすり抜けて飛び越える時間（秒） */
+const TANIMON_LEAP_PASS_TIME = 0.45;
+const _tanimonPoint = new Vector3();
+const _tanimonVel = new Vector3();
 const YAMAMURON_RAGE_HP_RATIO = 0.5;
 const YAMAMURON_RAGE_ATTACK_RATE = 2;
 const YAMAMURON_RAGE_MAX_TARGETS = 3;
@@ -239,6 +257,21 @@ export class Unit {
   /** 大鷲の鷲掴み対象と残り時間 */
   grabbedUnit: Unit | null = null;
   grabTimer = 0;
+  /** タニモン: 頭をつかもうとしている（つかんでいる）敵と施設 */
+  tanimonGrab: Unit | null = null;
+  tanimonGrabFacility: Facility | null = null;
+  /** タニモン: 伸ばした右手の位置（ワールド座標。描画で右腕をここまで伸ばす） */
+  readonly tanimonHand = new Vector3();
+  /** タニモン: 右腕の伸び具合（0 = 通常の腕, 1 = つかむ点まで伸びきった） */
+  tanimonReach = 0;
+  /** タニモン: 今回の攻撃でつかんだ数（1 から数える） */
+  tanimonChain = 0;
+  /** タニモン: 今回の攻撃で激突させた数 */
+  tanimonHits = 0;
+  /** タニモン: 連鎖が途切れて大跳躍している最中か */
+  tanimonLeaping = false;
+  /** タニモン: 最後に引き寄せた向き（水平・単位ベクトル。大跳躍の向きになる） */
+  readonly tanimonPullDir = new Vector3();
   /** かさね配置: 乗っている土台ユニット（null なら通常の地上ユニット） */
   mountedOn: Unit | null = null;
   fallingFromEagle: Unit | null = null;
@@ -792,6 +825,7 @@ export class Unit {
       st === 'dragon_twister' ||
       st === 'psychic' ||
       st === 'mouth_laser' ||
+      st === 'grab_chain' ||
       st === 'zeruel_cutter'
     ) {
       return this.attackRange;
@@ -842,6 +876,7 @@ export class Unit {
       st === 'dragon_twister' ||
       st === 'psychic' ||
       st === 'mouth_laser' ||
+      st === 'grab_chain' ||
       st === 'zeruel_cutter'
     ) {
       return this.attackRange;
@@ -894,11 +929,24 @@ export class Unit {
       this.psychicFinished = false;
     } else if (id === 'hayato') {
       ctx.combat.emitEffect({ kind: 'mouth_laser_charge', pos: this.head.pos.clone() });
+    } else if (id === 'tanimon') {
+      this.mountedOn = null;
+      this.tanimonGrab = this.target && this.target.alive ? this.target : null;
+      this.tanimonGrabFacility = this.tanimonGrab ? null : this.targetFacility;
+      this.tanimonChain = 1;
+      this.tanimonHits = 0;
+      this.tanimonLeaping = false;
+      this.tanimonHand.copy(this.joints[J.HandR].pos);
+      ctx.combat.emitEffect({ kind: 'tanimon_reach', pos: this.joints[J.ShoulderR].pos.clone() });
     }
   }
 
   /** 攻撃フェーズの進行 */
   private updateAttack(dt: number, ctx: UnitContext): void {
+    if (this.type.style === 'grab_chain') {
+      this.updateGrabChain(dt, ctx);
+      return;
+    }
     if (this.attackPhase === 'none') {
       this.laserActive = false;
       return;
@@ -1540,6 +1588,292 @@ export class Unit {
     this.joints[J.HandR].addVelocity(_tmp, dt);
     _tmp.multiplyScalar(1.3);
     for (const wp of this.weaponParticles) wp.addVelocity(_tmp, dt);
+  }
+
+  // ---------------------------------------------------------------
+  // タニモン: 頭つかみ・引き寄せ激突・連鎖・大跳躍
+  // ---------------------------------------------------------------
+
+  /**
+   * タニモンの攻撃の進行。
+   *  windup  … 右腕を敵の頭まで伸ばす
+   *  strike  … 頭をつかんだまま自分の体を引き寄せ、激突で大ダメージ
+   *  recover … 連鎖が途切れたら、引き寄せた勢いのまま大跳躍して着地を待つ
+   * 激突したとき間合いに別の敵がいれば、すぐ windup に戻って次の頭をつかむ。
+   */
+  private updateGrabChain(dt: number, ctx: UnitContext): void {
+    const phase = this.attackPhase;
+    if (phase === 'none') {
+      this.retractTanimonArm(dt);
+      return;
+    }
+    // つかみかかる前（最初の腕伸ばし）だけ、怯むと中断する。つかんだ後は連鎖が途切れるまで止まらない
+    if (this.tanimonHits === 0 && this.attackPhase === 'windup' && this.muscle < TANIMON_MIN_MUSCLE) {
+      this.finishGrabChain(0.3);
+      return;
+    }
+    this.phaseTime += dt * this.attackRateMul;
+
+    if (phase === 'windup') {
+      const point = this.tanimonGrabPoint(_tanimonPoint);
+      if (!point) {
+        this.afterGrabTargetLost(ctx, dt);
+        return;
+      }
+      this.faceTowards(point, true);
+      const reach = clamp(this.phaseTime / this.type.windup, 0, 1);
+      this.tanimonReach = reach;
+      const eased = 1 - (1 - reach) * (1 - reach);
+      this.tanimonHand.lerpVectors(this.joints[J.HandR].pos, point, eased);
+      if (reach >= 1) {
+        this.attackPhase = 'strike';
+        this.phaseTime = 0;
+        this.tanimonHand.copy(point);
+        ctx.combat.emitEffect({ kind: 'tanimon_grab', pos: point.clone(), team: this.team });
+      }
+      return;
+    }
+
+    if (phase === 'strike') {
+      const point = this.tanimonGrabPoint(_tanimonPoint);
+      if (!point) {
+        this.afterGrabTargetLost(ctx, dt);
+        return;
+      }
+      this.tanimonReach = 1;
+      this.tanimonHand.copy(point);
+      this.faceTowards(point, false);
+      _dir.subVectors(point, this.chest.pos);
+      const dist = _dir.length();
+      const g = this.tanimonGrab;
+      const f = this.tanimonGrabFacility;
+      const otherR = g ? g.bodyRadius : f ? f.radius * 0.6 : 0.3;
+      const contact = this.bodyRadius + otherR + 0.35 * this.scale;
+      const h = Math.hypot(_dir.x, _dir.z);
+      if (h > 0.05) this.tanimonPullDir.set(_dir.x / h, 0, _dir.z / h);
+      if (dist <= contact || this.phaseTime >= this.type.strike) {
+        this.tanimonImpact(ctx, dt);
+        return;
+      }
+      // 腕を縮めて自分の体を一気に引き寄せる（体ごと飛ぶので速度を直接寄せる）
+      _tanimonVel.copy(_dir).multiplyScalar(TANIMON_PULL_SPEED / Math.max(dist, 1e-3));
+      this.blendJointVelocity(_tanimonVel, 0.35, dt);
+      // つかまれた敵はもがけない
+      if (g) g.muscle = Math.min(g.muscle, 0.3);
+      return;
+    }
+
+    // recover
+    this.retractTanimonArm(dt);
+    if (this.tanimonLeaping) {
+      // 踏み切り直後は、激突した相手の体に引っかからないようすり抜ける
+      if (this.phaseTime >= TANIMON_LEAP_PASS_TIME) this.setPassThrough(false);
+      const groundY = ctx.world.getSlopeHeightAt(this.pelvis.pos.x, this.pelvis.pos.z);
+      const landed =
+        this.phaseTime > 0.4 && this.velocity.y <= 0.5 && this.pelvis.pos.y < groundY + PELVIS_HEIGHT * this.scale * 1.25;
+      if (landed || this.phaseTime > 4.5) {
+        if (landed) {
+          ctx.combat.emitEffect({ kind: 'eagle_drop_impact', pos: new Vector3(this.pelvis.pos.x, groundY + 0.05, this.pelvis.pos.z) });
+        }
+        this.finishGrabChain(this.type.cooldown * (0.8 + Math.random() * 0.4));
+      }
+    } else if (this.phaseTime >= this.type.recover) {
+      this.finishGrabChain(this.type.cooldown * (0.8 + Math.random() * 0.4));
+    }
+  }
+
+  /** つかむ点（敵の頭、施設なら上部）。つかむ相手がいなくなっていれば null */
+  private tanimonGrabPoint(out: Vector3): Vector3 | null {
+    const g = this.tanimonGrab;
+    if (g) return g.alive ? out.copy(g.head.pos) : null;
+    const f = this.tanimonGrabFacility;
+    if (f && f.alive) return out.set(f.pos.x, Math.max(0.6, f.height * 0.75), f.pos.z);
+    return null;
+  }
+
+  private faceTowards(point: Vector3, snap: boolean): void {
+    const dx = point.x - this.pelvis.pos.x;
+    const dz = point.z - this.pelvis.pos.z;
+    if (dx * dx + dz * dz < 1e-4) return;
+    this.desiredFacing = Math.atan2(dx, dz);
+    if (snap) {
+      this.facing = this.desiredFacing;
+      this.updateFrame();
+    }
+  }
+
+  /** 全関節の速度を target へ rate の割合だけ寄せる */
+  private blendJointVelocity(target: Vector3, rate: number, dt: number): void {
+    for (const p of this.joints) {
+      p.getVelocity(dt, _vel).lerp(target, rate);
+      p.prev.copy(p.pos).addScaledVector(_vel, -dt);
+    }
+  }
+
+  /** 頭をつかんだ相手に激突する */
+  private tanimonImpact(ctx: UnitContext, dt: number): void {
+    const g = this.tanimonGrab;
+    const f = this.tanimonGrabFacility;
+    const chainMul = Math.min(1.6, 1 + TANIMON_CHAIN_DAMAGE_STEP * (this.tanimonChain - 1));
+    const dmg = (TANIMON_DAMAGE + Math.random() * 20) * chainMul * this.damageMul;
+    const hitPos = (g ? g.head.pos : this.tanimonHand).clone();
+    if (g && g.alive) {
+      const impulse = this.tanimonPullDir.clone().multiplyScalar(9).add(new Vector3(0, 4.5, 0));
+      this.registerHit(g, 0.3);
+      const killed = g.takeDamage(dmg, g.head, impulse, dt, this);
+      ctx.combat.onHit?.({
+        kind: 'melee',
+        point: hitPos.clone(),
+        damage: dmg,
+        attacker: this,
+        victim: g,
+        hitParticle: g.head,
+        impulse,
+        killed,
+      });
+    } else if (f && f.alive) {
+      const facDmg = dmg * 1.3;
+      const killed = f.takeDamage(facDmg, this);
+      ctx.combat.emitEffect({ kind: 'facility_hit', pos: f.pos.clone(), damage: facDmg });
+      if (killed) ctx.combat.emitEffect({ kind: 'facility_destroy', pos: f.pos.clone(), team: f.team, radius: f.radius });
+    }
+    ctx.combat.emitEffect({ kind: 'tanimon_impact', pos: hitPos, scale: this.scale, chain: this.tanimonChain });
+    this.tanimonHits++;
+    // 激突で勢いを殺し、その場から次の相手へ腕を伸ばす
+    for (const p of this.joints) {
+      p.getVelocity(dt, _vel).multiplyScalar(0.2);
+      p.prev.copy(p.pos).addScaledVector(_vel, -dt);
+    }
+    this.chainOrLeap(ctx, dt, g, f);
+  }
+
+  /** つかむ前・引き寄せ中に相手が倒れたとき */
+  private afterGrabTargetLost(ctx: UnitContext, dt: number): void {
+    const lostUnit = this.tanimonGrab;
+    const lostFac = this.tanimonGrabFacility;
+    if (this.tanimonHits === 0) {
+      // まだ誰にも激突していなければ、跳ばずに次の相手を探すだけ
+      if (!this.pickNextGrab(ctx, lostUnit, lostFac)) {
+        this.tanimonGrab = null;
+        this.tanimonGrabFacility = null;
+        this.attackPhase = 'recover';
+        this.phaseTime = 0;
+      }
+      return;
+    }
+    this.chainOrLeap(ctx, dt, lostUnit, lostFac);
+  }
+
+  /** 間合いに次の敵がいれば連鎖し、いなければ大跳躍する */
+  private chainOrLeap(ctx: UnitContext, dt: number, exclude: Unit | null, excludeFac: Facility | null): void {
+    if (this.tanimonChain < TANIMON_MAX_CHAIN && this.pickNextGrab(ctx, exclude, excludeFac)) {
+      this.tanimonChain++;
+      ctx.combat.emitEffect({ kind: 'tanimon_reach', pos: this.joints[J.ShoulderR].pos.clone() });
+      return;
+    }
+    this.startTanimonLeap(ctx, dt);
+  }
+
+  /** 間合いの中で一番近い敵（いなければ施設）をつかみに行く。見つからなければ false */
+  private pickNextGrab(ctx: UnitContext, exclude: Unit | null, excludeFac: Facility | null): boolean {
+    const range = this.attackRange;
+    const p = this.pelvis.pos;
+    let best: Unit | null = null;
+    let bestD = range * range;
+    for (const u of ctx.units) {
+      if (!u.alive || u.team === this.team || u === exclude) continue;
+      const d = (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2;
+      if (d <= bestD) {
+        bestD = d;
+        best = u;
+      }
+    }
+    let bestFac: Facility | null = null;
+    if (!best && ctx.facilities) {
+      let bestFacD = Infinity;
+      for (const f of ctx.facilities) {
+        if (!f.alive || f.isTerrain || f.team === this.team || f === excludeFac) continue;
+        const reach = range + f.radius;
+        const d = (f.pos.x - p.x) ** 2 + (f.pos.z - p.z) ** 2;
+        if (d <= reach * reach && d < bestFacD) {
+          bestFacD = d;
+          bestFac = f;
+        }
+      }
+    }
+    if (!best && !bestFac) return false;
+    this.tanimonGrab = best;
+    this.tanimonGrabFacility = best ? null : bestFac;
+    this.attackPhase = 'windup';
+    this.phaseTime = 0;
+    // 伸ばし直す腕は、今の手の位置から次の頭へ向かう
+    this.tanimonReach = 0;
+    this.tanimonHand.copy(this.joints[J.HandR].pos);
+    return true;
+  }
+
+  /** 引き寄せた向きのまま大きく跳び、戦場の端の手前まで飛んでいく */
+  private startTanimonLeap(ctx: UnitContext, dt: number): void {
+    const dir = this.tanimonPullDir;
+    if (dir.lengthSq() < 0.5) dir.copy(this.forward);
+    const dist = this.tanimonLeapDistance(ctx, dir);
+    const flightTime = (2 * TANIMON_LEAP_UP_SPEED) / GRAVITY;
+    _tanimonVel.set(dir.x * (dist / flightTime), TANIMON_LEAP_UP_SPEED, dir.z * (dist / flightTime));
+    this.blendJointVelocity(_tanimonVel, 1, dt);
+    this.tanimonGrab = null;
+    this.tanimonGrabFacility = null;
+    this.tanimonLeaping = true;
+    this.setPassThrough(true);
+    this.attackPhase = 'recover';
+    this.phaseTime = 0;
+    this.desiredFacing = Math.atan2(dir.x, dir.z);
+    ctx.combat.emitEffect({ kind: 'tanimon_leap', pos: this.pelvis.pos.clone(), dir: dir.clone() });
+  }
+
+  /** 大跳躍の水平距離。壁（場外）の手前で止まり、奈落や穴の上には降りない */
+  tanimonLeapDistance(ctx: Pick<UnitContext, 'world'>, dir: Vector3): number {
+    const world = ctx.world;
+    const bounds = world.fieldWalls ?? world.arenaBounds;
+    const margin = world.fieldWalls ? TANIMON_WALL_MARGIN : TANIMON_ARENA_MARGIN;
+    const px = this.pelvis.pos.x;
+    const pz = this.pelvis.pos.z;
+    let dist = TANIMON_LEAP_MAX;
+    if (bounds) {
+      const limitX = Math.max(0, bounds.maxX - margin);
+      const limitZ = Math.max(0, bounds.maxZ - margin);
+      if (dir.x > 1e-3) dist = Math.min(dist, (limitX - px) / dir.x);
+      else if (dir.x < -1e-3) dist = Math.min(dist, (-limitX - px) / dir.x);
+      if (dir.z > 1e-3) dist = Math.min(dist, (limitZ - pz) / dir.z);
+      else if (dir.z < -1e-3) dist = Math.min(dist, (-limitZ - pz) / dir.z);
+    }
+    dist = clamp(dist, TANIMON_LEAP_MIN, TANIMON_LEAP_MAX);
+    while (dist > TANIMON_LEAP_MIN && world.isOverChasm(px + dir.x * dist, pz + dir.z * dist)) dist -= 1;
+    return Math.max(TANIMON_LEAP_MIN, dist);
+  }
+
+  /** 伸ばした右腕を元に戻していく */
+  private retractTanimonArm(dt: number): void {
+    if (this.tanimonReach <= 0) {
+      this.tanimonHand.copy(this.joints[J.HandR].pos);
+      return;
+    }
+    this.tanimonReach = Math.max(0, this.tanimonReach - dt * 6);
+    this.tanimonHand.lerp(this.joints[J.HandR].pos, Math.min(1, dt * 18));
+  }
+
+  /** 体の粒子が他のユニットと衝突しないようにする（地面とは衝突する） */
+  private setPassThrough(on: boolean): void {
+    for (const p of this.joints) p.flags = on ? p.flags | PF_NO_COLLIDE : p.flags & ~PF_NO_COLLIDE;
+  }
+
+  private finishGrabChain(cooldown: number): void {
+    this.setPassThrough(false);
+    this.attackPhase = 'none';
+    this.phaseTime = 0;
+    this.cooldown = cooldown;
+    this.tanimonGrab = null;
+    this.tanimonGrabFacility = null;
+    this.tanimonLeaping = false;
   }
 
   /** 遠距離攻撃の射程（ヤマムロンの強化モードで 5 倍） */
@@ -3181,6 +3515,34 @@ export class Unit {
         lp[J.Chest].set(0, 0.28, 0.05);
         lp[J.Head].set(0, 0.58, 0.1);
       }
+    } else if (style === 'grab_chain') {
+      if (phase === 'windup' || phase === 'strike') {
+        // 右腕を前へ突き出して頭をつかみ、左腕は引いて力をためる
+        lp[J.ShoulderR].set(0.26, 0.48, 0.08);
+        lp[J.ElbowR].set(0.3, 0.5, 0.34);
+        lp[J.HandR].set(0.26, 0.54, 0.58);
+        lp[J.ElbowL].set(-0.36, 0.24, -0.12);
+        lp[J.HandL].set(-0.3, 0.36, 0.08);
+        if (phase === 'strike') {
+          // 体ごと飛んでいくので前のめりになり、脚は後ろへ流れる
+          lp[J.Chest].z += 0.1;
+          lp[J.Head].z += 0.16;
+          lp[J.KneeL].set(-0.13, -0.42, -0.2);
+          lp[J.KneeR].set(0.13, -0.4, -0.16);
+          lp[J.FootL].set(-0.13, -0.72, -0.42);
+          lp[J.FootR].set(0.13, -0.7, -0.36);
+        }
+      } else if (phase === 'recover' && this.tanimonLeaping) {
+        // 大跳躍: 両腕を広げ、膝を抱えて飛んでいく
+        lp[J.ElbowL].set(-0.46, 0.5, 0.0);
+        lp[J.HandL].set(-0.62, 0.78, 0.04);
+        lp[J.ElbowR].set(0.46, 0.5, 0.0);
+        lp[J.HandR].set(0.62, 0.78, 0.04);
+        lp[J.KneeL].set(-0.14, -0.3, 0.26);
+        lp[J.KneeR].set(0.14, -0.32, 0.22);
+        lp[J.FootL].set(-0.14, -0.66, 0.08);
+        lp[J.FootR].set(0.14, -0.68, 0.04);
+      }
     } else if (style === 'psychic') {
       if (phase === 'windup') {
         // 胸の前で両手を引き寄せサイキックチャージ
@@ -3391,6 +3753,10 @@ export class Unit {
     this.target = null;
     this.laserActive = false;
     this.grabbedUnit = null;
+    this.tanimonGrab = null;
+    this.tanimonGrabFacility = null;
+    if (this.tanimonLeaping) this.setPassThrough(false);
+    this.tanimonLeaping = false;
     // かさね配置: 死んだら土台から外れて落ちる（乗り手側の解除は applyMountBinding でも検出する）
     this.mountedOn = null;
 

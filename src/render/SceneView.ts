@@ -2125,6 +2125,48 @@ export class SceneView {
       }
       case 'mouth_laser_charge':
         break;
+      case 'tanimon_reach':
+        // 腕を伸ばす瞬間の風切り（肩口に小さな白い筋）
+        for (let i = 0; i < 6; i++) {
+          const vel = new Vector3((Math.random() - 0.5) * 2.5, Math.random() * 1.5, (Math.random() - 0.5) * 2.5);
+          this.pushFxParticle(e.pos.clone(), vel, 0xf1f3f5, 0.08, 0.18, 0);
+        }
+        break;
+      case 'tanimon_grab': {
+        const glow = TEAM_COLORS[e.team].shirt;
+        for (let i = 0; i < 10; i++) {
+          const ang = (i / 10) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 3.2, 1 + Math.random() * 1.5, Math.sin(ang) * 3.2);
+          this.pushFxParticle(e.pos.clone(), vel, i % 2 === 0 ? 0xffffff : glow, 0.11, 0.22, 2);
+        }
+        break;
+      }
+      case 'tanimon_impact': {
+        // 激突: 星形に飛ぶ火花と土ぼこり。連鎖が続くほど派手にする
+        const power = Math.min(1.8, 1 + (e.chain - 1) * 0.12);
+        const count = Math.round(26 * power);
+        for (let i = 0; i < count; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.9, Math.random() - 0.5).normalize();
+          const col = i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0xffd43b : 0xff922b;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar((4 + Math.random() * 6) * power), col, 0.17 * e.scale, 0.35 + Math.random() * 0.2, 5);
+        }
+        for (let i = 0; i < 12; i++) {
+          const ang = (i / 12) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 5.5 * power, 0.4, Math.sin(ang) * 5.5 * power);
+          this.pushFxParticle(e.pos.clone(), vel, 0xdee2e6, 0.14, 0.28, 0);
+        }
+        this.addCameraShake(0.12 + 0.03 * Math.min(6, e.chain));
+        break;
+      }
+      case 'tanimon_leap': {
+        // 踏み切りの土煙と、跳ぶ向きと逆へ流れる砂
+        for (let i = 0; i < 18; i++) {
+          const ang = (i / 18) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 3.5 - e.dir.x * 2.5, 0.8 + Math.random() * 1.6, Math.sin(ang) * 3.5 - e.dir.z * 2.5);
+          this.pushFxParticle(e.pos.clone(), vel, i % 2 === 0 ? 0xa89070 : 0xdee2e6, 0.15, 0.45 + Math.random() * 0.2, 3);
+        }
+        break;
+      }
       case 'mouth_laser': {
         const glow = TEAM_COLORS[e.team].shirt;
         const dir = new Vector3().subVectors(e.to, e.from).normalize();
