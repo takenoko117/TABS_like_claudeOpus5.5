@@ -886,8 +886,14 @@ export class FieldRuntime implements CombatTerrain, FieldSteering {
       if (!u.alive) continue;
       const tr = this.traitsOf(u);
       // 濃霧・砂嵐は全員の索敵範囲を狭める
-      if (trait === 'fog') u.targetRangeMul = Math.min(u.targetRangeMul, 0.35);
-      else if (biome === 'desert') u.targetRangeMul = Math.min(u.targetRangeMul, 0.55);
+      // 見えない敵にも向かって進む（索敵範囲で棒立ちにならないように）
+      if (trait === 'fog') {
+        u.targetRangeMul = Math.min(u.targetRangeMul, 0.35);
+        u.advanceWhenBlind = true;
+      } else if (biome === 'desert') {
+        u.targetRangeMul = Math.min(u.targetRangeMul, 0.55);
+        u.advanceWhenBlind = true;
+      }
       if (biome === 'snow' && u.burnTimer > 0) u.burnTimer = Math.max(0, u.burnTimer - dt);
       if (biome === 'volcano' && u.poisonTimer > 0) u.poisonTimer = Math.max(0, u.poisonTimer - dt);
       const px = u.pelvis.pos.x;

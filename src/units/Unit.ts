@@ -255,6 +255,11 @@ export class Unit {
   vulnerabilityMul = 1.0;
   /** 索敵射程倍率（日食フレア等で短縮、デフォルト 1.0） */
   targetRangeMul = 1.0;
+  /**
+   * 索敵制限中でも、見えない敵へ向かって進むか（濃霧・砂嵐のフィールド）。
+   * true なら見える範囲に敵がいないとき最寄りの敵へ歩き、見える距離まで近づいてから攻撃する
+   */
+  advanceWhenBlind = false;
   /** 草むらに隠れている（近くの敵からしか見つからない）。地形が毎ステップ設定する */
   concealed = false;
   /** 変わり身の術クールダウン（からくり忍者） */
@@ -673,7 +678,9 @@ export class Unit {
     }
 
     this.desiredFacing = Math.atan2(dx, dz);
-    const engage = t ? this.engageDistance(t) : this.engageFacilityDistance(fac!);
+    let engage = t ? this.engageDistance(t) : this.engageFacilityDistance(fac!);
+    // 濃霧・砂嵐: 見える距離より遠くからは撃たず、近づいてから攻撃する
+    if (t && this.advanceWhenBlind && this.targetRangeMul < 1.0) engage = Math.min(engage, 45 * this.targetRangeMul * 0.9);
 
     // 突撃兵 (charger) の跳躍突撃トリガー
     if (
@@ -925,6 +932,8 @@ export class Unit {
   private findNearestEnemy(units: readonly Unit[]): Unit | null {
     let best: Unit | null = null;
     let bestD = Infinity;
+    let blindBest: Unit | null = null;
+    let blindD = Infinity;
     const p = this.pelvis.pos;
     for (const u of units) {
       if (!u.alive || u.team === this.team) continue;
@@ -934,7 +943,13 @@ export class Unit {
       if (this.targetRangeMul < 1.0) {
         const maxVision = 45 * this.targetRangeMul;
         const rawDist2 = (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2;
-        if (rawDist2 > maxVision * maxVision) continue;
+        if (rawDist2 > maxVision * maxVision) {
+          if (this.advanceWhenBlind && rawDist2 < blindD) {
+            blindD = rawDist2;
+            blindBest = u;
+          }
+          continue;
+        }
       }
       // 地上近接ユニットや火炎ブレスは高空の敵よりも地上の敵を優先する
       const airPenalty =
@@ -945,7 +960,7 @@ export class Unit {
         best = u;
       }
     }
-    return best;
+    return best ?? blindBest;
   }
 
   private onWindupStart(ctx: UnitContext): void {

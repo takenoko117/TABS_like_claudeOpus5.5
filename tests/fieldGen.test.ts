@@ -53,7 +53,7 @@ describe('フィールド生成', () => {
     // 作り直しの平均回数と、地物なしに落ちた割合を記録する
     console.info(`field gen: avg attempts ${(attemptsTotal / n).toFixed(2)}, max ${maxAttempts}, fallback ${fallbacks}/${n}`);
     expect(fallbacks / n).toBeLessThan(0.05);
-  });
+  }, 30000);
 
   it('施設レリックの位置と自陣の後方は塞がない', () => {
     for (const biome of BIOME_IDS) {

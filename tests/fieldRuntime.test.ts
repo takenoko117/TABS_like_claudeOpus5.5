@@ -170,6 +170,22 @@ describe('戦闘中のフィールド', () => {
       for (const u of battle.units) expect(Number.isFinite(u.pelvis.pos.x), biome).toBe(true);
     }
   });
+
+  it('濃霧・砂嵐でも遠距離ユニットは敵へ近づいて攻撃する', () => {
+    for (const layout of [{ ...emptyLayout(), trait: 'fog' as const }, { ...emptyLayout(), biome: 'desert' as const }]) {
+      const battle = new Battle();
+      battle.configureStage({});
+      battle.setField(layout);
+      const archer = battle.spawnUnit('archer', 0, -15, 0);
+      const target = battle.spawnUnit('decoy', 1, 15, 0);
+      const startX = archer.pelvis.pos.x;
+      const hp = target.hp;
+      battle.aiEnabled = true;
+      run(battle, 12);
+      expect(archer.pelvis.pos.x, layout.biome).toBeGreaterThan(startX + 5);
+      expect(target.hp, layout.biome).toBeLessThan(hp);
+    }
+  });
 });
 
 describe('ローグライトの進路', () => {

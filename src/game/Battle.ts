@@ -488,6 +488,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
       u.speedMul = this.baseSpeedMul * u.permSpeedMul;
       u.vulnerabilityMul = u.permVulnerabilityMul;
       u.targetRangeMul = 1.0;
+      u.advanceWhenBlind = false;
       u.hasBuff = false;
     }
     this.combat.projectileDamageMultiplier = 1.0;
