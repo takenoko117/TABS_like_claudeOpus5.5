@@ -7,6 +7,7 @@ import {
   getWaveAt,
   getWaveBudget,
   getWaveRound,
+  levelForTotalXp,
   pickWaveEnemies,
   TD_ALLY_CAP,
   TD_COUNTER_BONUS_MONEY,
@@ -15,12 +16,13 @@ import {
   TD_PLAYER_BASE_HP,
   TD_START_MONEY,
   TDRun,
+  xpForKill,
   xpForLevel,
 } from '../src/game/RealtimeTDMode';
 import { ROGUE_STARTERS, getSquadSize, getUnitSlotCost } from '../src/game/RogueliteMode';
 import { createSeededRng } from '../src/game/ChallengeMode';
 import { FACILITY_TYPE_LIST } from '../src/facilities/FacilityTypes';
-import { UNIT_TYPES } from '../src/units/UnitTypes';
+import { TEAM_COLORS, UNIT_TYPES, setAllyBluePalette } from '../src/units/UnitTypes';
 
 function setup(seed = 1): { battle: Battle; td: TDRun } {
   const battle = new Battle();
@@ -84,6 +86,29 @@ describe('タワーディフェンスの計算式', () => {
   it('必要経験値はレベルとともに増える', () => {
     expect(xpForLevel(2)).toBeGreaterThan(xpForLevel(1));
     expect(xpForLevel(10)).toBeGreaterThan(xpForLevel(5));
+  });
+
+  it('経験値の合計からレベルとたまっている経験値を求められる（経験値バーの表示用）', () => {
+    expect(levelForTotalXp(0)).toEqual({ level: 1, xp: 0 });
+    expect(levelForTotalXp(xpForLevel(1) - 1)).toEqual({ level: 1, xp: xpForLevel(1) - 1 });
+    expect(levelForTotalXp(xpForLevel(1))).toEqual({ level: 2, xp: 0 });
+    expect(levelForTotalXp(xpForLevel(1) + xpForLevel(2) + 3)).toEqual({ level: 3, xp: 3 });
+  });
+
+  it('城の HP は自軍 1000・敵軍 100000', () => {
+    expect(TD_PLAYER_BASE_HP).toBe(1000);
+    expect(TD_ENEMY_BASE_HP).toBe(100000);
+  });
+
+  it('タワーディフェンス用に自軍を青・敵軍を赤へ入れ替えられる', () => {
+    const red = TEAM_COLORS[0];
+    const blue = TEAM_COLORS[1];
+    setAllyBluePalette(true);
+    expect(TEAM_COLORS[0]).toBe(blue);
+    expect(TEAM_COLORS[1]).toBe(red);
+    setAllyBluePalette(false);
+    expect(TEAM_COLORS[0]).toBe(red);
+    expect(TEAM_COLORS[1]).toBe(blue);
   });
 
   it('基地はパレットや施設一覧に出ない', () => {
@@ -161,6 +186,8 @@ describe('タワーディフェンスのラン', () => {
     expect(td.money).toBeGreaterThan(before);
     expect(td.level).toBeGreaterThan(1);
     expect(td.choices).toBe(td.level - 1);
+    expect(td.totalXp).toBeCloseTo(xpForKill(victim));
+    expect(levelForTotalXp(td.totalXp).level).toBe(td.level);
     const options = td.currentOptions();
     expect(options).not.toBeNull();
     expect(options!.length).toBe(3);

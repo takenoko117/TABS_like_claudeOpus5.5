@@ -4,6 +4,7 @@ import { SoundManager } from '../audio/SoundManager';
 import { JackpotRoulette } from '../ui/JackpotRoulette';
 import { JackpotRewardFx } from '../ui/JackpotRewardFx';
 import { DroppedChests, type DroppedChest } from '../render/DroppedChests';
+import { XpOrbs } from '../render/XpOrbs';
 import { setVoxelText, type VoxelTextOptions } from '../ui/VoxelText';
 import { UnitPreviews } from '../render/UnitPreviews';
 import { WarRoomFx } from '../ui/WarRoomFx';
@@ -109,7 +110,7 @@ import {
   type RogueCard,
 } from './RogueliteMode';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
-import { TDRun } from './RealtimeTDMode';
+import { TDRun, xpForKill } from './RealtimeTDMode';
 import { RealtimeTDHud } from '../ui/RealtimeTDHud';
 import {
   CATEGORY_ICONS,
@@ -126,6 +127,7 @@ import {
   TEAM_NAMES,
   UNIT_TYPES,
   UNIT_TYPE_LIST,
+  setAllyBluePalette,
   type Team,
   type UnitTypeId,
 } from '../units/UnitTypes';
@@ -573,6 +575,10 @@ export class GameApp {
   private tdHudField: RealtimeTDHud | null = null;
   /** 設定を開いたことで止めたか（閉じたら再開する） */
   private tdPausedForSettings = false;
+  /** 強化を選んでいる間は戦闘を止める */
+  private tdHold = false;
+  /** 敵を倒すと出る経験値オーブ（最初に使うときに作る） */
+  private xpOrbsField: XpOrbs | null = null;
 
   /** ダメージ数字・HPバーのオーバーレイ */
   readonly damageOverlay: DamageOverlay;
@@ -837,6 +843,8 @@ export class GameApp {
     // ローグライトの戦闘ルールはローグライトのときだけ有効にする（タワーディフェンスはランの開始時に設定する）
     this.battle.rules = this.playStyle === 'roguelite' ? this.rogueRules : null;
     if (this.playStyle !== 'td') this.tdHudField?.hide();
+    // タワーディフェンスだけ自軍を青・敵軍を赤にする
+    setAllyBluePalette(this.playStyle === 'td');
     if (this.playStyle !== 'roguelite') this.hideRogueModal();
     // 残機ハートはローグライトモードのときだけ表示する
     this.view.setRogueHeartsVisible(this.playStyle === 'roguelite');
@@ -1326,6 +1334,9 @@ export class GameApp {
     if (this.playStyle === 'td') this.battle.rules = null;
     this.td = null;
     this.tdPausedForSettings = false;
+    this.tdHold = false;
+    this.xpOrbsField?.clear();
+    setAllyBluePalette(false);
     document.body.classList.add('on-title');
     document.getElementById('title-screen')?.classList.remove('hidden');
     this.titleLogo ??= new TitleLogo3D(document.querySelector<HTMLElement>('.title-logo')!);
@@ -2418,6 +2429,10 @@ export class GameApp {
     this.tdHudField ??= new RealtimeTDHud({
       battle: this.battle,
       getRun: () => this.td,
+      getPendingXp: () => this.xpOrbsField?.pending ?? 0,
+      setHold: (hold) => {
+        this.tdHold = hold;
+      },
       isPaused: () => this.paused,
       togglePause: () => this.setPaused(!this.paused),
       openSettings: () => this.openTDSettings(),
@@ -2462,6 +2477,8 @@ export class GameApp {
     this.view.setPlacementGuidesVisible(false);
     this.view.setFollowedUnit(null);
     this.droppedChestsField?.clear();
+    this.xpOrbsField?.clear();
+    this.tdHold = false;
     this.syncPhaseUI();
   }
 
@@ -2485,8 +2502,19 @@ export class GameApp {
     this.sound.playBattleStart();
   }
 
+  private get xpOrbs(): XpOrbs {
+    this.xpOrbsField ??= new XpOrbs(
+      this.view.scene,
+      this.view.camera,
+      () => this.tdHudField?.xpTarget ?? null,
+      () => {},
+    );
+    return this.xpOrbsField;
+  }
+
   private onTDEnemyKilled(victim: Unit, pos: Vector3): void {
     if (this.mode !== 'battle' || this.onTitleScreen || !this.td) return;
+    if (!this.td.ended) this.xpOrbs.spawn(pos, xpForKill(victim));
     const tier = this.td.onEnemyKilled(victim);
     if (tier === null) return;
     this.droppedChests.spawn(pos, tier);
@@ -2498,7 +2526,8 @@ export class GameApp {
     if (!td) return;
     const won = res === 0;
     td.finish(won ? 'clear' : 'defeat');
-    this.tdHud.setRoomOpen(false);
+    this.tdHud.closeChoice();
+    this.xpOrbsField?.clear();
     // 決着のスローモーションが終わってからリザルトを出す
     window.setTimeout(() => {
       if (this.td === td && this.playStyle === 'td') this.tdHud.showResult(td, won);
@@ -2551,19 +2580,17 @@ export class GameApp {
   /** タワーディフェンス中のキー操作 */
   private handleTDKey(e: KeyboardEvent): void {
     if (e.code.startsWith('Digit')) {
-      // 1〜9 が 1〜9 枚目、0 が 10 枚目
       const d = Number(e.code.replace('Digit', ''));
-      this.tdHud.deployIndex(d === 0 ? 9 : d - 1);
+      // 強化を選んでいる間は 1〜3 で選ぶ。それ以外は 1〜9 が 1〜9 枚目、0 が 10 枚目を出撃
+      if (this.tdHud.isChoiceOpen) {
+        if (d >= 1 && d <= 3) this.tdHud.chooseIndex(d - 1);
+      } else this.tdHud.deployIndex(d === 0 ? 9 : d - 1);
     } else if (e.code === 'KeyP') {
       this.setPaused(!this.paused);
     } else if (e.code === 'KeyF') {
       this.cycleFastForward();
-    } else if (e.code === 'Tab') {
-      e.preventDefault();
-      this.tdHud.setRoomOpen(!this.tdHud.isRoomOpen);
     } else if (e.code === 'Escape') {
       if (this.view.isFollowingUnit) this.view.setFollowedUnit(null);
-      else if (this.tdHud.isRoomOpen) this.tdHud.setRoomOpen(false);
     }
   }
 
@@ -4875,14 +4902,17 @@ export class GameApp {
     if (this.jackpot.active) this.jackpot.update(realDt);
     if (this.jackpotFx.active) this.jackpotFx.update(realDt);
     this.updateDroppedChests(realDt);
-    if (!this.paused && !this.jackpotBusy) {
+    if (!this.paused && !this.jackpotBusy && !this.tdHold) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
       this.battle.advance(realDt * scale);
     }
 
     if (this.isRogueModalOpen()) this.unitPreviews?.update(realDt);
-    if (this.playStyle === 'td' && !this.onTitleScreen) this.tdHud.update(realDt);
+    if (this.playStyle === 'td' && !this.onTitleScreen) {
+      this.xpOrbsField?.update(realDt);
+      this.tdHud.update(realDt);
+    }
 
     if (this.onTitleScreen) {
       this.updateTitleDemo(realDt);

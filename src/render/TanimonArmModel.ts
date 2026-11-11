@@ -117,17 +117,17 @@ function buildSegment(rings: readonly Ring[], colorAt: (t: number, k: number) =>
   return b.build();
 }
 
-const upperCache = new Map<Team, BufferGeometry>();
+const upperCache = new Map<number, BufferGeometry>();
 let foreCache: BufferGeometry | null = null;
 let fistCache: BufferGeometry | null = null;
 
 /** 上腕（肩口は陣営色の半袖） */
 export function getTanimonUpperArmGeometry(team: Team): BufferGeometry {
-  const hit = upperCache.get(team);
+  const hit = upperCache.get(TEAM_COLORS[team].shirt);
   if (hit) return hit;
   const sleeve = TEAM_COLORS[team].shirt;
   const geom = buildSegment(UPPER_RINGS, (t, k) => (t < 0.24 ? sleeve : k % 3 === 0 ? SKIN_SHADE : SKIN));
-  upperCache.set(team, geom);
+  upperCache.set(TEAM_COLORS[team].shirt, geom);
   return geom;
 }
 

@@ -45,8 +45,8 @@ export const TD_ELITE_WAVES: readonly number[] = [5, 10, 15];
 
 export const TD_PLAYER_BASE_X = -22;
 export const TD_ENEMY_BASE_X = 22;
-export const TD_PLAYER_BASE_HP = 8000;
-export const TD_ENEMY_BASE_HP = 60000;
+export const TD_PLAYER_BASE_HP = 1000;
+export const TD_ENEMY_BASE_HP = 100000;
 /** 自軍が出撃する位置（基地の正面） */
 export const TD_DEPLOY_X = -18.6;
 /** 敵が湧く位置（敵基地の正面） */
@@ -77,7 +77,7 @@ export const TD_FUND_PRICE_STEP = 200;
 /** 敵の撃破で入るお金（敵のコストに対する割合） */
 export const TD_KILL_MONEY_RATIO = 0.1;
 /** 敵基地に与えたダメージ 1 あたりのお金 */
-export const TD_BASE_DAMAGE_MONEY = 0.08;
+export const TD_BASE_DAMAGE_MONEY = 0.05;
 /** 敵基地の HP がこの割合減るごとに反撃部隊が出る */
 export const TD_COUNTER_STEP = 0.1;
 /** 反撃の節目ごとのボーナス */
@@ -91,7 +91,7 @@ export const TD_XP_PER_COST = 0.1;
 export const TD_REROLL_PRICE_STEP = 50;
 
 /** 基地強化のレベル（1始まり）ごとの自動回復（HP/秒）。最大 HP もレベルごとに TD_BASE_HP_STEP ずつ増える */
-export const TD_BASE_REGEN: readonly number[] = [0, 10, 20, 32, 46, 62];
+export const TD_BASE_REGEN: readonly number[] = [0, 1, 2.5, 4, 6, 8];
 export const TD_BASE_HP_STEP = 0.25;
 export const TD_BASE_PRICE_STEP = 400;
 
@@ -155,6 +155,22 @@ export function getEnemyTimeMul(seconds: number): number {
 /** レベル lv から次のレベルに必要な経験値 */
 export function xpForLevel(lv: number): number {
   return Math.ceil(20 * Math.pow(Math.max(1, lv), 1.4));
+}
+
+/** 経験値の合計からレベルと、そのレベルでたまっている経験値を求める（経験値バーの表示用） */
+export function levelForTotalXp(total: number): { level: number; xp: number } {
+  let level = 1;
+  let left = Math.max(0, total);
+  while (left >= xpForLevel(level)) {
+    left -= xpForLevel(level);
+    level++;
+  }
+  return { level, xp: left };
+}
+
+/** 敵1体を倒して入る経験値 */
+export function xpForKill(victim: Unit): number {
+  return victim.type.cost * TD_XP_PER_COST;
 }
 
 /** 経過時間の Wave 番号（1〜20。開始前は 0） */
@@ -240,6 +256,8 @@ export class TDRun {
   readonly cooldowns = new Map<UnitTypeId, number>();
   level = 1;
   xp = 0;
+  /** これまでに得た経験値の合計 */
+  totalXp = 0;
   /** 使っていない強化の選択権 */
   choices = 0;
   /** 今出ている3択（null ならまだ引いていない） */
@@ -583,7 +601,7 @@ export class TDRun {
     this.kills++;
     const cost = victim.type.cost;
     this.addMoney(cost * TD_KILL_MONEY_RATIO, false);
-    this.gainXp(cost * TD_XP_PER_COST);
+    this.gainXp(xpForKill(victim));
     if (victim.isBoss) return 2;
     if (this.time - this.lastChestTime < TD_CHEST_COOLDOWN) return null;
     const chance = TD_CHEST_CHANCE + (cost >= 300 ? TD_CHEST_HIGH_VALUE_BONUS : 0);
@@ -593,6 +611,7 @@ export class TDRun {
   }
 
   gainXp(amount: number): void {
+    this.totalXp += amount;
     this.xp += amount;
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
@@ -662,17 +681,7 @@ export class TDRun {
     return true;
   }
 
-  // ---- 作戦室 ----
-
-  buyCardLevel(id: UnitTypeId): boolean {
-    return this.run.buyCardLevel(id);
-  }
-
-  buyRelicLevel(battle: Battle, index: number): boolean {
-    if (!this.run.buyRelicLevel(index)) return false;
-    this.rebuildRelics(battle);
-    return true;
-  }
+  // ---- 強化（資金供給力・基地強化。ユニットのレベルアップはない） ----
 
   get fundPrice(): number | null {
     return getFundPrice(this.fundLevel);

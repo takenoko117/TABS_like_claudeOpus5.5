@@ -245,15 +245,15 @@ interface YamamuronAwakenedTemplates {
   torso: VoxelPartTemplate;
   head: VoxelPartTemplate;
 }
-const yamamuronAwakenedCache = new Map<Team, YamamuronAwakenedTemplates>();
+const yamamuronAwakenedCache = new Map<number, YamamuronAwakenedTemplates>();
 function getYamamuronAwakenedTemplates(team: Team): YamamuronAwakenedTemplates {
-  let set = yamamuronAwakenedCache.get(team);
+  let set = yamamuronAwakenedCache.get(TEAM_COLORS[team].shirt);
   if (!set) {
     set = {
       torso: { ...specTemplate(buildAwakenedMountain(team)), uncarvable: true },
       head: { ...specTemplate(buildAwakenedJewel()), uncarvable: true },
     };
-    yamamuronAwakenedCache.set(team, set);
+    yamamuronAwakenedCache.set(TEAM_COLORS[team].shirt, set);
   }
   return set;
 }
@@ -266,9 +266,9 @@ interface DragonExtras {
   segment: BufferGeometry;
   tailTip: BufferGeometry;
 }
-const dragonExtraCache = new Map<Team, DragonExtras>();
+const dragonExtraCache = new Map<number, DragonExtras>();
 function getDragonExtras(team: Team): DragonExtras {
-  let e = dragonExtraCache.get(team);
+  let e = dragonExtraCache.get(TEAM_COLORS[team].shirt);
   if (!e) {
     const geo = (spec: DragonPartSpec) => spec.grid.toGeometry(spec.voxelSize, spec.pivot);
     e = {
@@ -277,7 +277,7 @@ function getDragonExtras(team: Team): DragonExtras {
       segment: geo(buildDragonSegment(team)),
       tailTip: geo(buildDragonTailTip(team)),
     };
-    dragonExtraCache.set(team, e);
+    dragonExtraCache.set(TEAM_COLORS[team].shirt, e);
   }
   return e;
 }
@@ -2267,7 +2267,8 @@ function buildSubmachineGunGeometry(team: Team): BufferGeometry {
 }
 
 function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
-  const key = `${type.id}:${team}`;
+  // 配色を入れ替えることがあるので、陣営番号ではなく色で引く
+  const key = `${type.id}:${TEAM_COLORS[team].shirt}`;
   let set = templateCache.get(key);
   if (set) return set;
   const tc = TEAM_COLORS[team];

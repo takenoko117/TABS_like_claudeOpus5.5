@@ -5,13 +5,32 @@ export const TEAM_NAMES: readonly string[] = ['赤軍', '青軍', '黄軍', '緑
 
 export const TEAM_ICONS: readonly string[] = ['🔴', '🔵', '🟡', '🟢'];
 
-/** 陣営ごとの配色 */
-export const TEAM_COLORS = [
+export interface TeamPalette {
+  readonly shirt: number;
+  readonly pants: number;
+  readonly accent: number;
+  readonly css: string;
+}
+
+const BASE_TEAM_COLORS: readonly TeamPalette[] = [
   { shirt: 0xc8372d, pants: 0x5a2a24, accent: 0xffc23a, css: '#e0473a' },
   { shirt: 0x2d62c8, pants: 0x24305a, accent: 0xf2f2f2, css: '#3a72e0' },
   { shirt: 0xd99b16, pants: 0x5c4314, accent: 0xfff3bf, css: '#f59f00' },
   { shirt: 0x12b886, pants: 0x0b4f3a, accent: 0xc3fae8, css: '#20c997' },
-] as const;
+];
+
+/**
+ * 陣営ごとの配色。ふだんは 0 = 赤・1 = 青。
+ * タワーディフェンスでは setAllyBluePalette(true) で 0（自軍）を青・1（敵軍）を赤に入れ替える。
+ * モデルのキャッシュは陣営番号ではなく配色（shirt の色）で引くこと。
+ */
+export const TEAM_COLORS: TeamPalette[] = [...BASE_TEAM_COLORS];
+
+/** 陣営 0 と 1 の配色を入れ替える（タワーディフェンス用）。入れ替えた後に作ったモデルから反映される */
+export function setAllyBluePalette(on: boolean): void {
+  TEAM_COLORS[0] = BASE_TEAM_COLORS[on ? 1 : 0];
+  TEAM_COLORS[1] = BASE_TEAM_COLORS[on ? 0 : 1];
+}
 
 export type AttackStyle =
   | 'none'
