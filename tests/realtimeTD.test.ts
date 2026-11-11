@@ -14,7 +14,6 @@ import {
   TD_ENEMY_BASE_HP,
   TD_PLAYER_BASE_HP,
   TD_START_MONEY,
-  TD_START_UNIT_SLOTS,
   TDRun,
   xpForLevel,
 } from '../src/game/RealtimeTDMode';
@@ -93,11 +92,11 @@ describe('タワーディフェンスの計算式', () => {
 });
 
 describe('タワーディフェンスのラン', () => {
-  it('開始時は初期レリックなし、ユニット枠4、両軍の基地がある', () => {
+  it('開始時は初期レリックなし、スターターの全ユニットが出撃でき、両軍の基地がある', () => {
     const { battle, td } = setup();
     expect(td.run.relics).toHaveLength(0);
-    expect(td.run.unitSlots).toBe(TD_START_UNIT_SLOTS);
-    expect(td.run.deck.map((c) => c.id)).toEqual([...ROGUE_STARTERS[0].units]);
+    expect(td.run.cards.map((c) => c.id)).toEqual([...ROGUE_STARTERS[0].units]);
+    for (const c of td.run.cards) expect(td.deployBlock(battle, c.id)).toBeNull();
     expect(td.money).toBe(TD_START_MONEY);
     expect(td.playerBase?.maxHp).toBe(TD_PLAYER_BASE_HP);
     expect(td.enemyBase?.maxHp).toBe(TD_ENEMY_BASE_HP);
@@ -131,10 +130,19 @@ describe('タワーディフェンスのラン', () => {
     expect(td.deployBlock(battle, 'clubber')).toBe('full');
   });
 
-  it('控えのカードは出撃できない', () => {
+  it('持っていないカードは出撃できない', () => {
     const { battle, td } = setup();
-    td.toggleDeck(battle, 'archer');
-    expect(td.deployBlock(battle, 'archer')).toBe('not_in_deck');
+    expect(td.run.ownsUnit('giant_tank')).toBe(false);
+    expect(td.deployBlock(battle, 'giant_tank')).toBe('not_owned');
+  });
+
+  it('枠はなく、手に入れたユニットとレリックはすべて使える', () => {
+    const { battle, td } = setup();
+    td.run.gold = 99999;
+    for (const id of ['giant_tank', 'giant', 'warelephant', 'dragon', 'samurai'] as const) td.run.gainUnit(id);
+    for (const c of td.run.cards) expect(td.deployBlock(battle, c.id)).toBeNull();
+    for (const id of ['power_gate', 'fire_gate', 'thunder_gate', 'venom_gate', 'buff_totem'] as const) td.run.gainRelic(id);
+    expect(td.run.relics.every((r) => r.active)).toBe(true);
   });
 
   it('時間とともに Wave が始まり、敵が湧く', () => {
@@ -225,20 +233,38 @@ describe('タワーディフェンスのラン', () => {
     expect(battle.result()).toBeNull();
   });
 
-  it('作戦室で財布・基地の修理と強化を買える', () => {
+  it('作戦室で資金供給力と基地強化を買える', () => {
     const { td } = setup();
     td.run.gold = 5000;
-    const income = td.walletIncome;
-    expect(td.buyWallet()).toBe(true);
-    expect(td.walletIncome).toBeGreaterThan(income);
+    const income = td.fundIncome;
+    expect(td.buyFund()).toBe(true);
+    expect(td.fundIncome).toBeGreaterThan(income);
     const base = td.playerBase!;
-    expect(td.repairBase()).toBe(false); // 満タンなら修理できない
-    base.hp = base.maxHp / 2;
-    expect(td.repairBase()).toBe(true);
-    expect(base.hp).toBeCloseTo(base.maxHp * 0.75);
     const max = base.maxHp;
-    expect(td.fortifyBase()).toBe(true);
+    expect(td.baseRegen).toBe(0);
+    expect(td.upgradeBase()).toBe(true);
     expect(base.maxHp).toBeGreaterThan(max);
+    expect(td.baseRegen).toBeGreaterThan(0);
+  });
+
+  it('基地強化の自動回復で基地の HP が戻る（最大 HP は超えない）', () => {
+    const { battle, td } = setup();
+    td.run.gold = 5000;
+    td.upgradeBase();
+    const base = td.playerBase!;
+    base.hp = base.maxHp - 50;
+    advance(battle, 2);
+    expect(base.hp).toBeGreaterThan(base.maxHp - 50);
+    advance(battle, 10);
+    expect(base.hp).toBeLessThanOrEqual(base.maxHp);
+  });
+
+  it('基地強化は上限まで上げると買えなくなる', () => {
+    const { td } = setup();
+    td.run.gold = 99999;
+    while (td.upgradeBase());
+    expect(td.basePrice).toBeNull();
+    expect(td.baseLevel).toBeGreaterThan(1);
   });
 
   it('宝箱を開けると中身がその場で適用される', () => {

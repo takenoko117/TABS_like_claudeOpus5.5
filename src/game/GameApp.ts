@@ -2551,15 +2551,14 @@ export class GameApp {
   /** タワーディフェンス中のキー操作 */
   private handleTDKey(e: KeyboardEvent): void {
     if (e.code.startsWith('Digit')) {
-      const n = Number(e.code.replace('Digit', '')) - 1;
-      if (n < 0) return;
-      if (this.tdHud.chooseIndex(n)) return;
-      this.tdHud.deployIndex(n);
+      // 1〜9 が 1〜9 枚目、0 が 10 枚目
+      const d = Number(e.code.replace('Digit', ''));
+      this.tdHud.deployIndex(d === 0 ? 9 : d - 1);
     } else if (e.code === 'KeyP') {
       this.setPaused(!this.paused);
     } else if (e.code === 'KeyF') {
       this.cycleFastForward();
-    } else if (e.code === 'KeyW' || e.code === 'Tab') {
+    } else if (e.code === 'Tab') {
       e.preventDefault();
       this.tdHud.setRoomOpen(!this.tdHud.isRoomOpen);
     } else if (e.code === 'Escape') {

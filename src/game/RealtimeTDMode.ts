@@ -61,17 +61,18 @@ const TD_GATE_WIDTH = 42;
 export const TD_ALLY_CAP = 50;
 export const TD_ENEMY_CAP = 50;
 
-export const TD_START_UNIT_SLOTS = 4;
+/** ユニット枠・レリック枠はない。持っているものはすべて使える（ローグライトの枠の仕組みを実質無効にする値） */
+const TD_UNLIMITED_SLOTS = 999;
 export const TD_START_MONEY = 300;
 /** 枠コストごとのクールタイム（秒） */
 export const TD_COOLDOWN_BY_SLOT: readonly number[] = [0, 5, 10, 18, 30];
 /** 出撃コスト = 枠コスト × この値 */
 export const TD_DEPLOY_COST_PER_SLOT = 120;
 
-/** 財布レベルごとのお金の自然増加（毎秒）と上限 */
-export const TD_WALLET_INCOME: readonly number[] = [10, 15, 20, 26, 33, 41, 50, 60];
-export const TD_WALLET_CAP: readonly number[] = [900, 1400, 2000, 2700, 3500, 4400, 5400, 6500];
-export const TD_WALLET_PRICE_STEP = 200;
+/** 資金供給力のレベルごとのお金の自然増加（毎秒）と上限 */
+export const TD_FUND_INCOME: readonly number[] = [10, 15, 20, 26, 33, 41, 50, 60];
+export const TD_FUND_CAP: readonly number[] = [900, 1400, 2000, 2700, 3500, 4400, 5400, 6500];
+export const TD_FUND_PRICE_STEP = 200;
 
 /** 敵の撃破で入るお金（敵のコストに対する割合） */
 export const TD_KILL_MONEY_RATIO = 0.1;
@@ -89,12 +90,10 @@ export const TD_XP_PER_COST = 0.1;
 /** 3択の引き直しの価格（同じ3択の中で引くたびに上がる） */
 export const TD_REROLL_PRICE_STEP = 50;
 
-export const TD_REPAIR_RATIO = 0.25;
-export const TD_REPAIR_BASE_PRICE = 300;
-export const TD_REPAIR_PRICE_STEP = 150;
-export const TD_FORTIFY_RATIO = 0.2;
-export const TD_FORTIFY_PRICE_STEP = 500;
-export const TD_MAX_FORTIFY = 3;
+/** 基地強化のレベル（1始まり）ごとの自動回復（HP/秒）。最大 HP もレベルごとに TD_BASE_HP_STEP ずつ増える */
+export const TD_BASE_REGEN: readonly number[] = [0, 10, 20, 32, 46, 62];
+export const TD_BASE_HP_STEP = 0.25;
+export const TD_BASE_PRICE_STEP = 400;
 
 /** Wave 1 の敵予算（ローグライトの同ラウンド1戦ぶんに対する割合） */
 export const TD_WAVE_BUDGET_RATIO = 0.36;
@@ -176,9 +175,9 @@ export function getCounterBudget(wave: number, step: number): number {
   return Math.round(Math.max(getWaveBudget(wave), roundBudget * 0.35) * (0.5 + 0.08 * step));
 }
 
-/** 財布レベル（1始まり）を上げる価格。上限なら null */
-export function getWalletPrice(level: number): number | null {
-  return level >= TD_WALLET_INCOME.length ? null : TD_WALLET_PRICE_STEP * level;
+/** 資金供給力のレベル（1始まり）を上げる価格。上限なら null */
+export function getFundPrice(level: number): number | null {
+  return level >= TD_FUND_INCOME.length ? null : TD_FUND_PRICE_STEP * level;
 }
 
 function weightedIndex(weights: readonly number[], rng: () => number): number {
@@ -218,7 +217,7 @@ export function pickWaveEnemies(round: number, budget: number, rng: () => number
 // ---------------------------------------------------------------
 
 /** 出撃できない理由 */
-export type DeployBlock = 'cooldown' | 'money' | 'full' | 'not_in_deck' | 'ended';
+export type DeployBlock = 'cooldown' | 'money' | 'full' | 'not_owned' | 'ended';
 
 interface SpawnOrder {
   id: UnitTypeId;
@@ -230,7 +229,7 @@ export type TDEndReason = 'clear' | 'defeat' | 'quit';
 
 /** 1回のタワーディフェンスのラン */
 export class TDRun {
-  /** カード・デッキ・レリック・お金（gold）はローグライトのランの仕組みを使う */
+  /** カード・レリック・お金（gold）はローグライトのランの仕組みを使う（枠はなく、持っているものはすべて使う） */
   readonly run: RogueliteRun;
   readonly rules: RogueliteRules;
   time = 0;
@@ -247,9 +246,9 @@ export class TDRun {
   options: RewardOption[] | null = null;
   private rerollsThisPick = 0;
   private draws = 0;
-  walletLevel = 1;
-  repairs = 0;
-  fortifies = 0;
+  fundLevel = 1;
+  /** 基地強化のレベル（最大 HP と自動回復） */
+  baseLevel = 1;
   autoDeploy = false;
   kills = 0;
   /** 敵基地に与えたダメージの合計 */
@@ -276,9 +275,9 @@ export class TDRun {
     this.run = new RogueliteRun(seed, starter);
     // スターターの初期レリックは持たない
     this.run.relics = [];
-    this.run.unitSlots = TD_START_UNIT_SLOTS;
-    for (const c of this.run.cards) c.inDeck = false;
-    for (const c of this.run.cards) if (this.run.fitsInDeck(c.id)) c.inDeck = true;
+    this.run.unitSlots = TD_UNLIMITED_SLOTS;
+    this.run.relicSlots = TD_UNLIMITED_SLOTS;
+    for (const c of this.run.cards) c.inDeck = true;
     this.run.gold = TD_START_MONEY;
     this.run.rerollsLeft = 1;
     this.run.round = 1;
@@ -293,12 +292,12 @@ export class TDRun {
     return getWaveAt(this.time);
   }
 
-  get walletIncome(): number {
-    return TD_WALLET_INCOME[this.walletLevel - 1];
+  get fundIncome(): number {
+    return TD_FUND_INCOME[this.fundLevel - 1];
   }
 
-  get walletCap(): number {
-    return TD_WALLET_CAP[this.walletLevel - 1];
+  get fundCap(): number {
+    return TD_FUND_CAP[this.fundLevel - 1];
   }
 
   get xpToNext(): number {
@@ -325,7 +324,7 @@ export class TDRun {
 
   /** デッキの兵種でシナジーを数え直す */
   syncTags(battle: Battle): void {
-    this.rules.tagSource = this.run.deck.map((c) => c.id);
+    this.rules.tagSource = this.run.cards.map((c) => c.id);
     this.rules.refreshTags(battle);
   }
 
@@ -369,7 +368,9 @@ export class TDRun {
   step(battle: Battle, dt: number): void {
     if (this.ended) return;
     this.time += dt;
-    this.addMoney(this.walletIncome * dt, true);
+    this.addMoney(this.fundIncome * dt, true);
+    const base = this.playerBase;
+    if (base?.alive && base.hp < base.maxHp) base.hp = Math.min(base.maxHp, base.hp + this.baseRegen * dt);
     for (const [id, t] of this.cooldowns) this.cooldowns.set(id, Math.max(0, t - dt));
 
     while (this.wavesStarted < TD_WAVE_COUNT && this.time >= this.wavesStarted * TD_WAVE_SECONDS) {
@@ -397,14 +398,14 @@ export class TDRun {
 
   private addMoney(amount: number, capped: boolean): void {
     if (capped) {
-      if (this.run.gold >= this.walletCap) {
+      if (this.run.gold >= this.fundCap) {
         this.moneyFraction = 0;
         return;
       }
       this.moneyFraction += amount;
       const whole = Math.floor(this.moneyFraction);
       this.moneyFraction -= whole;
-      this.run.gold = Math.min(this.walletCap, this.run.gold + whole);
+      this.run.gold = Math.min(this.fundCap, this.run.gold + whole);
     } else {
       this.run.gold += Math.round(amount);
     }
@@ -531,8 +532,7 @@ export class TDRun {
   /** 出撃できるか。できなければ理由を返す */
   deployBlock(battle: Battle, id: UnitTypeId): DeployBlock | null {
     if (this.ended) return 'ended';
-    const card = this.run.card(id);
-    if (!card?.inDeck) return 'not_in_deck';
+    if (!this.run.card(id)) return 'not_owned';
     if ((this.cooldowns.get(id) ?? 0) > 0) return 'cooldown';
     if (this.money < getDeployCost(id)) return 'money';
     if (battle.aliveCount(0) >= TD_ALLY_CAP) return 'full';
@@ -566,7 +566,7 @@ export class TDRun {
 
   /** 自動出撃: 出せるカードを、高いものから順に出す */
   private autoDeployReady(battle: Battle): void {
-    const deck = [...this.run.deck].sort((a, b) => getDeployCost(b.id) - getDeployCost(a.id));
+    const deck = [...this.run.cards].sort((a, b) => getDeployCost(b.id) - getDeployCost(a.id));
     for (const c of deck) {
       if (this.deployBlock(battle, c.id) === null) {
         this.deploy(battle, c.id);
@@ -664,28 +664,8 @@ export class TDRun {
 
   // ---- 作戦室 ----
 
-  toggleDeck(battle: Battle, id: UnitTypeId): boolean {
-    if (!this.run.toggleDeck(id)) return false;
-    this.syncTags(battle);
-    return true;
-  }
-
   buyCardLevel(id: UnitTypeId): boolean {
     return this.run.buyCardLevel(id);
-  }
-
-  buyUnitSlot(): boolean {
-    return this.run.buyUnitSlot();
-  }
-
-  toggleRelic(battle: Battle, index: number): boolean {
-    if (!this.run.toggleRelic(index)) return false;
-    this.rebuildRelics(battle);
-    return true;
-  }
-
-  buyRelicSlot(): boolean {
-    return this.run.buyRelicSlot();
   }
 
   buyRelicLevel(battle: Battle, index: number): boolean {
@@ -694,42 +674,36 @@ export class TDRun {
     return true;
   }
 
-  get walletPrice(): number | null {
-    return getWalletPrice(this.walletLevel);
+  get fundPrice(): number | null {
+    return getFundPrice(this.fundLevel);
   }
 
-  buyWallet(): boolean {
-    const price = this.walletPrice;
+  buyFund(): boolean {
+    const price = this.fundPrice;
     if (price === null || this.money < price) return false;
     this.run.gold -= price;
-    this.walletLevel++;
+    this.fundLevel++;
     return true;
   }
 
-  get repairPrice(): number {
-    return TD_REPAIR_BASE_PRICE + TD_REPAIR_PRICE_STEP * this.repairs;
+  /** 基地強化の自動回復（HP/秒） */
+  get baseRegen(): number {
+    return TD_BASE_REGEN[this.baseLevel - 1] ?? 0;
   }
 
-  repairBase(): boolean {
+  /** 基地強化を1段上げる価格。上限なら null */
+  get basePrice(): number | null {
+    return this.baseLevel >= TD_BASE_REGEN.length ? null : TD_BASE_PRICE_STEP * this.baseLevel;
+  }
+
+  /** 基地強化: 最大 HP が増え（増えたぶん回復もする）、自動回復が速くなる */
+  upgradeBase(): boolean {
     const base = this.playerBase;
-    if (!base?.alive || base.hp >= base.maxHp || this.money < this.repairPrice) return false;
-    this.run.gold -= this.repairPrice;
-    this.repairs++;
-    base.hp = Math.min(base.maxHp, base.hp + base.maxHp * TD_REPAIR_RATIO);
-    return true;
-  }
-
-  get fortifyPrice(): number | null {
-    return this.fortifies >= TD_MAX_FORTIFY ? null : TD_FORTIFY_PRICE_STEP * (this.fortifies + 1);
-  }
-
-  fortifyBase(): boolean {
-    const base = this.playerBase;
-    const price = this.fortifyPrice;
+    const price = this.basePrice;
     if (!base?.alive || price === null || this.money < price) return false;
     this.run.gold -= price;
-    this.fortifies++;
-    const add = TD_PLAYER_BASE_HP * TD_FORTIFY_RATIO;
+    this.baseLevel++;
+    const add = TD_PLAYER_BASE_HP * TD_BASE_HP_STEP;
     base.maxHp += add;
     base.hp += add;
     return true;

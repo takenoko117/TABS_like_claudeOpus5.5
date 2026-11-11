@@ -18,8 +18,9 @@ import {
   type RewardOption,
   type RogueStarter,
 } from '../game/RogueliteMode';
-import { MAX_GATE_LEVEL } from '../facilities/FacilityTypes';
+import { MAX_GATE_LEVEL, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { JackpotReward } from '../game/RogueJackpot';
+import { UnitPreviews } from '../render/UnitPreviews';
 import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
 import { getFacilityIconSvg, getUnitIconSvg } from './UnitIcons';
 
@@ -45,13 +46,29 @@ const BLOCK_LABELS: Record<DeployBlock, string> = {
   cooldown: '待機中',
   money: 'お金不足',
   full: '満員',
-  not_in_deck: '控え',
+  not_owned: '未所持',
   ended: '終了',
 };
 
 function formatTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** 画面がこの幅以上なら、作戦室を開いたまま始める */
+const ROOM_OPEN_MIN_WIDTH = 900;
+
+/** 動くボクセルモデル（用意できるまでは下のアイコンが見える） */
+function unitVoxel(id: UnitTypeId): string {
+  return `<span class="unit-voxel td-voxel" data-unit-preview="${id}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span>`;
+}
+
+function propVoxel(key: string, fallback: string): string {
+  return `<span class="unit-voxel prop-voxel td-voxel" data-prop-preview="${key}">${fallback}<canvas aria-hidden="true"></canvas></span>`;
+}
+
+function relicVoxel(id: FacilityTypeId): string {
+  return propVoxel(`relic:${id}`, getFacilityIconSvg(id));
 }
 
 function esc(text: string): string {
@@ -72,6 +89,9 @@ export class RealtimeTDHud {
   private announceTimer = 0;
   private refreshTimer = 0;
   private readonly cardEls = new Map<UnitTypeId, HTMLElement>();
+  private readonly previews = new UnitPreviews();
+  /** 作戦室の下に出す説明（触れた・押したアイコンの中身） */
+  private info = '';
 
   constructor(private readonly host: TDHudHost) {
     this.root = document.createElement('div');
@@ -92,6 +112,21 @@ export class RealtimeTDHud {
     this.elModal = this.root.querySelector('.td-modal')!;
     this.renderTop();
     this.root.addEventListener('click', (e) => this.onClick(e));
+    this.root.addEventListener('pointerover', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-info]');
+      if (el && this.elRoom.contains(el)) this.setInfo(el.dataset.info ?? '');
+    });
+  }
+
+  private setInfo(text: string): void {
+    this.info = text;
+    const el = this.elRoom.querySelector<HTMLElement>('.td-room-info');
+    if (el) el.textContent = text || 'アイコンに触れると説明が出ます';
+  }
+
+  /** モデルの表示先を取り直す（バーや作戦室を描き直したとき） */
+  private bindPreviews(): void {
+    this.previews.bind(this.root);
   }
 
   // ---- 表示の切り替え ----
@@ -102,6 +137,7 @@ export class RealtimeTDHud {
   }
 
   hide(): void {
+    this.previews.unbind();
     this.root.classList.add('hidden');
     document.body.classList.remove('td-mode');
     this.setRoomOpen(false);
@@ -118,6 +154,8 @@ export class RealtimeTDHud {
     this.root.classList.toggle('room-open', open);
     this.roomKey = '';
     if (open) this.renderRoom();
+    else this.elRoom.innerHTML = '';
+    this.bindPreviews();
   }
 
   /** 新しいランを始めたときに表示をリセットする */
@@ -126,7 +164,9 @@ export class RealtimeTDHud {
     this.roomKey = '';
     this.cardEls.clear();
     this.elBar.innerHTML = '';
-    this.setRoomOpen(false);
+    this.info = '';
+    // 広い画面では作戦室を開いたまま遊べるようにする
+    this.setRoomOpen(this.host.getRun() !== null && window.innerWidth >= ROOM_OPEN_MIN_WIDTH);
     this.hideModal();
     this.elAnnounce.classList.add('hidden');
   }
@@ -142,7 +182,7 @@ export class RealtimeTDHud {
       if (this.announceTimer <= 0) this.elAnnounce.classList.add('hidden');
     }
     this.updateTop(td);
-    const key = td.run.deck.map((c) => `${c.id}:${c.level}`).join(',');
+    const key = td.run.cards.map((c) => `${c.id}:${c.level}`).join(',');
     if (key !== this.deckKey) {
       this.deckKey = key;
       this.renderBar(td);
@@ -153,6 +193,7 @@ export class RealtimeTDHud {
       this.refreshTimer = 0.25;
       this.renderRoom();
     }
+    this.previews.update(realDt);
   }
 
   private consumeEvents(td: TDRun): void {
@@ -198,7 +239,7 @@ export class RealtimeTDHud {
       <div class="td-status">
         <div class="td-xp"><span class="td-lv"></span><div class="td-xp-bar"><i></i></div></div>
         <div class="td-money"></div>
-        <button type="button" class="td-btn td-room-btn" data-td="room">🧭 作戦室<span class="td-badge hidden"></span></button>
+        <button type="button" class="td-btn td-room-btn" data-td="room" title="作戦室 (Tab)">🧭 作戦室<span class="td-badge hidden"></span></button>
         <button type="button" class="td-btn td-auto" data-td="auto" title="クールタイムが明けたカードを自動で出撃させる">AUTO</button>
         <button type="button" class="td-btn" data-td="pause" title="一時停止 (P)">⏸</button>
         <button type="button" class="td-btn" data-td="settings" title="設定（開いている間は止まる）">⚙</button>
@@ -225,8 +266,8 @@ export class RealtimeTDHud {
     this.elTop.querySelector('.td-lv')!.textContent = `Lv${td.level}`;
     this.elTop.querySelector<HTMLElement>('.td-xp-bar i')!.style.width = `${Math.min(1, td.xp / td.xpToNext) * 100}%`;
     const money = this.elTop.querySelector<HTMLElement>('.td-money')!;
-    money.innerHTML = `💰 <b>${td.money.toLocaleString()}</b><small>/${td.walletCap.toLocaleString()}G ・ +${td.walletIncome}/秒</small>`;
-    money.classList.toggle('full', td.money >= td.walletCap);
+    money.innerHTML = `💰 <b>${td.money.toLocaleString()}</b><small>/${td.fundCap.toLocaleString()}G ・ +${td.fundIncome}/秒</small>`;
+    money.classList.toggle('full', td.money >= td.fundCap);
     const badge = this.elTop.querySelector<HTMLElement>('.td-badge')!;
     badge.textContent = `⚔${td.choices}`;
     badge.classList.toggle('hidden', td.choices <= 0);
@@ -237,11 +278,11 @@ export class RealtimeTDHud {
 
   private renderBar(td: TDRun): void {
     this.cardEls.clear();
-    this.elBar.innerHTML = td.run.deck
+    this.elBar.innerHTML = td.run.cards
       .map((c, i) => {
         const t = UNIT_TYPES[c.id];
         return `<button type="button" class="td-card slot${getUnitSlotCost(c.id)}" data-deploy="${c.id}" title="${esc(t.name)}（${i + 1} キー）">
-          <span class="td-card-icon">${getUnitIconSvg(c.id)}</span>
+          <span class="td-card-icon">${unitVoxel(c.id)}</span>
           <span class="td-card-name">${esc(t.name)}</span>
           <span class="td-card-meta">×${getSquadSize(c.id)} ・ Lv${c.level}</span>
           <span class="td-card-cost">💰${getDeployCost(c.id)}</span>
@@ -251,12 +292,13 @@ export class RealtimeTDHud {
         </button>`;
       })
       .join('');
-    if (td.run.deck.length === 0) {
-      this.elBar.innerHTML = '<div class="td-bar-empty">デッキが空です。作戦室でカードを入れてください</div>';
+    if (td.run.cards.length === 0) {
+      this.elBar.innerHTML = '<div class="td-bar-empty">出撃できるユニットがいません</div>';
     }
     this.elBar.querySelectorAll<HTMLElement>('[data-deploy]').forEach((el) => {
       this.cardEls.set(el.dataset.deploy as UnitTypeId, el);
     });
+    this.bindPreviews();
   }
 
   private updateBar(td: TDRun): void {
@@ -277,17 +319,14 @@ export class RealtimeTDHud {
 
   private renderRoom(): void {
     const td = this.host.getRun();
-    if (!td) return;
+    if (!td || !this.roomOpen) return;
     const run = td.run;
     const options = td.currentOptions();
     // お金は毎秒変わるので、値そのものではなく「買えるかどうか」が変わったときだけ描き直す
     const prices = [
       td.rerollPrice,
-      run.unitSlotPrice,
-      run.relicSlotPrice,
-      td.walletPrice,
-      td.repairPrice,
-      td.fortifyPrice,
+      td.fundPrice,
+      td.basePrice,
       ...run.cards.map((c) => run.cardLevelPrice(c.id)),
       ...run.relics.map((_, i) => run.relicLevelPrice(i)),
     ];
@@ -295,101 +334,109 @@ export class RealtimeTDHud {
       prices.map((p) => (p !== null && td.money >= p ? 1 : 0)).join(''),
       td.choices,
       options?.map((o) => o.title).join('|'),
-      run.cards.map((c) => `${c.id}${c.level}${c.inDeck}`).join(','),
-      run.relics.map((r) => `${r.id}${r.level}${r.active}`).join(','),
-      run.unitSlots,
-      run.relicSlots,
-      td.walletLevel,
-      td.repairs,
-      td.fortifies,
-      Math.round(td.playerBase?.hp ?? 0),
+      run.cards.map((c) => `${c.id}${c.level}`).join(','),
+      run.relics.map((r) => `${r.id}${r.level}`).join(','),
+      td.fundLevel,
+      td.baseLevel,
       run.rerollsLeft,
     ].join('/');
     if (key === this.roomKey) return;
     this.roomKey = key;
-    const scroll = this.elRoom.scrollTop;
+    const body = this.elRoom.querySelector('.td-room-body');
+    const scroll = body?.scrollTop ?? 0;
+
+    const can = (price: number | null) => price !== null && td.money >= price;
+    const priceLabel = (price: number | null) => (price === null ? 'MAX' : `${price}G`);
+    /** アイコン1つぶんのボタン。説明は data-info（触れると下に出る）と title に入れる */
+    const tile = (attrs: string, icon: string, lv: string, price: number | null, info: string, enabled = can(price)) =>
+      `<button type="button" class="td-tile" ${attrs} data-info="${esc(info)}" title="${esc(info)}" ${enabled ? '' : 'disabled'}>
+        ${icon}<span class="td-tile-lv">${lv}</span><span class="td-tile-price">${priceLabel(price)}</span>
+      </button>`;
 
     const choiceHtml = options
       ? `<section class="td-sec td-choices">
-          <h3>⚔ 強化の選択 <small>残り ${td.choices} 回</small></h3>
+          <h3>⚔ 強化を選ぶ <small>×${td.choices}</small>
+            <button type="button" class="td-btn td-small td-reroll" data-td="reroll" title="引き直す" ${td.money < td.rerollPrice ? 'disabled' : ''}>🔄 ${td.rerollPrice === 0 ? `無料${run.rerollsLeft}` : `${td.rerollPrice}G`}</button></h3>
           <div class="td-options">${options.map((o, i) => this.optionHtml(td, o, i)).join('')}</div>
-          <button type="button" class="td-btn td-small" data-td="reroll" ${td.money < td.rerollPrice ? 'disabled' : ''}>🔄 引き直す（${td.rerollPrice === 0 ? `無料・残り${run.rerollsLeft}` : `${td.rerollPrice}G`}）</button>
         </section>`
-      : `<section class="td-sec td-choices empty"><h3>⚔ 強化の選択</h3><p>敵を倒して経験値をためると、レベルアップで選べるようになる。</p></section>`;
+      : '';
 
-    const used = run.usedUnitSlots;
-    const cardRow = (id: UnitTypeId) => {
-      const c = run.card(id)!;
-      const t = UNIT_TYPES[id];
-      const price = run.cardLevelPrice(id);
-      const canToggle = c.inDeck || run.fitsInDeck(id);
-      return `<div class="td-row ${c.inDeck ? 'in' : 'out'}">
-        <span class="td-row-icon">${getUnitIconSvg(id)}</span>
-        <span class="td-row-main"><b>${esc(t.name)}</b><small>枠${getUnitSlotCost(id)} ・ ×${getSquadSize(id)} ・ 💰${getDeployCost(id)} ・ ${getDeployCooldown(id)}秒</small></span>
-        <span class="td-row-lv">Lv${c.level}</span>
-        <button type="button" class="td-btn td-small" data-card-toggle="${id}" ${canToggle ? '' : 'disabled'}>${c.inDeck ? '外す' : '入れる'}</button>
-        <button type="button" class="td-btn td-small" data-card-level="${id}" ${price === null || td.money < price ? 'disabled' : ''}>${price === null ? `Lv${ROGUE_MAX_UNIT_LEVEL}` : `強化 ${price}G`}</button>
-      </div>`;
-    };
-    const deckHtml = `<section class="td-sec">
-      <h3>🃏 デッキ <small>枠 ${used} / ${run.unitSlots}</small></h3>
-      ${run.deck.map((c) => cardRow(c.id)).join('')}
-      ${run.bench.length > 0 ? `<h4>控え</h4>${run.bench.map((c) => cardRow(c.id)).join('')}` : ''}
-    </section>`;
+    const fund = tile(
+      'data-buy="fund"',
+      propVoxel('gold', '<span class="td-emoji">💰</span>'),
+      `Lv${td.fundLevel}`,
+      td.fundPrice,
+      `資金供給力 Lv${td.fundLevel}：毎秒 +${td.fundIncome}G・上限 ${td.fundCap.toLocaleString()}G。上げると収入と上限が増える`,
+    );
+    const base = td.playerBase;
+    const baseTile = tile(
+      'data-buy="base"',
+      relicVoxel('hq'),
+      `Lv${td.baseLevel}`,
+      td.basePrice,
+      `基地強化 Lv${td.baseLevel}：最大HP ${Math.round(base?.maxHp ?? 0).toLocaleString()}・自動回復 ${td.baseRegen}/秒。上げると最大HPと自動回復が増える`,
+      can(td.basePrice) && !!base?.alive,
+    );
 
-    const activeRelics = run.relics.filter((r) => r.active).length;
-    const relicRows = run.relics
-      .map((r, i) => {
-        const price = run.relicLevelPrice(i);
-        const canOn = r.active || activeRelics < run.relicSlots;
-        return `<div class="td-row ${r.active ? 'in' : 'out'}">
-          <span class="td-row-icon">${getFacilityIconSvg(r.id)}</span>
-          <span class="td-row-main"><b>${esc(relicDisplayName(r))}</b><small>${esc(relicDescription(r))}</small></span>
-          <button type="button" class="td-btn td-small" data-relic-toggle="${i}" ${canOn ? '' : 'disabled'}>${r.active ? 'OFF' : 'ON'}</button>
-          <button type="button" class="td-btn td-small" data-relic-level="${i}" ${price === null || td.money < price ? 'disabled' : ''}>${price === null || r.level >= MAX_GATE_LEVEL ? 'MAX' : `強化 ${price}G`}</button>
-        </div>`;
+    const units = run.cards
+      .map((c) => {
+        const price = run.cardLevelPrice(c.id);
+        const t = UNIT_TYPES[c.id];
+        const next = price === null ? '（最大レベル）' : `。強化 ${price}G で Lv${c.level + 1}`;
+        return tile(
+          `data-card-level="${c.id}"`,
+          unitVoxel(c.id),
+          `Lv${c.level}`,
+          price,
+          `${t.name} Lv${c.level}：×${getSquadSize(c.id)}人・出撃 ${getDeployCost(c.id)}G・待機 ${getDeployCooldown(c.id)}秒${next}`,
+        );
       })
       .join('');
-    const relicHtml = `<section class="td-sec">
-      <h3>🏛 レリック <small>発動 ${activeRelics} / ${run.relicSlots}</small></h3>
-      ${relicRows || '<p>強化の選択や宝箱で手に入る。門は基地の出口に置かれ、出撃した兵がくぐると効果が掛かる。</p>'}
-    </section>`;
 
-    const buy = (attr: string, label: string, price: number | null, extra = '', disabled = false) =>
-      `<button type="button" class="td-btn td-buy" data-buy="${attr}" ${price === null || td.money < price || disabled ? 'disabled' : ''}>
-        <b>${label}</b><small>${price === null ? '上限' : `${price}G`}${extra}</small></button>`;
-    const base = td.playerBase;
-    const shopHtml = `<section class="td-sec">
-      <h3>🛠 強化</h3>
-      <div class="td-buys">
-        ${buy('slot', `ユニット枠 +1（${run.unitSlots}）`, run.unitSlotPrice)}
-        ${buy('relic-slot', `レリック枠 +1（${run.relicSlots}）`, run.relicSlotPrice)}
-        ${buy('wallet', `財布 Lv${td.walletLevel}`, td.walletPrice, ' ・ 収入と上限UP')}
-        ${buy('repair', '基地の修理 +25%', td.repairPrice, '', !base || base.hp >= base.maxHp)}
-        ${buy('fortify', '基地の強化 +20%', td.fortifyPrice)}
-      </div>
-    </section>`;
+    const relics = run.relics
+      .map((r, i) => {
+        const price = r.level >= MAX_GATE_LEVEL ? null : run.relicLevelPrice(i);
+        return tile(
+          `data-relic-level="${i}"`,
+          relicVoxel(r.id),
+          `Lv${r.level + 1}`,
+          price,
+          `${relicDisplayName(r)}：${relicDescription(r)}${price === null ? '（最大レベル）' : `。強化 ${price}G`}`,
+        );
+      })
+      .join('');
 
     this.elRoom.innerHTML = `
       <header class="td-room-head"><b>🧭 作戦室</b><small>時間は止まりません</small>
-        <button type="button" class="td-btn td-small" data-td="room">✕ 閉じる</button></header>
-      ${choiceHtml}${deckHtml}${relicHtml}${shopHtml}`;
-    this.elRoom.scrollTop = scroll;
+        <button type="button" class="td-btn td-small" data-td="room" title="閉じる (Tab)">✕</button></header>
+      <div class="td-room-body">
+        ${choiceHtml}
+        <section class="td-sec"><h3>🛠 強化</h3><div class="td-tiles">${fund}${baseTile}</div></section>
+        <section class="td-sec"><h3>🃏 ユニット <small>押すとレベルアップ</small></h3><div class="td-tiles">${units}</div></section>
+        <section class="td-sec"><h3>🏛 レリック</h3>${
+          relics ? `<div class="td-tiles">${relics}</div>` : '<p>強化の選択や宝箱で手に入る。門は基地の出口に並ぶ</p>'
+        }</section>
+      </div>
+      <footer class="td-room-info"></footer>`;
+    this.elRoom.querySelector('.td-room-body')!.scrollTop = scroll;
+    this.setInfo(this.info);
+    this.bindPreviews();
   }
 
   private optionHtml(td: TDRun, o: RewardOption, i: number): string {
     const icon = o.unitId
-      ? getUnitIconSvg(o.unitId)
+      ? unitVoxel(o.unitId)
       : o.relicId
-        ? getFacilityIconSvg(o.relicId)
-        : `<span class="td-emoji">${o.kind === 'gold' ? '💰' : '➕'}</span>`;
+        ? relicVoxel(o.relicId)
+        : o.kind === 'gold'
+          ? propVoxel('gold', '<span class="td-emoji">💰</span>')
+          : '<span class="td-emoji">➕</span>';
     const owned = o.unitId ? td.run.card(o.unitId) : undefined;
     const desc = owned ? `Lv${owned.level} → Lv${Math.min(ROGUE_MAX_UNIT_LEVEL, owned.level + 1)}（無料）` : o.description;
-    return `<button type="button" class="td-option ${o.rarity}" data-choose="${i}">
-      <span class="td-option-rarity">${RARITY_LABELS[o.rarity]}</span>
-      <span class="td-option-icon">${icon}</span>
+    const info = `${RARITY_LABELS[o.rarity]}｜${o.title}：${desc}`;
+    return `<button type="button" class="td-option ${o.rarity}" data-choose="${i}" data-info="${esc(info)}" title="${esc(info)}">
+      ${icon}
       <b>${esc(o.title)}</b>
-      <small>${esc(desc)}</small>
     </button>`;
   }
 
@@ -437,18 +484,18 @@ export class RealtimeTDHud {
         ok = td.reroll();
         break;
     }
+    if (d.info !== undefined) this.setInfo(d.info);
     if (d.choose !== undefined) ok = td.choose(battle, Number(d.choose)) !== null;
-    else if (d.cardToggle) ok = td.toggleDeck(battle, d.cardToggle as UnitTypeId);
     else if (d.cardLevel) ok = td.buyCardLevel(d.cardLevel as UnitTypeId);
-    else if (d.relicToggle !== undefined) ok = td.toggleRelic(battle, Number(d.relicToggle));
     else if (d.relicLevel !== undefined) ok = td.buyRelicLevel(battle, Number(d.relicLevel));
-    else if (d.buy === 'slot') ok = td.buyUnitSlot();
-    else if (d.buy === 'relic-slot') ok = td.buyRelicSlot();
-    else if (d.buy === 'wallet') ok = td.buyWallet();
-    else if (d.buy === 'repair') ok = td.repairBase();
-    else if (d.buy === 'fortify') ok = td.fortifyBase();
+    else if (d.buy === 'fund') ok = td.buyFund();
+    else if (d.buy === 'base') ok = td.upgradeBase();
     if (ok === undefined) return;
-    if (ok) this.host.playClick();
+    if (ok) {
+      this.host.playClick();
+      const kick = d.cardLevel ?? (d.buy === 'fund' ? 'gold' : undefined);
+      if (kick) this.previews.kick(kick);
+    }
     else this.host.playDenied();
     this.roomKey = '';
     this.renderRoom();
@@ -473,22 +520,11 @@ export class RealtimeTDHud {
     }
   }
 
-  /** デッキの n 番目（0始まり）を出撃させる */
+  /** 出撃バーの n 番目（0始まり）を出撃させる */
   deployIndex(n: number): void {
     const td = this.host.getRun();
-    const card = td?.run.deck[n];
+    const card = td?.run.cards[n];
     if (card) this.tryDeploy(card.id);
-  }
-
-  /** 3択を数字キーで選ぶ（作戦室が開いているとき） */
-  chooseIndex(n: number): boolean {
-    const td = this.host.getRun();
-    if (!td || !this.roomOpen || !td.currentOptions()?.[n]) return false;
-    td.choose(this.host.battle, n);
-    this.host.playClick();
-    this.roomKey = '';
-    this.renderRoom();
-    return true;
   }
 
   /** 宝箱の中身を短く知らせる */
