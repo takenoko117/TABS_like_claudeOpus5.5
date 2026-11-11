@@ -19,8 +19,30 @@ export interface UnitSpawnOptions {
 }
 
 /** ユニットが更新時に参照する戦場の情報（Battle が実装する） */
+/** 地形（プロシージャル・フィールド）による進路の補正。Battle.field が実装する */
+export interface FieldSteering {
+  /**
+   * 敵へ向かう方向 dir（単位ベクトル、xz）を、地物や水域を迂回する方向に補正する。
+   * 補正したら true を返し、dir を書き換える。
+   */
+  steer(unit: Unit, targetX: number, targetZ: number, dir: Vector3): boolean;
+}
+
+/** 空を飛ぶ兵種（地形・水域の影響を受けない） */
+export const FLYING_UNIT_IDS: ReadonlySet<string> = new Set([
+  'giant_eagle',
+  'dragon',
+  'angel_ramiel',
+  'angel_sahaquiel',
+  'angel_zeruel',
+  'deoxys',
+  'hayato',
+]);
+
 export interface UnitContext {
   readonly world: PhysicsWorld;
+  /** 地形による進路の補正（ローグライトのフィールドがあるときだけ） */
+  readonly field?: FieldSteering | null;
   readonly units: readonly Unit[];
   readonly facilities?: readonly Facility[];
   /** false の間は AI が停止し、その場で待機する（配置フェーズ） */
@@ -33,6 +55,7 @@ export interface UnitContext {
 }
 
 const UP = new Vector3(0, 1, 0);
+const _steerDir = new Vector3();
 const GRAVITY = 9.81;
 /** 姿勢バネの加速度上限（数値的な暴れを防ぐ） */
 const MAX_MUSCLE_ACCEL = 300;
@@ -232,6 +255,8 @@ export class Unit {
   vulnerabilityMul = 1.0;
   /** 索敵射程倍率（日食フレア等で短縮、デフォルト 1.0） */
   targetRangeMul = 1.0;
+  /** 草むらに隠れている（近くの敵からしか見つからない）。地形が毎ステップ設定する */
+  concealed = false;
   /** 変わり身の術クールダウン（からくり忍者） */
   kawariCooldown = 0;
   /** デオキシスの距離取りテレポートクールダウン */
@@ -429,6 +454,10 @@ export class Unit {
 
   get pelvis(): Particle {
     return this.joints[J.Pelvis];
+  }
+  /** 移動しようとしているか（地物に引っかかって止まっているかの判定に使う） */
+  get wantsToMove(): boolean {
+    return this.moveSpeed > 0.05;
   }
   get chest(): Particle {
     return this.joints[J.Chest];
@@ -673,8 +702,17 @@ export class Unit {
       let mz = dz / Math.max(0.001, dist);
 
       // 飛行ユニット以外は奈落（一本橋ステージ）や石柱を迂回する
-      const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys' || this.type.id === 'hayato';
+      const isFlyer = FLYING_UNIT_IDS.has(this.type.id);
       if (!isFlyer) {
+        // プロシージャル・フィールド: 地物・水域を迂回する
+        if (ctx.field) {
+          _steerDir.set(mx, 0, mz);
+          if (ctx.field.steer(this, targetPos.x, targetPos.z, _steerDir)) {
+            mx = _steerDir.x;
+            mz = _steerDir.z;
+            this.desiredFacing = Math.atan2(mx, mz);
+          }
+        }
         const chasm = ctx.world.chasm;
         if (chasm) {
           const px = this.pelvis.pos.x;
@@ -890,6 +928,8 @@ export class Unit {
     const p = this.pelvis.pos;
     for (const u of units) {
       if (!u.alive || u.team === this.team) continue;
+      // 草むらに隠れた敵は 8m 以内に近づかないと見つからない
+      if (u.concealed && (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2 > 64) continue;
       // 日食フレア等による索敵制限
       if (this.targetRangeMul < 1.0) {
         const maxVision = 45 * this.targetRangeMul;

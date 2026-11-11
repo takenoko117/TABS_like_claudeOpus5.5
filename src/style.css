@@ -5350,3 +5350,82 @@ kbd { border-width: 2px; }
 .wed-name small { color: var(--sub); font-size: 12px; }
 .wed-stats { display: flex; flex-wrap: wrap; gap: 5px; }
 .wed-desc { margin: 0; color: var(--sub); font-size: 13px; line-height: 1.55; }
+
+/* ---- ローグライト: 進路カードと戦場の見取り図 ---- */
+.route-card {
+  width: min(320px, 44vw);
+  text-align: left;
+}
+.rogue-card.route-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+}
+.route-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 6px;
+  image-rendering: pixelated;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.route-trait {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #b0413e;
+  color: #fff;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.route-features {
+  margin-top: 6px;
+  color: var(--sub);
+  font-size: 12px;
+}
+.route-trait-desc {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.route-trait-desc b {
+  display: block;
+  color: #f5c542;
+}
+.wr-field {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.wr-field-map {
+  width: 120px;
+  height: auto;
+  flex: none;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+.wr-field-info {
+  min-width: 0;
+  font-size: 12px;
+}
+.wr-field-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.wr-field-rule {
+  margin: 2px 0 4px;
+  color: var(--sub);
+}
+.wr-field-memo {
+  line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .route-card {
+    width: 100%;
+  }
+  .wr-field-map {
+    width: 96px;
+  }
+}

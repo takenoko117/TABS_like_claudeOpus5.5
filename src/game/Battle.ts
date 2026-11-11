@@ -14,6 +14,8 @@ import { Unit, type UnitContext } from '../units/Unit';
 import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { StageHazardConfig } from './ArcadeStages';
 import { BATTLE_FIELD_WALLS } from '../physics/PhysicsWorld';
+import { FieldRuntime, type FieldUnitTraitsFn } from '../field/FieldRuntime';
+import type { FieldLayout } from '../field/FieldTypes';
 
 export type BattleResult = Team | 'draw' | null;
 
@@ -91,8 +93,25 @@ export class Battle implements UnitContext, FacilityBattleContext {
   onPlayFacilitySound: ((kind: string) => void) | null = null;
   /** モード固有の戦闘ルール（null なら標準ルール） */
   rules: BattleRules | null = null;
+  /** ローグライトのプロシージャル・フィールド（壊せる地物・水域）。なければ null */
+  field: FieldRuntime | null = null;
 
   private accumulator = 0;
+
+  /** プロシージャル・フィールドを置く（null で外す）。configureStage の後に呼ぶ */
+  setField(layout: FieldLayout | null, traitsOf?: FieldUnitTraitsFn): FieldRuntime | null {
+    if (this.field) {
+      this.field.uninstall();
+      this.field = null;
+    }
+    this.combat.terrain = null;
+    if (!layout) return null;
+    const field = new FieldRuntime(this.world, this.combat, layout, traitsOf);
+    field.install();
+    this.field = field;
+    this.combat.terrain = field;
+    return field;
+  }
 
   /** ユニットを地面上の (x, z) に生成する。向きを省略すると敵陣の方向を向く */
   spawnUnit(typeId: UnitTypeId, team: Team, x: number, z: number, facing?: number): Unit {
@@ -323,12 +342,14 @@ export class Battle implements UnitContext, FacilityBattleContext {
     for (const f of [...this.facilities]) this.removeFacility(f);
     this.world.clear();
     this.combat.clear();
+    this.field?.reset();
     this.resetProgress();
   }
 
   /** 戦場を空にして、新しい舞台設定を適用する */
   configureStage(config: BattleStageConfig = {}): void {
     this.aiEnabled = false;
+    this.setField(null);
     this.clear();
     this.world.obstacles = config.obstacles ? [...config.obstacles] : [];
     this.world.chasm = config.chasm ? { ...config.chasm } : null;
@@ -477,6 +498,9 @@ export class Battle implements UnitContext, FacilityBattleContext {
     // ステージ状態異常の更新（AI有効時）
     this.updateStageHazard(dt);
 
+    // 地面・水域の効果（減速・流れ・炎上など）
+    this.field?.preStep(this.units, dt, this.aiEnabled);
+
     // 施設更新（AI有効時のみ効果を発揮: トーテムが味方にバフ適用、ポータルがユニット召喚等）
     if (this.aiEnabled) {
       for (const f of this.facilities) {
@@ -501,6 +525,7 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.world.step(dt);
     this.combat.processContacts(this.world.contacts, dt, this.units);
     this.combat.updateArrows(dt, this.units, this.world.obstacles, this.facilities);
+    this.field?.postStep(this.units, this.facilities, dt, this.aiEnabled);
     if (this.aiEnabled) this.rules?.onStepEnd?.(this, dt);
     if (!this.opening) this.time += dt;
   }

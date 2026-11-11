@@ -39,6 +39,24 @@ export interface DamageEvent {
   pos: Vector3;
 }
 
+/** 壊せる地形（ローグライトのフィールド）とのやりとり。Battle.field が実装する */
+export interface CombatTerrain {
+  /** 線分 from→to が最初に当たる地物の区画（t は 0〜1） */
+  raycast(from: Vector3, to: Vector3): { t: number; seg: number } | null;
+  /** 飛び道具が区画に当たった */
+  hitSegment(seg: number, damage: number, from: Vector3, to: Vector3, flame: boolean): void;
+  /** 範囲攻撃（爆発・衝撃波）が起きた */
+  onBlast(center: Vector3, radius: number, damage: number, explosion: boolean, fire: boolean): void;
+  /** 爆風の半径の倍率（沼の上では弱まる） */
+  blastRadiusScale(center: Vector3): number;
+  /** 雷が当たった（同じ水域にいる敵へ伝わる） */
+  onShockHit(owner: Unit, victim: Unit, damage: number, units: readonly Unit[], dt: number, visited: Set<number>): void;
+  /** 雷の連鎖回数の増減（砂漠では地面に逃げて減る） */
+  chainHopBonus(): number;
+  /** 炎が地面に落ちた（燃えやすい地物に燃え移る） */
+  igniteNear(pos: Vector3, radius: number, chance: number): void;
+}
+
 export type CombatEffectEvent =
   | { kind: 'lightning'; points: Vector3[] }
   | { kind: 'gravity_pull'; pos: Vector3 }
@@ -219,6 +237,8 @@ export class CombatSystem {
   private readonly delayedSlashes: DelayedSlash[] = [];
   /** 飛び道具・魔法・爆風の威力補正（虚無領域ステージ等で半減） */
   projectileDamageMultiplier = 1.0;
+  /** 壊せる地形（ローグライトのフィールドがあるときだけ） */
+  terrain: CombatTerrain | null = null;
 
   onHit: ((e: HitEvent) => void) | null = null;
   /** ユニットがダメージを受けるたびに呼ばれるリスナー（数値表示・ローグライトのルールなど） */
@@ -450,7 +470,7 @@ export class CombatSystem {
     const chainPoints: Vector3[] = [from.clone()];
     let currentTarget: Unit | null = firstTarget;
     let currentDamage = 28;
-    const maxJumps = 4;
+    const maxJumps = Math.max(1, 4 + (this.terrain?.chainHopBonus() ?? 0));
 
     for (let hop = 0; hop < maxJumps && currentTarget; hop++) {
       visited.add(currentTarget.id);
@@ -478,6 +498,8 @@ export class CombatSystem {
           impulse: jolt,
           killed,
         });
+        // 水域にいる敵へ伝わる
+        this.terrain?.onShockHit(owner, victim, shockDamage, units, dt, visited);
       }
 
       // 次の連鎖ターゲット（3.5m 以内の最も近い未訪問の敵）を探す
@@ -549,6 +571,7 @@ export class CombatSystem {
   ): number {
     let hitCount = 0;
     radius *= attacker?.permRangeMul ?? 1;
+    if (this.terrain) radius *= this.terrain.blastRadiusScale(center);
     const r2 = radius * radius;
     const attackerTeam = teamOverride ?? attacker?.team ?? 0;
     const dmgMul = (attacker?.damageMul ?? 1.0) * this.projectileDamageMultiplier;
@@ -611,6 +634,9 @@ export class CombatSystem {
         hitCount++;
       }
     }
+
+    // 壊せる地形にも当てる
+    this.terrain?.onBlast(center, radius, damage * dmgMul, hitKind === 'explosion', this.currentDamageKind === 'fire');
 
     return hitCount;
   }
@@ -833,6 +859,15 @@ export class CombatSystem {
           continue;
         }
 
+        // 壊せる地形（木・家・岩）との衝突判定
+        if (this.terrain && this.checkTerrainHit(a, _from, _to, units, facilities, dt)) {
+          if (a.life <= 0) {
+            arrows[i] = arrows[arrows.length - 1];
+            arrows.pop();
+          }
+          continue;
+        }
+
         // 石柱などの障害物との衝突判定
         if (obstacles.length > 0 && this.checkObstacleHit(a, _from, _to, obstacles, units, dt)) {
           if (a.life <= 0) {
@@ -967,7 +1002,38 @@ export class CombatSystem {
     return false;
   }
 
+  /** 飛翔体が壊せる地形に当たったか判定する */
+  private checkTerrainHit(
+    a: Arrow,
+    from: Vector3,
+    to: Vector3,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+  ): boolean {
+    const terrain = this.terrain;
+    if (!terrain) return false;
+    const hit = terrain.raycast(from, to);
+    if (!hit) return false;
+    a.pos.lerpVectors(from, to, hit.t);
+    const k = a.projectileKind;
+    if (k === 'bomb' || k === 'rocket' || k === 'tank_shell' || k === 'rocket_punch' || k === 'angel_bomb' || k === 'volcano_rock') {
+      // 爆発で地形にもダメージが入る
+      this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
+      return true;
+    }
+    terrain.hitSegment(hit.seg, a.damage * this.projectileDamageMultiplier, from, to, k === 'flame');
+    if (k === 'arrow' || k === 'shuriken') {
+      a.state = 'ground';
+      a.life = 3;
+    } else {
+      a.life = 0;
+    }
+    return true;
+  }
+
   private spawnFireZone(owner: Unit, pos: Vector3): void {
+    this.terrain?.igniteNear(pos, 1.6, 0.5);
     // 既存の延焼ゾーンがすぐ近くにあれば寿命を延長するだけにする
     for (const z of this.fireZones) {
       if (z.pos.distanceToSquared(pos) < 1.2 * 1.2) {

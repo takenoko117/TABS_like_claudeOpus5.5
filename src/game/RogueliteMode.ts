@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { fieldGoldBonus, getRogueFieldOptions, type FieldOption } from '../field/BiomeDefs';
 import type { DamageEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
 import { MAX_GIANT_GATE_SCALE, MIN_SHRINK_GATE_SCALE, applyStatGate } from '../facilities/Facility';
@@ -1338,6 +1339,8 @@ export interface RogueRunState {
   pendingRewards: RewardOption[] | null;
   rewardDraws: number;
   endReason: RogueEndReason | null;
+  /** ラウンドごとに選んだ進路カードの番号（フィールド生成の再現用） */
+  fieldPicks?: Record<number, number>;
 }
 
 /** 1回のローグライトのラン */
@@ -1366,6 +1369,8 @@ export class RogueliteRun {
   /** 報酬を引いた回数（引き直しのたびに増え、乱数を変える） */
   rewardDraws = 0;
   endReason: RogueEndReason | null = null;
+  /** ラウンドごとに選んだ進路カードの番号（シードと合わせればフィールドを再現できる） */
+  fieldPicks: Record<number, number> = {};
 
   constructor(seed: number, starter: RogueStarter = ROGUE_STARTERS[0]) {
     this.seed = seed;
@@ -1388,6 +1393,31 @@ export class RogueliteRun {
 
   get isHardMode(): boolean {
     return isRogueHardMode(this.round);
+  }
+
+  // ---- フィールド（進路） ----
+
+  /** 指定ラウンドの進路カード（R1・エリート・ボスは1枚） */
+  fieldOptions(round = this.round): FieldOption[] {
+    const eliteIndex = Math.max(0, ROGUE_ELITE_ROUNDS.indexOf(round));
+    const kind = getRogueRoundKind(round);
+    return getRogueFieldOptions(this.seed, { round, kind, eliteIndex, hard: isRogueHardMode(round) });
+  }
+
+  /** 今のラウンドで進路を選ぶ必要があるか */
+  get needsRouteChoice(): boolean {
+    return !this.ended && this.fieldOptions().length > 1 && this.fieldPicks[this.round] === undefined;
+  }
+
+  chooseRoute(index: number): void {
+    const n = this.fieldOptions().length;
+    this.fieldPicks[this.round] = Math.max(0, Math.min(n - 1, Math.floor(index)));
+  }
+
+  /** 今のラウンドのフィールド（未選択なら1枚目） */
+  currentField(): FieldOption {
+    const opts = this.fieldOptions();
+    return opts[this.fieldPicks[this.round] ?? 0] ?? opts[0];
   }
 
   // ---- カードとデッキ ----
@@ -1573,7 +1603,8 @@ export class RogueliteRun {
       this.round < ROGUE_FINAL_ROUND && (this.roundKind === 'elite' || this.roundKind === 'boss')
         ? ROGUE_ELITE_REWARD_PICKS
         : 0;
-    this.gold += getRogueWinBonus(this.round);
+    // 危険なフィールド特性はゴールドが上乗せされる
+    this.gold += Math.round(getRogueWinBonus(this.round) * (1 + fieldGoldBonus(this.currentField())));
     this.history.push({ round: this.round, won: true, damage, maxHit });
     if (this.round >= ROGUE_FINAL_ROUND) {
       this.score += this.lives * 500;
@@ -1666,6 +1697,7 @@ export class RogueliteRun {
       pendingRewards: this.pendingRewards ? this.pendingRewards.map((o) => ({ ...o })) : null,
       rewardDraws: this.rewardDraws,
       endReason: this.endReason,
+      fieldPicks: { ...this.fieldPicks },
     };
   }
 
@@ -1689,6 +1721,7 @@ export class RogueliteRun {
     run.pendingRewards = s.pendingRewards ?? null;
     run.rewardDraws = s.rewardDraws ?? 0;
     run.endReason = s.endReason ?? null;
+    run.fieldPicks = { ...(s.fieldPicks ?? {}) };
     return run;
   }
 }

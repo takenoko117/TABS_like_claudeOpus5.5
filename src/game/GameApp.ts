@@ -29,7 +29,13 @@ import {
   type JackpotReward,
 } from './RogueJackpot';
 import type { Facility } from '../facilities/Facility';
-import type { Unit } from '../units/Unit';
+import { FLYING_UNIT_IDS, type Unit } from '../units/Unit';
+import { BIOMES, TRAITS, fieldChestBonus, type FieldOption } from '../field/BiomeDefs';
+import { describeFieldFeatures, generateField } from '../field/FieldGenerator';
+import type { FieldEvent, FieldUnitTraits } from '../field/FieldRuntime';
+import type { FieldLayout } from '../field/FieldTypes';
+import { FieldRenderer } from '../render/FieldRenderer';
+import { renderFieldMinimap } from '../render/FieldMinimap';
 import {
   COMBAT_FACILITY_TYPE_LIST,
   FACILITY_TYPES,
@@ -79,6 +85,7 @@ import {
   TAG_INFO,
   type TagId,
   UNIT_TAGS,
+  getUnitTags,
   countTags,
   generateRogueEnemyLineup,
   getTagTier,
@@ -407,6 +414,12 @@ export const PRESETS: readonly PresetScenario[] = [
   },
 ];
 
+/** ローグライトのタグから、ユニットが地形の影響をどう受けるかを決める */
+function rogueFieldTraits(u: Unit): FieldUnitTraits {
+  const tags = getUnitTags(u);
+  return { giant: tags.includes('giant'), mobile: tags.includes('mobile'), flyer: FLYING_UNIT_IDS.has(u.type.id) };
+}
+
 /** 決着の瞬間のスロー演出（実時間の秒数と速度倍率） */
 const FINISH_SLOWMO_SECONDS = 1.3;
 const FINISH_SLOWMO_SCALE = 0.3;
@@ -484,6 +497,10 @@ const BANNER_VOXEL: VoxelTextOptions = {
 export class GameApp {
   readonly battle = new Battle();
   readonly view: SceneView;
+  /** ローグライトのプロシージャル・フィールドの描画 */
+  private fieldRenderer!: FieldRenderer;
+  /** 生成済みのフィールド（同じ進路カードを何度も作り直さない） */
+  private readonly fieldLayoutCache = new Map<string, FieldLayout>();
   readonly sound = new SoundManager();
   readonly music = new MusicPlayer();
   private settings: GameSettings = loadSettings();
@@ -540,7 +557,7 @@ export class GameApp {
   /** 作戦室で最後に操作したカード（枠を強調する） */
   private roomSelectedUnit: UnitTypeId | null = null;
   /** 開いているローグライトの画面の種類 */
-  private rogueModalKind: 'starter' | 'rewards' | 'room' | null = null;
+  private rogueModalKind: 'starter' | 'rewards' | 'room' | 'route' | null = null;
   private rogueHudKey = '';
   private rogueRankKey = '';
   private rogueRankAt = 0;
@@ -636,6 +653,7 @@ export class GameApp {
 
   constructor(viewport: HTMLElement) {
     this.view = new SceneView(viewport);
+    this.fieldRenderer = new FieldRenderer(this.view.scene, this.view);
 
     this.battle.onUnitAdded = (u) => this.view.addUnitVisual(u);
     this.battle.onUnitRemoved = (u) => this.view.removeUnitVisual(u);
@@ -1247,6 +1265,10 @@ export class GameApp {
         const n = Number(e.code.replace('Digit', '')) - 1;
         if (this.playStyle === 'roguelite' && this.isRogueModalOpen()) {
           // 報酬の3択は 1〜3 キーでも選べる
+          if (this.rogueModalKind === 'route') {
+            if (n >= 0 && n < (this.rogue?.fieldOptions().length ?? 0)) this.chooseRogueRoute(n);
+            return;
+          }
           const option = this.rogueModalKind === 'rewards' ? this.rogue?.pendingRewards?.[n] : undefined;
           if (option) this.chooseRogueReward(option);
           return;
@@ -2569,6 +2591,7 @@ export class GameApp {
       // 再開時はアニメーションなしで残機ハートを即時同期する
       this.view.syncRogueHearts(saved.lives, ROGUE_MAX_LIVES, true);
       this.loadRogueRound();
+      if (saved.needsRouteChoice && !saved.pendingRewards) this.showRogueRouteChoice();
     } else {
       this.rogue = null;
       this.prepareEmptyRogueField();
@@ -2639,16 +2662,19 @@ export class GameApp {
     this.hideResultBanner();
     this.hideRogueModal();
     this.view.setPlacementGuidesVisible(false);
-    // 地形は標準固定（特殊地形・状態異常なし）
+    // 状態異常はなし。地形はラウンドごとにプロシージャル生成したフィールド
     this.battle.configureStage({ timeLimitSeconds: ROGUE_TIME_LIMIT_SECONDS });
     this.battle.rules = this.rogueRules;
     this.view.clearDebris();
     this.damageOverlay.clear();
-    this.view.setStageTheme(undefined);
+    const fieldOpt = run.currentField();
+    this.battle.setField(this.rogueFieldLayout(fieldOpt), rogueFieldTraits);
+    this.view.setStageTheme(BIOMES[fieldOpt.biome].theme);
     this.view.setVersusZones(getVersusZones(2), 0);
 
     const enemies = generateRogueEnemyLineup(run.round, run.seed);
     this.savedLineup = [...enemies, ...generateRogueFormation(run.deckRoster, run.relics, run.deckLevels)];
+    this.fitRecordsToField(this.savedLineup);
     this.spawnRecords(this.savedLineup);
     this.clearedBackup = [];
 
@@ -2671,8 +2697,59 @@ export class GameApp {
     if (!run) return;
     for (const record of this.savedLineup.filter((r) => r.team === 0)) this.removeRecord(record);
     const records = generateRogueFormation(run.deckRoster, run.relics, run.deckLevels);
+    this.fitRecordsToField(records);
     this.savedLineup.push(...records);
     this.spawnRecords(records);
+  }
+
+  /** 進路カードのフィールドを作る（キャッシュあり） */
+  private rogueFieldLayout(opt: FieldOption): FieldLayout {
+    const key = `${opt.seed}:${opt.biome}:${opt.trait}`;
+    let layout = this.fieldLayoutCache.get(key);
+    if (!layout) {
+      layout = generateField({ seed: opt.seed, biome: opt.biome, trait: opt.trait });
+      if (this.fieldLayoutCache.size > 16) this.fieldLayoutCache.clear();
+      this.fieldLayoutCache.set(key, layout);
+    }
+    return layout;
+  }
+
+  /** 地物・水域に重なったユニットの初期位置を、近くの空いた所へずらす */
+  private fitRecordsToField(records: PlacedRecord[]): void {
+    const field = this.battle.field;
+    if (!field) return;
+    const taken = new Set<number>();
+    for (const r of records) {
+      if (!r.typeId) continue;
+      const spot = field.findFreeSpot(r.x, r.z, r.team, UNIT_TYPES[r.typeId].scale ?? 1, taken);
+      if (!spot) continue;
+      r.x = spot.x + (Math.random() - 0.5) * 0.4;
+      r.z = spot.z + (Math.random() - 0.5) * 0.4;
+    }
+  }
+
+  /** フィールドの出来事（倒壊・宝の山など）に音・揺れ・宝箱で応える */
+  private handleFieldEvents(events: readonly FieldEvent[]): void {
+    if (events.length === 0 || this.onTitleScreen) return;
+    for (const e of events) {
+      switch (e.kind) {
+        case 'collapse':
+          this.sound.playEffect({ kind: e.heavy ? 'elephant_step' : 'eagle_drop_impact', pos: e.pos });
+          this.view.addCameraShake(e.heavy ? 0.22 : 0.1);
+          break;
+        case 'destroy':
+          if (e.big) this.view.addCameraShake(0.08);
+          break;
+        case 'treasure':
+          if (this.playStyle === 'roguelite' && this.mode === 'battle') this.droppedChests.spawn(e.pos, 0);
+          break;
+        case 'ice_break':
+          this.sound.playEffect({ kind: 'eagle_drop_impact', pos: e.pos });
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   /** 戦闘中・決着後の主ボタン */
@@ -2699,10 +2776,101 @@ export class GameApp {
       this.showRogueRewards();
       return;
     }
-    if (this.announcedResult !== null) {
-      run.advanceRound();
+    if (this.announcedResult !== null) this.advanceRogueRound();
+  }
+
+  /** 次のラウンドへ進む。進路を選ぶラウンドなら、先に進路カードを出す */
+  private advanceRogueRound(): void {
+    const run = this.rogue;
+    if (!run) return;
+    run.advanceRound();
+    saveRogueRun(run);
+    if (run.needsRouteChoice) {
+      this.loadRogueRound(false);
+      this.showRogueRouteChoice();
+    } else {
       this.loadRogueRound(true);
     }
+  }
+
+  /** 進路カード（次の戦場を2枚から選ぶ） */
+  private showRogueRouteChoice(): void {
+    const run = this.rogue;
+    if (!run || run.ended) return;
+    const opts = run.fieldOptions();
+    const cards = opts
+      .map((o, i) => {
+        const b = BIOMES[o.biome];
+        const layout = this.rogueFieldLayout(o);
+        const map = renderFieldMinimap(layout, 4);
+        const t = o.trait ? TRAITS[o.trait] : null;
+        const bonus = t
+          ? [t.goldBonus > 0 ? `ゴールド +${Math.round(t.goldBonus * 100)}%` : '', t.chestBonus > 0 ? `宝箱 +${Math.round(t.chestBonus * 100)}%` : '']
+              .filter(Boolean)
+              .join(' ／ ')
+          : '';
+        const features = describeFieldFeatures(layout).slice(0, 3).join('・');
+        return `
+        <button type="button" class="rogue-card route-card" data-action="route-pick" data-index="${i}">
+          <div class="rogue-card-title">${b.icon} ${b.name}${t ? ` <span class="route-trait">${t.name}</span>` : ''}</div>
+          ${map ? `<img class="route-map" src="${map}" alt="${b.name}の見取り図" />` : ''}
+          <div class="rogue-card-desc">${b.rule}</div>
+          ${features ? `<div class="route-features">${features}</div>` : ''}
+          ${t ? `<div class="route-trait-desc">${t.effect}${bonus ? `<b>${bonus}</b>` : ''}</div>` : ''}
+          <div class="rogue-card-foot">${i + 1}: この戦場へ</div>
+        </button>`;
+      })
+      .join('');
+    this.showRogueModal(
+      `
+      <div class="rogue-modal-title">ROUND ${run.round}：進路を選んでください</div>
+      <div class="rogue-modal-sub">戦場の地形はバイオームごとに変わります。敵の編成はどちらでも同じです。見取り図の左が自陣、右が敵陣です。</div>
+      <div class="rogue-card-row">${cards}</div>
+    `,
+      'rogue-route',
+    );
+  }
+
+  private chooseRogueRoute(index: number): void {
+    const run = this.rogue;
+    if (!run || !run.needsRouteChoice) return;
+    run.chooseRoute(index);
+    saveRogueRun(run);
+    this.sound.playPlace();
+    this.loadRogueRound(true);
+  }
+
+  /** 作戦室に出す、今の戦場の情報（見取り図・特性・デッキに関わる地形メモ） */
+  private renderRogueFieldSection(run: RogueliteRun): string {
+    const field = this.battle.field;
+    if (!field) return '';
+    const opt = run.currentField();
+    const b = BIOMES[opt.biome];
+    const t = opt.trait ? TRAITS[opt.trait] : null;
+    const map = renderFieldMinimap(field.layout, 3);
+    const tags = new Set<string>();
+    for (const c of run.deck) for (const tag of UNIT_TAGS[c.id] ?? []) tags.add(tag);
+    const memos: string[] = [];
+    const layout = field.layout;
+    const hasWater = layout.bodies.some((w) => w.kind !== 'lava');
+    const flammableKinds = ['tree_small', 'tree_big', 'pine', 'bush', 'haybale', 'house_wood', 'shack', 'fence', 'cart', 'log'];
+    const flammable = layout.props.some((p) => flammableKinds.includes(p.kind));
+    if (tags.has('shock') && hasWater) memos.push('⚡ 水につかった敵には雷が水域ごと伝わる');
+    if (tags.has('fire') && flammable) memos.push('🔥 炎で木や木造の建物が燃え広がる（味方も巻き込む）');
+    if (tags.has('explosive')) memos.push('💥 爆発は地物を壊しやすい（1.5倍）');
+    if (tags.has('giant')) memos.push('🦣 巨体は地物を踏み倒し、深い川も渡れる');
+    if (tags.has('impact')) memos.push('💨 吹き飛ばした敵を岩や壁にぶつけると地物が壊れる');
+    if (tags.has('ranged') && layout.props.length > 0) memos.push('🏹 地物が射線を切る。岩の上から撃つと威力 +20%');
+    if (layout.bodies.some((w) => w.kind === 'river' && w.flowSpeed > 0)) memos.push('🌊 深い川に入ると流され、滝に落ちると戻れない');
+    return `
+      <div class="wr-field">
+        ${map ? `<img class="wr-field-map" src="${map}" alt="戦場の見取り図" />` : ''}
+        <div class="wr-field-info">
+          <div class="wr-field-name">${b.icon} ${b.name}${t ? ` <span class="route-trait">${t.name}</span>` : ''}</div>
+          <div class="wr-field-rule">${b.rule}${t ? `／${t.effect}` : ''}</div>
+          ${memos.slice(0, 3).map((m) => `<div class="wr-field-memo">${m}</div>`).join('')}
+        </div>
+      </div>`;
   }
 
   /** 戦闘の勝敗を判定する。時間切れは生き残ったユニットの合計コストが多い側の勝ち（同値は負け） */
@@ -3080,10 +3248,8 @@ export class GameApp {
       this.showRogueRewards();
       return;
     }
-    run.advanceRound();
-    saveRogueRun(run);
     this.sound.playPlace();
-    this.loadRogueRound(true);
+    this.advanceRogueRound();
   }
 
   /** ライフのハート（ドット絵。残っている分は鼓動し、失った分は暗くする） */
@@ -3397,6 +3563,10 @@ export class GameApp {
   private showRogueWarRoom(): void {
     const run = this.rogue;
     if (!run || run.ended || this.mode !== 'placement') return;
+    if (run.needsRouteChoice) {
+      this.showRogueRouteChoice();
+      return;
+    }
     const openRoom = this.isRogueModalOpen() ? this.elRogueModal?.querySelector<HTMLElement>('.rogue-war-room') : null;
     const before = openRoom ? this.roomFx.capture(openRoom) : new Map<string, DOMRect>();
     const scrollTops = openRoom ? [openRoom, ...openRoom.querySelectorAll<HTMLElement>('.wr-col')].map((el) => el.scrollTop) : [];
@@ -3437,6 +3607,7 @@ export class GameApp {
             <span>敵予算 <b>${run.enemyBudget.toLocaleString()}</b> pt</span>
             ${badge ? `<span class="wr-badge ${badge.kind}">${badge.text}</span>` : ''}
           </div>
+          ${this.renderRogueFieldSection(run)}
         </section>
         <section class="wr-col wr-col-deck" aria-label="あなたのデッキ">
           <h2 class="wr-title">あなたのデッキ <span>カードを押すとデッキと控えを入れ替え</span></h2>
@@ -3610,7 +3781,8 @@ export class GameApp {
     this.hideEnemyDetail();
     this.elRogueModal.innerHTML = `<div class="rogue-modal-inner ${innerClass}">${html}</div>`;
     this.elRogueModal.classList.remove('hidden');
-    this.rogueModalKind = innerClass === 'rogue-war-room' ? 'room' : innerClass === 'rogue-rewards' ? 'rewards' : 'starter';
+    this.rogueModalKind =
+      innerClass === 'rogue-war-room' ? 'room' : innerClass === 'rogue-rewards' ? 'rewards' : innerClass === 'rogue-route' ? 'route' : 'starter';
     // 作戦室は全画面を使うので、背後のパネル類を隠す（閉じると元に戻る）
     document.body.classList.toggle('war-room-open', this.rogueModalKind === 'room');
     this.unitPreviews ??= new UnitPreviews();
@@ -3623,6 +3795,9 @@ export class GameApp {
       switch (target.dataset.action) {
         case 'starter':
           this.startRogueRun(ROGUE_STARTERS[index]);
+          break;
+        case 'route-pick':
+          this.chooseRogueRoute(index);
           break;
         case 'reward': {
           const opt = this.rogue?.pendingRewards?.[index];
@@ -4033,7 +4208,11 @@ export class GameApp {
           : null;
       this.jackpotAllyMaxHpTotal = this.rogueAllyMaxHpTotal();
       this.resetJackpot();
-      this.jackpotTracker = new JackpotDropTracker(JACKPOT_MAX_DROPS[this.rogue.roundKind]);
+      this.jackpotTracker = new JackpotDropTracker(
+        JACKPOT_MAX_DROPS[this.rogue.roundKind],
+        Math.random,
+        1 + fieldChestBonus(this.rogue.currentField()),
+      );
     }
     this.battleStats.reset();
     this.damageOverlay.clear();
@@ -4472,6 +4651,7 @@ export class GameApp {
 
     if (this.onTitleScreen) {
       this.updateTitleDemo(realDt);
+      this.fieldRenderer.sync(this.battle.field, realDt);
       this.view.renderFrame(this.battle, realDt);
       this.titleLogo?.update(realDt);
       return;
@@ -4493,6 +4673,7 @@ export class GameApp {
     }
 
     this.updateHUD();
+    this.handleFieldEvents(this.fieldRenderer.sync(this.battle.field, realDt));
     this.view.renderFrame(this.battle, realDt);
     // スロー観戦中は数字の経過も遅くし、連鎖を読めるようにする
     const labelDt = this.paused ? 0 : realDt * Math.min(1.5, Math.max(0.35, this.timeScale));

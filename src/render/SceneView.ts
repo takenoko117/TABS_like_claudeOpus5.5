@@ -1408,6 +1408,16 @@ export class SceneView {
     this.kawariLogs.length = 0;
   }
 
+  /** フィールドの地物が壊れたときの破片（地面に落ちて残る） */
+  emitDebrisVoxel(pos: Vector3, vel: Vector3, colorHex: number, size: number): void {
+    this.pushDroppedVoxel(pos, vel, colorHex, size);
+  }
+
+  /** フィールドの演出用の短命な粒子（炎・水しぶき・砂など） */
+  emitFxParticle(pos: Vector3, vel: Vector3, colorHex: number, size: number, life: number, gravity = 0): void {
+    this.pushFxParticle(pos, vel, colorHex, size, life, gravity);
+  }
+
   private pushDroppedVoxel(pos: Vector3, vel: Vector3, colorHex: number, size: number): void {
     const item: DroppedVoxel = {
       pos,

@@ -100,6 +100,8 @@ export class JackpotDropTracker {
   constructor(
     private readonly maxDrops: number,
     private readonly rng: () => number = Math.random,
+    /** フィールド特性による出やすさの倍率（1.2 なら +20%） */
+    private readonly chanceMul = 1,
   ) {}
 
   onKill(
@@ -116,7 +118,7 @@ export class JackpotDropTracker {
     const highValue = enemy.cost >= enemyBudget * HIGH_VALUE_COST_RATIO;
     // 自軍がピンチなほど出やすく、余裕があるうちはほぼ出ない（割合未指定なら従来どおり）
     const scale = allyHpRatio === undefined ? 1 : jackpotHpDropScale(allyHpRatio);
-    const chance = (BASE_DROP_CHANCE + DROP_CHANCE_PER_MISS * this.misses + (highValue ? 0.3 : 0)) * scale;
+    const chance = (BASE_DROP_CHANCE + DROP_CHANCE_PER_MISS * this.misses + (highValue ? 0.3 : 0)) * scale * this.chanceMul;
     if (this.rng() >= chance) {
       this.misses++;
       return null;

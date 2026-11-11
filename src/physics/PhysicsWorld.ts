@@ -58,6 +58,32 @@ export interface SlopeSpec {
   rightZ: number;
 }
 
+/** 箱型の障害物（壊せる地物の区画）。active を false にすると当たらなくなる */
+export interface ObstacleBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+  active: boolean;
+}
+
+/** 粒子が箱に当たった記録（壊せる地物へのダメージに使う） */
+export interface BoxImpact {
+  /** boxes の添字 */
+  box: number;
+  particle: Particle;
+  /** めり込む直前の速さ（m/s） */
+  speed: number;
+}
+
+/** 箱の検索グリッドの範囲と1マスの大きさ */
+const BOX_GRID_MIN_X = -27;
+const BOX_GRID_MIN_Z = -21;
+const BOX_GRID_COLS = 54;
+const BOX_GRID_ROWS = 42;
+
 /** 戦場を囲む見えない壁（原点中心の矩形。高さは無限） */
 export interface FieldWalls {
   maxX: number;
@@ -75,6 +101,8 @@ const WALL_MIN_IMPACT_SPEED = 2.5;
 const WALL_MIN_BOUNCE_SPEED = 1.5;
 /** 跳ね返り速度の上限（強烈なノックバックでも反対側まで飛ばないように） */
 const WALL_MAX_BOUNCE_SPEED = 10;
+
+const EMPTY_LIST: readonly number[] = [];
 
 const _va = new Vector3();
 const _vb = new Vector3();
@@ -108,6 +136,13 @@ export class PhysicsWorld {
   pits: PitSpec[] = [];
   /** スロープ（坂道ブロック）のリスト */
   slopes: SlopeSpec[] = [];
+  /** 箱型の障害物（壊せる地物）。変更したら markBoxesDirty() を呼ぶ */
+  boxes: ObstacleBox[] = [];
+  /** 直近の step() で記録された、粒子と箱の接触 */
+  readonly boxImpacts: BoxImpact[] = [];
+  private boxGrid: number[][] = [];
+  private boxGridDirty = true;
+  private readonly boxImpactKeys = new Set<number>();
   /** 戦場外周（|x|>arenaMaxX または |z|>arenaMaxZ）を奈落とする浮島アリーナ設定 */
   arenaBounds: { maxX: number; maxZ: number } | null = null;
 
@@ -155,7 +190,13 @@ export class PhysicsWorld {
     this.constraints.length = w;
   }
 
+  /** 箱の位置や active を変えたあとに呼ぶ（検索グリッドを作り直す） */
+  markBoxesDirty(): void {
+    this.boxGridDirty = true;
+  }
+
   clear(): void {
+    this.boxImpacts.length = 0;
     this.particles.length = 0;
     this.constraints.length = 0;
     this.contacts.length = 0;
@@ -164,6 +205,9 @@ export class PhysicsWorld {
   /** 物理を dt 秒進める（固定 dt での呼び出しを推奨） */
   step(dt: number): void {
     this.contacts.length = 0;
+    this.boxImpacts.length = 0;
+    const hasBoxes = this.boxes.length > 0;
+    if (hasBoxes && this.boxGridDirty) this.rebuildBoxGrid();
     this.integrate(dt);
     this.solveFieldWalls(dt);
     for (let it = 0; it < this.iterations; it++) {
@@ -171,10 +215,13 @@ export class PhysicsWorld {
       for (let i = 0; i < cs.length; i++) cs[i].solve();
       this.solveGround(false);
       if (this.obstacles.length > 0) this.solveObstacles();
+      // 箱は重いので1回おきに解く（最後にもう一度、接触を記録しながら解く）
+      if (hasBoxes && (it & 1) === 1) this.solveBoxes(false, dt);
       this.solveFieldWalls(dt);
     }
     if (this.collisionsEnabled) this.solveParticleCollisions(dt);
     if (this.obstacles.length > 0) this.solveObstacles();
+    if (hasBoxes) this.solveBoxes(true, dt);
     this.solveFieldWalls(dt);
     // 最後に摩擦付きで地面判定を行う
     this.solveGround(true);
@@ -360,6 +407,99 @@ export class PhysicsWorld {
           const nz = dz / d;
           p.pos.x = obs.x + nx * minR;
           p.pos.z = obs.z + nz * minR;
+        }
+      }
+    }
+  }
+
+  private rebuildBoxGrid(): void {
+    this.boxGridDirty = false;
+    const grid: number[][] = Array.from({ length: BOX_GRID_COLS * BOX_GRID_ROWS }, () => []);
+    // 巨体の粒子は大きいので、後から追加されても届くよう余裕を持たせる
+    const pad = Math.max(1.2, this.maxRadius);
+    this.boxes.forEach((b, idx) => {
+      if (!b.active) return;
+      const i0 = Math.max(0, Math.floor(b.minX - pad - BOX_GRID_MIN_X));
+      const i1 = Math.min(BOX_GRID_COLS - 1, Math.floor(b.maxX + pad - BOX_GRID_MIN_X));
+      const j0 = Math.max(0, Math.floor(b.minZ - pad - BOX_GRID_MIN_Z));
+      const j1 = Math.min(BOX_GRID_ROWS - 1, Math.floor(b.maxZ + pad - BOX_GRID_MIN_Z));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) grid[j * BOX_GRID_COLS + i].push(idx);
+    });
+    this.boxGrid = grid;
+  }
+
+  /** (x, z) の近くにある箱の添字（なければ空配列） */
+  boxesNear(x: number, z: number): readonly number[] {
+    if (this.boxGridDirty) this.rebuildBoxGrid();
+    const i = Math.floor(x - BOX_GRID_MIN_X);
+    const j = Math.floor(z - BOX_GRID_MIN_Z);
+    if (i < 0 || j < 0 || i >= BOX_GRID_COLS || j >= BOX_GRID_ROWS) return EMPTY_LIST;
+    return this.boxGrid[j * BOX_GRID_COLS + i] ?? EMPTY_LIST;
+  }
+
+  /** 箱型の障害物との押し出し。record なら接触を boxImpacts に記録し、天面に乗った粒子に摩擦をかける */
+  private solveBoxes(record: boolean, dt: number): void {
+    const boxes = this.boxes;
+    if (record) this.boxImpactKeys.clear();
+    for (const p of this.particles) {
+      if (p.invMass === 0) continue;
+      const list = this.boxesNear(p.pos.x, p.pos.z);
+      for (let n = 0; n < list.length; n++) {
+        const bi = list[n];
+        const b = boxes[bi];
+        if (!b.active) continue;
+        const r = p.radius;
+        const px = p.pos.x;
+        const py = p.pos.y;
+        const pz = p.pos.z;
+        if (px < b.minX - r || px > b.maxX + r || pz < b.minZ - r || pz > b.maxZ + r || py < b.minY - r || py > b.maxY + r) continue;
+        const qx = px < b.minX ? b.minX : px > b.maxX ? b.maxX : px;
+        const qy = py < b.minY ? b.minY : py > b.maxY ? b.maxY : py;
+        const qz = pz < b.minZ ? b.minZ : pz > b.maxZ ? b.maxZ : pz;
+        let dx = px - qx;
+        let dy = py - qy;
+        let dz = pz - qz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= r * r) continue;
+        let push: number;
+        if (d2 > 1e-10) {
+          const d = Math.sqrt(d2);
+          dx /= d;
+          dy /= d;
+          dz /= d;
+          push = r - d;
+        } else {
+          // 中心が箱の中: いちばん浅い面から押し出す（底面へは押さない）
+          const pen = [px - b.minX, b.maxX - px, pz - b.minZ, b.maxZ - pz, b.maxY - py];
+          let m = 0;
+          for (let k = 1; k < pen.length; k++) if (pen[k] < pen[m]) m = k;
+          dx = m === 0 ? -1 : m === 1 ? 1 : 0;
+          dz = m === 2 ? -1 : m === 3 ? 1 : 0;
+          dy = m === 4 ? 1 : 0;
+          push = pen[m] + r;
+        }
+        if (record) {
+          const key = p.bodyId * 4096 + bi;
+          if (!this.boxImpactKeys.has(key)) {
+            this.boxImpactKeys.add(key);
+            const vx = p.pos.x - p.prev.x;
+            const vy = p.pos.y - p.prev.y;
+            const vz = p.pos.z - p.prev.z;
+            // 押し出す向きへの速さ（箱へ向かう成分）
+            const into = -(vx * dx + vy * dy + vz * dz) / dt;
+            this.boxImpacts.push({ box: bi, particle: p, speed: Math.max(0, into) });
+          }
+        }
+        p.pos.x += dx * push;
+        p.pos.y += dy * push;
+        p.pos.z += dz * push;
+        if (record && dy > 0.7) {
+          // 天面に乗った: 地面と同じように摩擦をかけ、接地扱いにする
+          p.grounded = true;
+          const f = p.friction;
+          p.prev.x += (p.pos.x - p.prev.x) * f;
+          p.prev.z += (p.pos.z - p.prev.z) * f;
+          if (p.prev.y > p.pos.y) p.prev.y = p.pos.y;
         }
       }
     }
