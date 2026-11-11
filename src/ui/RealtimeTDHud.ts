@@ -22,6 +22,8 @@ import {
   type RogueStarter,
 } from '../game/RogueliteMode';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
+import { BIOMES, TRAITS } from '../field/BiomeDefs';
+import { TD_TERRAIN_SECONDS } from '../game/TDTerrain';
 import type { JackpotReward } from '../game/RogueJackpot';
 import { UnitPreviews } from '../render/UnitPreviews';
 import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
@@ -344,11 +346,17 @@ export class RealtimeTDHud {
     const events = td.events.splice(0).filter((e) => e.kind !== 'levelup');
     if (events.length === 0) return;
     // 同じフレームに重なったら最も重要なものだけを出す
-    const order = ['boss', 'counter', 'elite', 'wave'] as const;
+    const order = ['boss', 'counter', 'terrain', 'elite', 'wave'] as const;
     const top = [...events].sort(
       (a, b) => order.indexOf(a.kind as (typeof order)[number]) - order.indexOf(b.kind as (typeof order)[number]),
     )[0];
     switch (top.kind) {
+      case 'terrain': {
+        const b = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
+        const t = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
+        this.announce(`🌋 地形変化！ ${b ? `${b.icon}${b.name}` : ''}${t ? `（${t.name}: ${t.effect}）` : ''}`, 'terrain');
+        break;
+      }
       case 'boss':
         this.announce('👹 最終ボス出現', 'boss');
         break;
@@ -376,6 +384,7 @@ export class RealtimeTDHud {
       <div class="td-clock">
         <div class="td-wave"></div>
         <div class="td-time"></div>
+        <div class="td-terrain"></div>
       </div>
       <div class="td-base enemy"><span class="td-base-label">敵軍の城 🏯</span><div class="td-hp"><i></i></div><b class="td-hp-num"></b></div>
     `;
@@ -396,6 +405,16 @@ export class RealtimeTDHud {
     const timeEl = this.elTop.querySelector<HTMLElement>('.td-time')!;
     timeEl.textContent = over ? `+${formatTime(td.time - TD_DURATION_SECONDS)}` : formatTime(TD_DURATION_SECONDS - td.time);
     timeEl.classList.toggle('over', over);
+    const terrainEl = this.elTop.querySelector<HTMLElement>('.td-terrain')!;
+    const biome = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
+    if (biome) {
+      const trait = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
+      const next = Math.max(0, (td.terrainIndex + 1) * TD_TERRAIN_SECONDS - td.time);
+      const label = `${biome.icon}${biome.name}${trait ? `・${trait.name}` : ''}`;
+      terrainEl.textContent = over ? label : `${label} ｜ 変化まで ${formatTime(next)}`;
+      terrainEl.title = `${biome.rule}${trait ? `／${trait.effect}` : ''}`;
+      terrainEl.classList.toggle('soon', !over && next <= 10);
+    } else terrainEl.textContent = '';
     const tools = this.root.querySelector('.td-tools')!;
     tools.querySelector('[data-td="auto"]')!.classList.toggle('active', td.autoDeploy);
     tools.querySelector('[data-td="pause"]')!.classList.toggle('active', this.host.isPaused());

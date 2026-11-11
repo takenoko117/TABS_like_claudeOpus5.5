@@ -30,10 +30,10 @@ import {
   type JackpotReward,
 } from './RogueJackpot';
 import type { Facility } from '../facilities/Facility';
-import { FLYING_UNIT_IDS, type Unit } from '../units/Unit';
+import type { Unit } from '../units/Unit';
 import { BIOMES, TRAITS, fieldChestBonus, type FieldOption } from '../field/BiomeDefs';
 import { describeFieldFeatures, generateField } from '../field/FieldGenerator';
-import type { FieldEvent, FieldUnitTraits } from '../field/FieldRuntime';
+import type { FieldEvent, FieldRuntime } from '../field/FieldRuntime';
 import type { FieldLayout } from '../field/FieldTypes';
 import { FieldRenderer } from '../render/FieldRenderer';
 import { renderFieldMinimap } from '../render/FieldMinimap';
@@ -86,7 +86,7 @@ import {
   TAG_INFO,
   type TagId,
   UNIT_TAGS,
-  getUnitTags,
+  rogueFieldTraits,
   countTags,
   generateRogueEnemyLineup,
   getTagTier,
@@ -419,12 +419,6 @@ export const PRESETS: readonly PresetScenario[] = [
   },
 ];
 
-/** ローグライトのタグから、ユニットが地形の影響をどう受けるかを決める */
-function rogueFieldTraits(u: Unit): FieldUnitTraits {
-  const tags = getUnitTags(u);
-  return { giant: tags.includes('giant'), mobile: tags.includes('mobile'), flyer: FLYING_UNIT_IDS.has(u.type.id) };
-}
-
 /** 決着の瞬間のスロー演出（実時間の秒数と速度倍率） */
 const FINISH_SLOWMO_SECONDS = 1.3;
 const FINISH_SLOWMO_SCALE = 0.3;
@@ -577,6 +571,8 @@ export class GameApp {
   private tdPausedForSettings = false;
   /** 強化を選んでいる間は戦闘を止める */
   private tdHold = false;
+  /** 背景の色合いを合わせ済みの TD の地形 */
+  private tdThemedField: FieldRuntime | null = null;
   /** 敵を倒すと出る経験値オーブ（最初に使うときに作る） */
   private xpOrbsField: XpOrbs | null = null;
 
@@ -2474,6 +2470,7 @@ export class GameApp {
     this.savedLineup = [];
     this.clearedBackup = [];
     this.view.setStageTheme(undefined);
+    this.tdThemedField = null;
     this.view.setPlacementGuidesVisible(false);
     this.view.setFollowedUnit(null);
     this.droppedChestsField?.clear();
@@ -2510,6 +2507,19 @@ export class GameApp {
         begin();
       });
     } else begin();
+  }
+
+  /** 地形が作り直されたら、空や地面の色合いをそのバイオームに合わせる */
+  private syncTDTerrainTheme(): void {
+    const field = this.battle.field;
+    if (field === this.tdThemedField || !this.td) return;
+    const first = this.tdThemedField === null;
+    this.tdThemedField = field;
+    this.view.setStageTheme(field ? BIOMES[field.layout.biome].theme : undefined);
+    if (field && !first) {
+      this.view.addCameraShake(0.6);
+      this.sound.playEffect({ kind: 'elephant_step', pos: new Vector3(0, 0, 0) });
+    }
   }
 
   private get xpOrbs(): XpOrbs {
@@ -2970,7 +2980,9 @@ export class GameApp {
           if (e.big) this.view.addCameraShake(0.08);
           break;
         case 'treasure':
-          if (this.playStyle === 'roguelite' && this.mode === 'battle') this.droppedChests.spawn(e.pos, 0);
+          if ((this.playStyle === 'roguelite' || (this.playStyle === 'td' && this.td && !this.td.ended)) && this.mode === 'battle') {
+            this.droppedChests.spawn(e.pos, 0);
+          }
           break;
         case 'ice_break':
           this.sound.playEffect({ kind: 'eagle_drop_impact', pos: e.pos });
@@ -3156,18 +3168,11 @@ export class GameApp {
   /** 戦場の宝箱を開ける。戦闘を止めてボーナス演出へ進む */
   private openDroppedChest(chest: DroppedChest): void {
     if (this.playStyle === 'td') {
-      // タワーディフェンスは時間を止めず、中身をその場で適用する
-      if (!this.td || this.battle.result() !== null) return;
-      this.droppedChests.remove(chest);
-      const rewards = this.td.openChest(this.battle, chest.tier);
-      this.tdHud.showChestRewards(rewards);
-      this.sound.playJackpotCoin();
-      this.view.addCameraShake(0.2);
+      this.openTDChest(chest);
       return;
     }
     if (!this.rogue || this.jackpotBusy || this.battle.result() !== null) return;
-    const ndc = chest.position.clone().project(this.view.camera);
-    const origin = { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight };
+    const origin = this.chestScreenOrigin(chest);
     this.droppedChests.remove(chest);
     const rewards = rollJackpot(chest.tier, {
       rng: Math.random,
@@ -3181,6 +3186,34 @@ export class GameApp {
       origin,
       sound: this.sound,
       onFinished: () => this.applyJackpotRewards(rewards),
+    });
+  }
+
+  private chestScreenOrigin(chest: DroppedChest): { x: number; y: number } {
+    const ndc = chest.position.clone().project(this.view.camera);
+    return { x: ((ndc.x + 1) / 2) * window.innerWidth, y: ((1 - ndc.y) / 2) * window.innerHeight };
+  }
+
+  /** タワーディフェンスの宝箱。ローグライトと同じ開封の演出を見せ、演出の間は戦闘を止める */
+  private openTDChest(chest: DroppedChest): void {
+    const td = this.td;
+    if (!td || td.ended || this.jackpotBusy || this.tdHud.isTutorialOpen || this.battle.result() !== null) return;
+    const origin = this.chestScreenOrigin(chest);
+    this.droppedChests.remove(chest);
+    const rewards = td.rollChest(chest.tier);
+    const hadCards = td.snapshotCards();
+    this.view.addCameraShake(0.3);
+    this.jackpot.play({
+      tier: chest.tier,
+      rewards,
+      origin,
+      sound: this.sound,
+      onFinished: () =>
+        this.applyJackpotRewardsTo(td.run, rewards, 0, false, () => {
+          if (this.td !== td) return;
+          td.afterChestRewards(this.battle, hadCards);
+          this.tdHud.showChestRewards(rewards);
+        }),
     });
   }
 
@@ -3201,15 +3234,29 @@ export class GameApp {
   private applyJackpotRewards(rewards: readonly JackpotReward[], start = 0): void {
     const run = this.rogue;
     if (!run) return;
+    this.applyJackpotRewardsTo(run, rewards, start, true, () => this.renderRoguePanel());
+  }
+
+  /** applyJackpotRewards の本体。record なら報酬をローグライトの記録と画面の隅のチップに残す */
+  private applyJackpotRewardsTo(
+    run: RogueliteRun,
+    rewards: readonly JackpotReward[],
+    start: number,
+    record: boolean,
+    onDone: () => void,
+  ): void {
     for (let i = start; i < rewards.length; i++) {
       const reward = rewards[i];
-      this.jackpotRewards.push(reward);
-      this.jackpot.addChip(reward);
-      if (this.playJackpotRewardFx(reward, run, () => this.applyJackpotRewards(rewards, i + 1))) return;
+      if (record) {
+        this.jackpotRewards.push(reward);
+        this.jackpot.addChip(reward);
+      }
+      const next = () => this.applyJackpotRewardsTo(run, rewards, i + 1, record, onDone);
+      if (this.playJackpotRewardFx(reward, run, next)) return;
       applyJackpotReward(reward, this.battle, run);
     }
     this.view.addCameraShake(0.25);
-    this.renderRoguePanel();
+    onDone();
   }
 
   /** 演出のある報酬なら演出を始めて true を返す。報酬の効果は演出の中で適用し、終わると next を呼ぶ */
@@ -4924,6 +4971,7 @@ export class GameApp {
 
     if (this.isRogueModalOpen()) this.unitPreviews?.update(realDt);
     if (this.playStyle === 'td' && !this.onTitleScreen) {
+      this.syncTDTerrainTheme();
       this.xpOrbsField?.update(realDt);
       this.tdHud.update(realDt);
     }

@@ -505,7 +505,7 @@ function placeBarrels(d: Draft, count: number, explosiveRatio: number): void {
 // バイオームごとの組み立て
 // ---------------------------------------------------------------
 
-const BASE_GROUND: Readonly<Record<BiomeId, number>> = {
+export const BASE_GROUND: Readonly<Record<BiomeId, number>> = {
   plains: GROUND.grass,
   forest: GROUND.grass,
   town: GROUND.grass,

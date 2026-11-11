@@ -30,7 +30,10 @@ import {
   type OwnedRelic,
   type RewardOption,
   type RogueStarter,
+  rogueFieldTraits,
 } from './RogueliteMode';
+import type { BiomeId, FieldTraitId } from '../field/FieldTypes';
+import { buildTDTerrain, pickTDTerrain, relocateUnitsOutOfTerrain, TD_TERRAIN_SECONDS } from './TDTerrain';
 
 // ---------------------------------------------------------------
 // 定数（数値は試遊で調整する前提の初版）
@@ -349,7 +352,11 @@ export class TDRun {
   private lastChestTime = -Infinity;
   endReason: TDEndReason | null = null;
   /** Wave の開始・反撃など、画面に出す知らせ */
-  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup'; value: number }> = [];
+  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain'; value: number }> = [];
+  /** 作り直した地形の回数（0 が開始時の地形） */
+  terrainIndex = -1;
+  terrainBiome: BiomeId | null = null;
+  terrainTrait: FieldTraitId | null = null;
   private readonly rng: () => number;
 
   constructor(seed: number, starter: RogueStarter, rng?: () => number) {
@@ -407,6 +414,18 @@ export class TDRun {
     this.rules.start(battle);
     this.syncTags(battle);
     this.rebuildRelics(battle);
+    this.regenerateTerrain(battle);
+  }
+
+  /** 地形を次のものに作り直す。重なったユニットは近くへ逃がす */
+  regenerateTerrain(battle: Battle): void {
+    this.terrainIndex++;
+    const spec = pickTDTerrain(this.run.seed, this.terrainIndex, this.terrainBiome);
+    this.terrainBiome = spec.biome;
+    this.terrainTrait = spec.trait;
+    const field = battle.setField(buildTDTerrain(spec), rogueFieldTraits);
+    if (field) relocateUnitsOutOfTerrain(field, battle.units);
+    if (this.terrainIndex > 0) this.events.push({ kind: 'terrain', value: this.terrainIndex });
   }
 
   /** デッキの兵種でシナジーを数え直す */
@@ -472,6 +491,7 @@ export class TDRun {
       this.queueEnemies(pickWaveEnemies(getWaveRound(wave), getWaveBudget(wave) * TD_TRICKLE_RATIO, this.rng), this.time, 2);
     }
     this.updateEnemyCannons(battle);
+    while (this.time >= (this.terrainIndex + 1) * TD_TERRAIN_SECONDS && this.terrainIndex >= 0) this.regenerateTerrain(battle);
     if (this.bossSpawned) {
       // 延長戦: 最終 Wave の強さで湧き続ける
       this.overtimeTimer += dt;
@@ -735,16 +755,31 @@ export class TDRun {
     }
   }
 
-  /** 宝箱の中身を引いて、その場で適用する（時間は止めない） */
+  /** 宝箱の中身を引いて、その場で適用する */
   openChest(battle: Battle, tier: ChestTier): JackpotReward[] {
-    const rewards = rollJackpot(tier, {
+    const rewards = this.rollChest(tier);
+    const hadCards = this.snapshotCards();
+    for (const r of rewards) applyJackpotReward(r, battle, this.run, this.rng);
+    this.afterChestRewards(battle, hadCards);
+    return rewards;
+  }
+
+  /** 宝箱の中身を引く（まだ適用しない。開封の演出のあとで適用する） */
+  rollChest(tier: ChestTier): JackpotReward[] {
+    return rollJackpot(tier, {
       rng: this.rng,
       battleActive: true,
       summonSlots: summonCandidates(this.run).length,
     });
-    const hadCards = new Set(this.run.cards.map((c) => c.id));
-    for (const r of rewards) applyJackpotReward(r, battle, this.run, this.rng);
-    // 増援要請で手に入れたカード
+  }
+
+  /** 宝箱の報酬を適用する前のデッキ（afterChestRewards に渡す） */
+  snapshotCards(): Set<UnitTypeId> {
+    return new Set(this.run.cards.map((c) => c.id));
+  }
+
+  /** 宝箱の報酬を適用し終えたあとの後始末。増援要請で増えたカードと部隊を TD の管理に入れる */
+  afterChestRewards(battle: Battle, hadCards: ReadonlySet<UnitTypeId>): void {
     for (const c of this.run.cards) {
       if (!hadCards.has(c.id)) this.cooldowns.set(c.id, getDeployCooldown(c.id));
     }
@@ -752,7 +787,6 @@ export class TDRun {
       if (u.alive && u.team === 0 && !this.deployed.has(u) && !hadCards.has(u.type.id)) this.deployed.add(u);
     }
     this.syncTags(battle);
-    return rewards;
   }
 
   /** 今の選択権の3択（なければ null） */

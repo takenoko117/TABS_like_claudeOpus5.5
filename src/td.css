@@ -90,6 +90,9 @@ body.td-mode #btn-restore-hud {
 .td-wave { font-weight: 900; font-size: 15px; color: var(--gold); }
 .td-time { font: 900 22px/1.1 'DotGothic16', var(--font-ui); }
 .td-time.over { color: var(--boss); }
+.td-terrain { font-size: 11px; color: var(--sub); white-space: nowrap; }
+.td-terrain.soon { color: var(--gold); animation: td-terrain-blink 0.6s steps(2) infinite; }
+@keyframes td-terrain-blink { 50% { opacity: 0.45; } }
 
 /* ---- 左上：経験値バー・お金・強化・レリック ---- */
 .td-side {
@@ -274,6 +277,7 @@ body.td-mode #btn-restore-hud {
 .td-announce.counter { border-color: var(--boss); color: #ffb3a8; }
 .td-announce.elite { border-color: var(--elite); color: #d9b8ff; }
 .td-announce.chest { font-size: 16px; }
+.td-announce.terrain { border-color: #46d17a; color: #c8ffd9; font-size: 18px; }
 @keyframes td-announce-in { from { transform: translate(-50%, -12px); opacity: 0; } }
 
 /* ---- レベルアップの演出（ボクセル調） ---- */
@@ -659,6 +663,7 @@ body.td-mode #btn-restore-hud {
   .td-clock { padding: 2px 8px; }
   .td-time { font-size: 18px; }
   .td-wave { font-size: 11px; }
+  .td-terrain { font-size: 10px; }
   .td-side { top: 50px; left: 6px; width: 160px; gap: 4px; }
   .td-xp { padding: 3px 4px; gap: 6px; }
   .td-lv { width: 30px; height: 30px; }

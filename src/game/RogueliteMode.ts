@@ -18,7 +18,8 @@ import {
   isGateTypeId,
   type FacilityTypeId,
 } from '../facilities/FacilityTypes';
-import type { Unit } from '../units/Unit';
+import { FLYING_UNIT_IDS, type Unit } from '../units/Unit';
+import type { FieldUnitTraits } from '../field/FieldRuntime';
 import { UNIT_TYPES, UNIT_TYPE_LIST, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { Battle, BattleOpening, BattleRules } from './Battle';
 import { createSeededRng, generateEnemyLineupWithBudget } from './ChallengeMode';
@@ -178,6 +179,12 @@ export function getUnitTags(unit: Pick<Unit, 'type' | 'grantedTags'>): TagId[] {
   const tags = new Set<TagId>(UNIT_TAGS[unit.type.id] ?? []);
   for (const t of unit.grantedTags) if ((TAG_IDS as readonly string[]).includes(t)) tags.add(t as TagId);
   return [...tags];
+}
+
+/** ローグライトのタグから、ユニットが地形の影響をどう受けるかを決める */
+export function rogueFieldTraits(u: Unit): FieldUnitTraits {
+  const tags = getUnitTags(u);
+  return { giant: tags.includes('giant'), mobile: tags.includes('mobile'), flyer: FLYING_UNIT_IDS.has(u.type.id) };
 }
 
 /**
