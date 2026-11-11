@@ -345,11 +345,24 @@ describe('ローグライト: ランの進行', () => {
       return leveled / units;
     };
     expect(leveledRatio(14)).toBeGreaterThan(leveledRatio(3));
-    // 5・10・15面（エリート・ボス）はユニット全員が最大レベル
-    for (const round of [5, 10, 15, 20, 25, 30]) {
+    // 5・10・15面（エリート・ボス）はユニット全員が Lv5、ハードモードのエリート・ボスはその面の上限
+    for (const [round, full] of [[5, 5], [10, 5], [15, 5], [20, 10], [25, 20], [30, 50]] as const) {
       const units = generateRogueEnemyLineup(round, 11).filter((r) => r.typeId);
       expect(units.length).toBeGreaterThan(0);
-      expect(units.every((r) => r.level === ROGUE_MAX_UNIT_LEVEL)).toBe(true);
+      expect(units.every((r) => r.level === full)).toBe(true);
+    }
+    expect(ROGUE_MAX_UNIT_LEVEL).toBe(5);
+    // ハードモードの通常ラウンドは面ごとの上限まで（16〜20: 10、21〜25: 20、26〜29: 30）
+    const { getRogueEnemyMaxLevel } = await import('../src/game/RogueliteMode');
+    for (const [round, cap] of [[15, 4], [16, 10], [19, 10], [21, 20], [24, 20], [26, 30], [29, 30], [30, 50]] as const) {
+      expect(getRogueEnemyMaxLevel(round)).toBe(cap);
+    }
+    for (const round of [17, 22, 28]) {
+      for (let s = 1; s <= 10; s++) {
+        for (const r of generateRogueEnemyLineup(round, s)) {
+          if (r.typeId) expect(r.level ?? 1).toBeLessThanOrEqual(getRogueEnemyMaxLevel(round));
+        }
+      }
     }
     // 通常ラウンドは最大レベル未満（序盤）
     expect(generateRogueEnemyLineup(4, 11).every((r) => (r.level ?? 1) <= 2)).toBe(true);

@@ -1058,8 +1058,24 @@ export function getRogueEnemyLevelUpChance(round: number): number {
   return Math.min(0.85, Math.max(0, round - 1) * 0.035);
 }
 
-/** 通常ラウンドで強化された敵ユニットがなれる最大レベル（1〜7面 Lv2、8〜14面 Lv3、15〜21面 Lv4、22面〜 Lv5） */
+/**
+ * ハードモードの敵ユニットのレベル上限（自軍の上限 ROGUE_MAX_UNIT_LEVEL を超える極端な強化）。
+ * [この面から, 上限レベル] を面の降順で並べる。
+ */
+export const ROGUE_HARD_ENEMY_LEVEL_CAPS: readonly (readonly [number, number])[] = [
+  [30, 50],
+  [26, 30],
+  [21, 20],
+  [16, 10],
+];
+
+/**
+ * 強化された敵ユニットがなれる最大レベル。
+ * 通常モード: 1〜7面 Lv2、8〜14面 Lv3、15面 Lv4。
+ * ハードモード: 16〜20面 Lv10、21〜25面 Lv20、26〜29面 Lv30、30面 Lv50。
+ */
 export function getRogueEnemyMaxLevel(round: number): number {
+  for (const [from, cap] of ROGUE_HARD_ENEMY_LEVEL_CAPS) if (round >= from) return cap;
   return Math.min(ROGUE_MAX_UNIT_LEVEL, 2 + Math.floor(Math.max(0, round - 1) / 7));
 }
 
@@ -1068,10 +1084,16 @@ export function isRogueFullPowerEnemyRound(round: number): boolean {
   return getRogueRoundKind(round) !== 'normal';
 }
 
+/** フル強化の敵ユニットのレベル（通常モードは Lv5、ハードモードはその面の上限） */
+export function getRogueEnemyFullLevel(round: number): number {
+  return Math.max(ROGUE_MAX_UNIT_LEVEL, getRogueEnemyMaxLevel(round));
+}
+
 /** 敵編成のユニットにレベルを付ける（シード固定で決定的） */
 function applyRogueEnemyLevels(lineup: VersusPlacedRecord[], round: number, seed: number): void {
   if (isRogueFullPowerEnemyRound(round)) {
-    for (const r of lineup) if (r.typeId) r.level = ROGUE_MAX_UNIT_LEVEL;
+    const full = getRogueEnemyFullLevel(round);
+    for (const r of lineup) if (r.typeId) r.level = full;
     return;
   }
   const chance = getRogueEnemyLevelUpChance(round);

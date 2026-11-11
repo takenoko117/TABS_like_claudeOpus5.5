@@ -103,7 +103,7 @@ import {
   RogueGateSequence,
   getSquadSize,
   getUnitLevelMul,
-  ROGUE_MAX_UNIT_LEVEL,
+  getRogueEnemyFullLevel,
   getUnitSlotCost,
   ROGUE_ELITE_ROUNDS,
   type RogueCard,
@@ -3311,6 +3311,7 @@ export class GameApp {
   /** 作戦室の左カラム。敵の兵種を1枚ずつのカードで並べる */
   private renderRogueEnemyCards(
     enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId; level?: number }>,
+    fullLevel: number,
   ): string {
     const units = new Map<UnitTypeId, number>();
     const unitLevels = new Map<UnitTypeId, { min: number; max: number }>();
@@ -3345,7 +3346,7 @@ export class GameApp {
         const lv = unitLevels.get(id) ?? { min: 1, max: 1 };
         const lvText = lv.max <= 1 ? '' : lv.min === lv.max ? `Lv${lv.max}` : `Lv${lv.min}〜${lv.max}`;
         const lvLabel = lvText
-          ? ` <span class="wr-enemy-lv${lv.max >= ROGUE_MAX_UNIT_LEVEL ? ' is-max' : ''}">${lvText}</span>`
+          ? ` <span class="wr-enemy-lv${lv.max >= fullLevel ? ' is-max' : ''}">${lvText}</span>`
           : '';
         return card(id, getUnitIconSvg(id), CATEGORY_THEME_COLORS[u.category], u.name, u.description, count, lvLabel);
       });
@@ -3359,9 +3360,11 @@ export class GameApp {
   /** 作戦室の「次の敵」のサマリ。コストの高い3体のアイコン、残りの体数、合計コストだけを出す */
   private renderRogueEnemySummary(
     enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId; level?: number }>,
+    fullLevel: number,
   ): string {
     const leveled = enemies.filter((e) => e.typeId && (e.level ?? 1) > 1);
-    const allMax = leveled.length > 0 && enemies.every((e) => !e.typeId || (e.level ?? 1) >= ROGUE_MAX_UNIT_LEVEL);
+    const allMax = leveled.length > 0 && enemies.every((e) => !e.typeId || (e.level ?? 1) >= fullLevel);
+    const topLevel = leveled.reduce((m, e) => Math.max(m, e.level ?? 1), 1);
     const items = enemies
       .map((e) => {
         if (e.facilityId) {
@@ -3392,9 +3395,9 @@ export class GameApp {
         <span class="wr-enemy-summary-cost">合計コスト <b>${total.toLocaleString()}</b></span>
         ${
           allMax
-            ? `<span class="wr-enemy-summary-lv is-max">全員フル強化 <b>Lv${ROGUE_MAX_UNIT_LEVEL}</b></span>`
+            ? `<span class="wr-enemy-summary-lv is-max">全員フル強化 <b>Lv${fullLevel}</b></span>`
             : leveled.length > 0
-              ? `<span class="wr-enemy-summary-lv">強化ユニット <b>${leveled.length}</b> 体</span>`
+              ? `<span class="wr-enemy-summary-lv">強化ユニット <b>${leveled.length}</b> 体（最大 Lv${topLevel}）</span>`
               : ''
         }
         <span class="wr-enemy-summary-hint">▼ タップで全て表示</span>
@@ -3633,8 +3636,8 @@ export class GameApp {
           ${
             this.rogueEnemyExpanded
               ? `<button type="button" class="wr-enemy-collapse" data-action="enemy-toggle" aria-expanded="true">▲ サマリ表示に戻す</button>
-          <div class="wr-enemy-list">${this.renderRogueEnemyCards(this.savedLineup.filter((r) => r.team === 1))}</div>`
-              : this.renderRogueEnemySummary(this.savedLineup.filter((r) => r.team === 1))
+          <div class="wr-enemy-list">${this.renderRogueEnemyCards(this.savedLineup.filter((r) => r.team === 1), getRogueEnemyFullLevel(run.round))}</div>`
+              : this.renderRogueEnemySummary(this.savedLineup.filter((r) => r.team === 1), getRogueEnemyFullLevel(run.round))
           }
           <div class="wr-enemy-foot">
             <span>敵予算 <b>${run.enemyBudget.toLocaleString()}</b> pt</span>
