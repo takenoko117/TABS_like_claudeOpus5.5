@@ -804,10 +804,10 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     weapon: null,
     projectile: null,
     range: 38,
-    windup: 3.0,
+    windup: 6.0, // タメ時間を 3.0s → 6.0s に下方修正
     strike: 0.9,
     recover: 0.7,
-    cooldown: 2.4,
+    cooldown: 6.4, // 攻撃サイクル 7.0s → 14.0s（攻撃頻度を半分に下方修正）
     strikeImpulse: 0,
     look: { skin: 0x339af0, hair: null, helmet: null, hood: null, armor: 0x1c7ed6, beard: null },
   },
@@ -849,7 +849,7 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     windup: 0.55,
     strike: 0.34,
     recover: 0.42,
-    cooldown: 1.15,
+    cooldown: 3.61, // 攻撃サイクル 2.46s → 4.92s（攻撃頻度を半分に下方修正）
     strikeImpulse: 0,
     look: { skin: 0x16171a, hair: null, helmet: 0xf8f9fa, hood: null, armor: 0x1f2024, beard: null },
   },
