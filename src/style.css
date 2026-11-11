@@ -3704,6 +3704,70 @@ body.war-room-open #coach { display: none !important; }
   font-variant-numeric: tabular-nums;
 }
 
+/* 次の敵のサマリ（タップで全件表示） */
+.wr-enemy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 0;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wr-enemy-summary:hover { background: rgba(255, 255, 255, 0.08); }
+
+.wr-enemy-summary-icons {
+  display: flex;
+  gap: 6px;
+}
+
+.wr-enemy-summary-rest,
+.wr-enemy-summary-cost {
+  color: var(--sub);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wr-enemy-summary-rest b {
+  color: var(--enemy);
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.wr-enemy-summary-cost b {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.wr-enemy-summary-hint {
+  width: 100%;
+  color: var(--sub);
+  font-size: 11px;
+}
+
+.wr-enemy-collapse {
+  align-self: flex-start;
+  margin-bottom: 8px;
+  padding: 4px 10px;
+  border-radius: 0;
+  border: 1px solid var(--panel-line);
+  background: transparent;
+  color: var(--sub);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .wr-enemy-foot {
   display: flex;
   flex-wrap: wrap;

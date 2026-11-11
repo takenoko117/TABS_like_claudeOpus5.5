@@ -531,6 +531,8 @@ export class GameApp {
   private readonly elRogueModal: HTMLElement | null;
   private elEnemyDetail: HTMLElement | null = null;
   private enemyDetailPinned: string | null = null;
+  /** 作戦室の「次の敵」を全件表示しているか（false のときはサマリだけ） */
+  private rogueEnemyExpanded = false;
   private rogueTagKey = '';
   /** カードの中で動くボクセルモデル（最初に開いたときに作る） */
   private unitPreviews: UnitPreviews | null = null;
@@ -3166,6 +3168,40 @@ export class GameApp {
     return [...unitCards, ...facilityCards].join('');
   }
 
+  /** 作戦室の「次の敵」のサマリ。コストの高い3体のアイコン、残りの体数、合計コストだけを出す */
+  private renderRogueEnemySummary(enemies: ReadonlyArray<{ typeId?: UnitTypeId; facilityId?: FacilityTypeId }>): string {
+    const items = enemies
+      .map((e) => {
+        if (e.facilityId) {
+          const f = FACILITY_TYPES[e.facilityId];
+          return { cost: f.cost, name: f.name, icon: getFacilityIconSvg(e.facilityId), theme: CATEGORY_THEME_COLORS.facility };
+        }
+        if (e.typeId) {
+          const u = UNIT_TYPES[e.typeId];
+          return { cost: u.cost, name: u.name, icon: getUnitIconSvg(e.typeId), theme: CATEGORY_THEME_COLORS[u.category] };
+        }
+        return null;
+      })
+      .filter((v): v is NonNullable<typeof v> => v !== null)
+      .sort((a, b) => b.cost - a.cost);
+    const total = items.reduce((s, it) => s + it.cost, 0);
+    const top = items
+      .slice(0, 3)
+      .map(
+        (it) =>
+          `<span class="wr-enemy-tile" title="${it.name}" style="background:${it.theme.bg};border-color:${it.theme.border}">${it.icon}</span>`,
+      )
+      .join('');
+    const rest = items.length - 3;
+    return `
+      <button type="button" class="wr-enemy-summary" data-action="enemy-toggle" aria-expanded="false" aria-label="次の敵をすべて表示">
+        <span class="wr-enemy-summary-icons">${top}</span>
+        ${rest > 0 ? `<span class="wr-enemy-summary-rest">他 <b>${rest}</b> 体</span>` : ''}
+        <span class="wr-enemy-summary-cost">合計コスト <b>${total.toLocaleString()}</b></span>
+        <span class="wr-enemy-summary-hint">▼ タップで全て表示</span>
+      </button>`;
+  }
+
   private setRogueMenuOpen(open: boolean): void {
     document.getElementById('rg-menu')?.classList.toggle('hidden', !open);
     document.getElementById('rg-menu-btn')?.setAttribute('aria-expanded', String(open));
@@ -3391,7 +3427,12 @@ export class GameApp {
       <div class="wr-panel">
         <section class="wr-col wr-col-enemy" aria-label="次の敵">
           <h2 class="wr-title">次の敵 <span>ROUND ${run.round}${run.isHardMode ? ' 🔥 HARD' : ''}</span></h2>
-          <div class="wr-enemy-list">${this.renderRogueEnemyCards(this.savedLineup.filter((r) => r.team === 1))}</div>
+          ${
+            this.rogueEnemyExpanded
+              ? `<button type="button" class="wr-enemy-collapse" data-action="enemy-toggle" aria-expanded="true">▲ サマリ表示に戻す</button>
+          <div class="wr-enemy-list">${this.renderRogueEnemyCards(this.savedLineup.filter((r) => r.team === 1))}</div>`
+              : this.renderRogueEnemySummary(this.savedLineup.filter((r) => r.team === 1))
+          }
           <div class="wr-enemy-foot">
             <span>敵予算 <b>${run.enemyBudget.toLocaleString()}</b> pt</span>
             ${badge ? `<span class="wr-badge ${badge.kind}">${badge.text}</span>` : ''}
@@ -3637,6 +3678,11 @@ export class GameApp {
           break;
         case 'room-close':
           this.hideRogueModal();
+          break;
+        case 'enemy-toggle':
+          this.rogueEnemyExpanded = !this.rogueEnemyExpanded;
+          this.hideEnemyDetail();
+          this.showRogueWarRoom();
           break;
         case 'room-fight':
           this.hideRogueModal();
