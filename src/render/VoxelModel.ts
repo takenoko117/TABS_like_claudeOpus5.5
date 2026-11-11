@@ -1,5 +1,6 @@
 import {
   AdditiveBlending,
+  BackSide,
   BufferAttribute,
   BufferGeometry,
   CircleGeometry,
@@ -2674,6 +2675,59 @@ const _voxelWorld = new Vector3();
 const _headPos = new Vector3();
 const _headUp = new Vector3();
 
+// ---- ユニットの縁取り（外側: 黒 / 内側: 陣営色 の 2 色）----
+/** 縁取りの太さ（ワールド単位） */
+const OUTLINE_OUTER = 0.05;
+const OUTLINE_INNER = 0.025;
+const outlineMatCache = new Map<number, MeshBasicMaterial>();
+function getOutlineMaterial(color: number): MeshBasicMaterial {
+  let m = outlineMatCache.get(color);
+  if (!m) {
+    m = new MeshBasicMaterial({ color, side: BackSide });
+    outlineMatCache.set(color, m);
+  }
+  return m;
+}
+
+/** 部位メッシュの子に、裏面だけ描く一回り大きい殻（インバーテッドハル）を付ける */
+function fitOutlineHull(hull: Mesh, parentScale: number, thickness: number): void {
+  const g = hull.geometry;
+  if (!g.boundingBox) g.computeBoundingBox();
+  const bb = g.boundingBox!;
+  const t = thickness / Math.max(parentScale, 1e-4);
+  const sx = 1 + (2 * t) / Math.max(bb.max.x - bb.min.x, 1e-3);
+  const sy = 1 + (2 * t) / Math.max(bb.max.y - bb.min.y, 1e-3);
+  const sz = 1 + (2 * t) / Math.max(bb.max.z - bb.min.z, 1e-3);
+  hull.scale.set(sx, sy, sz);
+  // 中心を基準に拡大する
+  const cx = (bb.min.x + bb.max.x) / 2;
+  const cy = (bb.min.y + bb.max.y) / 2;
+  const cz = (bb.min.z + bb.max.z) / 2;
+  hull.position.set(cx * (1 - sx), cy * (1 - sy), cz * (1 - sz));
+}
+
+function addUnitOutline(mesh: Mesh, teamColor: number): void {
+  const layers: Array<[number, number]> = [
+    [0x000000, OUTLINE_OUTER],
+    [teamColor, OUTLINE_INNER],
+  ];
+  for (const [color, thickness] of layers) {
+    const hull = new Mesh(mesh.geometry, getOutlineMaterial(color));
+    hull.castShadow = false;
+    hull.receiveShadow = false;
+    hull.userData.isOutline = true;
+    fitOutlineHull(hull, mesh.scale.x, thickness);
+    // 部位破壊などで親のジオメトリが差し替わったら追従する
+    hull.onBeforeRender = () => {
+      if (hull.geometry !== mesh.geometry) {
+        hull.geometry = mesh.geometry;
+        fitOutlineHull(hull, mesh.scale.x, thickness);
+      }
+    };
+    mesh.add(hull);
+  }
+}
+
 function makeMesh(geom: BufferGeometry, mat: MeshLambertMaterial, scale: number): Mesh {
   const m = new Mesh(geom, mat);
   m.scale.setScalar(scale);
@@ -3331,6 +3385,7 @@ export class VoxelCharacterVisual {
     ): DestructiblePart => {
       const mesh = makeMesh(tmpl.geometry, this.material, s);
       this.group.add(mesh);
+      addUnitOutline(mesh, TEAM_COLORS[unit.team].shirt);
       return {
         id,
         mesh,
@@ -3360,6 +3415,7 @@ export class VoxelCharacterVisual {
 
     if (set.weapon) {
       this.weaponMesh = makeMesh(set.weapon, this.material, s);
+      addUnitOutline(this.weaponMesh, TEAM_COLORS[unit.team].shirt);
       this.group.add(this.weaponMesh);
     } else {
       this.weaponMesh = null;
@@ -3367,6 +3423,7 @@ export class VoxelCharacterVisual {
 
     if (set.bow) {
       this.bowMesh = makeMesh(set.bow, this.material, s);
+      addUnitOutline(this.bowMesh, TEAM_COLORS[unit.team].shirt);
       this.group.add(this.bowMesh);
     } else {
       this.bowMesh = null;
