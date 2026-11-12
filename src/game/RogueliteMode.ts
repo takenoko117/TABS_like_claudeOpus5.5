@@ -1963,6 +1963,87 @@ export function generateRewardOptions(run: RogueliteRun, rng: () => number): Rew
   return options;
 }
 
+/**
+ * 対戦用の共通の報酬候補。所持カードやタグに左右されず、ラウンドと乱数だけで決まるので、
+ * 同じ種なら両プレイヤーに同じ候補が出る（表示や効果は各自の所持状況で RewardOption に直す）。
+ */
+export type SharedRewardOffer =
+  | { kind: 'unit'; unitId: UnitTypeId }
+  | { kind: 'relic'; relicId: FacilityTypeId }
+  | { kind: 'gold'; amount: number };
+
+/** 対戦用の共通の3択（ユニット2枚＋レリックかゴールド） */
+export function generateSharedRewardOffers(round: number, rng: () => number): SharedRewardOffer[] {
+  const offers: SharedRewardOffer[] = [];
+  const picked: UnitTypeId[] = [];
+  const all = UNIT_TYPE_LIST.map((u) => u.id);
+  for (let i = 0; i < 2; i++) {
+    const candidates = all.filter((id) => !picked.includes(id));
+    const rarity = rollRarity(getRarityWeights(round), rng);
+    const band = candidates.filter((id) => unitRarity(id) === rarity);
+    const id = weightedPick(band.length > 0 ? band : candidates, (u) => costAffinity(u, round), rng);
+    if (!id) break;
+    picked.push(id);
+    offers.push({ kind: 'unit', unitId: id });
+  }
+  let relic: FacilityTypeId | undefined;
+  if (rng() < REWARD_RELIC_CHANCE) {
+    const rarity = rollRarity(getRarityWeights(round), rng);
+    const band = ROGUE_RELIC_POOL.filter((r) => r.rarity === rarity);
+    relic = weightedPick(band.length > 0 ? band : ROGUE_RELIC_POOL, () => 1, rng)?.id;
+  }
+  offers.push(relic ? { kind: 'relic', relicId: relic } : { kind: 'gold', amount: getGoldRewardAmount(round) });
+  return offers;
+}
+
+/** 共通の候補を、そのプレイヤーの所持状況に合わせた報酬にする（もう強化できないものはゴールドに替える） */
+export function sharedOfferToOption(run: RogueliteRun, offer: SharedRewardOffer, round: number): RewardOption {
+  const gold = (): RewardOption => {
+    const amount = offer.kind === 'gold' ? offer.amount : getGoldRewardAmount(round);
+    return {
+      kind: 'gold',
+      rarity: 'common',
+      amount,
+      title: `ゴールド +${amount}G`,
+      description: `所持ゴールドが ${run.gold} → ${run.gold + amount}G になる`,
+    };
+  };
+  if (offer.kind === 'unit') {
+    const card = run.card(offer.unitId);
+    if (!card) return unitOption(offer.unitId);
+    if (card.level >= ROGUE_MAX_UNIT_LEVEL) return gold();
+    return {
+      kind: 'unit',
+      rarity: unitRarity(offer.unitId),
+      unitId: offer.unitId,
+      title: `${UNIT_TYPES[offer.unitId].name} 強化`,
+      description: `持っている部隊が Lv${card.level} → Lv${card.level + 1} になる`,
+    };
+  }
+  if (offer.kind === 'relic') {
+    const level = run.relics.find((r) => r.id === offer.relicId)?.level ?? -1;
+    if (level >= MAX_GATE_LEVEL) return gold();
+    const rarity = ROGUE_RELIC_POOL.find((r) => r.id === offer.relicId)?.rarity ?? 'rare';
+    const name = FACILITY_TYPES[offer.relicId].name;
+    return level >= 0
+      ? {
+          kind: 'relic',
+          rarity,
+          relicId: offer.relicId,
+          title: `${name} 強化`,
+          description: `Lv${level + 1} → Lv${level + 2}（無料）。${relicDescription({ id: offer.relicId, level: level + 1 })}`,
+        }
+      : {
+          kind: 'relic',
+          rarity,
+          relicId: offer.relicId,
+          title: `陣地レリック: ${name}`,
+          description: relicDescription({ id: offer.relicId, level: 0 }),
+        };
+  }
+  return gold();
+}
+
 export function applyReward(run: RogueliteRun, option: RewardOption): void {
   switch (option.kind) {
     case 'unit':

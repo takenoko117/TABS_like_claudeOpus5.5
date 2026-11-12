@@ -112,6 +112,9 @@ import {
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
 import { TDRun, TD_PLAYER_BASE_X, xpForKill } from './RealtimeTDMode';
 import { RealtimeTDHud, isTDTutorialDone, markTDTutorialDone } from '../ui/RealtimeTDHud';
+import { TDVersusSession } from './TDVersusSession';
+import { TDVersusClient } from '../net/TDVersusClient';
+import type { TDVersusEndReason } from '../net/tdVersusProtocol';
 import {
   CATEGORY_ICONS,
   CATEGORY_THEME_COLORS,
@@ -163,6 +166,7 @@ import {
   ChallengeRun,
   computeSurvivalRatio,
   createChallengeSeed,
+  createSeededRng,
   generateEnemyLineup,
   loadChallengeBest,
   mergeChallengeBest,
@@ -573,6 +577,12 @@ export class GameApp {
   private tdHold = false;
   /** 背景の色合いを合わせ済みの TD の地形 */
   private tdThemedField: FieldRuntime | null = null;
+  /** TD のオンライン対戦（最初に使うときに作る） */
+  private tdVersusField: TDVersusSession | null = null;
+  /** オンライン対戦で今どの画面を出しているか */
+  private tdVsView: 'lobby' | 'battle' | 'result' | null = null;
+  /** オンライン対戦の決着（リザルトに出す） */
+  private tdVsResult: { won: boolean; reason: TDVersusEndReason } | null = null;
   /** 敵を倒すと出る経験値オーブ（最初に使うときに作る） */
   private xpOrbsField: XpOrbs | null = null;
 
@@ -1328,6 +1338,8 @@ export class GameApp {
     this.tutorial = null;
     this.tdHudField?.hide();
     if (this.playStyle === 'td') this.battle.rules = null;
+    this.tdVersusField?.leave();
+    this.tdVsView = null;
     this.td = null;
     this.tdPausedForSettings = false;
     this.tdHold = false;
@@ -1524,6 +1536,8 @@ export class GameApp {
   }
 
   private setPaused(paused: boolean): void {
+    // オンライン対戦の試合中は止められない
+    if (paused && this.isTDVersusLive) paused = false;
     this.paused = paused;
     this.syncSpeedButtons();
   }
@@ -2443,8 +2457,87 @@ export class GameApp {
         if (this.tdStarter) this.startTDRun(this.tdStarter);
         else this.enterTDMode();
       },
+      getVersus: () => this.tdVersusField,
+      openVersus: () => this.showTDVersusLobby(),
+      vsJoin: (room) => this.joinTDVersusRoom(room),
+      vsReady: (id) => {
+        this.tdVersus.setReady(id);
+        this.showTDVersusLobby();
+      },
+      vsUnready: () => this.tdVersus.unready(),
+      vsLeave: () => {
+        this.tdVersus.leave();
+        this.showTDVersusLobby();
+      },
+      vsLobby: () => this.showTDVersusLobby(),
+      vsBack: () => {
+        this.tdVersus.leave();
+        this.tdVsView = null;
+        this.enterTDMode();
+      },
     });
     return this.tdHudField;
+  }
+
+  // ---- TD オンライン対戦 ----
+
+  /** オンライン対戦の試合中か（止めたり早送りしたりできない） */
+  private get isTDVersusLive(): boolean {
+    return this.playStyle === 'td' && !!this.td?.versus && !this.td.ended;
+  }
+
+  private get tdVersus(): TDVersusSession {
+    this.tdVersusField ??= new TDVersusSession({
+      onChange: () => {
+        if (this.playStyle !== 'td') return;
+        if (this.tdVsView === 'lobby') this.tdHud.showVersusLobby(this.tdVersus);
+        else if (this.tdVsView === 'result' && this.td && this.tdVsResult) {
+          this.tdHud.showVersusResult(this.td, this.tdVsResult.won, this.tdVsResult.reason, this.tdVersus);
+        }
+      },
+      onStart: (seed, starter) => this.startTDVersusRun(seed, starter),
+      onSend: (budget, seed) => {
+        if (this.td?.versus && !this.td.ended) this.td.receiveSend(budget, seed);
+      },
+      onResult: (won, reason) => {
+        this.tdVsResult = { won, reason };
+        // 自分の戦場がまだ続いていれば、ここで決着させる（Battle.result が拾って終了処理へ進む）
+        if (this.td?.versus && !this.td.ended) this.td.versusOutcome = won ? 'win' : 'lose';
+      },
+      onClosed: () => {},
+    });
+    return this.tdVersusField;
+  }
+
+  /** ロビーを出す（未接続なら部屋名の入力、入室済みなら部屋の待機画面） */
+  private showTDVersusLobby(): void {
+    this.tdVsView = 'lobby';
+    this.tdHud.showVersusLobby(this.tdVersus);
+  }
+
+  private joinTDVersusRoom(room: string): void {
+    const vs = this.tdVersus;
+    if (vs.connected) return;
+    const client = TDVersusClient.open(room, {
+      onMessage: (msg) => vs.handle(msg),
+      onClose: (reason) => vs.handleClose(reason),
+    });
+    if (typeof client === 'string') {
+      vs.message = client;
+      this.showTDVersusLobby();
+      return;
+    }
+    vs.attach(client, client.room);
+  }
+
+  /** 対戦の試合を始める。敵ウェーブと3択は共通の種、宝箱などは自分だけの乱数で決まる */
+  private startTDVersusRun(seed: number, starter: RogueStarter): void {
+    if (this.playStyle !== 'td' || this.onTitleScreen) return;
+    this.tdStarter = starter;
+    this.tdVsResult = null;
+    this.tdVsView = 'battle';
+    const personal = createSeededRng(Math.floor(Math.random() * 0x7fffffff));
+    this.beginTDRun(new TDRun(seed, starter, personal, { versus: true }), false);
   }
 
   /** タワーディフェンスを開く（スターター選択から） */
@@ -2482,8 +2575,12 @@ export class GameApp {
   /** スターターを選んでランを始める。戦闘はすぐに始まり、止まらない */
   private startTDRun(starter: RogueStarter): void {
     this.tdStarter = starter;
+    this.beginTDRun(new TDRun(Math.floor(Math.random() * 0x7fffffff), starter), true);
+  }
+
+  /** ランを戦場に置いて戦闘を始める。tutorial なら初回プレイであそびかたを見せる */
+  private beginTDRun(td: TDRun, tutorial: boolean): void {
     this.prepareTDField();
-    const td = new TDRun(Math.floor(Math.random() * 0x7fffffff), starter);
     this.td = td;
     td.setup(this.battle);
     // 戦場が横に長いので、自軍の城の通路から前線の手前までを見渡す位置にカメラを置く
@@ -2503,7 +2600,7 @@ export class GameApp {
       this.sound.playBattleStart();
     };
     // 初めてのプレイでは、あそびかたを見せてから始める（見ている間は止まる・スキップ可）
-    if (!isTDTutorialDone()) {
+    if (tutorial && !isTDTutorialDone()) {
       this.tdHud.showTutorial(() => {
         markTDTutorialDone();
         begin();
@@ -2547,6 +2644,10 @@ export class GameApp {
     const td = this.td;
     if (!td) return;
     const won = res === 0;
+    if (td.versus) {
+      this.handleTDVersusEnd(td, won);
+      return;
+    }
     td.finish(won ? 'clear' : 'defeat');
     this.tdHud.closeChoice();
     this.xpOrbsField?.clear();
@@ -2556,8 +2657,31 @@ export class GameApp {
     }, 2200);
   }
 
+  /** 対戦の自分の戦場で決着した。サーバーの判定（先着）を待ってからリザルトを出す */
+  private handleTDVersusEnd(td: TDRun, won: boolean): void {
+    // サーバーから決着が届く前に自分の戦場で決着したなら、それを知らせる
+    if (!td.versusOutcome) this.tdVersus.reportLocalEnd(won);
+    td.finish(won ? 'clear' : 'defeat');
+    this.tdHud.closeChoice();
+    this.xpOrbsField?.clear();
+    window.setTimeout(() => {
+      if (this.td !== td || this.playStyle !== 'td') return;
+      this.tdVsResult ??= { won, reason: won ? 'clear' : 'castle' };
+      this.tdVsView = 'result';
+      this.tdHud.showVersusResult(td, this.tdVsResult.won, this.tdVsResult.reason, this.tdVersus);
+    }, 2200);
+  }
+
   private confirmRetireTD(): void {
     const td = this.td;
+    if (td?.versus && !td.ended) {
+      this.showConfirm('降参しますか？（相手の勝ちになります）', '降参', () => {
+        this.tdVersus.surrender();
+        // 接続が切れていて決着が届かないときも終われるようにする
+        if (!this.tdVersus.connected) td.versusOutcome = 'lose';
+      });
+      return;
+    }
     if (!td || td.ended) {
       this.showTitleScreen();
       return;
@@ -4966,9 +5090,11 @@ export class GameApp {
     if (this.jackpot.active) this.jackpot.update(realDt);
     if (this.jackpotFx.active) this.jackpotFx.update(realDt);
     this.updateDroppedChests(realDt);
-    if (!this.paused && !this.jackpotBusy && !this.tdHold) {
+    // オンライン対戦の試合中は、宝箱の演出中や強化を選んでいる間も時間を止めず、早送りもしない
+    const versusLive = this.isTDVersusLive;
+    if (versusLive || (!this.paused && !this.jackpotBusy && !this.tdHold)) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
-      const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : this.timeScale;
+      const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : versusLive ? 1 : this.timeScale;
       this.battle.advance(realDt * scale);
     }
 
@@ -4976,6 +5102,7 @@ export class GameApp {
     if (this.playStyle === 'td' && !this.onTitleScreen) {
       this.syncTDTerrainTheme();
       this.xpOrbsField?.update(realDt);
+      if (this.td?.versus) this.tdVersusField?.update(this.td, realDt);
       this.tdHud.update(realDt);
     }
 

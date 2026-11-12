@@ -17,6 +17,8 @@ import {
   applyReward,
   gateInfusionsFor,
   generateRewardOptions,
+  generateSharedRewardOffers,
+  sharedOfferToOption,
   isRogueHardMode,
   ROGUE_HARD_BUDGET_MUL,
   getRogueEnemyPool,
@@ -185,6 +187,30 @@ const DIVINE_UNITS: readonly UnitTypeId[] = UNIT_TYPE_LIST.filter((u) => u.categ
 // 計算式
 // ---------------------------------------------------------------
 
+
+// ---- オンライン対戦（並走型） ----
+
+/** 倒した敵のコストのうち、相手への送り込み予算になる割合 */
+export const TD_VS_SEND_RATIO = 0.2;
+/** 送り込みを送る間隔（秒） */
+export const TD_VS_SEND_INTERVAL = 10;
+/** これ未満の予算は次の回へ持ち越す */
+export const TD_VS_SEND_MIN = 60;
+/** 送り込まれた敵が湧き終わるまでの時間（秒） */
+export const TD_VS_SEND_SPREAD = 3;
+/** 敵ウェーブ用の乱数を、ほかの乱数と分けるための値 */
+const TD_VS_WAVE_SALT = 0x5bd1e995;
+
+/** 対戦の n 回目（0 始まり）の選択権の3択の強さ（ラウンド換算） */
+export function getVersusOfferRound(pick: number): number {
+  return getWaveRound(Math.min(TD_WAVE_COUNT, 1 + pick));
+}
+
+/** 対戦の3択を決める種。共通の種・何回目の選択権か・何回目の引き直しかで決まる */
+export function getVersusOfferSeed(seed: number, pick: number, reroll: number): number {
+  return (Math.imul(seed ^ 0x2545f491, 31) + Math.imul(pick + 1, 7919) + Math.imul(reroll, 104729)) | 0;
+}
+
 /** カードを出撃させた後のクールタイム（秒） */
 export function getDeployCooldown(id: UnitTypeId): number {
   return TD_COOLDOWN_BY_SLOT[getUnitSlotCost(id)] ?? 30;
@@ -326,7 +352,20 @@ export type DeployBlock = 'cooldown' | 'money' | 'full' | 'not_owned' | 'ended';
 interface SpawnOrder {
   id: UnitTypeId;
   at: number;
-  kind: 'normal' | 'counter' | 'elite' | 'boss';
+  /** sent は対戦相手から送り込まれた敵（通常の敵と同じく同時数の上限に従う） */
+  kind: 'normal' | 'counter' | 'elite' | 'boss' | 'sent';
+}
+
+/** TDRun の追加設定 */
+export interface TDRunOptions {
+  /** オンライン対戦。敵ウェーブと強化の3択を共通の種で決め、宝箱などは各自の乱数で決める */
+  versus?: boolean;
+}
+
+/** 相手に送り込む敵（送信待ち） */
+export interface TDVersusSend {
+  budget: number;
+  seed: number;
 }
 
 export type TDEndReason = 'clear' | 'defeat' | 'quit';
@@ -381,15 +420,35 @@ export class TDRun {
   private lastChestTime = -Infinity;
   endReason: TDEndReason | null = null;
   /** Wave の開始・反撃など、画面に出す知らせ */
-  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain'; value: number }> = [];
+  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain' | 'sent'; value: number }> =
+    [];
   /** 作り直した地形の回数（0 が開始時の地形） */
   terrainIndex = -1;
   terrainBiome: BiomeId | null = null;
   terrainTrait: FieldTraitId | null = null;
+  /** 宝箱・門・出撃のばらつきなど、プレイヤーごとの乱数 */
   private readonly rng: () => number;
+  /** 時間で湧く敵ウェーブ用の乱数（対戦では両者で同じ並びになる） */
+  private readonly waveRng: () => number;
+  /** オンライン対戦か */
+  readonly versus: boolean;
+  /** これまでに使った強化の選択権の数（対戦の3択は「何回目か」で決まる） */
+  picks = 0;
+  /** 相手に送り込む予算のたまり */
+  sendBank = 0;
+  private sendTimer = 0;
+  /** 送信待ちの送り込み（GameApp が取り出してサーバーへ送る） */
+  readonly outbox: TDVersusSend[] = [];
+  /** 送り込んだ予算と、送り込まれた予算の合計 */
+  sentTotal = 0;
+  receivedTotal = 0;
+  /** 対戦の決着（サーバーから届く。null ならまだ） */
+  versusOutcome: 'win' | 'lose' | null = null;
 
-  constructor(seed: number, starter: RogueStarter, rng?: () => number) {
+  constructor(seed: number, starter: RogueStarter, rng?: () => number, options: TDRunOptions = {}) {
+    this.versus = options.versus ?? false;
     this.rng = rng ?? createSeededRng(seed);
+    this.waveRng = this.versus ? createSeededRng(Math.imul(seed ^ TD_VS_WAVE_SALT, 0x9e3779b1)) : this.rng;
     this.run = new RogueliteRun(seed, starter);
     // スターターの初期レリックは持たず、城の近くを守る加護のトーテムを最初から置く
     this.run.relics = TD_START_RELICS.map((id) => ({ id, level: 0, active: true }));
@@ -522,7 +581,7 @@ export class TDRun {
     if (!this.bossSpawned && this.trickleTimer >= TD_TRICKLE_SECONDS) {
       this.trickleTimer -= TD_TRICKLE_SECONDS;
       const wave = Math.max(1, this.wave);
-      this.queueEnemies(pickWaveEnemies(getWaveRound(wave), getWaveBudget(wave) * TD_TRICKLE_RATIO, this.rng), this.time, 2);
+      this.queueEnemies(pickWaveEnemies(getWaveRound(wave), getWaveBudget(wave) * TD_TRICKLE_RATIO, this.waveRng), this.time, 2);
     }
     this.updateEnemyCannons(battle);
     while (this.time >= (this.terrainIndex + 1) * TD_TERRAIN_SECONDS && this.terrainIndex >= 0) this.regenerateTerrain(battle);
@@ -532,12 +591,13 @@ export class TDRun {
       if (this.overtimeTimer >= 10) {
         this.overtimeTimer = 0;
         this.queueEnemies(
-          pickWaveEnemies(getWaveRound(TD_WAVE_COUNT), getWaveBudget(TD_WAVE_COUNT) / 3, this.rng),
+          pickWaveEnemies(getWaveRound(TD_WAVE_COUNT), getWaveBudget(TD_WAVE_COUNT) / 3, this.waveRng),
           this.time,
           3,
         );
       }
     }
+    if (this.versus) this.updateSend(dt);
     this.flushQueue(battle);
     this.updateGates(battle);
     this.trackEnemyBase();
@@ -579,14 +639,14 @@ export class TDRun {
   private startWave(wave: number): void {
     this.wavesStarted = wave;
     const start = (wave - 1) * TD_WAVE_SECONDS;
-    const ids = pickWaveEnemies(getWaveRound(wave), getWaveBudget(wave), this.rng);
+    const ids = pickWaveEnemies(getWaveRound(wave), getWaveBudget(wave), this.waveRng);
     const burst = Math.round(ids.length * TD_WAVE_BURST_RATIO);
     this.queueEnemies(ids.slice(0, burst), start, 3);
     this.queueEnemies(ids.slice(burst), start + 3, TD_WAVE_SECONDS - 4);
     const elite = TD_ELITE_WAVES.includes(wave);
     const eliteCount = getWaveEliteCount(wave);
     for (let i = 0; i < eliteCount; i++) {
-      const id = this.pickStrongUnit(getWaveRound(wave) + 4);
+      const id = this.pickStrongUnit(getWaveRound(wave) + 4, this.waveRng);
       if (id) this.queue.push({ id, at: start + 1 + i * 2, kind: 'elite' });
     }
     this.events.push({ kind: elite ? 'elite' : 'wave', value: wave });
@@ -594,16 +654,16 @@ export class TDRun {
 
   private startFinalBoss(): void {
     this.bossSpawned = true;
-    const id = DIVINE_UNITS[Math.floor(this.rng() * DIVINE_UNITS.length)];
+    const id = DIVINE_UNITS[Math.floor(this.waveRng() * DIVINE_UNITS.length)];
     if (id) this.queue.push({ id, at: this.time, kind: 'boss' });
     this.events.push({ kind: 'boss', value: TD_WAVE_COUNT });
   }
 
   /** そのラウンドに出せる中で一番高い兵種のどれか */
-  private pickStrongUnit(round: number): UnitTypeId | undefined {
+  private pickStrongUnit(round: number, rng: () => number = this.rng): UnitTypeId | undefined {
     const pool = getRogueEnemyPool(Math.min(30, round));
     const sorted = [...pool].sort((a, b) => UNIT_TYPES[b].cost - UNIT_TYPES[a].cost).slice(0, 4);
-    return sorted[Math.floor(this.rng() * sorted.length)];
+    return sorted[Math.floor(rng() * sorted.length)];
   }
 
   private queueEnemies(ids: readonly UnitTypeId[], from: number, span: number): void {
@@ -619,7 +679,8 @@ export class TDRun {
     let alive = battle.aliveCount(1);
     const keep: SpawnOrder[] = [];
     for (const order of this.queue) {
-      if (order.at > this.time || (order.kind === 'normal' && alive >= TD_ENEMY_CAP)) {
+      const capped = order.kind === 'normal' || order.kind === 'sent';
+      if (order.at > this.time || (capped && alive >= TD_ENEMY_CAP)) {
         keep.push(order);
         continue;
       }
@@ -770,6 +831,7 @@ export class TDRun {
     const cost = victim.type.cost;
     this.addMoney(cost * TD_KILL_MONEY_RATIO, false);
     this.gainXp(xpForKill(victim));
+    if (this.versus) this.sendBank += cost * TD_VS_SEND_RATIO;
     if (victim.isBoss) return 2;
     if (this.time - this.lastChestTime < TD_CHEST_COOLDOWN) return null;
     const chance = TD_CHEST_CHANCE + (cost >= 300 ? TD_CHEST_HIGH_VALUE_BONUS : 0);
@@ -828,8 +890,15 @@ export class TDRun {
     if (this.choices <= 0) return null;
     if (!this.options) {
       this.draws++;
-      const rng = createSeededRng(Math.imul(this.run.seed ^ 0x2545f491, 31) + this.draws * 7919);
-      this.options = generateRewardOptions(this.run, rng);
+      if (this.versus) {
+        // 対戦: 何回目の選択権か・何回目の引き直しかだけで決め、両者に同じ候補を出す
+        const round = getVersusOfferRound(this.picks);
+        const rng = createSeededRng(getVersusOfferSeed(this.run.seed, this.picks, this.rerollsThisPick));
+        this.options = generateSharedRewardOffers(round, rng).map((o) => sharedOfferToOption(this.run, o, round));
+      } else {
+        const rng = createSeededRng(Math.imul(this.run.seed ^ 0x2545f491, 31) + this.draws * 7919);
+        this.options = generateRewardOptions(this.run, rng);
+      }
     }
     return this.options;
   }
@@ -840,6 +909,7 @@ export class TDRun {
     if (!option) return null;
     applyReward(this.run, option);
     this.choices--;
+    this.picks++;
     this.options = null;
     this.rerollsThisPick = 0;
     if (option.kind === 'relic') this.rebuildRelics(battle);
@@ -912,9 +982,38 @@ export class TDRun {
     );
   }
 
+  // ---- オンライン対戦 ----
+
+  /** たまった送り込み予算を一定間隔で送信待ちにする */
+  private updateSend(dt: number): void {
+    this.sendTimer += dt;
+    if (this.sendTimer < TD_VS_SEND_INTERVAL) return;
+    this.sendTimer -= TD_VS_SEND_INTERVAL;
+    if (this.sendBank < TD_VS_SEND_MIN) return;
+    const budget = Math.round(this.sendBank);
+    this.sendBank = 0;
+    this.sentTotal += budget;
+    this.outbox.push({ budget, seed: Math.floor(this.rng() * 0x7fffffff) });
+  }
+
+  /** 相手から送り込まれた敵を、自分の今の Wave の顔ぶれで湧かせる */
+  receiveSend(budget: number, seed: number): UnitTypeId[] {
+    if (this.ended) return [];
+    const ids = pickWaveEnemies(getWaveRound(Math.max(1, this.wave)), budget, createSeededRng(seed));
+    ids.forEach((id, i) => {
+      const at = this.time + (ids.length <= 1 ? 0 : (TD_VS_SEND_SPREAD * i) / (ids.length - 1));
+      this.queue.push({ id, at, kind: 'sent' });
+    });
+    this.receivedTotal += budget;
+    this.events.push({ kind: 'sent', value: budget });
+    return ids;
+  }
+
   // ---- 決着 ----
 
   result(): BattleResult {
+    if (this.versusOutcome === 'win') return 0;
+    if (this.versusOutcome === 'lose') return 1;
     if (this.playerBase && !this.playerBase.alive) return 1;
     if (this.enemyBase && !this.enemyBase.alive) return 0;
     return null;

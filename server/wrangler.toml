@@ -1,0 +1,17 @@
+# TD オンライン対戦の中継サーバー（Cloudflare Workers）
+name = "exblocks-war-td-versus"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[vars]
+# 接続を許す Origin（カンマ区切り）。空なら制限しない。例: "https://takenoko117.github.io,http://localhost:5173"
+ALLOWED_ORIGINS = ""
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "VersusRoomObject"
+
+# 無料プランでは SQLite 版の Durable Object を使う
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["VersusRoomObject"]

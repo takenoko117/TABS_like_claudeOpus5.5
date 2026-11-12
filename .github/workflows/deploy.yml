@@ -37,6 +37,9 @@ jobs:
 
       - name: 本番用ビルド
         run: npm run build
+        env:
+          # TD オンライン対戦の中継サーバー（リポジトリの Variables に TD_VS_SERVER を設定する。例: wss://xxx.workers.dev）
+          VITE_TD_VS_SERVER: ${{ vars.TD_VS_SERVER }}
 
       - name: Pages アーティファクトのアップロード
         uses: actions/upload-pages-artifact@v3

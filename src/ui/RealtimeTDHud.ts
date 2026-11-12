@@ -22,6 +22,9 @@ import {
   type RogueStarter,
 } from '../game/RogueliteMode';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
+import type { TDVersusSession } from '../game/TDVersusSession';
+import type { TDVersusEndReason } from '../net/tdVersusProtocol';
+import { renderVersusLobby, renderVersusPanel, renderVersusResult, updateVersusPanel } from './TDVersusUi';
 import { BIOMES, TRAITS } from '../field/BiomeDefs';
 import { TD_TERRAIN_SECONDS } from '../game/TDTerrain';
 import type { JackpotReward } from '../game/RogueJackpot';
@@ -50,6 +53,19 @@ export interface TDHudHost {
   retire(): void;
   toTitle(): void;
   retry(): void;
+  /** オンライン対戦（対戦していなければ null） */
+  getVersus(): TDVersusSession | null;
+  /** スターター選択からオンライン対戦のロビーへ */
+  openVersus(): void;
+  vsJoin(room: string): void;
+  vsReady(starterId: string): void;
+  vsUnready(): void;
+  /** 部屋を出てロビーの入力画面へ戻る */
+  vsLeave(): void;
+  /** 決着後、同じ部屋のロビーへ戻る */
+  vsLobby(): void;
+  /** オンライン対戦をやめて 1 人用のスターター選択へ */
+  vsBack(): void;
 }
 
 const BLOCK_LABELS: Record<DeployBlock, string> = {
@@ -204,6 +220,10 @@ export class RealtimeTDHud {
   private readonly elTutorial: HTMLElement;
   private tutorialPage = -1;
   private tutorialOnClose: (() => void) | null = null;
+  /** 対戦相手の戦況 */
+  private readonly elVs: HTMLElement;
+  /** ロビーで入力中の部屋名 */
+  private vsRoomDraft = '';
 
   constructor(private readonly host: TDHudHost) {
     this.root = document.createElement('div');
@@ -211,6 +231,7 @@ export class RealtimeTDHud {
     this.root.className = 'td-hud hidden';
     this.root.innerHTML = `
       <div class="td-top"></div>
+      <div class="td-vs hidden"></div>
       <div class="td-side">
         <div class="td-xp">
           <span class="td-lv"><small>Lv</small><b>1</b></span>
@@ -245,8 +266,21 @@ export class RealtimeTDHud {
     this.elChoice = this.root.querySelector('.td-choice')!;
     this.elModal = this.root.querySelector('.td-modal')!;
     this.elTutorial = this.root.querySelector('.td-tutorial')!;
+    this.elVs = this.root.querySelector('.td-vs')!;
+    this.elVs.innerHTML = renderVersusPanel();
     this.renderTop();
     this.root.addEventListener('click', (e) => this.onClick(e));
+    // 部屋名の入力: 打った内容を覚え、Enter で入室する
+    this.root.addEventListener('input', (e) => {
+      const input = e.target as HTMLElement;
+      if (input.classList.contains('td-vs-room')) this.vsRoomDraft = (input as HTMLInputElement).value;
+    });
+    this.root.addEventListener('keydown', (e) => {
+      const input = e.target as HTMLElement;
+      if (!input.classList.contains('td-vs-room')) return;
+      e.stopPropagation();
+      if (e.key === 'Enter') this.host.vsJoin(this.vsRoomDraft);
+    });
   }
 
   /** モデルの表示先を取り直す（描き直したとき） */
@@ -310,6 +344,9 @@ export class RealtimeTDHud {
     this.hideModal();
     this.elAnnounce.classList.add('hidden');
     this.root.classList.toggle('td-running', this.host.getRun() !== null);
+    const versus = this.host.getRun()?.versus ?? false;
+    this.root.classList.toggle('td-versus', versus);
+    this.elVs.classList.toggle('hidden', !versus);
     this.bindPreviews();
   }
 
@@ -328,6 +365,8 @@ export class RealtimeTDHud {
       if (this.announceTimer <= 0) this.elAnnounce.classList.add('hidden');
     }
     this.updateTop(td);
+    const vs = this.host.getVersus();
+    if (td.versus && vs) updateVersusPanel(this.elVs, td, vs);
     this.updateXp(td, realDt);
     this.updateSide(td);
     const key = td.run.cards.map((c) => c.id).join(',');
@@ -346,7 +385,7 @@ export class RealtimeTDHud {
     const events = td.events.splice(0).filter((e) => e.kind !== 'levelup');
     if (events.length === 0) return;
     // 同じフレームに重なったら最も重要なものだけを出す
-    const order = ['boss', 'counter', 'terrain', 'elite', 'wave'] as const;
+    const order = ['boss', 'counter', 'sent', 'terrain', 'elite', 'wave'] as const;
     const top = [...events].sort(
       (a, b) => order.indexOf(a.kind as (typeof order)[number]) - order.indexOf(b.kind as (typeof order)[number]),
     )[0];
@@ -362,6 +401,9 @@ export class RealtimeTDHud {
         break;
       case 'counter':
         this.announce(`🔥 敵基地の反撃！（${top.value * 10}%）`, 'counter');
+        break;
+      case 'sent':
+        this.announce(`📥 相手から敵が送り込まれた！（${top.value}）`, 'counter');
         break;
       case 'elite':
         this.announce(`😈 WAVE ${top.value} エリート出現`, 'elite');
@@ -720,6 +762,31 @@ export class RealtimeTDHud {
     }
     if (d.td === 'title') return this.host.toTitle();
     if (d.td === 'retry') return this.host.retry();
+    // オンライン対戦のロビー
+    if (d.vsStarter !== undefined) {
+      this.host.playClick();
+      this.host.vsReady(d.vsStarter);
+      return;
+    }
+    switch (d.td) {
+      case 'versus':
+        this.host.playClick();
+        return this.host.openVersus();
+      case 'vs-join': {
+        const input = this.elModal.querySelector<HTMLInputElement>('.td-vs-room');
+        if (input) this.vsRoomDraft = input.value;
+        this.host.playClick();
+        return this.host.vsJoin(this.vsRoomDraft);
+      }
+      case 'vs-unready':
+        return this.host.vsUnready();
+      case 'vs-leave':
+        return this.host.vsLeave();
+      case 'vs-lobby':
+        return this.host.vsLobby();
+      case 'vs-back':
+        return this.host.vsBack();
+    }
     if (!td) return;
     if (d.deploy) {
       this.tryDeploy(d.deploy as UnitTypeId);
@@ -810,10 +877,29 @@ export class RealtimeTDHud {
       <h3>スターターを選ぶ</h3>
       <div class="td-starters">${cards}</div>
       <div class="td-modal-actions">
+        <button type="button" class="td-btn primary" data-td="versus">🌐 オンライン対戦</button>
         <button type="button" class="td-btn" data-td="howto">❓ あそびかた</button>
         <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
       </div>
     `);
+  }
+
+  /** オンライン対戦のロビー（部屋名の入力・部屋での待機）。部屋の状態が変わるたびに呼ぶ */
+  showVersusLobby(vs: TDVersusSession): void {
+    const focused = document.activeElement?.classList.contains('td-vs-room') ?? false;
+    this.showModal(renderVersusLobby(vs, this.vsRoomDraft));
+    this.bindPreviews();
+    const input = this.elModal.querySelector<HTMLInputElement>('.td-vs-room');
+    if (input && (focused || vs.phase === 'idle')) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  /** オンライン対戦のリザルト */
+  showVersusResult(td: TDRun, won: boolean, reason: TDVersusEndReason, vs: TDVersusSession): void {
+    this.closeChoice();
+    this.showModal(renderVersusResult(td, won, reason, vs));
   }
 
   showResult(td: TDRun, won: boolean): void {

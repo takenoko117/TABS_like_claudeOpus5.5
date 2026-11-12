@@ -28,7 +28,8 @@ npm run outline -- src                          # 全ファイルの行数
 | `GameApp.ts` | 5234 | **巨大**。全モードの UI・入力・モード切替・戦闘の開始/終了・HUD。下の「GameApp の中身」を参照 |
 | `Battle.ts` | 766 | 1 戦闘のシミュレーション本体。ユニット/施設の生成・削除、`step`、勝敗判定、ステージのハザード |
 | `RogueliteMode.ts` | 2548 | **巨大**。ローグライトのルール・ラン・報酬・ゲート。下の「RogueliteMode の中身」を参照 |
-| `RealtimeTDMode.ts` | 952 | TD モード。定数（`TD_*`）、ウェーブ・資金・経験値の計算関数、`TDRun`（ラン状態）、`TDBattleRules` |
+| `RealtimeTDMode.ts` | 1071 | TD モード。定数（`TD_*`、対戦用は `TD_VS_*`）、ウェーブ・資金・経験値の計算関数、`TDRun`（ラン状態。対戦では `waveRng` を共通の種で分け、`receiveSend`・`outbox` で送り込み）、`TDBattleRules` |
+| `TDVersusSession.ts` | 211 | TD オンライン対戦の進行（部屋・準備・試合・決着）。通信路を差し替えられ、DOM なしでテストできる |
 | `TDTerrain.ts` | 148 | TD の地形を 2 分ごとに作り直す処理 |
 | `RogueJackpot.ts` | 285 | 戦闘中の宝箱ドロップ判定とリール報酬（ローグライト・TD 共通） |
 | `ArcadeStages.ts` | 2302 | アーケード全 40 面のデータ（`ARCADE_STAGES` が大半）と星評価・セーブ |
@@ -88,7 +89,8 @@ npm run outline -- src                          # 全ファイルの行数
 
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
-| `ui/RealtimeTDHud.ts` | 935 | TD モードの HUD 全部（上部バー・配置バー・強化 3 択・チュートリアル・結果） |
+| `ui/RealtimeTDHud.ts` | 1021 | TD モードの HUD 全部（上部バー・配置バー・強化 3 択・チュートリアル・結果） |
+| `ui/TDVersusUi.ts` | 133 | TD オンライン対戦のロビー・相手の戦況・リザルトの HTML |
 | `ui/UnitIcons.ts` | 1093 | 兵種・施設の SVG アイコン（ほぼデータ） |
 | `ui/JackpotRoulette.ts` / `JackpotRewardFx.ts` | 462 / 269 | 宝箱開封の進行と報酬演出 |
 | `ui/UnitDetailHelper.ts` | 231 | 兵種詳細パネルの表示データ |
@@ -98,10 +100,19 @@ npm run outline -- src                          # 全ファイルの行数
 | `audio/SoundManager.ts` | 1878 | 効果音（WebAudio で合成）。`playEffect` が大半 |
 | `audio/MusicPlayer.ts` / `MusicPatterns.ts` | 小 | BGM |
 
+### src/net・server — TD オンライン対戦の通信
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `src/net/tdVersusProtocol.ts` | 134 | 通信メッセージの型・検証、部屋名の整形、定数（放置で消すまでの `TD_VS_IDLE_MS` など）。クライアントとサーバーで共用 |
+| `src/net/TDVersusClient.ts` | 92 | WebSocket の接続。URL はビルド時の `VITE_TD_VS_SERVER`（未設定の開発時は `ws://localhost:8787`） |
+| `server/src/roomLogic.ts` | 147 | 部屋のルール `TDVersusRoom`（入室・準備・開始・中継・決着・放置判定）。Cloudflare 非依存で `tests/tdVersus.test.ts` から検証 |
+| `server/src/index.ts` | 138 | Cloudflare Worker と Durable Object `VersusRoomObject`（部屋名ごとに 1 つ、アラームで放置部屋を消す）。手順は `server/README.md` |
+
 ### その他
 
 - `src/style.css`（5450 行）: 全 UI。前半が共通 UI・スマホ対応・ダメージ数字、「ローグライト」見出し以降（全体の後ろ 6 割）がローグライト（作戦室・報酬・宝箱演出）。`npm run outline -- src/style.css` で見出しを確認する
-- `src/td.css`（711 行）: TD モード
+- `src/td.css`（767 行）: TD モード（末尾近くにオンライン対戦のロビーと相手の戦況）
 - `index.html`: 画面の DOM の骨組み（id 付き要素を `GameApp` が取得）
 - `preview.html` + `src/preview.ts`: 兵種モデル単体の確認ページ（`?unit=&angle=&mode=`）
 - `tests/*.test.ts`: vitest。ファイル名がほぼ対象モジュールに対応（`roguelite.test.ts` → `RogueliteMode.ts`、`realtimeTD.test.ts` → `RealtimeTDMode.ts` など）
@@ -120,7 +131,8 @@ npm run outline -- src                          # 全ファイルの行数
 | 兵種バー・詳細 | `renderUnitCards`, `selectPlaceable`, `updateUnitDetailOverlay` |
 | アーケード | `loadArcadeStage`, `renderArcadeStageButtons`, `renderStageBriefing`, `renderEnemyChips` |
 | サンドボックス | `loadPreset`, `PRESETS`（ファイル冒頭の定数） |
-| TD モード | `enterTDMode`, `startTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
+| TD モード | `enterTDMode`, `startTDRun`, `beginTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
+| TD オンライン対戦 | `tdVersus`（セッションとイベント）, `showTDVersusLobby`, `joinTDVersusRoom`, `startTDVersusRun`, `handleTDVersusEnd`, `isTDVersusLive`（対戦中は止めない） |
 | チャレンジ | `enterChallengeMode`, `loadChallengeRound`, `handleChallengeBattleEnd`, `renderChallengePanel` |
 | ローグライト | `enterRogueliteMode`, `startRogueRun`, `loadRogueRound`, `showRogueWarRoom`（作戦室）, `showRogueRewards`, `handleRogueBattleEnd`, `renderRoguePanel`, `showRogueModal` |
 | 宝箱（共通） | `onRogueEnemyKilled`, `openDroppedChest`, `applyJackpotRewards`, `playJackpotRewardFx` |
@@ -188,6 +200,7 @@ npm run outline -- src                          # 全ファイルの行数
 | ローグライトの画面 | `GameApp.ts` の `showRogue*` / `renderRogue*` ＋ `style.css` 後半 |
 | TD モードの数値 | `RealtimeTDMode.ts` 冒頭の `TD_*` 定数 |
 | TD モードの画面 | `RealtimeTDHud.ts` ＋ `td.css` |
+| TD オンライン対戦 | ルール `RealtimeTDMode.ts`（`TD_VS_*`）、進行 `TDVersusSession.ts`、通信 `src/net/`、サーバー `server/`、画面 `ui/TDVersusUi.ts`、仕様 `REALTIME_TD_SPEC.md` §16 |
 | 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
 | 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
 | 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |
@@ -198,7 +211,7 @@ npm run outline -- src                          # 全ファイルの行数
 
 | ファイル | 内容・状態 |
 | --- | --- |
-| `REALTIME_TD_SPEC.md` | TD モード（実装済み・調整中。§12 が優先） |
+| `REALTIME_TD_SPEC.md` | TD モード（実装済み・調整中。§12 が優先、§16 がオンライン対戦） |
 | `ROGUELITE_V3_SPEC.md` | ローグライト現行版（デッキ＋ゴールド強化。実装済み） |
 | `ROGUELITE_DIFFICULTY_SPEC.md` | 難易度階層・エンドレス |
 | `RELIC_UPDATE_SPEC.md` | レリック変更 5 件 |

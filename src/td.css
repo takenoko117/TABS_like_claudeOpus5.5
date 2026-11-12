@@ -542,7 +542,59 @@ body.td-mode #btn-restore-hud {
 .td-result-grid div { display: grid; padding: 8px; background: rgba(255, 255, 255, 0.05); }
 .td-result-grid small { color: var(--sub); font-size: 11px; }
 .td-result-grid b { font-size: 20px; }
-.td-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.td-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+
+/* ---- オンライン対戦（ロビー・相手の戦況） ---- */
+.td-vs-join { display: flex; gap: 8px; }
+.td-vs-room {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  background: #0e1628;
+  color: var(--text);
+  font: 700 16px/1.2 var(--font-ui);
+}
+.td-vs-room:focus { outline: none; border-color: var(--gold); }
+.td-vs-note { margin: 8px 0 0; color: var(--sub); font-size: 12px; }
+.td-vs-message { margin: 8px 0 0; color: var(--boss); font-size: 13px; font-weight: 700; }
+.td-vs-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.td-vs-slot { display: grid; gap: 2px; padding: 8px 10px; border: 2px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.05); }
+.td-vs-slot small { color: var(--sub); font-size: 11px; }
+.td-vs-slot b { font-size: 14px; }
+.td-vs-slot.empty b { color: var(--sub); }
+.td-vs-slot.ready { border-color: #6fdc8c; }
+.td-vs-slot.ready b { color: #8ff0a8; }
+.td-starter.selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(255, 200, 80, 0.35) inset; }
+.td-starter:disabled { cursor: default; opacity: 0.55; }
+.td-starter.selected:disabled { opacity: 1; }
+
+/* 対戦中は一時停止できないのでボタンを隠す */
+.td-hud.td-versus .td-tools [data-td='pause'] { display: none; }
+.td-vs {
+  position: absolute;
+  top: 100px;
+  right: 8px;
+  width: 230px;
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(14, 22, 40, 0.88);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  pointer-events: none;
+}
+.td-hud:not(.td-running) > .td-vs { display: none; }
+.td-vs.danger { border-color: var(--boss); }
+.td-vs-head { font: 900 14px/1.2 'DotGothic16', var(--font-ui); color: #ffb3a8; }
+.td-vs-row { display: grid; grid-template-columns: 34px 1fr 52px; gap: 6px; align-items: center; }
+.td-vs-row span { color: var(--sub); }
+.td-vs-row b { text-align: right; }
+.td-vs-row .td-hp i { background: linear-gradient(90deg, #e05a8a, #ff9ac0); }
+.td-vs-row .td-hp.enemy i { background: linear-gradient(90deg, #ff8a65, #e0473a); }
+.td-vs-stats { color: var(--text); }
+.td-vs-send { color: var(--sub); font-size: 11px; }
 
 /* ---- あそびかた（ボクセル調のポップな簡易チュートリアル） ---- */
 .td-tutorial {
@@ -708,4 +760,8 @@ body.td-mode #btn-restore-hud {
   .td-card-key { display: none; }
   .td-card-state { top: 22px; font-size: 12px; }
   .td-result-grid { grid-template-columns: repeat(2, 1fr); }
+  .td-vs { top: 50px; right: 52px; width: 150px; padding: 4px 6px; font-size: 10px; gap: 2px; }
+  .td-vs-head { font-size: 11px; }
+  .td-vs-row { grid-template-columns: 26px 1fr 34px; gap: 4px; }
+  .td-vs-send { display: none; }
 }
