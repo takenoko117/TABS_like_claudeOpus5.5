@@ -31,8 +31,10 @@ import {
   renderVersusPanel,
   renderVersusResult,
   renderVersusRoomList,
+  renderVersusWatchResult,
   updateVersusPanel,
 } from './TDVersusUi';
+import { pixelArt } from './PixelArt';
 import { BIOMES, TRAITS } from '../field/BiomeDefs';
 import { TD_TERRAIN_SECONDS } from '../game/TDTerrain';
 import type { JackpotReward } from '../game/RogueJackpot';
@@ -61,6 +63,10 @@ export interface TDHudHost {
   retire(): void;
   toTitle(): void;
   retry(): void;
+  /** 対戦で、まだ開けていない自分の宝箱の数（1 人用・観戦は 0） */
+  getChestCount(): number;
+  /** 対戦で、いちばん古い宝箱を開ける（宝箱ボタン）。開けられたら true */
+  openNextChest(): boolean;
   /** オンライン対戦（対戦していなければ null） */
   getVersus(): TDVersusSession | null;
   /** 対戦の試合のロックステップ（試合中でなければ null） */
@@ -69,6 +75,8 @@ export interface TDHudHost {
   vsJoin(room: string, intent: TDVersusJoinIntent): void;
   /** 募集中の部屋の一覧を取り直す */
   vsRefreshRooms(): void;
+  /** 対戦中の部屋を観戦する */
+  vsWatch(room: string): void;
   vsReady(starterId: string): void;
   vsUnready(): void;
   /** 部屋を出てロビーの入力画面へ戻る */
@@ -316,6 +324,11 @@ export class RealtimeTDHud {
     this.closeTutorial(false);
   }
 
+  /** 観戦中か */
+  get spectating(): boolean {
+    return this.host.getLockstep()?.spectator ?? false;
+  }
+
   get isChoiceOpen(): boolean {
     return this.choiceOpen;
   }
@@ -358,6 +371,12 @@ export class RealtimeTDHud {
     const versus = this.host.getRun()?.duel ?? false;
     this.root.classList.toggle('td-versus', versus);
     this.elVs.classList.toggle('hidden', !versus);
+    // 観戦では操作の UI を隠し、🏳 は「観戦をやめる」にする
+    const watching = this.spectating;
+    this.root.classList.toggle('td-spectate', watching);
+    const retire = this.root.querySelector<HTMLElement>('[data-td="retire"]')!;
+    retire.textContent = watching ? '✖' : '🏳';
+    retire.title = watching ? '観戦をやめて部屋の一覧へ戻る' : 'リタイアしてタイトルへ';
     // 対戦のゲスト（赤）は、カードのモデルや城の HP バーを赤の配色にする
     const team = this.host.getRun()?.team ?? 0;
     this.root.classList.toggle('td-red-side', team === 1);
@@ -460,10 +479,15 @@ export class RealtimeTDHud {
     const timeEl = this.elTop.querySelector<HTMLElement>('.td-time')!;
     const over = !td.duel && td.time >= TD_DURATION_SECONDS;
     if (td.duel) {
-      // 対戦: 城の名前を「あなた／相手」にし、制限時間の残りを出す
-      this.elTop.querySelector('.td-base.ally .td-base-label')!.textContent = `🏰 あなたの城（${td.team === 0 ? '青' : '赤'}）`;
-      this.elTop.querySelector('.td-base.enemy .td-base-label')!.textContent = `相手の城（${td.team === 0 ? '赤' : '青'}） 🏯`;
-      this.elTop.querySelector('.td-wave')!.textContent = '⚔ 対戦';
+      // 対戦: 城の名前を「あなた／相手」にし、制限時間の残りを出す（観戦は「青／赤」）
+      const watching = this.spectating;
+      this.elTop.querySelector('.td-base.ally .td-base-label')!.textContent = watching
+        ? '🏰 青の城（ホスト）'
+        : `🏰 あなたの城（${td.team === 0 ? '青' : '赤'}）`;
+      this.elTop.querySelector('.td-base.enemy .td-base-label')!.textContent = watching
+        ? '赤の城（ゲスト） 🏯'
+        : `相手の城（${td.team === 0 ? '赤' : '青'}） 🏯`;
+      this.elTop.querySelector('.td-wave')!.textContent = watching ? '👁 観戦中' : '⚔ 対戦';
       const left = Math.max(0, TD_DUEL_TIME_LIMIT - td.time);
       timeEl.textContent = formatTime(left);
       timeEl.classList.toggle('over', left <= 60);
@@ -506,7 +530,7 @@ export class RealtimeTDHud {
     const { level, xp } = levelForTotalXp(total);
     if (level > this.shownLevel) {
       this.shownLevel = level;
-      this.playLevelUpFx(level);
+      if (!this.spectating) this.playLevelUpFx(level);
     }
     this.elSide.querySelector('.td-lv b')!.textContent = String(level);
     const need = xpForLevel(level);
@@ -559,7 +583,8 @@ export class RealtimeTDHud {
 
     const can = (price: number | null) => price !== null && td.money >= price;
     const base = td.playerBase;
-    const upsKey = [can(td.fundPrice), can(td.basePrice), td.fundLevel, td.baseLevel, !!base?.alive].join('/');
+    const chests = td.ended ? 0 : this.host.getChestCount();
+    const upsKey = [can(td.fundPrice), can(td.basePrice), td.fundLevel, td.baseLevel, !!base?.alive, chests].join('/');
     if (upsKey !== this.upsKey) {
       this.upsKey = upsKey;
       const tile = (
@@ -594,7 +619,16 @@ export class RealtimeTDHud {
           td.basePrice,
           `城強化 Lv${td.baseLevel}：最大HP ${Math.round(base?.maxHp ?? 0).toLocaleString()}・自動回復 ${td.baseRegen}/秒・砲台 ${td.playerCannons.length}基。上げると最大HPと自動回復が増え、城に砲台が1基増える`,
           can(td.basePrice) && !!base?.alive,
-        );
+        ) +
+        // 対戦で開けられる宝箱があれば、城強化の横に宝箱ボタンを出す（戦場の宝箱を押さなくても開けられる）
+        (chests > 0
+          ? `<button type="button" class="td-up td-chest-btn" data-buy="chest" title="宝箱を開ける（古い順。戦場の宝箱を押しても開けられる）">
+              <span class="td-up-icon">${pixelArt('chest', 'td-px')}</span>
+              <span class="td-up-lv">×${chests}</span>
+              <span class="td-up-name">宝箱</span>
+              <span class="td-up-price">OPEN!</span>
+            </button>`
+          : '');
       this.bindPreviews();
     }
 
@@ -661,7 +695,7 @@ export class RealtimeTDHud {
   }
 
   private updateChoice(td: TDRun): void {
-    const revealed = td.ended ? 0 : this.revealedChoices(td);
+    const revealed = td.ended || this.spectating ? 0 : this.revealedChoices(td);
     if (!this.choiceOpen) {
       // レベルアップ演出を少し見せてから出す
       if (revealed > 0 && this.levelUpTimer <= LEVELUP_FX_TIME - CHOICE_DELAY && this.elModal.classList.contains('hidden')) {
@@ -798,6 +832,11 @@ export class RealtimeTDHud {
       this.host.vsJoin(d.vsRoom, 'join');
       return;
     }
+    if (d.vsWatch !== undefined) {
+      this.host.playClick();
+      this.host.vsWatch(d.vsWatch);
+      return;
+    }
     switch (d.td) {
       case 'vs-create': {
         const input = this.elModal.querySelector<HTMLInputElement>('.td-vs-room');
@@ -818,6 +857,8 @@ export class RealtimeTDHud {
         return this.host.vsBack();
     }
     if (!td) return;
+    // 観戦では、やめるボタンとカメラ以外は操作できない
+    if (this.spectating && d.td !== 'retire' && d.td !== 'settings') return;
     if (d.deploy) {
       this.tryDeploy(d.deploy as UnitTypeId);
       return;
@@ -847,6 +888,11 @@ export class RealtimeTDHud {
         this.renderChoice(td);
         return;
     }
+    if (d.buy === 'chest') {
+      if (!this.host.openNextChest()) this.host.playDenied();
+      this.upsKey = '';
+      return;
+    }
     let ok: boolean | undefined;
     if (d.buy === 'fund') ok = td.requestFund();
     else if (d.buy === 'base') ok = td.requestBase();
@@ -862,7 +908,7 @@ export class RealtimeTDHud {
   /** 出撃（カードのクリックと数字キー） */
   tryDeploy(id: UnitTypeId): void {
     const td = this.host.getRun();
-    if (!td) return;
+    if (!td || this.spectating) return;
     const ok = td.requestDeploy(this.host.battle, id);
     const el = this.cardEls.get(id);
     if (ok) {
@@ -929,6 +975,12 @@ export class RealtimeTDHud {
   updateVersusRooms(rooms: readonly TDVersusRoomListing[] | null, error: string | null): void {
     const el = this.elModal.querySelector<HTMLElement>('.td-vs-rooms');
     if (el) el.innerHTML = renderVersusRoomList(rooms, error);
+  }
+
+  /** 観戦した対戦のリザルト */
+  showVersusWatchResult(blue: TDRun, red: TDRun, winner: number | null, reason: TDVersusEndReason): void {
+    this.closeChoice();
+    this.showModal(renderVersusWatchResult(blue, red, winner, reason));
   }
 
   /** オンライン対戦のリザルト */

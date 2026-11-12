@@ -51,7 +51,8 @@ export class TDVersusClient {
   ) {}
 
   /**
-   * 部屋名で接続する。intent が create なら部屋を作る（人がいれば断られる）、join なら一覧の部屋に入る。
+   * 部屋名で接続する。intent が create なら部屋を作る（人がいれば断られる）、join なら一覧の部屋に入る、
+   * watch なら対戦中の部屋を観戦する。
    * 部屋名が使えない・サーバー未設定ならエラー文を返す
    */
   static open(rawRoom: string, intent: TDVersusJoinIntent, handlers: TDVersusClientHandlers): TDVersusClient | string {
@@ -98,9 +99,13 @@ export class TDVersusClient {
               ? 'その名前の部屋はすでにあります。別の名前にするか、一覧から入ってください'
               : e.code === 4003
                 ? 'その部屋はもうありません'
-                : opened
-              ? 'サーバーとの接続が切れました'
-              : 'サーバーに接続できませんでした';
+                : e.code === 4004
+                  ? 'その部屋はいま対戦中ではありません'
+                  : e.code === 4005
+                    ? '対戦していた2人が退室したため、部屋が閉じられました'
+                    : opened
+                      ? 'サーバーとの接続が切れました'
+                      : 'サーバーに接続できませんでした';
       this.handlers.onClose(reason);
     });
   }

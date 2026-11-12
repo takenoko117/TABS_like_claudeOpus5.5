@@ -356,6 +356,19 @@ interface SpawnOrder {
 }
 
 /** TDRun の追加設定 */
+/** 対戦で落ちた宝箱（x, z は落ちた場所） */
+export interface TDDuelChest {
+  id: number;
+  tier: ChestTier;
+  x: number;
+  z: number;
+}
+
+/** 対戦で開けた宝箱と中身 */
+export interface TDDuelChestOpened extends TDDuelChest {
+  rewards: JackpotReward[];
+}
+
 export interface TDRunOptions {
   /**
    * オンライン対戦（対面型）でこのランが受け持つ陣営。0 はホスト（青・左の城）、1 はゲスト（赤・右の城）。
@@ -443,8 +456,13 @@ export class TDRun {
   /** 送ったがまだ反映されていない選択・引き直しの数（画面の二度押しを防ぐ） */
   pendingChoices = 0;
   pendingRerolls = 0;
-  /** 対戦で自動で開けた宝箱の中身（GameApp が取り出して知らせる） */
-  readonly chestLog: JackpotReward[][] = [];
+  /** 対戦で落ちた、まだ開けていない宝箱（番号は両端末で同じ順に振られる） */
+  readonly pendingChests: TDDuelChest[] = [];
+  private chestSeq = 0;
+  /** 開けるよう送ったが、まだ反映されていない宝箱の番号（二度押しを防ぐ） */
+  private readonly requestedChests = new Set<number>();
+  /** 対戦で開けた宝箱（GameApp が取り出して開封の演出を見せる） */
+  readonly chestLog: TDDuelChestOpened[] = [];
 
   constructor(seed: number, starter: RogueStarter, rng?: () => number, options: TDRunOptions = {}) {
     this.duel = options.duel !== undefined;
@@ -911,6 +929,27 @@ export class TDRun {
     return this.upgradeBase();
   }
 
+  /** まだ開けるよう送っていない宝箱（古い順） */
+  get openableChests(): TDDuelChest[] {
+    return this.pendingChests.filter((c) => !this.requestedChests.has(c.id));
+  }
+
+  /** 対戦で id 番の宝箱を開けるよう頼む（送るだけで、反映は execute）。頼めたら true */
+  requestChest(id: number): boolean {
+    if (!this.commandSink || this.ended || this.requestedChests.has(id)) return false;
+    if (!this.pendingChests.some((c) => c.id === id)) return false;
+    this.requestedChests.add(id);
+    this.commandSink({ k: 'chest', id });
+    return true;
+  }
+
+  /** 対戦で宝箱を落とす（撃破した側のランに、両端末で同じ番号で積む） */
+  dropDuelChest(tier: ChestTier, x: number, z: number): TDDuelChest {
+    const chest = { id: this.chestSeq++, tier, x, z };
+    this.pendingChests.push(chest);
+    return chest;
+  }
+
   requestAuto(on: boolean): void {
     if (this.commandSink) this.commandSink({ k: 'auto', on });
     else this.autoDeploy = on;
@@ -940,6 +979,14 @@ export class TDRun {
       case 'auto':
         this.autoDeploy = cmd.on;
         return;
+      case 'chest': {
+        this.requestedChests.delete(cmd.id);
+        const i = this.pendingChests.findIndex((c) => c.id === cmd.id);
+        if (i < 0) return;
+        const [chest] = this.pendingChests.splice(i, 1);
+        this.chestLog.push({ ...chest, rewards: this.openChest(battle, chest.tier) });
+        return;
+      }
     }
   }
 

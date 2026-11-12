@@ -5,19 +5,25 @@ import {
   TD_VS_LIST_STALE_MS,
   normalizeRoomName,
   type TDVersusRoomListing,
+  type TDVersusRoomStatus,
 } from '../../src/net/tdVersusProtocol';
 
 interface DirectoryEntry {
   players: number;
+  status: TDVersusRoomStatus;
+  watchers: number;
   /** 最後に知らせを受けた時刻（ミリ秒） */
   updated: number;
 }
 
-/** 部屋からの知らせ（open が false なら一覧から外す） */
+/** 部屋からの知らせ（open が false なら一覧から外す。open は「一覧に出す」の意味で、対戦中の部屋も含む） */
 export interface RoomReport {
   name: string;
   players: number;
   open: boolean;
+  /** 募集中か対戦中か（省略時は募集中） */
+  status?: TDVersusRoomStatus;
+  watchers?: number;
 }
 
 export class RoomDirectory {
@@ -28,7 +34,7 @@ export class RoomDirectory {
     const name = normalizeRoomName(r.name);
     if (!name) return false;
     if (!r.open || r.players <= 0) this.rooms.delete(name);
-    else this.rooms.set(name, { players: r.players, updated: now });
+    else this.rooms.set(name, { players: r.players, status: r.status ?? 'open', watchers: r.watchers ?? 0, updated: now });
     return true;
   }
 
@@ -44,13 +50,14 @@ export class RoomDirectory {
     return removed;
   }
 
-  /** 募集中の部屋（新しく作られた・知らせ直した順） */
+  /** 募集中の部屋（先）と対戦中の部屋（後）。それぞれ新しく作られた・知らせ直した順 */
   list(now: number): TDVersusRoomListing[] {
     this.prune(now);
+    const rank = (s: TDVersusRoomStatus) => (s === 'open' ? 0 : 1);
     return [...this.rooms]
-      .sort((a, b) => b[1].updated - a[1].updated)
+      .sort((a, b) => rank(a[1].status) - rank(b[1].status) || b[1].updated - a[1].updated)
       .slice(0, TD_VS_LIST_MAX)
-      .map(([name, e]) => ({ name, players: e.players }));
+      .map(([name, e]) => ({ name, players: e.players, status: e.status, watchers: e.watchers }));
   }
 
   get size(): number {
@@ -70,7 +77,12 @@ export class RoomDirectory {
       if (!Array.isArray(item) || typeof item[0] !== 'string') continue;
       const e = item[1] as Partial<DirectoryEntry> | null;
       if (!e || typeof e.players !== 'number' || typeof e.updated !== 'number') continue;
-      dir.rooms.set(item[0], { players: e.players, updated: e.updated });
+      dir.rooms.set(item[0], {
+        players: e.players,
+        status: e.status === 'playing' ? 'playing' : 'open',
+        watchers: typeof e.watchers === 'number' ? e.watchers : 0,
+        updated: e.updated,
+      });
     }
     return dir;
   }
@@ -90,5 +102,5 @@ export function shouldReport(
 
 /** shouldReport で使う、知らせの内容のキー */
 export function reportKey(report: RoomReport): string {
-  return `${report.open ? 1 : 0}:${report.players}`;
+  return `${report.open ? 1 : 0}:${report.players}:${report.status ?? 'open'}:${report.watchers ?? 0}`;
 }

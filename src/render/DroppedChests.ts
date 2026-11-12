@@ -94,7 +94,7 @@ export class DroppedChests {
   }
 
   /** 倒した敵の位置から宝箱を跳ね上げる */
-  spawn(pos: Vector3, tier: ChestTier): void {
+  spawn(pos: Vector3, tier: ChestTier): DroppedChest {
     const withTrim = (list: ReturnType<typeof bodyVoxels>) => list.map((v) => (v.trim ? { ...v, color: TRIM_COLORS[tier] } : v));
     const halfW = (W - 1) / 2;
     const halfD = (D - 1) / 2;
@@ -133,7 +133,7 @@ export class DroppedChests {
     this.scene.add(root);
 
     const angle = Math.random() * Math.PI * 2;
-    this.chests.push({
+    const state: ChestState = {
       tier,
       position: root.position,
       root,
@@ -152,7 +152,9 @@ export class DroppedChests {
       t: 0,
       landed: false,
       collecting: -1,
-    });
+    };
+    this.chests.push(state);
+    return state;
   }
 
   /** 画面座標にある宝箱を探す。重なっていたら一番近いものを返す */

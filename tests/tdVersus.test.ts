@@ -27,6 +27,9 @@ import {
 import { TDVersusRoom, type RoomOutput } from '../server/src/roomLogic';
 import { RoomDirectory, reportKey, shouldReport } from '../server/src/roomDirectory';
 import { buildRelicVoxelGrid } from '../src/render/RewardVoxelModels';
+import { pixelArt, pixelCells, unknownPixelChars, type PixelSpriteName } from '../src/ui/PixelArt';
+import { TD_SPECTATE_LAG_TURNS } from '../src/game/TDDuel';
+import { TD_VS_MAX_WATCHERS, type TDVersusInputLog } from '../src/net/tdVersusProtocol';
 
 const STARTERS: [RogueStarter, RogueStarter] = [ROGUE_STARTERS[0], ROGUE_STARTERS[1]];
 
@@ -405,6 +408,8 @@ describe('TD オンライン対戦: 進行（クライアント）', () => {
     const events: TDVersusSessionEvents = {
       onChange: () => {},
       onStart: (seed, starters, s) => log.push(`start:${seed}:${starters.map((st) => st.id).join('+')}:${s}`),
+      onWatch: (seed, starters, l, result) =>
+        log.push(`watch:${seed}:${starters.map((st) => st.id).join('+')}:${l.upTo.join(',')}:${result?.reason ?? '-'}`),
       onResult: (winner, reason) => log.push(`result:${winner}:${reason}`),
       onClosed: (reason) => log.push(`closed:${reason}`),
     };
@@ -494,16 +499,18 @@ describe('TD オンライン対戦: 部屋の作成・一覧', () => {
     const room = new TDVersusRoom('abc', 0, () => 0.5);
     expect(room.listing()).toBeNull();
     room.join(0, 'create');
-    expect(room.listing()).toEqual({ name: 'abc', players: 1 });
+    expect(room.listing()).toEqual({ name: 'abc', players: 1, status: 'open', watchers: 0 });
     room.join(0, 'join');
     expect(room.listing()).toBeNull();
     room.message(0, { t: 'ready', starter: 'a' }, 0);
     room.message(1, { t: 'ready', starter: 'b' }, 0);
     expect(room.phase).toBe('playing');
+    // 対戦中の部屋は「対戦中」として一覧に出る（観戦できる）
+    expect(room.listing()).toEqual({ name: 'abc', players: 2, status: 'playing', watchers: 0 });
     // 試合中に相手が抜けても、決着がつくまでは募集しない（決着後に 1 人なら再び募集中）
     room.leave(1, 1);
     expect(room.phase).toBe('ended');
-    expect(room.listing()).toEqual({ name: 'abc', players: 1 });
+    expect(room.listing()).toEqual({ name: 'abc', players: 1, status: 'open', watchers: 0 });
   });
 
   it('一覧は募集中の部屋を新しい順に出し、閉じた・古い部屋は消える', () => {
@@ -511,8 +518,8 @@ describe('TD オンライン対戦: 部屋の作成・一覧', () => {
     dir.report({ name: 'aaa', players: 1, open: true }, 0);
     dir.report({ name: 'BBB', players: 1, open: true }, 10);
     expect(dir.list(20)).toEqual([
-      { name: 'bbb', players: 1 },
-      { name: 'aaa', players: 1 },
+      { name: 'bbb', players: 1, status: 'open', watchers: 0 },
+      { name: 'aaa', players: 1, status: 'open', watchers: 0 },
     ]);
     dir.report({ name: 'aaa', players: 2, open: false }, 30);
     expect(dir.list(40).map((r) => r.name)).toEqual(['bbb']);
@@ -524,7 +531,7 @@ describe('TD オンライン対戦: 部屋の作成・一覧', () => {
     const dir = new RoomDirectory();
     dir.report({ name: 'x', players: 1, open: true }, 5);
     const back = RoomDirectory.fromJSON(JSON.parse(JSON.stringify(dir.toJSON())));
-    expect(back.list(6)).toEqual([{ name: 'x', players: 1 }]);
+    expect(back.list(6)).toEqual([{ name: 'x', players: 1, status: 'open', watchers: 0 }]);
     expect(RoomDirectory.fromJSON('broken').size).toBe(0);
   });
 
@@ -539,8 +546,18 @@ describe('TD オンライン対戦: 部屋の作成・一覧', () => {
   });
 
   it('クライアントは部屋の一覧の応答を検証する', () => {
-    expect(parseRoomList({ rooms: [{ name: 'Abc', players: 1 }, { name: 'bad name!', players: 1 }, 3] })).toEqual([
-      { name: 'abc', players: 1 },
+    expect(
+      parseRoomList({
+        rooms: [
+          { name: 'Abc', players: 1 },
+          { name: 'bad name!', players: 1 },
+          3,
+          { name: 'live', players: 2, status: 'playing', watchers: 3 },
+        ],
+      }),
+    ).toEqual([
+      { name: 'abc', players: 1, status: 'open', watchers: 0 },
+      { name: 'live', players: 2, status: 'playing', watchers: 3 },
     ]);
     expect(parseRoomList({})).toBeNull();
     expect(parseRoomList(null)).toBeNull();
@@ -554,3 +571,257 @@ describe('TD オンライン対戦: 赤チームの表示', () => {
     expect(JSON.stringify(red)).not.toBe(JSON.stringify(blue));
   });
 });
+
+describe('TD オンライン対戦: 宝箱', () => {
+  /** 相手（team 1）の兵を host に倒させ、宝箱が出るまで繰り返す */
+  function dropChest(c: Client): void {
+    const host = c.duel.sides[0];
+    for (let i = 0; i < 200 && host.pendingChests.length === 0; i++) {
+      const victim = c.battle.spawnUnit('giant', 1, 0, 0);
+      victim.isBoss = true;
+      withSimRandom(c.duel.simRng, () => victim.takeDamage(1e9, victim.chest, new Vector3(3, 3, -2), c.battle.fixedDt));
+    }
+  }
+
+  it('倒した側に宝箱が積まれ、自動では開かない（番号は両端末で同じ）', () => {
+    const a = makeClient(77, 0);
+    const b = makeClient(77, 1);
+    dropChest(a);
+    dropChest(b);
+    const host = a.duel.sides[0];
+    expect(host.pendingChests.length).toBe(1);
+    expect(host.pendingChests[0]).toMatchObject({ id: 0, tier: 2 });
+    expect(host.chestLog.length).toBe(0);
+    expect(b.duel.sides[0].pendingChests).toEqual(host.pendingChests);
+    expect(a.duel.sides[1].pendingChests.length).toBe(0);
+  });
+
+  it('開ける操作は送ってから両端末で同じターンに反映され、中身も同じになる', () => {
+    const a = makeClient(78, 0);
+    const b = makeClient(78, 1);
+    dropChest(a);
+    dropChest(b);
+    const mine = a.ls.mine;
+    expect(mine.openableChests.length).toBe(1);
+    expect(mine.requestChest(0)).toBe(true);
+    // 送っただけではまだ開かず、二度押しもできない
+    expect(mine.requestChest(0)).toBe(false);
+    expect(mine.openableChests.length).toBe(0);
+    expect(mine.pendingChests.length).toBe(1);
+    expect(a.outbox).toEqual([]);
+    for (let frame = 0; frame < 60; frame++) {
+      a.ls.advance(a.battle, 1 / 60);
+      b.ls.advance(b.battle, 1 / 60);
+      deliver(a, b);
+      deliver(b, a);
+    }
+    expect(a.duel.sides[0].pendingChests.length).toBe(0);
+    expect(b.duel.sides[0].pendingChests.length).toBe(0);
+    const la = a.duel.sides[0].chestLog;
+    const lb = b.duel.sides[0].chestLog;
+    expect(la.length).toBe(1);
+    expect(la.map((c) => c.rewards.map((r) => r.name))).toEqual(lb.map((c) => c.rewards.map((r) => r.name)));
+    expect(a.duel.hash(a.battle)).toBe(b.duel.hash(b.battle));
+  });
+
+  it('宝箱を開ける操作の検証', () => {
+    expect(parseClientMessage(JSON.stringify({ t: 'input', turn: 5, cmds: [{ k: 'chest', id: 3 }] }))).toEqual({
+      t: 'input',
+      turn: 5,
+      cmds: [{ k: 'chest', id: 3 }],
+    });
+    expect(parseClientMessage(JSON.stringify({ t: 'input', turn: 5, cmds: [{ k: 'chest', id: -1 }] }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ t: 'input', turn: 5, cmds: [{ k: 'chest', id: 1.5 }] }))).toBeNull();
+  });
+});
+
+describe('TD オンライン対戦: 観戦（サーバー）', () => {
+  it('対戦中でなければ観戦できない。対戦中なら記録を渡し、人数の上限がある', () => {
+    const room = new TDVersusRoom('w', 0, () => 0.25);
+    expect(room.watch()).toEqual({ error: 'not_playing' });
+    room.join(0);
+    room.join(0);
+    room.message(0, { t: 'ready', starter: 'a' }, 0);
+    room.message(1, { t: 'ready', starter: 'b' }, 0);
+    room.message(0, { t: 'input', turn: 3, cmds: [] }, 1);
+    room.message(1, { t: 'input', turn: 3, cmds: [{ k: 'fund' }] }, 1);
+    room.message(0, { t: 'input', turn: 4, cmds: [{ k: 'deploy', id: 'clubber' }] }, 1);
+    const res = room.watch();
+    expect('msg' in res && res.msg).toEqual({
+      t: 'watch',
+      room: 'w',
+      seed: Math.floor(0.25 * 0x7fffffff),
+      starters: ['a', 'b'],
+      log: {
+        upTo: [4, 3],
+        cmds: [
+          [1, 3, [{ k: 'fund' }]],
+          [0, 4, [{ k: 'deploy', id: 'clubber' }]],
+        ],
+      },
+      result: null,
+    });
+    expect(room.watchers).toBe(1);
+    expect(room.listing()).toMatchObject({ status: 'playing', watchers: 1 });
+    for (let i = 1; i < TD_VS_MAX_WATCHERS; i++) room.watch();
+    expect(room.watch()).toEqual({ error: 'full' });
+    room.unwatch();
+    expect(room.watchers).toBe(TD_VS_MAX_WATCHERS - 1);
+  });
+
+  it('観戦者には両席の操作（どちらの席か付き）と決着・次の試合が届き、ハッシュは届かない', () => {
+    const room = playingRoom();
+    room.watch();
+    const out = room.message(1, { t: 'input', turn: 3, cmds: [] }, 1);
+    expect(out).toEqual([
+      { to: 0, msg: { t: 'input', turn: 3, cmds: [] } },
+      { to: 'watchers', msg: { t: 'input', turn: 3, cmds: [], slot: 1 } },
+    ]);
+    expect(room.message(0, { t: 'hash', turn: 20, h: 1 }, 1).some((o) => o.to === 'watchers')).toBe(false);
+    expect(room.message(0, { t: 'surrender' }, 2)).toContainEqual({
+      to: 'watchers',
+      msg: { t: 'result', winner: 1, reason: 'surrender' },
+    });
+    // 決着後は一覧に出ない（2 人いる募集でも対戦でもない）
+    expect(room.listing()).toBeNull();
+    room.message(0, { t: 'ready', starter: 'a' }, 3);
+    const next = room.message(1, { t: 'ready', starter: 'b' }, 3);
+    const watch = next.find((o) => o.to === 'watchers')?.msg;
+    expect(watch).toMatchObject({ t: 'watch', log: { upTo: [-1, -1], cmds: [] }, result: null });
+  });
+
+  it('一覧では募集中の部屋が先、対戦中の部屋が後に並ぶ', () => {
+    const dir = new RoomDirectory();
+    dir.report({ name: 'live', players: 2, open: true, status: 'playing', watchers: 2 }, 50);
+    dir.report({ name: 'wait', players: 1, open: true }, 10);
+    expect(dir.list(60)).toEqual([
+      { name: 'wait', players: 1, status: 'open', watchers: 0 },
+      { name: 'live', players: 2, status: 'playing', watchers: 2 },
+    ]);
+    const key = reportKey({ name: 'live', players: 2, open: true, status: 'playing', watchers: 2 });
+    expect(key).not.toBe(reportKey({ name: 'live', players: 2, open: true, status: 'playing', watchers: 3 }));
+  });
+});
+
+describe('TD オンライン対戦: 観戦（クライアント）', () => {
+  it('途中から観戦しても、記録を読み込んで早送りし、プレイヤーと同じ戦況になる', () => {
+    const seed = Math.floor(0.5 * 0x7fffffff);
+    const room = new TDVersusRoom('w', 0, () => 0.5);
+    room.join(0);
+    room.join(0);
+    room.message(0, { t: 'ready', starter: STARTERS[0].id }, 0);
+    room.message(1, { t: 'ready', starter: STARTERS[1].id }, 0);
+    const a = makeClient(seed, 0);
+    const b = makeClient(seed, 1);
+    let watcher: (Client & { log: TDVersusInputLog }) | null = null;
+    const watcherInbox: Array<{ turn: number; cmds: TDDuelCommand[]; slot: number }> = [];
+    /** 送った操作をサーバーの部屋に通して、相手と観戦者へ届ける */
+    const relay = (from: Client, slot: 0 | 1, to: Client) => {
+      for (const m of from.outbox.splice(0)) {
+        for (const o of room.message(slot, m, 1)) {
+          if (o.to === 1 - slot && o.msg.t === 'input') to.ls.receiveInput(o.msg.turn, o.msg.cmds);
+          if (o.to === 1 - slot && o.msg.t === 'hash') to.ls.receiveHash(o.msg.turn, o.msg.h);
+          if (o.to === 'watchers' && o.msg.t === 'input') watcherInbox.push({ turn: o.msg.turn, cmds: o.msg.cmds, slot: o.msg.slot! });
+        }
+      }
+    };
+    a.ls.mine.requestDeploy(a.battle, a.ls.mine.run.cards[0].id);
+    b.ls.mine.requestAuto(true);
+    for (let frame = 0; frame < 60 * 12; frame++) {
+      a.ls.advance(a.battle, 1 / 60);
+      b.ls.advance(b.battle, 1 / 60);
+      relay(a, 0, b);
+      relay(b, 1, a);
+      if (frame === 60 * 6) {
+        // 6 秒たったところで観戦を始める
+        const res = room.watch();
+        if (!('msg' in res) || res.msg.t !== 'watch') throw new Error('観戦できない');
+        expect(res.msg.seed).toBe(seed);
+        const c = makeClient(res.msg.seed, 0);
+        const ls = new TDLockstep(c.duel, null, (m) => c.outbox.push(m));
+        ls.loadLog(res.msg.log);
+        watcher = { ...c, ls, log: res.msg.log };
+        expect(ls.lagTurns).toBeGreaterThan(TD_SPECTATE_LAG_TURNS);
+      }
+      if (watcher) {
+        for (const m of watcherInbox.splice(0)) watcher.ls.receiveInput(m.turn, m.cmds, m.slot);
+        // 時計を進めずに呼ぶと、予算の範囲で早送りし続ける
+        let t = 0;
+        watcher.ls.advance(watcher.battle, 1 / 60, () => (t += 1));
+      }
+      if (frame === 60 * 7) a.ls.mine.requestBase();
+    }
+    const w = watcher!;
+    expect(w.outbox).toEqual([]);
+    expect(w.ls.catchingUp).toBe(false);
+    // 観戦者の画面からの操作は戦場に反映されない
+    expect(w.ls.mine.requestDeploy(w.battle, w.ls.mine.run.cards[0].id)).toBe(true);
+    // 同じステップまでそろえて比べる
+    while (w.ls.steps < a.ls.steps) {
+      for (const m of watcherInbox.splice(0)) w.ls.receiveInput(m.turn, m.cmds, m.slot);
+      if (w.ls.advance(w.battle, w.battle.fixedDt) === 0) break;
+    }
+    while (a.ls.steps < w.ls.steps) a.ls.advance(a.battle, a.battle.fixedDt);
+    expect(w.ls.steps).toBe(a.ls.steps);
+    expect(w.duel.hash(w.battle)).toBe(a.duel.hash(a.battle));
+    expect(w.duel.sides[0].baseLevel).toBe(a.duel.sides[0].baseLevel);
+  }, 60_000);
+
+  it('観戦のセッションは何も送らず、操作をどちらの席か付きで渡し、切断しても負けにしない', () => {
+    const log: string[] = [];
+    const outbox: TDVersusClientMessage[] = [];
+    const session = new TDVersusSession({
+      onChange: () => {},
+      onStart: () => log.push('start'),
+      onWatch: (seed, starters, l) => log.push(`watch:${seed}:${starters[1].id}:${l.upTo.join(',')}`),
+      onResult: (winner, reason) => log.push(`result:${winner}:${reason}`),
+      onClosed: () => log.push('closed'),
+    });
+    session.attach({ send: (m) => outbox.push(m), close: () => {} }, 'w', true);
+    expect(session.spectating).toBe(true);
+    session.handle({ t: 'watch', room: 'w', seed: 9, starters: [STARTERS[0].id, STARTERS[1].id], log: { upTo: [5, 4], cmds: [] }, result: null });
+    expect(log).toEqual([`watch:9:${STARTERS[1].id}:5,4`]);
+    expect(session.phase).toBe('playing');
+    const got: string[] = [];
+    session.match = { receiveInput: (turn, cmds, from) => got.push(`${from}:${turn}`), receiveHash: () => got.push('hash') };
+    session.handle({ t: 'input', turn: 6, cmds: [], slot: 1 });
+    expect(got).toEqual(['1:6']);
+    session.sendMatch({ t: 'input', turn: 1, cmds: [] });
+    session.reportOver(0, 'castle');
+    session.surrender();
+    session.setReady(STARTERS[0].id);
+    expect(outbox).toEqual([]);
+    session.handleClose('閉じた');
+    expect(log.some((l) => l.startsWith('result'))).toBe(false);
+  });
+});
+
+describe('ピクセルアート', () => {
+  const names: PixelSpriteName[] = [
+    'castleBlue',
+    'castleRed',
+    'swords',
+    'chest',
+    'crown',
+    'hourglass',
+    'eye',
+    'soldierBlue',
+    'soldierRed',
+    'house',
+    'levelup',
+  ];
+  it('どの絵も色の決まっていない文字を使わず、SVG にできる', () => {
+    for (const name of names) {
+      const { width, height, cells } = pixelCells(name);
+      expect(unknownPixelChars(name)).toEqual([]);
+      expect(cells.length).toBeGreaterThan(10);
+      expect(width).toBeGreaterThan(5);
+      expect(height).toBeGreaterThan(5);
+      expect(pixelArt(name)).toContain('<svg');
+    }
+    // 青と赤の城は旗の色だけが違う
+    const flags = (name: PixelSpriteName) => new Set(pixelCells(name).cells.map((c) => c.color));
+    expect([...flags('castleBlue')].sort()).not.toEqual([...flags('castleRed')].sort());
+  });
+});
+

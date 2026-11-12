@@ -2,18 +2,21 @@
 // 「誰に何を送るか」を返すだけにして、tests/ から vitest で検証できるようにしている。
 import {
   TD_VS_IDLE_MS,
+  TD_VS_MAX_WATCHERS,
   TD_VS_ROOM_CAPACITY,
+  type TDDuelCommand,
   type TDVersusClientMessage,
   type TDVersusEndReason,
+  type TDVersusInputLog,
   type TDVersusJoinIntent,
   type TDVersusRoomListing,
   type TDVersusServerMessage,
   type TDVersusSlotInfo,
 } from '../../src/net/tdVersusProtocol';
 
-/** 送り先（席番号か全員） */
+/** 送り先（席番号・プレイヤー全員・観戦者全員） */
 export interface RoomOutput {
-  to: number | 'all';
+  to: number | 'all' | 'watchers';
   msg: TDVersusServerMessage;
 }
 
@@ -31,6 +34,14 @@ export class TDVersusRoom {
   lastActivity: number;
   /** 今の試合の共通の種 */
   seed = 0;
+  /** 観戦している人数 */
+  watchers = 0;
+  /** 今の試合の席ごとのスターター（観戦を始めた人に渡す） */
+  private starters: string[] = [];
+  /** 今の試合の操作の記録（観戦を始めた人に渡す） */
+  private log: TDVersusInputLog = { upTo: [-1, -1], cmds: [] };
+  /** 直前の試合の決着（観戦者が決着後に入ったとき用） */
+  private lastResult: { winner: number | null; reason: TDVersusEndReason } | null = null;
 
   constructor(
     readonly name: string,
@@ -68,9 +79,47 @@ export class TDVersusRoom {
     return this.players === 1 && this.phase !== 'playing';
   }
 
-  /** 一覧に出す情報（募集中でなければ null） */
+  /** 対戦中で観戦できるか */
+  get watchable(): boolean {
+    return this.phase === 'playing' && this.players === TD_VS_ROOM_CAPACITY;
+  }
+
+  /** 一覧に出す情報（募集中でも対戦中でもなければ null） */
   listing(): TDVersusRoomListing | null {
-    return this.open ? { name: this.name, players: this.players } : null;
+    if (this.open) return { name: this.name, players: this.players, status: 'open', watchers: this.watchers };
+    if (this.watchable) return { name: this.name, players: this.players, status: 'playing', watchers: this.watchers };
+    return null;
+  }
+
+  /** 観戦を始める。入れたら、それまでの操作の記録を載せた watch メッセージを返す（観戦は放置の判定に数えない） */
+  watch(): { msg: TDVersusServerMessage } | { error: 'not_playing' | 'full' } {
+    if (!this.watchable) return { error: 'not_playing' };
+    if (this.watchers >= TD_VS_MAX_WATCHERS) return { error: 'full' };
+    this.watchers++;
+    return { msg: this.watchMessage() };
+  }
+
+  /** 観戦をやめた */
+  unwatch(): void {
+    this.watchers = Math.max(0, this.watchers - 1);
+  }
+
+  private watchMessage(): TDVersusServerMessage {
+    return {
+      t: 'watch',
+      room: this.name,
+      seed: this.seed,
+      starters: [...this.starters],
+      log: { upTo: [this.log.upTo[0], this.log.upTo[1]], cmds: this.log.cmds.map(([s, t, c]) => [s, t, [...c]]) },
+      result: this.phase === 'playing' ? null : this.lastResult,
+    };
+  }
+
+  /** 操作を記録する（空のターンは最後のターン番号だけ覚える） */
+  private record(slot: number, turn: number, cmds: TDDuelCommand[]): void {
+    if (slot !== 0 && slot !== 1) return;
+    if (turn > this.log.upTo[slot]) this.log.upTo[slot] = turn;
+    if (cmds.length > 0) this.log.cmds.push([slot, turn, cmds]);
   }
 
   /**
@@ -126,9 +175,13 @@ export class TDVersusRoom {
         if (this.phase === 'playing' || !me.ready) return [];
         me.ready = false;
         return this.broadcastRoom();
-      case 'input':
+      case 'input': {
         if (this.phase !== 'playing' || other < 0) return [];
-        return [{ to: other, msg: { t: 'input', turn: msg.turn, cmds: msg.cmds } }];
+        this.record(slot, msg.turn, msg.cmds);
+        const out: RoomOutput[] = [{ to: other, msg: { t: 'input', turn: msg.turn, cmds: msg.cmds } }];
+        if (this.watchers > 0) out.push({ to: 'watchers', msg: { t: 'input', turn: msg.turn, cmds: msg.cmds, slot } });
+        return out;
+      }
       case 'hash':
         if (this.phase !== 'playing' || other < 0) return [];
         return [{ to: other, msg: { t: 'hash', turn: msg.turn, h: msg.h } }];
@@ -151,14 +204,23 @@ export class TDVersusRoom {
     this.seed = Math.floor(this.random() * 0x7fffffff);
     const starters = this.slots.map((s) => s?.starter ?? '');
     for (const s of this.slots) if (s) s.ready = false;
-    return [{ to: 'all', msg: { t: 'start', seed: this.seed, starters } }];
+    this.starters = starters;
+    this.log = { upTo: [-1, -1], cmds: [] };
+    this.lastResult = null;
+    const out: RoomOutput[] = [{ to: 'all', msg: { t: 'start', seed: this.seed, starters } }];
+    // 観戦を続けている人には、次の試合を最初から見せる
+    if (this.watchers > 0) out.push({ to: 'watchers', msg: this.watchMessage() });
+    return out;
   }
 
   /** 決着（winner は勝った席。null は引き分け）。先に届いた知らせで決まり、あとから届いたものは無視される */
   private finish(winner: number | null, reason: TDVersusEndReason): RoomOutput[] {
     this.phase = 'ended';
     for (const s of this.slots) if (s) s.ready = false;
-    return [{ to: 'all', msg: { t: 'result', winner, reason } }];
+    this.lastResult = { winner, reason };
+    const out: RoomOutput[] = [{ to: 'all', msg: { t: 'result', winner, reason } }];
+    if (this.watchers > 0) out.push({ to: 'watchers', msg: { t: 'result', winner, reason } });
+    return out;
   }
 
   private broadcastRoom(): RoomOutput[] {

@@ -110,7 +110,7 @@ import {
   type RogueCard,
 } from './RogueliteMode';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
-import { TDRun, TD_DUEL_XP_MUL, TD_PLAYER_BASE_X, xpForKill } from './RealtimeTDMode';
+import { TDRun, TD_DUEL_XP_MUL, TD_PLAYER_BASE_X, xpForKill, type TDDuelChestOpened } from './RealtimeTDMode';
 import { RealtimeTDHud, isTDTutorialDone, markTDTutorialDone } from '../ui/RealtimeTDHud';
 import { TDVersusSession, slotColorName, verdictFor } from './TDVersusSession';
 import { TDDuel, TDLockstep } from './TDDuel';
@@ -119,6 +119,7 @@ import { TDVersusClient, fetchTDVersusRooms } from '../net/TDVersusClient';
 import {
   TD_VS_LIST_POLL_MS,
   type TDVersusEndReason,
+  type TDVersusInputLog,
   type TDVersusJoinIntent,
   type TDVersusRoomListing,
 } from '../net/tdVersusProtocol';
@@ -598,6 +599,13 @@ export class GameApp {
   /** オンライン対戦（対面型）の試合中の戦場と、ロックステップ */
   private tdDuel: TDDuel | null = null;
   private tdLockstep: TDLockstep | null = null;
+  /** 対戦で、画面に落とした宝箱（番号 → 3D の宝箱）と、開けるよう送った宝箱の開封演出の出どころ */
+  private readonly tdDuelChestMeshes = new Map<number, DroppedChest>();
+  private readonly tdDuelChestOrigins = new Map<number, { x: number; y: number }>();
+  /** 対戦で、画面に落とし済みの宝箱の番号の上限 */
+  private tdDuelChestSeen = -1;
+  /** 対戦で開いた宝箱のうち、開封の演出を待っているもの */
+  private readonly tdDuelChestQueue: TDDuelChestOpened[] = [];
   /** 敵を倒すと出る経験値オーブ（最初に使うときに作る） */
   private xpOrbsField: XpOrbs | null = null;
 
@@ -722,7 +730,7 @@ export class GameApp {
       } else if (this.playStyle === 'td' && this.td) {
         if (this.tdDuel) {
           // 対面対戦: 報酬は TDDuel が両陣営に配る。ここでは自分が倒したぶんの経験値オーブを飛ばすだけ
-          if (e.killed && e.victim.team !== this.td.team && !this.td.ended && this.mode === 'battle') {
+          if (e.killed && e.victim.team !== this.td.team && !this.td.ended && this.mode === 'battle' && !this.tdLockstep?.spectator) {
             this.xpOrbs.spawn(e.pos, xpForKill(e.victim) * TD_DUEL_XP_MUL);
           }
         } else {
@@ -2510,6 +2518,8 @@ export class GameApp {
         if (this.tdStarter) this.startTDRun(this.tdStarter);
         else this.enterTDMode();
       },
+      getChestCount: () => (this.td?.duel && !this.tdLockstep?.spectator ? this.td.openableChests.length : 0),
+      openNextChest: () => this.openNextTDDuelChest(),
       getVersus: () => this.tdVersusField,
       getLockstep: () => this.tdLockstep,
       vsJoin: (room, intent) => this.joinTDVersusRoom(room, intent),
@@ -2520,9 +2530,13 @@ export class GameApp {
       },
       vsUnready: () => this.tdVersus.unready(),
       vsLeave: () => {
+        const watching = this.tdVersus.spectating;
         this.tdVersus.leave();
-        this.showTDVersusLobby();
+        // 観戦をやめたら戦場を片付けて一覧へ戻る
+        if (watching) this.enterTDVersusMode();
+        else this.showTDVersusLobby();
       },
+      vsWatch: (room) => this.joinTDVersusRoom(room, 'watch'),
       vsLobby: () => this.showTDVersusLobby(),
       vsBack: () => {
         this.tdVersus.leave();
@@ -2548,16 +2562,30 @@ export class GameApp {
         else if (this.tdVsView === 'result') this.showTDVersusResult();
       },
       onStart: (seed, starters, slot) => this.startTDVersusRun(seed, starters, slot),
-      onResult: (winner, reason) => {
-        this.tdVsResult = { winner, reason };
-        // 自分の戦場がまだ続いていれば、ここで決着させる（Battle.result が拾って終了処理へ進む）
-        if (this.tdDuel && !this.tdLockstep?.finished) {
-          this.tdDuel.external = { winner: winner === 0 || winner === 1 ? winner : null, reason };
+      onWatch: (seed, starters, log, result) => this.startTDVersusWatch(seed, starters, log, result),
+      onResult: (winner, reason) => this.applyTDVersusResult(winner, reason),
+      onClosed: () => {
+        // 観戦中に部屋が閉じられたら（決着がまだ届いていなければ）一覧へ戻る
+        if (this.playStyle === 'td' && this.tdLockstep?.spectator && !this.tdVsResult) {
+          const message = this.tdVersus.message;
+          this.enterTDVersusMode();
+          this.tdVersus.message = message;
+          this.showTDVersusLobby();
         }
       },
-      onClosed: () => {},
     });
     return this.tdVersusField;
+  }
+
+  /** サーバーの決着を受け取った */
+  private applyTDVersusResult(winner: number | null, reason: TDVersusEndReason): void {
+    this.tdVsResult = { winner, reason };
+    // 自分の戦場がまだ続いていれば、ここで決着させる（Battle.result が拾って終了処理へ進む）。
+    // 観戦は遅れて追いかけているので、城・時間の決着は自分の計算で着くのを待つ（降参・切断だけすぐ反映）
+    const ls = this.tdLockstep;
+    if (this.tdDuel && !ls?.finished && (!ls?.spectator || reason === 'left' || reason === 'surrender')) {
+      this.tdDuel.external = { winner: winner === 0 || winner === 1 ? winner : null, reason };
+    }
   }
 
   /** 対戦のリザルトを出す */
@@ -2566,6 +2594,10 @@ export class GameApp {
     const ls = this.tdLockstep;
     if (!duel || !ls || !this.tdVsResult) return;
     const { winner, reason } = this.tdVsResult;
+    if (ls.slot === null) {
+      this.tdHud.showVersusWatchResult(duel.sides[0], duel.sides[1], winner, reason);
+      return;
+    }
     this.tdHud.showVersusResult(duel.sides[ls.slot], duel.sides[1 - ls.slot], verdictFor(winner, ls.slot), reason, this.tdVersus);
   }
 
@@ -2574,6 +2606,10 @@ export class GameApp {
     this.tdDuel?.dispose();
     this.tdDuel = null;
     this.tdLockstep = null;
+    this.tdDuelChestMeshes.clear();
+    this.tdDuelChestOrigins.clear();
+    this.tdDuelChestQueue.length = 0;
+    this.tdDuelChestSeen = -1;
     if (this.tdVersusField) this.tdVersusField.match = null;
   }
 
@@ -2654,7 +2690,7 @@ export class GameApp {
       return;
     }
     this.stopTDVersusRoomPolling();
-    vs.attach(client, client.room);
+    vs.attach(client, client.room, intent === 'watch');
   }
 
   /** 対戦の試合を始める。両端末が共通の種から同じ戦場を作り、席 slot の陣営を操作する */
@@ -2666,6 +2702,23 @@ export class GameApp {
     this.tdVsView = 'battle';
     const duel = new TDDuel(seed, starters);
     this.beginTDRun(duel.sides[slot], false, duel);
+  }
+
+  /** 観戦を始める。それまでの操作の記録を読み込み、追いつくまで早送りする */
+  private startTDVersusWatch(
+    seed: number,
+    starters: [RogueStarter, RogueStarter],
+    log: TDVersusInputLog,
+    result: { winner: number | null; reason: TDVersusEndReason } | null,
+  ): void {
+    if (this.playStyle !== 'td' || this.onTitleScreen) return;
+    this.tdStarter = null;
+    this.tdVsResult = null;
+    this.stopTDVersusRoomPolling();
+    this.tdVsView = 'battle';
+    const duel = new TDDuel(seed, starters);
+    this.beginTDRun(duel.sides[0], false, duel, log);
+    if (result) this.applyTDVersusResult(result.winner, result.reason);
   }
 
   /** タワーディフェンスを開く（スターター選択から） */
@@ -2708,19 +2761,26 @@ export class GameApp {
   }
 
   /** ランを戦場に置いて戦闘を始める。tutorial なら初回プレイであそびかたを見せる */
-  private beginTDRun(td: TDRun, tutorial: boolean, duel: TDDuel | null = null): void {
+  private beginTDRun(td: TDRun, tutorial: boolean, duel: TDDuel | null = null, watchLog: TDVersusInputLog | null = null): void {
     this.prepareTDField();
     this.td = td;
     if (duel) {
       this.tdDuel = duel;
       duel.setup(this.battle);
-      const slot = td.team === 1 ? 1 : 0;
-      this.tdLockstep = new TDLockstep(duel, slot, (msg) => this.tdVersus.sendMatch(msg));
+      if (watchLog) {
+        // 観戦: 両席の操作を受け取るだけ（何も送らない）
+        this.tdLockstep = new TDLockstep(duel, null, () => {});
+        this.tdLockstep.loadLog(watchLog);
+      } else {
+        const slot = td.team === 1 ? 1 : 0;
+        this.tdLockstep = new TDLockstep(duel, slot, (msg) => this.tdVersus.sendMatch(msg));
+      }
       this.tdVersus.match = this.tdLockstep;
     } else td.setup(this.battle);
     // 戦場が横に長いので、自軍の城の通路から前線の手前までを見渡す位置にカメラを置く。
-    // 対戦のゲスト（右の城）は反対側から見て、自分の城が画面の左に来るようにする
-    this.view.frameFieldAt((TD_PLAYER_BASE_X + 26) * td.dir, 46, td.dir === 1 ? 0 : Math.PI);
+    // 対戦のゲスト（右の城）は反対側から見て、自分の城が画面の左に来るようにする。観戦は戦場の真ん中から見渡す
+    if (watchLog) this.view.frameFieldAt(0, 72, 0);
+    else this.view.frameFieldAt((TD_PLAYER_BASE_X + 26) * td.dir, 46, td.dir === 1 ? 0 : Math.PI);
     this.playerRoster = [];
     this.paused = false;
     this.timeScale = 1;
@@ -2732,7 +2792,8 @@ export class GameApp {
     this.syncPhaseUI();
     const begin = () => {
       if (this.td !== td) return;
-      if (td.duel) this.tdHud.announce(`⚔ 対戦開始！ あなたは${slotColorName(td.team)}`, 'wave');
+      if (watchLog) this.tdHud.announce('👁 観戦中 ― 青 vs 赤', 'wave');
+      else if (td.duel) this.tdHud.announce(`⚔ 対戦開始！ あなたは${slotColorName(td.team)}`, 'wave');
       else this.tdHud.announce('WAVE 1', 'wave');
       this.sound.playBattleStart();
     };
@@ -2813,6 +2874,12 @@ export class GameApp {
 
   private confirmRetireTD(): void {
     const td = this.td;
+    if (this.tdLockstep?.spectator) {
+      // 観戦をやめて部屋の一覧へ戻る
+      this.tdVersus.leave();
+      this.enterTDVersusMode();
+      return;
+    }
     if (td?.duel && !td.ended) {
       this.showConfirm('降参しますか？（相手の勝ちになります）', '降参', () => {
         this.tdVersus.surrender();
@@ -3464,6 +3531,10 @@ export class GameApp {
 
   /** タワーディフェンスの宝箱。ローグライトと同じ開封の演出を見せ、演出の間は戦闘を止める */
   private openTDChest(chest: DroppedChest): void {
+    if (this.td?.duel) {
+      this.openTDDuelChest(chest);
+      return;
+    }
     const td = this.td;
     if (!td || td.ended || this.jackpotBusy || this.tdHud.isTutorialOpen || this.battle.result() !== null) return;
     const origin = this.chestScreenOrigin(chest);
@@ -3482,6 +3553,83 @@ export class GameApp {
           td.afterChestRewards(this.battle, hadCards);
           this.tdHud.showChestRewards(rewards);
         }),
+    });
+  }
+
+  /** 対戦で、画面の宝箱を押した。開けるよう送り、反映されたら開封の演出を見せる（その間も対戦は止まらない） */
+  private openTDDuelChest(chest: DroppedChest): void {
+    const td = this.td;
+    if (!td?.duel || td.ended || this.tdLockstep?.spectator) return;
+    for (const [id, mesh] of this.tdDuelChestMeshes) {
+      if (mesh !== chest) continue;
+      if (!td.requestChest(id)) return;
+      this.tdDuelChestOrigins.set(id, this.chestScreenOrigin(chest));
+      this.tdDuelChestMeshes.delete(id);
+      this.droppedChests.remove(chest);
+      this.sound.playJackpotReelStop(0);
+      return;
+    }
+  }
+
+  /** 対戦で、いちばん古いまだ開けていない宝箱を開ける（HUD の宝箱ボタン） */
+  private openNextTDDuelChest(): boolean {
+    const td = this.td;
+    if (!td?.duel || td.ended || this.tdLockstep?.spectator) return false;
+    const next = td.openableChests[0];
+    if (!next) return false;
+    const mesh = this.tdDuelChestMeshes.get(next.id);
+    if (mesh) {
+      this.openTDDuelChest(mesh);
+      return true;
+    }
+    if (!td.requestChest(next.id)) return false;
+    this.sound.playJackpotReelStop(0);
+    return true;
+  }
+
+  /** 対戦の宝箱を毎フレーム同期する。新しく落ちた自分の宝箱を戦場に出し、開いた宝箱の開封演出を順に見せる */
+  private syncTDDuelChests(): void {
+    const td = this.td;
+    if (!td?.duel || !this.tdDuel) return;
+    if (this.tdLockstep?.spectator) {
+      // 観戦では宝箱を出さない
+      for (const side of this.tdDuel.sides) side.chestLog.length = 0;
+      return;
+    }
+    for (const c of td.pendingChests) {
+      if (c.id <= this.tdDuelChestSeen) continue;
+      this.tdDuelChestSeen = c.id;
+      this.tdDuelChestMeshes.set(c.id, this.droppedChests.spawn(new Vector3(c.x, 1.5, c.z), c.tier));
+      this.sound.playJackpotCoin();
+    }
+    for (const opened of td.chestLog.splice(0)) {
+      const mesh = this.tdDuelChestMeshes.get(opened.id);
+      if (mesh) {
+        this.tdDuelChestOrigins.set(opened.id, this.chestScreenOrigin(mesh));
+        this.droppedChests.remove(mesh);
+        this.tdDuelChestMeshes.delete(opened.id);
+      }
+      this.tdDuelChestQueue.push(opened);
+    }
+    // 決着したら、残りの開封演出は省いて中身だけ知らせる
+    if (td.ended) {
+      for (const opened of this.tdDuelChestQueue.splice(0)) this.tdHud.showChestRewards(opened.rewards);
+      return;
+    }
+    if (this.jackpotBusy || this.tdDuelChestQueue.length === 0) return;
+    const opened = this.tdDuelChestQueue.shift()!;
+    const origin = this.tdDuelChestOrigins.get(opened.id) ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    this.tdDuelChestOrigins.delete(opened.id);
+    this.view.addCameraShake(0.3);
+    // 中身は両端末で同じターンに適用済み。ここでは開封の演出だけを見せる
+    this.jackpot.play({
+      tier: opened.tier,
+      rewards: opened.rewards,
+      origin,
+      sound: this.sound,
+      onFinished: () => {
+        if (this.td === td) this.tdHud.showChestRewards(opened.rewards);
+      },
     });
   }
 
@@ -5241,18 +5389,16 @@ export class GameApp {
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : versusLive ? 1 : this.timeScale;
       this.battle.advance(realDt * scale);
     }
+    // 観戦で早送りして追いついている間は、効果音が鳴りっぱなしにならないよう消す
+    const catchingUp = this.tdLockstep?.catchingUp ?? false;
+    if (catchingUp !== this.sound.muted) this.sound.setMuted(catchingUp);
 
     if (this.isRogueModalOpen()) this.unitPreviews?.update(realDt);
     if (this.playStyle === 'td' && !this.onTitleScreen) {
       this.syncTDTerrainTheme();
       this.xpOrbsField?.update(realDt);
-      // 対戦で自動で開いた宝箱の中身を知らせる
-      if (this.td?.duel) {
-        for (const rewards of this.td.chestLog.splice(0)) {
-          this.tdHud.showChestRewards(rewards);
-          this.sound.playJackpotCoin();
-        }
-      }
+      // 対戦の宝箱（落ちた宝箱を出し、開いた宝箱の開封演出を見せる）
+      if (this.td?.duel) this.syncTDDuelChests();
       this.tdHud.update(realDt);
     }
 
@@ -5270,7 +5416,7 @@ export class GameApp {
       if (res !== null && this.announcedResult === null && !this.jackpotBusy) {
         this.announcedResult = res;
         // 友人対戦・サンドボックスは誰かの勝利なので、1 人用モードの負けだけ敗北音にする
-        const lost = this.td?.duel ? res !== this.td.team : this.isSoloPlayStyle() && res !== 0;
+        const lost = this.td?.duel ? !this.tdLockstep?.spectator && res !== this.td.team : this.isSoloPlayStyle() && res !== 0;
         if (lost) this.sound.playDefeat();
         else this.sound.playVictory();
         this.startFinishSequence();

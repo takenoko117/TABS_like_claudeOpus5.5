@@ -5,6 +5,7 @@ import type {
   TDDuelCommand,
   TDVersusClientMessage,
   TDVersusEndReason,
+  TDVersusInputLog,
   TDVersusServerMessage,
   TDVersusSlotInfo,
 } from '../net/tdVersusProtocol';
@@ -23,7 +24,8 @@ export interface TDVersusTransport {
 
 /** 試合中の操作・ハッシュの受け取り先（TDLockstep） */
 export interface TDVersusMatchSink {
-  receiveInput(turn: number, cmds: readonly TDDuelCommand[]): void;
+  /** from は観戦のときだけ付く、どちらの席の操作か */
+  receiveInput(turn: number, cmds: readonly TDDuelCommand[], from?: number): void;
   receiveHash(turn: number, h: number): void;
 }
 
@@ -32,6 +34,13 @@ export interface TDVersusSessionEvents {
   onChange(): void;
   /** 試合開始。seed は両者共通の種、starters は席ごとのスターター、slot は自分の席 */
   onStart(seed: number, starters: [RogueStarter, RogueStarter], slot: 0 | 1): void;
+  /** 観戦を始めた（観戦中に次の試合が始まったときも呼ぶ）。log はそれまでの操作、result は決着済みならその結果 */
+  onWatch(
+    seed: number,
+    starters: [RogueStarter, RogueStarter],
+    log: TDVersusInputLog,
+    result: { winner: number | null; reason: TDVersusEndReason } | null,
+  ): void;
   /** 決着（サーバーの判定。winner は勝った席、null は引き分け） */
   onResult(winner: number | null, reason: TDVersusEndReason): void;
   /** 接続が切れた・部屋が閉じられた */
@@ -55,16 +64,20 @@ export class TDVersusSession {
   message: string | null = null;
   /** 試合中の操作の受け取り先 */
   match: TDVersusMatchSink | null = null;
+  /** 観戦しているか（観戦者は席を持たず、何も送らない） */
+  spectating = false;
   private transport: TDVersusTransport | null = null;
 
   constructor(private readonly events: TDVersusSessionEvents) {}
 
-  /** 接続を始めた */
-  attach(transport: TDVersusTransport, room: string): void {
+  /** 接続を始めた。spectating なら観戦として入る */
+  attach(transport: TDVersusTransport, room: string, spectating = false): void {
     this.transport = transport;
     this.room = room;
     this.phase = 'connecting';
     this.message = null;
+    this.spectating = spectating;
+    this.result = null;
     this.events.onChange();
   }
 
@@ -127,8 +140,18 @@ export class TDVersusSession {
         this.events.onStart(msg.seed, starters, this.slot);
         break;
       }
+      case 'watch': {
+        if (!this.spectating) return;
+        this.room = msg.room;
+        this.slot = -1;
+        this.result = msg.result;
+        this.phase = msg.result ? 'ended' : 'playing';
+        const starters = [0, 1].map((i) => findStarter(msg.starters[i] ?? null)) as [RogueStarter, RogueStarter];
+        this.events.onWatch(msg.seed, starters, msg.log, msg.result);
+        break;
+      }
       case 'input':
-        if (this.phase === 'playing') this.match?.receiveInput(msg.turn, msg.cmds);
+        if (this.phase === 'playing') this.match?.receiveInput(msg.turn, msg.cmds, this.spectating ? msg.slot : undefined);
         return;
       case 'hash':
         if (this.phase === 'playing') this.match?.receiveHash(msg.turn, msg.h);
@@ -160,8 +183,8 @@ export class TDVersusSession {
     this.slot = -1;
     this.message = reason;
     this.events.onClosed(reason);
-    // 試合中に自分の接続が切れたら、その試合は続けられないので負け扱いで終える
-    if (wasPlaying && !this.result) {
+    // 試合中に自分の接続が切れたら、その試合は続けられないので負け扱いで終える（観戦は何もしない）
+    if (wasPlaying && !this.result && !this.spectating) {
       const winner = mySlot === 0 ? 1 : 0;
       this.result = { winner, reason: 'left' };
       this.events.onResult(winner, 'left');
@@ -171,7 +194,7 @@ export class TDVersusSession {
 
   /** スターターを選んで準備完了にする */
   setReady(starterId: string): void {
-    if (this.phase !== 'room' && this.phase !== 'ended') return;
+    if (this.spectating || (this.phase !== 'room' && this.phase !== 'ended')) return;
     this.starterId = starterId;
     this.send({ t: 'ready', starter: starterId });
   }
@@ -183,17 +206,17 @@ export class TDVersusSession {
 
   /** 試合中のメッセージを送る（TDLockstep が使う） */
   sendMatch(msg: TDVersusClientMessage): void {
-    if (this.phase === 'playing') this.send(msg);
+    if (this.phase === 'playing' && !this.spectating) this.send(msg);
   }
 
   /** 自分の計算で決着した。両端末が同じ計算なので、先にサーバーへ届いたほうで決まる */
   reportOver(winner: number | null, reason: 'castle' | 'time'): void {
-    if (this.phase !== 'playing') return;
+    if (this.phase !== 'playing' || this.spectating) return;
     this.send({ t: 'over', winner, reason });
   }
 
   surrender(): void {
-    if (this.phase === 'playing') this.send({ t: 'surrender' });
+    if (this.phase === 'playing' && !this.spectating) this.send({ t: 'surrender' });
   }
 
   /** 部屋を出る */
@@ -205,6 +228,7 @@ export class TDVersusSession {
     this.slot = -1;
     this.result = null;
     this.match = null;
+    this.spectating = false;
     this.events.onChange();
   }
 
@@ -219,6 +243,7 @@ const ERROR_TEXT: Record<Extract<TDVersusServerMessage, { t: 'error' }>['code'],
   bad_message: '通信エラーが起きました',
   exists: 'その名前の部屋はすでにあります。別の名前にするか、一覧から入ってください',
   not_found: 'その部屋はもうありません',
+  not_playing: 'その部屋はいま対戦中ではありません',
 };
 
 /** 勝った席から、slot の席にとっての決着を返す */

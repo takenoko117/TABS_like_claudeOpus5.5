@@ -8,7 +8,7 @@
  * Three.js の描画には依存しないので、tests/ から 2 端末ぶんを並べて検証できる。
  */
 import type { DamageEvent } from '../combat/CombatSystem';
-import type { TDDuelCommand, TDVersusClientMessage, TDVersusEndReason } from '../net/tdVersusProtocol';
+import type { TDDuelCommand, TDVersusClientMessage, TDVersusEndReason, TDVersusInputLog } from '../net/tdVersusProtocol';
 import { TD_VS_MAX_COMMANDS } from '../net/tdVersusProtocol';
 import type { Unit } from '../units/Unit';
 import type { Team, UnitTypeId } from '../units/UnitTypes';
@@ -33,6 +33,10 @@ export const TD_DUEL_HASH_TURNS = 20;
 export const TD_DUEL_MAX_STEPS_PER_FRAME = 24;
 /** ためておける遅れの上限（秒）。これを超えたぶんは捨て、相手に待ってもらう */
 const TD_DUEL_MAX_BACKLOG = 0.5;
+/** 観戦で、この数のターンより遅れていたら早送りで追いつく */
+export const TD_SPECTATE_LAG_TURNS = 8;
+/** 観戦の早送りで、1 フレームに使ってよい時間（ミリ秒） */
+export const TD_SPECTATE_BUDGET_MS = 12;
 /** 戦場の乱数を、陣営ごとの乱数と分けるための値 */
 const TD_DUEL_SIM_SALT = 0x27d4eb2d;
 
@@ -101,8 +105,8 @@ export class TDDuel {
     if (victim.team !== 0 && victim.team !== 1) return;
     const killer = this.sides[1 - victim.team];
     const tier = killer.onEnemyKilled(victim);
-    // 対戦の宝箱はその場で開ける（中身は陣営ごとの乱数。開封の演出は持ち主の画面で短く知らせるだけ）
-    if (tier !== null && this.battleRef) killer.chestLog.push(killer.openChest(this.battleRef, tier));
+    // 対戦の宝箱は倒した側に積む。持ち主が開けると操作として送られ、両端末で同じターンに開く（中身は陣営ごとの乱数）
+    if (tier !== null) killer.dropDuelChest(tier, e.pos.x, e.pos.z);
   }
 
   /** 席の操作を反映する */
@@ -157,6 +161,7 @@ export class TDDuel {
       mix(side.money);
       mix(side.totalXp);
       mix(side.playerBase?.hp ?? 0);
+      mix(side.pendingChests.length);
     }
     return h | 0;
   }
@@ -210,6 +215,7 @@ export class TDDuelBattleRules implements BattleRules {
  * ターンごとに両席の操作がそろってから戦場を進める。
  * 自分の操作は TD_DUEL_INPUT_DELAY ターン先に予約して送る（何もしないターンも空で送る）。
  * 相手の操作が届いていなければ待つ（stalled）。
+ * slot が null なら観戦: 何も送らず、両席の操作を受け取って進める（遅れていれば早送りで追いつく）。
  */
 export class TDLockstep {
   /** 進めた固定ステップの数 */
@@ -222,16 +228,20 @@ export class TDLockstep {
   finished = false;
   /** 戦況のずれを最初に見つけたターン（null ならずれていない） */
   desyncTurn: number | null = null;
+  /** 観戦で、早送りして追いついている最中か */
+  catchingUp = false;
   private backlog = 0;
   private sentUpTo = TD_DUEL_INPUT_DELAY - 1;
   private readonly pending: TDDuelCommand[] = [];
   private readonly inputs: [Map<number, TDDuelCommand[]>, Map<number, TDDuelCommand[]>] = [new Map(), new Map()];
+  /** 席ごとに、届いた操作の最後のターン（観戦の遅れを測る） */
+  private readonly knownUpTo: [number, number] = [TD_DUEL_INPUT_DELAY - 1, TD_DUEL_INPUT_DELAY - 1];
   private readonly localHashes = new Map<number, number>();
   private readonly remoteHashes = new Map<number, number>();
 
   constructor(
     readonly duel: TDDuel,
-    readonly slot: 0 | 1,
+    readonly slot: 0 | 1 | null,
     private readonly send: (msg: TDVersusClientMessage) => void,
   ) {
     // 最初の数ターンは、両席とも操作なしと決めておく
@@ -239,58 +249,111 @@ export class TDLockstep {
       this.inputs[0].set(t, []);
       this.inputs[1].set(t, []);
     }
-    // 自分の陣営の画面操作は、送ってから反映する
-    duel.sides[slot].commandSink = (cmd) => this.pending.push(cmd);
+    if (slot === null) {
+      // 観戦では画面から操作できないようにする（送らず、反映もしない）
+      for (const side of duel.sides) side.commandSink = () => {};
+    } else {
+      // 自分の陣営の画面操作は、送ってから反映する
+      duel.sides[slot].commandSink = (cmd) => this.pending.push(cmd);
+    }
   }
 
-  /** 自分の陣営のラン */
+  /** 観戦か */
+  get spectator(): boolean {
+    return this.slot === null;
+  }
+
+  /** 自分の陣営のラン（観戦では青〈ホスト〉） */
   get mine(): TDRun {
-    return this.duel.sides[this.slot];
+    return this.duel.sides[this.slot ?? 0];
   }
 
   get opponent(): TDRun {
-    return this.duel.sides[1 - this.slot];
+    return this.duel.sides[1 - (this.slot ?? 0)];
   }
 
   get turn(): number {
     return Math.floor(this.steps / TD_DUEL_TURN_STEPS);
   }
 
-  /** 相手の操作が届いた */
-  receiveInput(turn: number, cmds: readonly TDDuelCommand[]): void {
-    this.inputs[1 - this.slot].set(turn, [...cmds]);
+  /** 観戦で、届いた操作に対して何ターン遅れているか */
+  get lagTurns(): number {
+    return Math.max(0, Math.min(this.knownUpTo[0], this.knownUpTo[1]) - this.turn);
+  }
+
+  /** 相手の操作が届いた（観戦では from にどちらの席の操作かが入る） */
+  receiveInput(turn: number, cmds: readonly TDDuelCommand[], from?: number): void {
+    const slot = this.slot === null ? (from === 1 ? 1 : 0) : 1 - this.slot;
+    this.inputs[slot].set(turn, [...cmds]);
+    if (turn > this.knownUpTo[slot]) this.knownUpTo[slot] = turn;
+  }
+
+  /** 観戦を始めたとき、それまでの操作の記録を読み込む（記録にないターンは空の操作） */
+  loadLog(log: TDVersusInputLog): void {
+    for (const slot of [0, 1] as const) {
+      for (let t = TD_DUEL_INPUT_DELAY; t <= log.upTo[slot]; t++) if (!this.inputs[slot].has(t)) this.inputs[slot].set(t, []);
+      if (log.upTo[slot] > this.knownUpTo[slot]) this.knownUpTo[slot] = log.upTo[slot];
+    }
+    for (const [slot, turn, cmds] of log.cmds) {
+      if ((slot === 0 || slot === 1) && turn <= log.upTo[slot]) this.inputs[slot].set(turn, [...cmds]);
+    }
   }
 
   /** 相手の戦況のハッシュが届いた */
   receiveHash(turn: number, h: number): void {
+    if (this.spectator) return;
     this.remoteHashes.set(turn, h);
     this.compareHash(turn);
   }
 
-  /** 実時間 dt ぶん戦場を進める（相手の操作が届いていなければ待つ）。進めたステップ数を返す */
-  advance(battle: Battle, dt: number): number {
+  /**
+   * 実時間 dt ぶん戦場を進める（相手の操作が届いていなければ待つ）。進めたステップ数を返す。
+   * 観戦で遅れているときは、1 フレーム TD_SPECTATE_BUDGET_MS まで早送りする（now は経過時間を測る時計）
+   */
+  advance(battle: Battle, dt: number, now: () => number = () => performance.now()): number {
     if (this.finished) return 0;
+    this.catchingUp = this.spectator && this.lagTurns > TD_SPECTATE_LAG_TURNS;
+    if (this.catchingUp) return this.fastForward(battle, now);
     this.backlog = Math.min(this.backlog + dt, TD_DUEL_MAX_BACKLOG);
     let n = 0;
     while (this.backlog >= battle.fixedDt && n < TD_DUEL_MAX_STEPS_PER_FRAME) {
-      if (this.steps % TD_DUEL_TURN_STEPS === 0 && !this.beginTurn(battle, this.turn)) break;
-      withSimRandom(this.duel.simRng, () => battle.step(battle.fixedDt));
-      this.steps++;
+      if (!this.stepOnce(battle)) break;
       this.backlog -= battle.fixedDt;
       n++;
-      if (this.duel.outcome()) {
-        this.finished = true;
-        this.duel.finishSides();
-        break;
-      }
+      if (this.finished) break;
     }
     if (this.stalled) this.stallTime += dt;
     return n;
   }
 
+  /** 観戦の早送り。時間の予算を使い切るか、追いつくまで進める */
+  private fastForward(battle: Battle, now: () => number): number {
+    const start = now();
+    this.backlog = 0;
+    let n = 0;
+    while (!this.finished && this.lagTurns > TD_DUEL_INPUT_DELAY) {
+      if (!this.stepOnce(battle)) break;
+      n++;
+      if (n % TD_DUEL_TURN_STEPS === 0 && now() - start >= TD_SPECTATE_BUDGET_MS) break;
+    }
+    return n;
+  }
+
+  /** 固定ステップを 1 つ進める。ターンの始めに操作がそろっていなければ進めず false */
+  private stepOnce(battle: Battle): boolean {
+    if (this.steps % TD_DUEL_TURN_STEPS === 0 && !this.beginTurn(battle, this.turn)) return false;
+    withSimRandom(this.duel.simRng, () => battle.step(battle.fixedDt));
+    this.steps++;
+    if (this.duel.outcome()) {
+      this.finished = true;
+      this.duel.finishSides();
+    }
+    return true;
+  }
+
   /** ターンの始め。両席の操作がそろっていれば反映して true */
   private beginTurn(battle: Battle, turn: number): boolean {
-    this.flushLocal(turn + TD_DUEL_INPUT_DELAY);
+    if (!this.spectator) this.flushLocal(turn + TD_DUEL_INPUT_DELAY);
     const a = this.inputs[0].get(turn);
     const b = this.inputs[1].get(turn);
     if (!a || !b) {
@@ -299,7 +362,7 @@ export class TDLockstep {
     }
     this.stalled = false;
     this.stallTime = 0;
-    if (turn > 0 && turn % TD_DUEL_HASH_TURNS === 0) {
+    if (!this.spectator && turn > 0 && turn % TD_DUEL_HASH_TURNS === 0) {
       const h = this.duel.hash(battle);
       this.localHashes.set(turn, h);
       this.send({ t: 'hash', turn, h });
@@ -316,10 +379,12 @@ export class TDLockstep {
 
   /** target ターンまでの自分の操作を予約して送る */
   private flushLocal(target: number): void {
+    const slot = this.slot;
+    if (slot === null) return;
     while (this.sentUpTo < target) {
       this.sentUpTo++;
       const cmds = this.sentUpTo === target ? this.pending.splice(0, TD_VS_MAX_COMMANDS) : [];
-      this.inputs[this.slot].set(this.sentUpTo, cmds);
+      this.inputs[slot].set(this.sentUpTo, cmds);
       this.send({ t: 'input', turn: this.sentUpTo, cmds });
     }
   }

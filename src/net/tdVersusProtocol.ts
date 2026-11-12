@@ -16,20 +16,39 @@ export const TD_VS_MAX_COMMANDS = 16;
 export const TD_VS_LIST_POLL_MS = 3000;
 /** 一覧に出す部屋の最大数 */
 export const TD_VS_LIST_MAX = 30;
+/** 1 部屋で観戦できる人数の上限 */
+export const TD_VS_MAX_WATCHERS = 8;
 /** 部屋の情報がこの時間更新されなければ一覧から外す（放置で閉じる時間＋余裕。ミリ秒） */
 export const TD_VS_LIST_STALE_MS = TD_VS_IDLE_MS + 30 * 1000;
 /** 一覧に出ている部屋が、この間隔ごとに「まだある」と知らせ直す（ミリ秒） */
 export const TD_VS_LIST_REFRESH_MS = 30 * 1000;
 
-/** 入室のしかた。create: 部屋を作る（同じ名前の部屋に人がいれば断る） / join: 一覧から入る（部屋がなければ断る） */
-export type TDVersusJoinIntent = 'create' | 'join';
+/**
+ * 入室のしかた。create: 部屋を作る（同じ名前の部屋に人がいれば断る） / join: 一覧から入る（部屋がなければ断る） /
+ * watch: 対戦中の部屋を観戦する（試合中でなければ断る）
+ */
+export type TDVersusJoinIntent = 'create' | 'join' | 'watch';
 
-/** 募集中の部屋の一覧の 1 行 */
+/** 一覧での部屋の状態。open: 相手を募集中 / playing: 対戦中（観戦できる） */
+export type TDVersusRoomStatus = 'open' | 'playing';
+
+/** 部屋の一覧の 1 行 */
 export interface TDVersusRoomListing {
   /** 部屋名（normalizeRoomName 済み） */
   name: string;
   /** 部屋にいる人数 */
   players: number;
+  status: TDVersusRoomStatus;
+  /** 観戦している人数 */
+  watchers: number;
+}
+
+/** 観戦を始めた人に渡す、それまでの操作の記録（空のターンは省き、どのターンまで届いたかだけを持つ） */
+export interface TDVersusInputLog {
+  /** 席ごとに、届いた操作の最後のターン（まだなければ -1） */
+  upTo: [number, number];
+  /** 空でない操作 [席, ターン, 操作] */
+  cmds: Array<[number, number, TDDuelCommand[]]>;
 }
 
 /** 部屋の一覧（GET /rooms の応答）を検証する。形が合わなければ null */
@@ -40,11 +59,17 @@ export function parseRoomList(raw: unknown): TDVersusRoomListing[] | null {
   const out: TDVersusRoomListing[] = [];
   for (const r of rooms) {
     if (!r || typeof r !== 'object') continue;
-    const { name, players } = r as Record<string, unknown>;
+    const { name, players, status, watchers } = r as Record<string, unknown>;
     if (typeof name !== 'string' || typeof players !== 'number') continue;
     const normalized = normalizeRoomName(name);
     if (!normalized) continue;
-    out.push({ name: normalized, players });
+    out.push({
+      name: normalized,
+      players,
+      // 古いサーバーは status を返さないので、募集中とみなす
+      status: status === 'playing' ? 'playing' : 'open',
+      watchers: typeof watchers === 'number' && watchers >= 0 ? Math.floor(watchers) : 0,
+    });
     if (out.length >= TD_VS_LIST_MAX) break;
   }
   return out;
@@ -72,7 +97,9 @@ export type TDDuelCommand =
   /** 城を強化する */
   | { k: 'base' }
   /** 自動出撃の入り切り */
-  | { k: 'auto'; on: boolean };
+  | { k: 'auto'; on: boolean }
+  /** id 番の宝箱を開ける（宝箱の番号は両端末で同じ順に振られる） */
+  | { k: 'chest'; id: number };
 
 /** 決着の理由 */
 export type TDVersusEndReason =
@@ -115,14 +142,23 @@ export type TDVersusServerMessage =
   | { t: 'room'; slots: TDVersusSlotInfo[] }
   /** 両者そろったので試合開始。seed は地形・強化の3択・宝箱などを決める共通の種、starters は席ごとのスターター */
   | { t: 'start'; seed: number; starters: string[] }
-  /** 相手の操作 */
-  | { t: 'input'; turn: number; cmds: TDDuelCommand[] }
+  /** 相手の操作（観戦者には slot〈どちらの席の操作か〉が付く） */
+  | { t: 'input'; turn: number; cmds: TDDuelCommand[]; slot?: number }
+  /** 観戦を始めた・観戦中に次の試合が始まった。log はそれまでの操作、result は決着していればその結果 */
+  | {
+      t: 'watch';
+      room: string;
+      seed: number;
+      starters: string[];
+      log: TDVersusInputLog;
+      result: { winner: number | null; reason: TDVersusEndReason } | null;
+    }
   /** 相手の戦況のハッシュ */
   | { t: 'hash'; turn: number; h: number }
   /** 決着（winner は勝った席。null は引き分け） */
   | { t: 'result'; winner: number | null; reason: TDVersusEndReason }
   /** 入室できなかった・不正な操作 */
-  | { t: 'error'; code: 'full' | 'bad_name' | 'bad_message' | 'exists' | 'not_found' }
+  | { t: 'error'; code: 'full' | 'bad_name' | 'bad_message' | 'exists' | 'not_found' | 'not_playing' }
   /** 放置で部屋が閉じられた */
   | { t: 'closed'; reason: 'idle' };
 
@@ -155,6 +191,8 @@ function parseCommand(v: unknown): TDDuelCommand | null {
       return { k: c.k };
     case 'auto':
       return typeof c.on === 'boolean' ? { k: 'auto', on: c.on } : null;
+    case 'chest':
+      return typeof c.id === 'number' && Number.isInteger(c.id) && c.id >= 0 && c.id < 1e6 ? { k: 'chest', id: c.id } : null;
     default:
       return null;
   }
