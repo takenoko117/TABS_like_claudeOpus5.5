@@ -3,7 +3,10 @@ import { FIELD_COLS, FIELD_ROWS, GROUND, WATER, cellIndex } from './FieldTypes';
 /** 通行コストの種類（0: 通常, 1: 巨体） */
 export type PathMode = 0 | 1;
 
-const N = FIELD_COLS * FIELD_ROWS;
+/** グリッドのマスの数（グリッドの横幅は戦場によって変わるので毎回求める） */
+function gridSize(): number {
+  return FIELD_COLS * FIELD_ROWS;
+}
 
 /**
  * マスの通行コスト（Infinity なら通れない）。§8 の地面・水域の効果をそのまま反映する。
@@ -46,9 +49,9 @@ export function buildCostGrid(
   blocked: Uint8Array,
   pit: Uint8Array,
   mode: PathMode,
-  out: Float32Array = new Float32Array(N),
+  out: Float32Array = new Float32Array(gridSize()),
 ): Float32Array {
-  for (let k = 0; k < N; k++) out[k] = cellCost(ground[k], water[k], blocked[k], pit[k], mode);
+  for (let k = 0; k < gridSize(); k++) out[k] = cellCost(ground[k], water[k], blocked[k], pit[k], mode);
   return out;
 }
 
@@ -111,9 +114,9 @@ const NB: readonly (readonly [number, number, number])[] = [
  * 目的のマスから全マスへの距離場（Dijkstra）。
  * 斜め移動は、角の両側のマスが通れるときだけ許す。
  */
-export function distanceField(cost: Float32Array, goal: number, out: Float32Array = new Float32Array(N)): Float32Array {
+export function distanceField(cost: Float32Array, goal: number, out: Float32Array = new Float32Array(gridSize())): Float32Array {
   out.fill(Infinity);
-  if (goal < 0 || goal >= N) return out;
+  if (goal < 0 || goal >= gridSize()) return out;
   const heap = new MinHeap();
   out[goal] = 0;
   heap.push(goal, 0);
@@ -145,7 +148,7 @@ export function distanceField(cost: Float32Array, goal: number, out: Float32Arra
 
 /** k×k の正方形がそのマスを左下として置けるか（幅 k m の道の判定に使う） */
 export function fitMask(pass: Uint8Array, k: number): Uint8Array {
-  const out = new Uint8Array(N);
+  const out = new Uint8Array(gridSize());
   for (let j = 0; j + k <= FIELD_ROWS; j++) {
     for (let i = 0; i + k <= FIELD_COLS; i++) {
       let ok = 1;
@@ -158,7 +161,7 @@ export function fitMask(pass: Uint8Array, k: number): Uint8Array {
 
 /** 4近傍の塗りつぶし（seed が 1 のマスから mask 内に広がる） */
 export function flood(mask: Uint8Array, seeds: (i: number, j: number) => boolean): Uint8Array {
-  const out = new Uint8Array(N);
+  const out = new Uint8Array(gridSize());
   const queue: number[] = [];
   for (let j = 0; j < FIELD_ROWS; j++) for (let i = 0; i < FIELD_COLS; i++) {
     const k = cellIndex(i, j);

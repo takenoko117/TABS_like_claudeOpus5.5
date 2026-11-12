@@ -391,15 +391,19 @@ export class RealtimeTDHud {
   }
 
   private updateTop(td: TDRun): void {
-    const setBase = (sel: string, hp: number, max: number) => {
+    const setBase = (sel: string, hp: number, max: number, stage2: boolean) => {
       const el = this.elTop.querySelector<HTMLElement>(sel)!;
+      el.classList.toggle('stage2', stage2);
+      el.querySelector<HTMLElement>('.td-hp')!.title = stage2
+        ? '第二段階：遠距離攻撃は1/10しか効かない（近接で攻めよう）'
+        : '第一段階：遠距離攻撃は半減。HPが半分を切ると第二段階';
       const ratio = max > 0 ? Math.max(0, hp) / max : 0;
       el.querySelector<HTMLElement>('.td-hp i')!.style.width = `${ratio * 100}%`;
       el.querySelector<HTMLElement>('.td-hp-num')!.textContent = `${Math.ceil(Math.max(0, hp)).toLocaleString()}`;
       el.classList.toggle('danger', ratio < 0.3);
     };
-    if (td.playerBase) setBase('.td-base.ally', td.playerBase.hp, td.playerBase.maxHp);
-    if (td.enemyBase) setBase('.td-base.enemy', td.enemyBase.hp, td.enemyBase.maxHp);
+    if (td.playerBase) setBase('.td-base.ally', td.playerBase.hp, td.playerBase.maxHp, td.playerBase.inLowHpStage);
+    if (td.enemyBase) setBase('.td-base.enemy', td.enemyBase.hp, td.enemyBase.maxHp, td.enemyBase.inLowHpStage);
     const over = td.time >= TD_DURATION_SECONDS;
     this.elTop.querySelector('.td-wave')!.textContent = over ? '最終決戦' : `WAVE ${td.wave} / ${TD_WAVE_COUNT}`;
     const timeEl = this.elTop.querySelector<HTMLElement>('.td-time')!;

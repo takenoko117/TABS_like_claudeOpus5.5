@@ -1,7 +1,8 @@
 /**
  * タワーディフェンスの地形。ローグライトのプロシージャル・フィールドを使い、
  * ラウンドの代わりに一定時間ごとに作り直す。
- * 両軍の城のまわり（出撃地点・砲台・レリック）は地物も水もない平地にする。
+ * 戦場は標準の2倍の長さ。両軍の城のまわり（出撃地点・砲台・レリック）は地物も水もない平地にし、
+ * 城を円形の城壁で囲む。城壁の正面は開いていて、まっすぐな通路（道）が戦場へ伸びる。
  */
 import { TRAITS } from '../field/BiomeDefs';
 import { BASE_GROUND, generateField } from '../field/FieldGenerator';
@@ -27,10 +28,25 @@ import { FLYING_UNIT_IDS, type Unit } from '../units/Unit';
 
 /** 地形を作り直す間隔（秒） */
 export const TD_TERRAIN_SECONDS = 120;
-/** |x| がこれ以上のマスは平地にする（城・砲台・出撃地点を守る） */
-export const TD_TERRAIN_CLEAR_X = 13;
+
+/** 戦場の見えない壁（標準の戦場 ±25 の約2倍の長さ。城どうしの距離が2倍になる） */
+export const TD_FIELD_WALLS = { maxX: 47, maxZ: 19 } as const;
+/** 城の x 座標（自軍は -、敵は +） */
+export const TD_CASTLE_X = 44;
+/** 城壁（円）の半径 */
+export const TD_CASTLE_WALL_RADIUS = 13;
+/** 城壁の正面の通路の半分の幅（通路の壁は z = ±(この値 + 0.5) のマス） */
+export const TD_CORRIDOR_HALF_WIDTH = 3;
+/** 通路の先端（城からの距離）。ここで戦場に出る */
+export const TD_CORRIDOR_END = 23;
+/** 門を置ける範囲（城からの距離）。通路の中 */
+export const TD_GATE_ZONE_FROM = 14;
+export const TD_GATE_ZONE_TO = 22;
+
+/** |x| がこれ以上のマスは平地にする（城・通路を守る） */
+export const TD_TERRAIN_CLEAR_X = TD_CASTLE_X - TD_CORRIDOR_END - 1;
 /** 中心の |x| がこれ以上の地物は置かない（大きな地物が平地へはみ出さないように） */
-export const TD_TERRAIN_PROP_CLEAR_X = 11;
+export const TD_TERRAIN_PROP_CLEAR_X = TD_TERRAIN_CLEAR_X - 2;
 /** 作り直しで出るバイオーム（専用フィールドは除く） */
 export const TD_TERRAIN_BIOMES: readonly BiomeId[] = ['plains', 'forest', 'town', 'desert', 'swamp', 'snow', 'volcano'];
 /** 特性が付く確率 */
@@ -96,9 +112,52 @@ export function clearTDBaseZones(layout: FieldLayout): FieldLayout {
   };
 }
 
-/** TD 用の地形を作る */
+/** マスの中心 (x, z) が、城 (castleX) の城壁・通路の壁になるか。forward は城から見た戦場の向き（+1 / -1） */
+export function isTDCastleWallCell(x: number, z: number, castleX: number, forward: number): boolean {
+  const ahead = (x - castleX) * forward;
+  const az = Math.abs(z);
+  const inCorridorWidth = az < TD_CORRIDOR_HALF_WIDTH + 0.01;
+  // 円形の城壁（正面の通路の幅だけ開ける）
+  const d = Math.hypot(x - castleX, z);
+  if (Math.abs(d - TD_CASTLE_WALL_RADIUS) < 0.6 && !(ahead > 0 && inCorridorWidth)) return true;
+  // 通路の左右の壁（城壁の円の外側から通路の先端まで）
+  const onCorridorWall = az > TD_CORRIDOR_HALF_WIDTH && az < TD_CORRIDOR_HALF_WIDTH + 1;
+  return onCorridorWall && ahead > 0 && d > TD_CASTLE_WALL_RADIUS && ahead < TD_CORRIDOR_END;
+}
+
+/** マスの中心が、城 (castleX) の正面の通路の中か */
+export function isTDCorridorCell(x: number, z: number, castleX: number, forward: number): boolean {
+  const ahead = (x - castleX) * forward;
+  return Math.abs(z) < TD_CORRIDOR_HALF_WIDTH && ahead > TD_CASTLE_WALL_RADIUS - 1 && ahead < TD_CORRIDOR_END;
+}
+
+/** 両軍の城の城壁（壊れない石積み）と、正面の通路の道を足した地形を返す */
+export function addTDCastleWalls(layout: FieldLayout): FieldLayout {
+  const ground = layout.ground.slice();
+  const props = layout.props.slice();
+  let nextId = props.reduce((m, p) => Math.max(m, p.id), -1) + 1;
+  for (let j = 0; j < FIELD_ROWS; j++) {
+    for (let i = 0; i < FIELD_COLS; i++) {
+      const x = cellCenterX(i);
+      const z = cellCenterZ(j);
+      for (const [castleX, forward] of [
+        [-TD_CASTLE_X, 1],
+        [TD_CASTLE_X, -1],
+      ] as const) {
+        if (isTDCastleWallCell(x, z, castleX, forward)) {
+          props.push({ id: nextId++, kind: 'castle_block', x, z, rot: 0, seed: i + j });
+        } else if (isTDCorridorCell(x, z, castleX, forward)) {
+          ground[cellIndex(i, j)] = GROUND.road;
+        }
+      }
+    }
+  }
+  return { ...layout, ground, props };
+}
+
+/** TD 用の地形を作る（グリッドの横幅は TD_FIELD_WALLS に合わせておくこと） */
 export function buildTDTerrain(spec: TDTerrainSpec): FieldLayout {
-  return clearTDBaseZones(generateField(spec));
+  return addTDCastleWalls(clearTDBaseZones(generateField(spec)));
 }
 
 /**

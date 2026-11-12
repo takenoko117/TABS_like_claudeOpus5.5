@@ -165,6 +165,10 @@ export class Facility {
   readonly inert: boolean;
   /** 遠距離攻撃（射程 RANGED_ATTACKER_MIN_RANGE 以上の兵）から受けるダメージの倍率 */
   rangedDamageMul = 1;
+  /** HP が最大の lowHpRatio 以下（第二段階）のときの遠距離ダメージ倍率（null なら段階なし） */
+  rangedDamageMulLow: number | null = null;
+  /** 第二段階に入る HP の割合 */
+  lowHpRatio = 0.5;
 
   constructor(
     typeId: FacilityTypeId,
@@ -355,11 +359,21 @@ export class Facility {
     }
   }
 
+  /** 第二段階（HP が最大の lowHpRatio 以下）に入っているか */
+  get inLowHpStage(): boolean {
+    return this.rangedDamageMulLow !== null && this.hp <= this.maxHp * this.lowHpRatio;
+  }
+
+  /** 今の段階での遠距離ダメージ倍率 */
+  get currentRangedDamageMul(): number {
+    return this.inLowHpStage ? (this.rangedDamageMulLow as number) : this.rangedDamageMul;
+  }
+
   /** ダメージを受ける。地形ブロックは無敵（破壊不可） */
   takeDamage(damage: number, attacker?: Unit): boolean {
     if (!this.alive || this.isTerrain || this.invulnerable) return false;
-    if (attacker && this.rangedDamageMul !== 1 && attacker.type.range >= RANGED_ATTACKER_MIN_RANGE) {
-      damage *= this.rangedDamageMul;
+    if (attacker && attacker.type.range >= RANGED_ATTACKER_MIN_RANGE) {
+      damage *= this.currentRangedDamageMul;
     }
     const creditsAttacker = attacker !== undefined && attacker.team !== this.team;
     if (creditsAttacker) attacker.damageDealt += Math.min(damage, this.hp);

@@ -33,7 +33,17 @@ import {
   rogueFieldTraits,
 } from './RogueliteMode';
 import type { BiomeId, FieldTraitId } from '../field/FieldTypes';
-import { buildTDTerrain, pickTDTerrain, relocateUnitsOutOfTerrain, TD_TERRAIN_SECONDS } from './TDTerrain';
+import {
+  buildTDTerrain,
+  pickTDTerrain,
+  relocateUnitsOutOfTerrain,
+  TD_CASTLE_X,
+  TD_CORRIDOR_HALF_WIDTH,
+  TD_FIELD_WALLS,
+  TD_GATE_ZONE_FROM,
+  TD_GATE_ZONE_TO,
+  TD_TERRAIN_SECONDS,
+} from './TDTerrain';
 
 // ---------------------------------------------------------------
 // 定数（数値は試遊で調整する前提の初版）
@@ -46,24 +56,36 @@ export const TD_WAVE_COUNT = 20;
 /** エリートが出る Wave */
 export const TD_ELITE_WAVES: readonly number[] = [3, 6, 9, 12, 15, 18];
 /** この Wave 以降は、エリート Wave でなくてもエリートが1体出る */
-export const TD_ALWAYS_ELITE_FROM_WAVE = 8;
+export const TD_ALWAYS_ELITE_FROM_WAVE = 11;
+/** 序盤（この Wave まで＝約5分）はエリートを控えめにする（エリート Wave でも1体・予算の割増も小さい） */
+export const TD_EARLY_ELITE_LAST_WAVE = 10;
+const TD_EARLY_ELITE_BUDGET_MUL = 1.25;
+const TD_ELITE_BUDGET_MUL = 1.5;
 /** 時間で湧く増援の間隔（秒）と、1回の予算（その Wave の予算に対する割合） */
 export const TD_TRICKLE_SECONDS = 10;
 export const TD_TRICKLE_RATIO = 0.12;
 
-export const TD_PLAYER_BASE_X = -22;
-export const TD_ENEMY_BASE_X = 22;
+/** 城の位置（戦場は標準の2倍の長さ。城どうしの距離も2倍） */
+export const TD_PLAYER_BASE_X = -TD_CASTLE_X;
+export const TD_ENEMY_BASE_X = TD_CASTLE_X;
 export const TD_PLAYER_BASE_HP = 1000;
 export const TD_ENEMY_BASE_HP = 100000;
-/** 自軍が出撃する位置（基地の正面） */
-export const TD_DEPLOY_X = -18.6;
-/** 敵が湧く位置（敵基地の正面） */
-export const TD_ENEMY_SPAWN_X = 18.6;
-/** 門を並べ始める位置と間隔 */
-const TD_GATE_START_X = -16.4;
+/** 自軍が出撃する位置（城壁の内側、城の正面） */
+export const TD_DEPLOY_X = TD_PLAYER_BASE_X + 3.4;
+/** 敵が湧く位置（敵の城壁の内側、城の正面） */
+export const TD_ENEMY_SPAWN_X = TD_ENEMY_BASE_X - 3.4;
+/** 門を並べる範囲（城壁の正面の通路の中）と、並べる間隔の上限 */
+export const TD_GATE_FIRST_X = TD_PLAYER_BASE_X + TD_GATE_ZONE_FROM;
+export const TD_GATE_LAST_X = TD_PLAYER_BASE_X + TD_GATE_ZONE_TO;
 const TD_GATE_SPACING = 1.8;
-/** 門の見た目の幅。戦場の外まで届く幅にして、出撃した兵が必ずくぐるようにする */
-const TD_GATE_WIDTH = 42;
+/** 門の見た目の幅（通路の幅に合わせる。戦場の端から端までは渡さない） */
+export const TD_GATE_WIDTH = TD_CORRIDOR_HALF_WIDTH * 2;
+
+/** 門 index 番目（n 個中）の x 座標。通路に収まらないときは間隔を詰める */
+export function getTDGateX(index: number, count: number): number {
+  const spacing = count <= 1 ? 0 : Math.min(TD_GATE_SPACING, (TD_GATE_LAST_X - TD_GATE_FIRST_X) / (count - 1));
+  return TD_GATE_FIRST_X + index * spacing;
+}
 
 /** 同時に戦場にいられる数 */
 export const TD_ALLY_CAP = 50;
@@ -109,8 +131,11 @@ export const TD_START_PLAYER_CANNONS = 2;
 export const TD_START_RELICS: readonly FacilityTypeId[] = ['buff_totem'];
 /** 倒れた兵が戦場に残る秒数（過ぎたら消して処理を軽くする） */
 export const TD_CORPSE_SECONDS = 4;
-/** 城が遠距離攻撃から受けるダメージの倍率（戦闘エリアの取り合いを主役にする） */
+/** 城が遠距離攻撃から受けるダメージの倍率（戦闘エリアの取り合いを主役にする）。第一段階 */
 export const TD_BASE_RANGED_DAMAGE_MUL = 0.5;
+/** 城の HP の第二段階（最大 HP のこの割合以下）では、遠距離攻撃はほとんど効かない（近接で落とす） */
+export const TD_BASE_STAGE2_RATIO = 0.5;
+export const TD_BASE_RANGED_DAMAGE_MUL_STAGE2 = 0.1;
 
 /** Wave 1 の敵予算（ローグライトの同ラウンド1戦ぶんに対する割合） */
 export const TD_WAVE_BUDGET_RATIO = 0.55;
@@ -128,24 +153,24 @@ export const TD_ELITE_DAMAGE_MUL = 1.5;
 export const TD_ENEMY_CANNON_INTERVAL = 60;
 export const TD_ENEMY_CANNON_LEVEL_SECONDS = 120;
 export const TD_ENEMY_CANNON_POSITIONS: ReadonlyArray<{ x: number; z: number }> = [
-  { x: 23.8, z: -4 },
-  { x: 23.8, z: 4 },
-  { x: 21, z: -11 },
-  { x: 21, z: 11 },
-  { x: 23.8, z: -8 },
-  { x: 23.8, z: 8 },
-  { x: 17, z: -12.5 },
-  { x: 17, z: 12.5 },
+  { x: TD_CASTLE_X + 1.8, z: -4 },
+  { x: TD_CASTLE_X + 1.8, z: 4 },
+  { x: TD_CASTLE_X - 2, z: -10 },
+  { x: TD_CASTLE_X - 2, z: 10 },
+  { x: TD_CASTLE_X + 1.8, z: -8 },
+  { x: TD_CASTLE_X + 1.8, z: 8 },
+  { x: TD_CASTLE_X - 7, z: -8 },
+  { x: TD_CASTLE_X - 7, z: 8 },
 ];
 /** 城強化で自軍の城に置く砲台（Lv2 から1段ごとに1基） */
 export const TD_PLAYER_CANNON_POSITIONS: ReadonlyArray<{ x: number; z: number }> = [
-  { x: -23.8, z: -4 },
-  { x: -23.8, z: 4 },
-  { x: -21, z: -11 },
-  { x: -21, z: 11 },
-  { x: -23.8, z: 0 },
-  { x: -23.8, z: -8 },
-  { x: -23.8, z: 8 },
+  { x: -TD_CASTLE_X - 1.8, z: -4 },
+  { x: -TD_CASTLE_X - 1.8, z: 4 },
+  { x: -TD_CASTLE_X + 2, z: -10 },
+  { x: -TD_CASTLE_X + 2, z: 10 },
+  { x: -TD_CASTLE_X - 1.8, z: 0 },
+  { x: -TD_CASTLE_X - 1.8, z: -8 },
+  { x: -TD_CASTLE_X - 1.8, z: 8 },
 ];
 
 /** 宝箱の出る確率（撃破1体ごと）と、次が出るまでの時間 */
@@ -182,7 +207,11 @@ export function getWaveBudget(wave: number): number {
   const r = round - 1;
   // ローグライトの予算式からエリート割増を除いたもの（ハードモードの割増は残す）
   const base = (500 + 180 * r + 14 * r * r) * (isRogueHardMode(round) ? ROGUE_HARD_BUDGET_MUL : 1);
-  const elite = TD_ELITE_WAVES.includes(wave) ? 1.5 : 1;
+  const elite = TD_ELITE_WAVES.includes(wave)
+    ? wave <= TD_EARLY_ELITE_LAST_WAVE
+      ? TD_EARLY_ELITE_BUDGET_MUL
+      : TD_ELITE_BUDGET_MUL
+    : 1;
   // 序盤はゆるやかに、後半ほど1戦ぶんに近づける
   const ratio = TD_WAVE_BUDGET_RATIO + TD_WAVE_BUDGET_RATIO_STEP * (Math.max(1, wave) - 1);
   return Math.round(base * ratio * elite);
@@ -241,7 +270,7 @@ export function getCounterEliteCount(step: number): number {
 
 /** エリート Wave に出るエリートの数（エリート Wave 以外でも TD_ALWAYS_ELITE_FROM_WAVE 以降は1体） */
 export function getWaveEliteCount(wave: number): number {
-  if (TD_ELITE_WAVES.includes(wave)) return 1 + Math.floor(wave / 6);
+  if (TD_ELITE_WAVES.includes(wave)) return wave <= TD_EARLY_ELITE_LAST_WAVE ? 1 : 1 + Math.floor(wave / 6);
   return wave >= TD_ALWAYS_ELITE_FROM_WAVE ? 1 : 0;
 }
 
@@ -401,10 +430,14 @@ export class TDRun {
 
   /** 基地とレリックを戦場に置き、ルールを有効にする（battle.configureStage の後に呼ぶ） */
   setup(battle: Battle): void {
+    battle.setFieldWalls(TD_FIELD_WALLS);
     this.playerBase = battle.spawnFacility('hq', 0, TD_PLAYER_BASE_X, 0, Math.PI / 2, { hp: TD_PLAYER_BASE_HP });
     this.enemyBase = battle.spawnFacility('hq', 1, TD_ENEMY_BASE_X, 0, -Math.PI / 2, { hp: TD_ENEMY_BASE_HP });
-    this.playerBase.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
-    this.enemyBase.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
+    for (const base of [this.playerBase, this.enemyBase]) {
+      base.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
+      base.rangedDamageMulLow = TD_BASE_RANGED_DAMAGE_MUL_STAGE2;
+      base.lowHpRatio = TD_BASE_STAGE2_RATIO;
+    }
     this.lastEnemyBaseHp = this.enemyBase.hp;
     this.battleRef = battle;
     this.updateEnemyCannons(battle);
@@ -441,10 +474,11 @@ export class TDRun {
     this.gateFacilities = [];
     this.relicFacilities = [];
     const active = this.run.relics.filter((r) => r.active);
+    const gateCount = active.filter((r) => isGateTypeId(r.id)).length;
     let gateIndex = 0;
     for (const relic of active) {
       if (isGateTypeId(relic.id)) {
-        const x = TD_GATE_START_X + gateIndex * TD_GATE_SPACING;
+        const x = getTDGateX(gateIndex, gateCount);
         gateIndex++;
         const facility = battle.spawnFacility(relic.id, 0, x, 0, Math.PI / 2, {
           gateLevel: relic.level,
@@ -893,9 +927,9 @@ export class TDRun {
 
 /** 門以外のレリックを置く位置（自軍基地のまわり） */
 export const TD_RELIC_POSITIONS: Partial<Record<FacilityTypeId, { x: number; z: number }>> = {
-  buff_totem: { x: -16.5, z: 5.5 },
-  cannon_tower: { x: -19.5, z: -7.5 },
-  barracks: { x: -19.5, z: 7.5 },
+  buff_totem: { x: -TD_CASTLE_X + 5.5, z: 5.5 },
+  cannon_tower: { x: -TD_CASTLE_X + 2.5, z: -7.5 },
+  barracks: { x: -TD_CASTLE_X + 2.5, z: 7.5 },
 };
 
 /** タワーディフェンスの戦闘ルール。ローグライトのシナジー・レリックに、時間の進行と基地の勝敗を足す */

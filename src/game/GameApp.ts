@@ -34,7 +34,7 @@ import type { Unit } from '../units/Unit';
 import { BIOMES, TRAITS, fieldChestBonus, type FieldOption } from '../field/BiomeDefs';
 import { describeFieldFeatures, generateField } from '../field/FieldGenerator';
 import type { FieldEvent, FieldRuntime } from '../field/FieldRuntime';
-import type { FieldLayout } from '../field/FieldTypes';
+import { FIELD_COLS, type FieldLayout } from '../field/FieldTypes';
 import { FieldRenderer } from '../render/FieldRenderer';
 import { renderFieldMinimap } from '../render/FieldMinimap';
 import {
@@ -110,7 +110,7 @@ import {
   type RogueCard,
 } from './RogueliteMode';
 import { getPlaceableDetail } from '../ui/UnitDetailHelper';
-import { TDRun, xpForKill } from './RealtimeTDMode';
+import { TDRun, TD_PLAYER_BASE_X, xpForKill } from './RealtimeTDMode';
 import { RealtimeTDHud, isTDTutorialDone, markTDTutorialDone } from '../ui/RealtimeTDHud';
 import {
   CATEGORY_ICONS,
@@ -2486,6 +2486,8 @@ export class GameApp {
     const td = new TDRun(Math.floor(Math.random() * 0x7fffffff), starter);
     this.td = td;
     td.setup(this.battle);
+    // 戦場が横に長いので、自軍の城の通路から前線の手前までを見渡す位置にカメラを置く
+    this.view.frameFieldAt(TD_PLAYER_BASE_X + 26, 46);
     this.playerRoster = [];
     this.paused = false;
     this.timeScale = 1;
@@ -2943,7 +2945,8 @@ export class GameApp {
 
   /** 進路カードのフィールドを作る（キャッシュあり） */
   private rogueFieldLayout(opt: FieldOption): FieldLayout {
-    const key = `${opt.seed}:${opt.biome}:${opt.trait}`;
+    // グリッドの横幅（戦場の幅）が違うと別のフィールドになるので、キーに含める
+    const key = `${opt.seed}:${opt.biome}:${opt.trait}:${FIELD_COLS}`;
     let layout = this.fieldLayoutCache.get(key);
     if (!layout) {
       layout = generateField({ seed: opt.seed, biome: opt.biome, trait: opt.trait });

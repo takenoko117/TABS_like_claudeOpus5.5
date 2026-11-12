@@ -13,9 +13,9 @@ import { PELVIS_HEIGHT } from '../units/Skeleton';
 import { Unit, type UnitContext } from '../units/Unit';
 import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import type { StageHazardConfig } from './ArcadeStages';
-import { BATTLE_FIELD_WALLS } from '../physics/PhysicsWorld';
+import { BATTLE_FIELD_WALLS, type FieldWalls } from '../physics/PhysicsWorld';
 import { FieldRuntime, type FieldUnitTraitsFn } from '../field/FieldRuntime';
-import type { FieldLayout } from '../field/FieldTypes';
+import { FIELD_COLS, FIELD_DEFAULT_HALF_X, FIELD_ROWS, setFieldHalfWidth, type FieldLayout } from '../field/FieldTypes';
 
 export type BattleResult = Team | 'draw' | null;
 
@@ -110,6 +110,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
     }
     this.combat.terrain = null;
     if (!layout) return null;
+    // 今のグリッドの大きさと違うフィールド（壁の幅を変える前に作ったもの）は置けない
+    if (layout.ground.length !== FIELD_COLS * FIELD_ROWS) return null;
     const field = new FieldRuntime(this.world, this.combat, layout, traitsOf);
     field.install();
     this.field = field;
@@ -362,12 +364,23 @@ export class Battle implements UnitContext, FacilityBattleContext {
     this.world.arenaBounds = config.arenaBounds ? { ...config.arenaBounds } : null;
     // 浮島アリーナは外周の奈落へ落とすのが遊びなので壁を置かない
     this.world.fieldWalls = config.arenaBounds ? null : BATTLE_FIELD_WALLS;
+    setFieldHalfWidth(FIELD_DEFAULT_HALF_X);
     this.world.gravity.set(0, -9.81 * (config.gravityScale ?? 1.0), 0);
     this.timeLimitSeconds = config.timeLimitSeconds ?? null;
     this.baseDamageMul = config.damageMultiplier ?? 1.0;
     this.baseSpeedMul = config.speedMultiplier ?? 1.0;
     this.hazardConfig = config.hazard ?? null;
     this.preferCloserFacility = false;
+  }
+
+  /**
+   * 見えない壁の位置を変える（タワーディフェンスの横に長い戦場など）。フィールドのグリッドの横幅も合わせる。
+   * 今のフィールドは古い大きさなので外す（この後に setField し直すこと）
+   */
+  setFieldWalls(walls: Readonly<FieldWalls>): void {
+    if (this.field) this.setField(null);
+    this.world.fieldWalls = walls;
+    setFieldHalfWidth(walls.maxX);
   }
 
   /** 戦闘を開始する。配置中に進んだ時間は制限時間に含めない */

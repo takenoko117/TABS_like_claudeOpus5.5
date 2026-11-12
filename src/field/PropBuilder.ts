@@ -114,6 +114,8 @@ const ROOF = [0xa8442f, 0x8a5a2b, 0x456d8a];
 const WALL_WOOD = [0xc9a679, 0xb48a5a, 0xd8c39a];
 const WALL_STONE = [0x9aa0a6, 0xb0a99a];
 const MARBLE = 0xe8e4da;
+/** 城壁の耐久力（実質壊れない） */
+const CASTLE_BLOCK_HP = 1e9;
 
 export function buildProp(kind: PropKind, seed: number): PropModel {
   const rng = fieldRng(seed);
@@ -313,6 +315,13 @@ export function buildProp(kind: PropKind, seed: number): PropModel {
       for (let x = -len / 2; x < len / 2; x++) {
         b.box(s1, x, 4, -1, x + 1, x % 2 === 0 ? 6 : 5, 1, j(0x9a968c, 0.06));
       }
+      break;
+    }
+    case 'castle_block': {
+      // 1m 四方・高さ 3m の石積み。seed の偶奇で胸壁（凸凹）を付け、並べると城壁になる
+      const s = b.seg({ hp: CASTLE_BLOCK_HP, material: 'stone', flammable: false });
+      b.box(s, -1, 0, -1, 1, 6, 1, j(0x8d8a82, 0.05));
+      if (seed % 2 === 0) b.box(s, -1, 6, -1, 1, 7, 1, j(0x9a968c, 0.05));
       break;
     }
     case 'treasure': {

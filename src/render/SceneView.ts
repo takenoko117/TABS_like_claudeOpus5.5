@@ -29,7 +29,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { BATTLE_FIELD_WALLS } from '../physics/PhysicsWorld';
+import { BATTLE_FIELD_WALLS, type FieldWalls } from '../physics/PhysicsWorld';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
 import { getGateOpeningWidth, isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
@@ -183,6 +183,10 @@ export class SceneView {
   private readonly terrainGroup = new Group();
   /** 戦場外周の山と海（見えない壁の位置を示す背景） */
   private readonly boundaryGroup = new Group();
+  /** 標準の戦場の外側に置く木と岩（横に長い戦場では戦場の中に入るので隠す） */
+  private readonly ringDecorGroup = new Group();
+  /** 山と海を作った壁の位置（戦場の壁が変わったら作り直す） */
+  private builtWalls: Readonly<FieldWalls> = BATTLE_FIELD_WALLS;
   private readonly boundaryMats = {
     rock: new MeshLambertMaterial(),
     rockDark: new MeshLambertMaterial(),
@@ -339,11 +343,12 @@ export class SceneView {
     this.groundTex.minFilter = NearestFilter;
     this.groundTex.wrapS = RepeatWrapping;
     this.groundTex.wrapT = RepeatWrapping;
-    this.groundTex.repeat.set(30, 30);
+    this.groundTex.repeat.set(60, 30);
     this.groundTex.colorSpace = SRGBColorSpace;
     this.drawGroundTexture();
 
-    const groundGeo = new PlaneGeometry(120, 120);
+    // 横に長い戦場（タワーディフェンス）でも端まで地面が続くように広めにとる
+    const groundGeo = new PlaneGeometry(240, 120);
     groundGeo.rotateX(-Math.PI / 2);
     const groundMat = new MeshLambertMaterial({ map: this.groundTex });
     const ground = new Mesh(groundGeo, groundMat);
@@ -380,7 +385,7 @@ export class SceneView {
         tree.add(crown);
 
         tree.position.set(x, 0, z);
-        this.scene.add(tree);
+        this.ringDecorGroup.add(tree);
       } else {
         const rock = new Mesh(cube, rockMat);
         const sx = 1.4 + (i % 3) * 0.6;
@@ -391,9 +396,10 @@ export class SceneView {
         rock.rotation.y = a;
         rock.castShadow = true;
         rock.receiveShadow = true;
-        this.scene.add(rock);
+        this.ringDecorGroup.add(rock);
       }
     }
+    this.scene.add(this.ringDecorGroup);
 
     const lineGeo = new BoxGeometry(0.14, 0.03, 0.9);
     const whiteMat = new MeshBasicMaterial({ color: 0xf8f8f2 });
@@ -433,7 +439,7 @@ export class SceneView {
 
   /** 見えない壁の外側に、左右と奥の山・手前の砂浜と海を作る（カメラの初期位置側は視界を塞がない海にする） */
   private buildFieldBoundary(): void {
-    const { maxX, maxZ } = BATTLE_FIELD_WALLS;
+    const { maxX, maxZ } = this.builtWalls;
     const { rock, rockDark, cap, sand, sea, foam } = this.boundaryMats;
     const cube = new BoxGeometry(1, 1, 1);
     let seed = 1;
@@ -479,10 +485,10 @@ export class SceneView {
     const beachW = maxX * 2 + 40;
     const seaDepth = 60 - maxZ;
     addBox(sand, beachW, 0.04, 2.4, 0, 0.03, maxZ - 1.2).receiveShadow = true;
-    addBox(sea, 120, 0.05, seaDepth, 0, 0.04, maxZ + seaDepth / 2);
+    addBox(sea, beachW + 80, 0.05, seaDepth, 0, 0.04, maxZ + seaDepth / 2);
     addBox(foam, beachW, 0.06, 0.3, 0, 0.045, maxZ + 0.1);
     for (let i = 0; i < 26; i++) {
-      addBox(foam, 1.5 + rand() * 3, 0.06, 0.16, (rand() - 0.5) * 80, 0.045, maxZ + 2 + rand() * 24);
+      addBox(foam, 1.5 + rand() * 3, 0.06, 0.16, (rand() - 0.5) * (maxX * 2 + 30), 0.045, maxZ + 2 + rand() * 24);
     }
 
     this.applyBoundaryTheme(this.currentVisualTheme ?? undefined);
@@ -976,7 +982,7 @@ export class SceneView {
           const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
           if (this.lastPinchDist > 10 && dist > 10) {
             const ratio = this.lastPinchDist / dist;
-            this.camDistance = Math.max(6, Math.min(55, this.camDistance * ratio));
+            this.camDistance = Math.max(6, Math.min(this.maxCamDistance, this.camDistance * ratio));
           }
           this.lastPinchDist = dist;
           this.updateCameraTransform();
@@ -1008,7 +1014,7 @@ export class SceneView {
       'wheel',
       (e) => {
         e.preventDefault();
-        this.camDistance = Math.max(6, Math.min(55, this.camDistance * (1 + e.deltaY * 0.001)));
+        this.camDistance = Math.max(6, Math.min(this.maxCamDistance, this.camDistance * (1 + e.deltaY * 0.001)));
         this.updateCameraTransform();
       },
       { passive: false },
@@ -3259,7 +3265,8 @@ export class SceneView {
     const cos = Math.cos(this.camYaw);
     this.camTarget.x += rightOffset * cos - forwardOffset * sin;
     this.camTarget.z += -rightOffset * sin - forwardOffset * cos;
-    this.camTarget.x = Math.max(-35, Math.min(35, this.camTarget.x));
+    const panX = this.builtWalls.maxX + 10;
+    this.camTarget.x = Math.max(-panX, Math.min(panX, this.camTarget.x));
     this.camTarget.z = Math.max(-35, Math.min(35, this.camTarget.z));
   }
 
@@ -3706,7 +3713,53 @@ export class SceneView {
   }
 
   /** 毎フレームの描画更新 */
+  /** 戦場の壁の位置が変わったら、外側の山と海を作り直し、カメラの動ける範囲を合わせる */
+  private syncFieldWalls(walls: Readonly<FieldWalls> | null): void {
+    if (!walls || (walls.maxX === this.builtWalls.maxX && walls.maxZ === this.builtWalls.maxZ)) return;
+    this.builtWalls = { maxX: walls.maxX, maxZ: walls.maxZ };
+    for (const child of [...this.boundaryGroup.children]) this.boundaryGroup.remove(child);
+    this.buildFieldBoundary();
+    const wide = walls.maxX > BATTLE_FIELD_WALLS.maxX + 5;
+    this.ringDecorGroup.visible = !wide;
+    this.camDistance = Math.min(this.camDistance, this.maxCamDistance);
+    this.updateCameraTransform();
+  }
+
+  /** ズームアウトできる最大の距離（横に長い戦場では広く見渡せるようにする） */
+  private get maxCamDistance(): number {
+    return Math.max(55, this.builtWalls.maxX + 25);
+  }
+
+  /** 影を落とす範囲をカメラの注視点に合わせて動かす（横に長い戦場でも見ている所に影が出るように） */
+  private followShadowCamera(): void {
+    if (this.builtWalls.maxX <= BATTLE_FIELD_WALLS.maxX) {
+      if (this.dirLight.target.position.x !== 0 || this.dirLight.target.position.z !== 0) {
+        this.dirLight.position.set(18, 32, 20);
+        this.dirLight.target.position.set(0, 0, 0);
+        this.dirLight.target.updateMatrixWorld();
+      }
+      return;
+    }
+    // 1m 単位に丸めて、影のちらつきを抑える
+    const x = Math.round(this.camTarget.x);
+    const z = Math.round(this.camTarget.z);
+    this.dirLight.position.set(x + 18, 32, z + 20);
+    this.dirLight.target.position.set(x, 0, z);
+    this.dirLight.target.updateMatrixWorld();
+  }
+
+  /** 横に長い戦場で、カメラを指定の x を中心に広めに見渡す位置へ置く */
+  frameFieldAt(x: number, distance: number): void {
+    this.camTarget.set(x, 0.8, 0);
+    this.camYaw = 0;
+    this.camPitch = 0.62;
+    this.camDistance = Math.min(distance, this.maxCamDistance);
+    this.updateCameraTransform();
+  }
+
   renderFrame(battle: Battle, realDt: number): void {
+    this.syncFieldWalls(battle.world.fieldWalls);
+    this.followShadowCamera();
     this.updateCameraMovement(realDt);
     for (const vis of this.unitVisuals.values()) {
       vis.sync();

@@ -25,10 +25,15 @@ import {
   TD_START_PLAYER_CANNONS,
   TD_BASE_PRICE_START,
   TD_BASE_RANGED_DAMAGE_MUL,
+  TD_BASE_RANGED_DAMAGE_MUL_STAGE2,
+  TD_BASE_STAGE2_RATIO,
+  TD_EARLY_ELITE_LAST_WAVE,
   TD_CORPSE_SECONDS,
   TDRun,
   xpForKill,
   xpForLevel,
+  TD_ENEMY_BASE_X,
+  TD_PLAYER_BASE_X,
 } from '../src/game/RealtimeTDMode';
 import { ROGUE_STARTERS, getSquadSize, getUnitSlotCost } from '../src/game/RogueliteMode';
 import { createSeededRng } from '../src/game/ChallengeMode';
@@ -261,8 +266,8 @@ describe('タワーディフェンスのラン', () => {
 
   it('敵兵より敵基地のほうが近い兵は、基地を攻撃する', () => {
     const { battle, td } = setup();
-    battle.spawnUnit('swordsman', 0, 17, 0);
-    battle.spawnUnit('decoy', 1, -14, 0);
+    battle.spawnUnit('swordsman', 0, TD_ENEMY_BASE_X - 5, 0);
+    battle.spawnUnit('decoy', 1, TD_PLAYER_BASE_X + 8, 0);
     const hp = td.enemyBase!.hp;
     advance(battle, 4);
     expect(td.enemyBase!.hp).toBeLessThan(hp);
@@ -375,5 +380,25 @@ describe('タワーディフェンスのラン', () => {
     const php = player.hp;
     player.takeDamage(80, enemyArcher);
     expect(player.hp).toBeCloseTo(php - 80 * TD_BASE_RANGED_DAMAGE_MUL);
+  });
+
+  it('城の HP が第二段階に入ると、遠距離攻撃は 1/10 しか効かない（近接はそのまま）', () => {
+    const { battle, td } = setup();
+    const base = td.enemyBase!;
+    const archer = battle.spawnUnit('archer', 0, 0, 20);
+    const sword = battle.spawnUnit('swordsman', 0, 0, -20);
+    expect(base.inLowHpStage).toBe(false);
+    base.hp = base.maxHp * TD_BASE_STAGE2_RATIO;
+    expect(base.inLowHpStage).toBe(true);
+    const hp = base.hp;
+    base.takeDamage(100, archer);
+    expect(base.hp).toBeCloseTo(hp - 100 * TD_BASE_RANGED_DAMAGE_MUL_STAGE2);
+    base.takeDamage(100, sword);
+    expect(base.hp).toBeCloseTo(hp - 100 * TD_BASE_RANGED_DAMAGE_MUL_STAGE2 - 100);
+  });
+
+  it('序盤（5分まで）はエリートが控えめ', () => {
+    for (let w = 1; w <= TD_EARLY_ELITE_LAST_WAVE; w++) expect(getWaveEliteCount(w)).toBeLessThanOrEqual(1);
+    expect(TD_ALWAYS_ELITE_FROM_WAVE).toBeGreaterThan(TD_EARLY_ELITE_LAST_WAVE);
   });
 });

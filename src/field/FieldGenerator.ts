@@ -46,17 +46,20 @@ export const FIELD_RESERVED_SPOTS: readonly { x: number; z: number; r: number }[
   { x: -4, z: 8, r: 2.2 },
 ];
 
-const N = FIELD_COLS * FIELD_ROWS;
+/** グリッドのマスの数（グリッドの横幅は戦場によって変わるので毎回求める） */
+function gridSize(): number {
+  return FIELD_COLS * FIELD_ROWS;
+}
 
 /** 生成の途中状態 */
 class Draft {
-  readonly ground = new Uint8Array(N);
-  readonly water = new Uint8Array(N);
-  readonly body = new Int16Array(N).fill(-1);
-  readonly flowX = new Float32Array(N);
-  readonly flowZ = new Float32Array(N);
-  readonly occ = new Uint8Array(N);
-  readonly pitMask = new Uint8Array(N);
+  readonly ground = new Uint8Array(gridSize());
+  readonly water = new Uint8Array(gridSize());
+  readonly body = new Int16Array(gridSize()).fill(-1);
+  readonly flowX = new Float32Array(gridSize());
+  readonly flowZ = new Float32Array(gridSize());
+  readonly occ = new Uint8Array(gridSize());
+  readonly pitMask = new Uint8Array(gridSize());
   readonly bodies: WaterBody[] = [];
   readonly props: PropPlacement[] = [];
   readonly models: PropModel[] = [];
@@ -673,12 +676,12 @@ export function validateDraftArrays(
 ): FieldValidation {
   const reasons: string[] = [];
   const cost = buildCostGrid(ground, water, blocked, pitMask, 0);
-  const pass = new Uint8Array(N);
-  for (let k = 0; k < N; k++) pass[k] = cost[k] < 10 ? 1 : 0;
+  const pass = new Uint8Array(gridSize());
+  for (let k = 0; k < gridSize(); k++) pass[k] = cost[k] < 10 ? 1 : 0;
   const routes = countCrossingRoutes(pass, 2);
   if (routes < 2) reasons.push(`通れる道が ${routes} 本`);
-  const giant = new Uint8Array(N);
-  for (let k = 0; k < N; k++) giant[k] = !blocked[k] && !pitMask[k] && water[k] !== WATER.lava ? 1 : 0;
+  const giant = new Uint8Array(gridSize());
+  for (let k = 0; k < gridSize(); k++) giant[k] = !blocked[k] && !pitMask[k] && water[k] !== WATER.lava ? 1 : 0;
   const giantRoutes = countCrossingRoutes(giant, 4);
   if (giantRoutes < 1) reasons.push('巨体の通れる道がない');
   let left = 0;
@@ -701,7 +704,7 @@ export function validateDraftArrays(
 
 /** 地物の配置から、塞がれているマスを数える */
 export function computeBlocked(props: readonly PropPlacement[], models?: readonly PropModel[]): Uint8Array {
-  const blocked = new Uint8Array(N);
+  const blocked = new Uint8Array(gridSize());
   props.forEach((p, idx) => {
     const model = models?.[idx] ?? buildProp(p.kind, p.seed);
     for (const b of propBlockingBoxes(model, p)) for (const c of cellsOfBox(b)) blocked[c] = Math.min(255, blocked[c] + 1);
@@ -710,7 +713,7 @@ export function computeBlocked(props: readonly PropPlacement[], models?: readonl
 }
 
 export function computePitMask(pits: readonly Waterfall[]): Uint8Array {
-  const mask = new Uint8Array(N);
+  const mask = new Uint8Array(gridSize());
   for (let j = 0; j < FIELD_ROWS; j++) for (let i = 0; i < FIELD_COLS; i++) {
     const x = cellCenterX(i);
     const z = cellCenterZ(j);

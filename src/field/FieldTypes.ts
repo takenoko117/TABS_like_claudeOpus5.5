@@ -5,12 +5,14 @@
 
 /** グリッドの1マスの大きさ（m） */
 export const FIELD_CELL = 1;
-/** グリッドの列数（x 方向） */
-export const FIELD_COLS = 50;
+/** 標準の戦場の半分の幅（m）。グリッドの横幅はこれの2倍 */
+export const FIELD_DEFAULT_HALF_X = 25;
+/** グリッドの列数（x 方向）。setFieldHalfWidth で変わる（タワーディフェンスは横に長い戦場を使う） */
+export let FIELD_COLS = 50;
 /** グリッドの行数（z 方向） */
 export const FIELD_ROWS = 38;
 /** グリッドの左端の x 座標 */
-export const FIELD_MIN_X = -25;
+export let FIELD_MIN_X = -25;
 /** グリッドの奥端の z 座標 */
 export const FIELD_MIN_Z = -19;
 /** ボクセル1個の大きさ（m） */
@@ -80,6 +82,8 @@ export type PropKind =
   | 'house_stone'
   | 'shack'
   | 'wall_stone'
+  /** タワーディフェンスの城壁の1マスぶん（壊れない） */
+  | 'castle_block'
   | 'treasure'
   | 'sanctum_pillar';
 
@@ -136,6 +140,15 @@ export interface FieldLayout {
   attempts: number;
   /** 検証に通らず、地物なしの平原にした場合 true */
   fallback: boolean;
+}
+
+/**
+ * グリッドの横幅を戦場の幅（壁の位置 ±halfX）に合わせる。
+ * 作り済みのフィールドは古い大きさのままなので、フィールドを作る前に呼ぶこと。
+ */
+export function setFieldHalfWidth(halfX: number): void {
+  FIELD_COLS = Math.max(2, Math.round((halfX * 2) / FIELD_CELL));
+  FIELD_MIN_X = -(FIELD_COLS * FIELD_CELL) / 2;
 }
 
 export function cellIndex(i: number, j: number): number {

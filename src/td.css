@@ -69,7 +69,11 @@ body.td-mode #btn-restore-hud {
   box-shadow: var(--shadow-panel);
 }
 .td-base-label { font-weight: 800; font-size: 13px; white-space: nowrap; }
-.td-hp { height: 12px; background: #1a2238; border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden; }
+.td-hp { position: relative; height: 12px; background: #1a2238; border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden; }
+/* 城の HP の段階の境目（半分） */
+.td-hp::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255, 255, 255, 0.55); }
+/* 第二段階：遠距離がほぼ効かない（金の縁で示す） */
+.td-base.stage2 .td-hp { border-color: #ffd54a; box-shadow: 0 0 6px rgba(255, 213, 74, 0.6); }
 .td-hp i { display: block; height: 100%; transition: width 0.2s; }
 /* 自軍は青、敵軍は赤 */
 .td-base.ally .td-hp i { background: linear-gradient(90deg, #3a7be0, #7db4ff); }
