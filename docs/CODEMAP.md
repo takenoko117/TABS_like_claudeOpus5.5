@@ -1,0 +1,209 @@
+# コードマップ（エージェント向けインデックス）
+
+ソースは約 6 万行あり、全部読むとコンテキストを使い切る。**まずこの表で当たりをつけ、`npm run outline` で行番号を取り、必要な範囲だけ読む。**
+行番号はすぐずれるので、この文書には書かない（行数は 2026-11-12 時点の目安）。
+
+```bash
+npm run outline -- src/game/GameApp.ts          # クラス・メソッドの目次と行番号
+npm run outline -- src/game/GameApp.ts rogue    # 名前に rogue を含むものだけ
+npm run outline -- src/style.css                # CSS の見出しコメント
+npm run outline -- src                          # 全ファイルの行数
+```
+
+## 全体の流れ
+
+`index.html` → `src/main.ts`（`GameApp` を作って `requestAnimationFrame` で `tick`）→ `GameApp` が UI・モード・`Battle`・`SceneView` を束ねる。
+
+- **シミュレーション**（Three.js 非依存。テストはここを叩く）: `Battle` が `PhysicsWorld`・`Unit`・`Facility`・`CombatSystem`・`FieldRuntime` を 1 ステップずつ進める。モード固有の処理は `BattleRules`（`RogueliteRules` / `TDBattleRules`）と `BattleOpening`（`RogueGateSequence`）を `Battle` に差し込む。
+- **描画**: `SceneView` が毎フレーム `Battle` の状態を読んで Three.js に反映。兵士の見た目は `VoxelCharacterVisual`（`VoxelModel.ts`）。
+- **UI**: ほとんどが `GameApp.ts` に直書きの DOM。TD モードの HUD だけ `ui/RealtimeTDHud.ts` に分離。CSS は `style.css`（全般・ローグライト）と `td.css`（TD）。
+- **データ定義**: 兵種 `units/UnitTypes.ts`、施設・レリック・ゲート `facilities/FacilityTypes.ts`、アーケード面 `game/ArcadeStages.ts`。
+
+## ファイル一覧
+
+### src/game — モードとゲーム進行
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `GameApp.ts` | 5234 | **巨大**。全モードの UI・入力・モード切替・戦闘の開始/終了・HUD。下の「GameApp の中身」を参照 |
+| `Battle.ts` | 766 | 1 戦闘のシミュレーション本体。ユニット/施設の生成・削除、`step`、勝敗判定、ステージのハザード |
+| `RogueliteMode.ts` | 2548 | **巨大**。ローグライトのルール・ラン・報酬・ゲート。下の「RogueliteMode の中身」を参照 |
+| `RealtimeTDMode.ts` | 952 | TD モード。定数（`TD_*`）、ウェーブ・資金・経験値の計算関数、`TDRun`（ラン状態）、`TDBattleRules` |
+| `TDTerrain.ts` | 148 | TD の地形を 2 分ごとに作り直す処理 |
+| `RogueJackpot.ts` | 285 | 戦闘中の宝箱ドロップ判定とリール報酬（ローグライト・TD 共通） |
+| `ArcadeStages.ts` | 2302 | アーケード全 40 面のデータ（`ARCADE_STAGES` が大半）と星評価・セーブ |
+| `ChallengeMode.ts` | 384 | チャレンジモード（敵編成の生成、スコア、ベスト記録） |
+| `VersusMode.ts` | 264 | 友人対戦（配置ゾーン、`VersusSession`） |
+| `BattleStats.ts` / `DamageStats.ts` | 55 / 52 | リザルトの戦績集計 |
+| `LineupStore.ts` | 69 | 編成の localStorage 保存 |
+| `Settings.ts` | 94 | 設定の保存・`AdaptiveQuality`（自動画質） |
+
+### src/units — 兵士
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `UnitTypes.ts` | 1139 | **全兵種のステータス定義** `UNIT_TYPES`、`UnitTypeId`、チーム色、カテゴリ |
+| `Unit.ts` | 3860 | **巨大**。1 体の兵士（ラグドール＋筋肉＋AI＋攻撃）。下の「Unit の中身」を参照 |
+| `Skeleton.ts` | 99 | 関節 `J` と骨の拘束定義 |
+| `Mounting.ts` | 60 | 騎乗（乗り物と乗り手の組み合わせ） |
+| `HayatoHead.ts` | 37 | 特殊兵種「はやと」の頭部の位置計算 |
+
+### src/combat・src/physics・src/facilities
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `combat/CombatSystem.ts` | 1552 | 当たり判定・ダメージ・投射物・爆発・雷・特殊技（使徒のビームなど） |
+| `physics/PhysicsWorld.ts` | 573 | 自前 Verlet 物理（粒子・拘束・地面・障害物・壁） |
+| `physics/Particle.ts` / `Constraint.ts` / `SpatialHash.ts` | 小 | 物理の部品 |
+| `facilities/FacilityTypes.ts` | 443 | 施設・レリック・ゲートの定義と、レベル別の数値テーブル |
+| `facilities/Facility.ts` | 662 | 施設の実体（兵舎・トーテム・砲台・ゲートの更新処理、`applyStatGate`） |
+
+### src/field — ローグライト/TD の手続き生成フィールド（仕様: `FIELD_PROCGEN_SPEC.md`）
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `FieldTypes.ts` | 180 | グリッド定数・地面/水の ID・`FieldLayout` |
+| `FieldGenerator.ts` | 817 | バイオームごとの地形生成と検証 `generateField` |
+| `FieldRuntime.ts` | 1340 | 戦闘中の地形（破壊・炎上・水流・溶岩・経路探索・ユニットの舵取り） |
+| `FieldPathing.ts` | 213 | コストグリッドと距離場 |
+| `PropBuilder.ts` | 453 | 木・家などの小物のボクセル形状 |
+| `BiomeDefs.ts` | 192 | バイオームと特性の定義、ルート選択肢 |
+| `FieldRng.ts` | 59 | 乱数・ノイズ |
+
+### src/render — 描画（Three.js）
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `VoxelModel.ts` | 6817 | **最大**。兵種ごとのボクセルモデル生成と `VoxelCharacterVisual`（見た目の同期・部位破壊）、施設モデル。下の「VoxelModel の中身」を参照 |
+| `SceneView.ts` | 3758 | **巨大**。シーン・カメラ・入力・地形描画・エフェクト・HP バー・ローグライトのハート |
+| `FieldRenderer.ts` | 446 | 手続き生成フィールドの描画 |
+| `DamageOverlay.ts` | 242 | ダメージ数値の表示 |
+| `UnitPreviews.ts` | 405 | カード上で動くユニットのミニプレビュー |
+| `DragonModel.ts` / `HayatoHeadModel.ts` / `TanimonArmModel.ts` / `YamamuronAwakenedModel.ts` | 200〜640 | 特殊兵種の専用モデル |
+| `DroppedChests.ts` / `JackpotChest3D.ts` / `JackpotReels3D.ts` / `JackpotIcons.ts` | 200〜470 | 宝箱とリールの 3D 演出 |
+| `XpOrbs.ts` | 184 | TD の経験値オーブ |
+| `EnergyGateVisual.ts` / `RewardVoxelModels.ts` / `TitleLogo3D.ts` / `FieldMinimap.ts` | 小 | ゲートの膜、報酬モデル、タイトルロゴ、ミニマップ画像 |
+
+### src/ui・src/audio
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `ui/RealtimeTDHud.ts` | 935 | TD モードの HUD 全部（上部バー・配置バー・強化 3 択・チュートリアル・結果） |
+| `ui/UnitIcons.ts` | 1093 | 兵種・施設の SVG アイコン（ほぼデータ） |
+| `ui/JackpotRoulette.ts` / `JackpotRewardFx.ts` | 462 / 269 | 宝箱開封の進行と報酬演出 |
+| `ui/UnitDetailHelper.ts` | 231 | 兵種詳細パネルの表示データ |
+| `ui/VoxelText.ts` | 303 | 見出し文字をボクセル風に描く |
+| `ui/WarRoomFx.ts` / `WarRoomIcons.ts` | 小 | ローグライト作戦室の演出とアイコン |
+| `ui/TutorialGuide.ts` | 95 | 初回プレイの案内 |
+| `audio/SoundManager.ts` | 1878 | 効果音（WebAudio で合成）。`playEffect` が大半 |
+| `audio/MusicPlayer.ts` / `MusicPatterns.ts` | 小 | BGM |
+
+### その他
+
+- `src/style.css`（5450 行）: 全 UI。前半が共通 UI・スマホ対応・ダメージ数字、「ローグライト」見出し以降（全体の後ろ 6 割）がローグライト（作戦室・報酬・宝箱演出）。`npm run outline -- src/style.css` で見出しを確認する
+- `src/td.css`（711 行）: TD モード
+- `index.html`: 画面の DOM の骨組み（id 付き要素を `GameApp` が取得）
+- `preview.html` + `src/preview.ts`: 兵種モデル単体の確認ページ（`?unit=&angle=&mode=`）
+- `tests/*.test.ts`: vitest。ファイル名がほぼ対象モジュールに対応（`roguelite.test.ts` → `RogueliteMode.ts`、`realtimeTD.test.ts` → `RealtimeTDMode.ts` など）
+
+## 巨大ファイルの中身（メソッド名で grep する）
+
+### GameApp の中身（`src/game/GameApp.ts`）
+
+メソッド名の接頭辞でモードが分かれている。`npm run outline -- src/game/GameApp.ts <接頭辞>` で絞り込める。
+
+| 領域 | 主なメソッド |
+| --- | --- |
+| 初期化・UI 構築 | `constructor`, `buildUI`（巨大）, `bindSettingsPanel`, `bindCanvasInteraction` |
+| タイトル・チュートリアル | `showTitleScreen`, `leaveTitleScreen`, `enterPlayStyle`, `startTutorial` |
+| 配置（全モード共通） | `checkPlacement`, `placeAt`, `spawnRecord(s)`, `removeNearestUnitAt`, `undoLastPlacement`, `persistPlayerLineup` |
+| 兵種バー・詳細 | `renderUnitCards`, `selectPlaceable`, `updateUnitDetailOverlay` |
+| アーケード | `loadArcadeStage`, `renderArcadeStageButtons`, `renderStageBriefing`, `renderEnemyChips` |
+| サンドボックス | `loadPreset`, `PRESETS`（ファイル冒頭の定数） |
+| TD モード | `enterTDMode`, `startTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
+| チャレンジ | `enterChallengeMode`, `loadChallengeRound`, `handleChallengeBattleEnd`, `renderChallengePanel` |
+| ローグライト | `enterRogueliteMode`, `startRogueRun`, `loadRogueRound`, `showRogueWarRoom`（作戦室）, `showRogueRewards`, `handleRogueBattleEnd`, `renderRoguePanel`, `showRogueModal` |
+| 宝箱（共通） | `onRogueEnemyKilled`, `openDroppedChest`, `applyJackpotRewards`, `playJackpotRewardFx` |
+| 友人対戦 | `enterVersusMode`, `syncVersusUI`, `confirmVersusTurn` |
+| 戦闘の開始/終了 | `startBattle`, `returnToPlacement`, `handleBattleEnd`, `startFinishSequence`, `renderBattleStats` |
+| 毎フレーム | `tick`, `updateHUD`, `syncPhaseUI`, `updateRogueBattleHud` |
+
+### RogueliteMode の中身（`src/game/RogueliteMode.ts`）
+
+ファイル内の並び順（上から）:
+
+1. 属性タグとシナジー: `TAG_INFO`, `UNIT_TAGS`, `countTags`, ゲート/パッシブレリックの数値定数
+2. `class RogueliteRules`（戦闘中のルール: シナジー効果、連鎖爆発、雷連鎖、復活、`onDamage`）
+3. ラン全体の定数 `ROGUE_*`（ラウンド数・ゴールド・枠・価格）と計算関数 `getRogue*` / `get*Price`
+4. 敵編成: `generateRogueEnemyLineup`, `applyRogueEnemyLevels`, `getRogueEnemyPool`
+5. スターター `ROGUE_STARTERS`、レリックの出現表 `ROGUE_RELIC_POOL`、レア度
+6. `class RogueliteRun`（ラン状態: デッキ・購入・報酬・保存用 `toState/fromState`）
+7. 報酬生成 `generateRewardOptions` / `applyReward`、セーブ `loadRogueRun` / `saveRogueRun`
+8. レリック説明文 `relicDescription` / `gateEffectText`
+9. `class RogueGateSequence`（開戦時のゲート通過演出）と `applyGateEnchant`
+10. 自動配置 `generateRogueFormation`
+
+### Unit の中身（`src/units/Unit.ts`）
+
+| 領域 | 主なメソッド |
+| --- | --- |
+| 生成・毎ステップ | `constructor`, `update` |
+| AI（標的選び・移動） | `think`, `findNearestEnemy`, `engageDistance`, `findNearestEnemyFacility` |
+| 攻撃 | `onWindupStart`, `updateAttack`, `onStrikeStart`（巨大）, `updateStrikeContinuous`, `shootArrow`, `throwBomb` |
+| 兵種固有の技 | `updateSpecialMechanics`（巨大な分岐）, `updateGrabChain`/`tanimon*`（たにもん）, `fireMouthLaser`（はやと）, `updateYamamuronRage`/`fireVolcanoRock`（やまむろん）, `executeIaidoDash`, `triggerKawari`, `triggerDeoxysTeleport` |
+| 体の制御 | `applyMuscles`, `computePose`（巨大）, `applyMountBinding` |
+| ダメージ | `takeDamage`, `heal`, `absorbRangedDamage`, `die` |
+
+### SceneView の中身（`src/render/SceneView.ts`）
+
+| 領域 | 主なメソッド |
+| --- | --- |
+| シーン構築・テーマ | `setupLights`, `setupEnvironment`, `setStageTheme`, `setStageTerrain`, `drawGroundTexture` |
+| 入力・カメラ | `setupInputListeners`, `screenToGround`, `updateCameraMovement`, `updateAutoCamera`, `playFinisherCamera`, `addCameraShake` |
+| 配置ゴースト | `updatePlacementGhost`, `setVersusZones` |
+| ユニット・施設の見た目 | `addUnitVisual`, `addFacilityVisual`, `syncFacilities` |
+| エフェクト | `spawnCombatEffect`（**約 1400 行の巨大 switch**。効果の種類名で grep する）, `spawnHitEffect`, `updateFxAndDynamicVisuals`, `syncArrows` |
+| HP バー・ハート | `updateHpBars`, `syncRogueHearts`, `renderRogueHearts` |
+| 毎フレーム | `renderFrame` |
+
+### VoxelModel の中身（`src/render/VoxelModel.ts`）
+
+| 領域 | 主な関数 |
+| --- | --- |
+| 兵種モデル生成 | `buildHeadTemplate`（約 700 行）, `buildTorsoTemplate`（約 900 行）, `buildWeaponGeometry`, `buildOffhandGeometry`, `getUnitTemplateSet`。中は `type.id` ごとの分岐なので兵種 ID で grep する |
+| 投射物 | `getProjectileGeometry` |
+| `class VoxelCharacterVisual` | `sync`（毎フレーム）, 兵種別 `syncDragon` / `syncTank` / `syncRamiel` / `syncHayato` など, 部位破壊 `applyHitDamage` / `shatterPart` |
+| 施設・ハート | `buildFacilityVoxelGrid`, `createFacilityMesh`, `buildHeartVoxelGrid` |
+
+## やりたいこと → 見る場所
+
+| やりたいこと | 見る場所 |
+| --- | --- |
+| 兵種を追加する | `UnitTypes.ts`（`UnitTypeId` と `UNIT_TYPES`）→ 見た目 `VoxelModel.ts`（`buildHeadTemplate` / `buildTorsoTemplate`）→ アイコン `UnitIcons.ts` `getUnitIconSvg` → ローグライトのタグ `RogueliteMode.ts` `UNIT_TAGS`（型で必須）→ 特殊技なら `Unit.ts` `updateSpecialMechanics` |
+| 兵種の数値調整 | `UnitTypes.ts` の該当エントリ |
+| 攻撃・エフェクトを足す | `CombatSystem.ts`（`CombatEffectEvent` 型）→ 描画 `SceneView.ts` `spawnCombatEffect` → 音 `SoundManager.ts` `playEffect` |
+| 施設・レリック・ゲート | `FacilityTypes.ts`（定義と数値）→ `Facility.ts`（挙動）→ ローグライトでの説明 `RogueliteMode.ts` `relicDescription` / `gateEffectText` |
+| アーケード面の追加・修正 | `ArcadeStages.ts` `ARCADE_STAGES` |
+| ローグライトの経済・難易度 | `RogueliteMode.ts` の `ROGUE_*` 定数と `getRogue*` 関数 |
+| ローグライトの画面 | `GameApp.ts` の `showRogue*` / `renderRogue*` ＋ `style.css` 後半 |
+| TD モードの数値 | `RealtimeTDMode.ts` 冒頭の `TD_*` 定数 |
+| TD モードの画面 | `RealtimeTDHud.ts` ＋ `td.css` |
+| 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
+| 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
+| 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |
+
+## 仕様書（ルート直下の .md）
+
+最新の決定は各仕様書の末尾の「決定事項」「実装メモ」節にあることが多い。必要なものだけ読む。
+
+| ファイル | 内容・状態 |
+| --- | --- |
+| `REALTIME_TD_SPEC.md` | TD モード（実装済み・調整中。§12 が優先） |
+| `ROGUELITE_V3_SPEC.md` | ローグライト現行版（デッキ＋ゴールド強化。実装済み） |
+| `ROGUELITE_DIFFICULTY_SPEC.md` | 難易度階層・エンドレス |
+| `RELIC_UPDATE_SPEC.md` | レリック変更 5 件 |
+| `ROGUELITE_UI_RENEWAL_SPEC.md` | ローグライト UI 刷新 |
+| `FIELD_PROCGEN_SPEC.md` | フィールド手続き生成（実装済み） |
+| `ROGUELITE_V2_NOTES.md` / `ROGUELITE_REWORK_SPEC.md` / `ROGUELITE_REVIEW_1110.md` | 旧版の経緯（通常は読まなくてよい） |
+| `チャレンジモード仕様.MD` | チャレンジモードのドラフト |
+| `README.md` | プレイヤー向けの遊び方（機能を変えたら更新する） |

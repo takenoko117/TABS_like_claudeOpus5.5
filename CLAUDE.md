@@ -1,3 +1,42 @@
+# エクスブロックスウォー（EXBLOCKS WAR）
+
+TABS 風の物理バトルシミュレーター。TypeScript + Vite + Three.js、物理は自前の Verlet 積分。ボクセルのラグドールを関節のばね（筋肉）で動かす。
+main へ push すると GitHub Actions（`.github/workflows/deploy.yml`）で GitHub Pages に自動デプロイされる。
+
+## コマンド
+
+```bash
+npm test                # vitest（ブラウザ不要。実装後の確認はこれと型チェックで行う）
+npm run typecheck       # tsc --noEmit
+npm run outline -- <ファイル> [絞り込み]   # クラス・メソッドの目次と行番号
+npm run dev             # 開発サーバー（.claude/launch.json の "dev"、port 5173）
+```
+
+## コードの読み方（コンテキスト節約のため必ず守る）
+
+ソースは約 6 万行あり、1000 行を超えるファイルが 10 本以上ある。**大きなファイルを頭から全部読まない。**
+
+1. まず [docs/CODEMAP.md](docs/CODEMAP.md) で、どのファイルのどのメソッドを見るか当たりをつける。
+2. `npm run outline -- <ファイル> [名前の一部]` か Grep で行番号を取る。
+3. Read は `offset` / `limit` で必要な範囲（目安 200 行以内）だけ読む。
+4. 特に次のファイルは全体を読まない: `render/VoxelModel.ts`（6800 行）、`style.css`（5400 行）、`game/GameApp.ts`（5200 行）、`units/Unit.ts`（3900 行）、`render/SceneView.ts`（3800 行）、`game/RogueliteMode.ts`（2500 行）、`game/ArcadeStages.ts`（2300 行）、`audio/SoundManager.ts`（1900 行）、`combat/CombatSystem.ts`（1600 行）。
+5. `package-lock.json`・`dist/`・`node_modules/` は読まない。仕様書（ルート直下の `*_SPEC.md` など）は作業に関係するものだけ読む。
+6. 広く探す必要があるときは Explore サブエージェントに任せ、結論だけ受け取る。
+
+### インデックスの更新
+
+- ファイルの追加・削除・分割、役割の大きな変化があったら、同じ作業の中で `docs/CODEMAP.md` を更新する。
+- CODEMAP には行番号を書かない（すぐずれる）。メソッド名・定数名で書く。
+
+## コーディング規約
+
+- コード内のコメントはすべて日本語で書く。
+- コミットメッセージは日本語。既存の形式に合わせ「TDモード: ○○を追加」のようにモード名を先頭に付ける。
+- 計画・進捗報告も日本語。
+- ゲームの仕組み（シミュレーション）は Three.js に依存させず、`tests/` から vitest で検証できるようにする。数値の変更や新ルールにはテストを足す。
+- 遊び方が変わる変更をしたら `README.md` も更新する。
+- 新しいモードの数値は、各モードのファイル冒頭の定数（`TD_*`、`ROGUE_*` など）にまとめる。
+
 # 作業ルール
 
 ## 実装後の GitHub への push 確認
