@@ -11,7 +11,16 @@ ALLOWED_ORIGINS = ""
 name = "ROOMS"
 class_name = "VersusRoomObject"
 
+# 募集中の部屋の一覧（全体で1つ）
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "LobbyObject"
+
 # 無料プランでは SQLite 版の Durable Object を使う
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["VersusRoomObject"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["LobbyObject"]

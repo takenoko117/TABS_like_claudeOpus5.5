@@ -12,7 +12,7 @@ import {
 } from 'three';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Unit } from '../units/Unit';
-import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
+import { UNIT_TYPES, type Team, type UnitTypeId } from '../units/UnitTypes';
 import { createRewardPropMesh } from './RewardVoxelModels';
 import { VoxelCharacterVisual } from './VoxelModel';
 
@@ -59,8 +59,9 @@ export class UnitPreviewActor {
   constructor(
     readonly id: UnitTypeId,
     private readonly still = false,
+    team: Team = 0,
   ) {
-    this.unit = new Unit(this.world, UNIT_TYPES[id], 0, new Vector3(0, 0, 0), IDLE_FACING);
+    this.unit = new Unit(this.world, UNIT_TYPES[id], team, new Vector3(0, 0, 0), IDLE_FACING);
     this.swingTimer = 1.5 + Math.random() * 3.5;
     for (let i = 0; i < SETTLE_STEPS; i++) this.step(STEP);
   }
@@ -217,6 +218,8 @@ export class UnitPreviews {
   private root: HTMLElement | null = null;
   private frameTimer = 0;
   private hoveredId: string | null = null;
+  /** モデルの陣営（配色）。TD オンライン対戦のゲスト（赤）は 1 */
+  private team: Team = 0;
 
   constructor() {
     this.scene.add(new AmbientLight(0xffffff, 1.5));
@@ -285,6 +288,21 @@ export class UnitPreviews {
     this.slots = [];
   }
 
+  /** モデルの陣営（配色）を変える。変わったら作ってあるモデルを捨てて作り直す */
+  setTeam(team: Team): void {
+    if (team === this.team) return;
+    this.team = team;
+    this.setHovered(null);
+    for (const model of this.models.values()) {
+      this.scene.remove(model.object);
+      model.object.traverse((o) => {
+        if (o instanceof Mesh) o.geometry.dispose();
+      });
+    }
+    this.models.clear();
+    for (const s of this.slots) s.host.classList.remove('ready');
+  }
+
   /** モデルに反応させる（ゴールドなどの回転） */
   kick(id: string): void {
     this.models.get(id)?.kick();
@@ -311,7 +329,7 @@ export class UnitPreviews {
   }
 
   private createUnitModel(id: UnitTypeId): PreviewModel {
-    const actor = new UnitPreviewActor(id, this.still);
+    const actor = new UnitPreviewActor(id, this.still, this.team);
     const visual = new VoxelCharacterVisual(actor.unit);
     visual.sync();
     this.scene.add(visual.group);
@@ -329,7 +347,7 @@ export class UnitPreviews {
 
   /** ゴールドやレリックのモデル。正面をカメラへ向けて左右にゆっくり揺らし、触れると1回転する */
   private createPropModel(key: string): PreviewModel {
-    const mesh = createRewardPropMesh(key);
+    const mesh = createRewardPropMesh(key, this.team);
     this.scene.add(mesh);
     const framing = this.frame(mesh);
     const facing = Math.atan2(VIEW_DIR.x, VIEW_DIR.z);

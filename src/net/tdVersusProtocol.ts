@@ -12,6 +12,43 @@ export const TD_VS_IDLE_MS = 3 * 60 * 1000;
 export const TD_VS_ROOM_NAME_MAX = 20;
 /** 1 ターンに送れる操作の最大数 */
 export const TD_VS_MAX_COMMANDS = 16;
+/** 募集中の部屋の一覧を取り直す間隔（ミリ秒） */
+export const TD_VS_LIST_POLL_MS = 3000;
+/** 一覧に出す部屋の最大数 */
+export const TD_VS_LIST_MAX = 30;
+/** 部屋の情報がこの時間更新されなければ一覧から外す（放置で閉じる時間＋余裕。ミリ秒） */
+export const TD_VS_LIST_STALE_MS = TD_VS_IDLE_MS + 30 * 1000;
+/** 一覧に出ている部屋が、この間隔ごとに「まだある」と知らせ直す（ミリ秒） */
+export const TD_VS_LIST_REFRESH_MS = 30 * 1000;
+
+/** 入室のしかた。create: 部屋を作る（同じ名前の部屋に人がいれば断る） / join: 一覧から入る（部屋がなければ断る） */
+export type TDVersusJoinIntent = 'create' | 'join';
+
+/** 募集中の部屋の一覧の 1 行 */
+export interface TDVersusRoomListing {
+  /** 部屋名（normalizeRoomName 済み） */
+  name: string;
+  /** 部屋にいる人数 */
+  players: number;
+}
+
+/** 部屋の一覧（GET /rooms の応答）を検証する。形が合わなければ null */
+export function parseRoomList(raw: unknown): TDVersusRoomListing[] | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const rooms = (raw as { rooms?: unknown }).rooms;
+  if (!Array.isArray(rooms)) return null;
+  const out: TDVersusRoomListing[] = [];
+  for (const r of rooms) {
+    if (!r || typeof r !== 'object') continue;
+    const { name, players } = r as Record<string, unknown>;
+    if (typeof name !== 'string' || typeof players !== 'number') continue;
+    const normalized = normalizeRoomName(name);
+    if (!normalized) continue;
+    out.push({ name: normalized, players });
+    if (out.length >= TD_VS_LIST_MAX) break;
+  }
+  return out;
+}
 
 /** 部屋名を整える（前後の空白を除き、英字は小文字にそろえる）。使えない名前なら null */
 export function normalizeRoomName(raw: string): string | null {
@@ -85,7 +122,7 @@ export type TDVersusServerMessage =
   /** 決着（winner は勝った席。null は引き分け） */
   | { t: 'result'; winner: number | null; reason: TDVersusEndReason }
   /** 入室できなかった・不正な操作 */
-  | { t: 'error'; code: 'full' | 'bad_name' | 'bad_message' }
+  | { t: 'error'; code: 'full' | 'bad_name' | 'bad_message' | 'exists' | 'not_found' }
   /** 放置で部屋が閉じられた */
   | { t: 'closed'; reason: 'idle' };
 

@@ -80,6 +80,11 @@ body.td-mode #btn-restore-hud {
 .td-base.enemy .td-hp i { background: linear-gradient(90deg, #ff8a65, #e0473a); margin-left: auto; }
 .td-base.ally { border-color: rgba(125, 180, 255, 0.5); }
 .td-base.enemy { border-color: rgba(255, 120, 100, 0.5); }
+/* 対戦のゲスト（赤）は自分の城が赤、相手の城が青 */
+.td-red-side .td-base.ally .td-hp i { background: linear-gradient(90deg, #e0473a, #ff8a65); }
+.td-red-side .td-base.enemy .td-hp i { background: linear-gradient(90deg, #7db4ff, #3a7be0); }
+.td-red-side .td-base.ally { border-color: rgba(255, 120, 100, 0.5); }
+.td-red-side .td-base.enemy { border-color: rgba(125, 180, 255, 0.5); }
 .td-base.danger { animation: td-danger 0.8s infinite; }
 .td-hp-num { font-size: 13px; min-width: 52px; text-align: right; }
 @keyframes td-danger { 50% { border-color: #ff5d73; } }
@@ -556,6 +561,33 @@ body.td-mode #btn-restore-hud {
   font: 700 16px/1.2 var(--font-ui);
 }
 .td-vs-room:focus { outline: none; border-color: var(--gold); }
+/* ロビー: 左に部屋を作る欄、右に募集中の部屋の一覧 */
+.td-vs-lobby { display: grid; grid-template-columns: 1fr 1.3fr; gap: 14px; margin-top: 6px; }
+.td-vs-lobby-col h3 { display: flex; align-items: center; gap: 8px; }
+.td-vs-rooms { min-height: 96px; max-height: 260px; overflow-y: auto; }
+.td-vs-rooms-empty { margin: 8px 0; color: var(--sub); font-size: 13px; line-height: 1.5; }
+.td-vs-room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.td-vs-room-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 2px solid rgba(255, 120, 100, 0.55);
+  background: #1b1424;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+}
+.td-vs-room-card:hover { border-color: var(--gold); filter: brightness(1.15); }
+.td-vs-room-card:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4); }
+.td-vs-room-icon { font-size: 26px; }
+.td-vs-room-card b { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-vs-room-card small { color: #ffb4a6; font-size: 11px; }
+@media (max-width: 640px) {
+  .td-vs-lobby { grid-template-columns: 1fr; }
+}
 .td-vs-note { margin: 8px 0 0; color: var(--sub); font-size: 12px; }
 .td-vs-message { margin: 8px 0 0; color: var(--boss); font-size: 13px; font-weight: 700; }
 .td-vs-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }

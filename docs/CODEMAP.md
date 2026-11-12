@@ -36,7 +36,7 @@ npm run outline -- src                          # 全ファイルの行数
 | `RogueJackpot.ts` | 285 | 戦闘中の宝箱ドロップ判定とリール報酬（ローグライト・TD 共通） |
 | `ArcadeStages.ts` | 2302 | アーケード全 40 面のデータ（`ARCADE_STAGES` が大半）と星評価・セーブ |
 | `ChallengeMode.ts` | 384 | チャレンジモード（敵編成の生成、スコア、ベスト記録） |
-| `VersusMode.ts` | 264 | 友人対戦（配置ゾーン、`VersusSession`） |
+| `VersusMode.ts` | 264 | 友人対戦の「ローカル対戦」（配置ゾーン、`VersusSession`）。「オンライン対戦」は TD の対戦（`TDDuel` など）を使う |
 | `BattleStats.ts` / `DamageStats.ts` | 55 / 52 | リザルトの戦績集計 |
 | `LineupStore.ts` | 69 | 編成の localStorage 保存 |
 | `Settings.ts` | 94 | 設定の保存・`AdaptiveQuality`（自動画質） |
@@ -92,7 +92,7 @@ npm run outline -- src                          # 全ファイルの行数
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
 | `ui/RealtimeTDHud.ts` | 1021 | TD モードの HUD 全部（上部バー・配置バー・強化 3 択・チュートリアル・結果） |
-| `ui/TDVersusUi.ts` | 182 | TD オンライン対戦のロビー（席の色）・試合中の対戦パネル（相手の城・通信待ち・ずれ）・リザルトの HTML |
+| `ui/TDVersusUi.ts` | 220 | TD オンライン対戦のロビー（部屋の作成・募集中の部屋の一覧 `renderVersusRoomList`・席の色）・試合中の対戦パネル（相手の城・通信待ち・ずれ）・リザルトの HTML |
 | `ui/UnitIcons.ts` | 1093 | 兵種・施設の SVG アイコン（ほぼデータ） |
 | `ui/JackpotRoulette.ts` / `JackpotRewardFx.ts` | 462 / 269 | 宝箱開封の進行と報酬演出 |
 | `ui/UnitDetailHelper.ts` | 231 | 兵種詳細パネルの表示データ |
@@ -106,10 +106,11 @@ npm run outline -- src                          # 全ファイルの行数
 
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
-| `src/net/tdVersusProtocol.ts` | 158 | 通信メッセージの型・検証（試合中の操作 `TDDuelCommand`・ハッシュ・決着）、部屋名の整形、定数（放置で消すまでの `TD_VS_IDLE_MS` など）。クライアントとサーバーで共用 |
-| `src/net/TDVersusClient.ts` | 92 | WebSocket の接続。URL はビルド時の `VITE_TD_VS_SERVER`（未設定の開発時は `ws://localhost:8787`） |
-| `server/src/roomLogic.ts` | 148 | 部屋のルール `TDVersusRoom`（入室・準備・開始・操作とハッシュの中継・決着・放置判定）。席 0 がホスト。Cloudflare 非依存で `tests/tdVersus.test.ts` から検証 |
-| `server/src/index.ts` | 138 | Cloudflare Worker と Durable Object `VersusRoomObject`（部屋名ごとに 1 つ、アラームで放置部屋を消す）。手順は `server/README.md` |
+| `src/net/tdVersusProtocol.ts` | 158 | 通信メッセージの型・検証（試合中の操作 `TDDuelCommand`・ハッシュ・決着）、部屋名の整形、部屋の一覧の行 `TDVersusRoomListing` と検証 `parseRoomList`、入室のしかた `TDVersusJoinIntent`、定数（放置で消すまでの `TD_VS_IDLE_MS`、一覧の取り直し間隔 `TD_VS_LIST_POLL_MS` など）。クライアントとサーバーで共用 |
+| `src/net/TDVersusClient.ts` | 92 | WebSocket の接続（`open` に部屋を作る・一覧から入るの区別を付ける）と、募集中の部屋の一覧の取得 `fetchTDVersusRooms`。URL はビルド時の `VITE_TD_VS_SERVER`（未設定の開発時は `ws://localhost:8787`） |
+| `server/src/roomLogic.ts` | 148 | 部屋のルール `TDVersusRoom`（入室〈作成・一覧からの入室の区別〉・募集中かどうか `listing`・準備・開始・操作とハッシュの中継・決着・放置判定）。席 0 がホスト。Cloudflare 非依存で `tests/tdVersus.test.ts` から検証 |
+| `server/src/roomDirectory.ts` | 105 | 募集中の部屋の一覧 `RoomDirectory`（部屋からの知らせ・古い部屋の削除）と、知らせ直す判定 `shouldReport`。`tests/tdVersus.test.ts` から検証 |
+| `server/src/index.ts` | 230 | Cloudflare Worker と Durable Object `VersusRoomObject`（部屋名ごとに 1 つ、アラームで放置部屋を消す）・`LobbyObject`（部屋の一覧、`GET /rooms`）。手順は `server/README.md` |
 
 ### その他
 
@@ -134,11 +135,11 @@ npm run outline -- src                          # 全ファイルの行数
 | アーケード | `loadArcadeStage`, `renderArcadeStageButtons`, `renderStageBriefing`, `renderEnemyChips` |
 | サンドボックス | `loadPreset`, `PRESETS`（ファイル冒頭の定数） |
 | TD モード | `enterTDMode`, `startTDRun`, `beginTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
-| TD オンライン対戦 | `tdVersus`（セッションとイベント）, `showTDVersusLobby`, `joinTDVersusRoom`, `startTDVersusRun`（`TDDuel` と `TDLockstep` を作る）, `handleTDVersusEnd`, `showTDVersusResult`, `disposeTDDuel`, `isTDVersusLive`（対戦中は `tick` で `tdLockstep.advance`） |
+| TD オンライン対戦 | `enterTDVersusMode`（友人対戦→オンライン対戦の入口）, `tdVersus`（セッションとイベント）, `showTDVersusLobby`, `refreshTDVersusRooms`/`startTDVersusRoomPolling`（募集中の部屋の一覧）, `joinTDVersusRoom`, `startTDVersusRun`（`TDDuel` と `TDLockstep` を作る）, `handleTDVersusEnd`, `showTDVersusResult`, `disposeTDDuel`, `isTDVersusLive`（対戦中は `tick` で `tdLockstep.advance`） |
 | チャレンジ | `enterChallengeMode`, `loadChallengeRound`, `handleChallengeBattleEnd`, `renderChallengePanel` |
 | ローグライト | `enterRogueliteMode`, `startRogueRun`, `loadRogueRound`, `showRogueWarRoom`（作戦室）, `showRogueRewards`, `handleRogueBattleEnd`, `renderRoguePanel`, `showRogueModal` |
 | 宝箱（共通） | `onRogueEnemyKilled`, `openDroppedChest`, `applyJackpotRewards`, `playJackpotRewardFx` |
-| 友人対戦 | `enterVersusMode`, `syncVersusUI`, `confirmVersusTurn` |
+| 友人対戦 | `showFriendChooser`（タイトルでローカル／オンラインを選ぶ）, ローカル対戦は `enterVersusMode`, `syncVersusUI`, `confirmVersusTurn` |
 | 戦闘の開始/終了 | `startBattle`, `returnToPlacement`, `handleBattleEnd`, `startFinishSequence`, `renderBattleStats` |
 | 毎フレーム | `tick`, `updateHUD`, `syncPhaseUI`, `updateRogueBattleHud` |
 

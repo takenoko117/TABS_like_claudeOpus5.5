@@ -18,7 +18,7 @@
       <div class="title-inner">
         <h1 class="title-logo"><span class="voxel-sr">エクスブロックスウォー EXBLOCKS WAR</span></h1>
         <p class="title-tagline">ボクセル軍団が爆発四散する物理バトル</p>
-        <div class="title-modes">
+        <div id="title-main-modes" class="title-modes">
           <button type="button" class="title-card primary" data-mode="arcade">
             <span class="title-card-icon">🏆</span>
             <b>アーケード</b>
@@ -42,12 +42,30 @@
           <button type="button" class="title-card" data-mode="versus">
             <span class="title-card-icon">👥</span>
             <b>友人対戦</b>
-            <small>2〜4 人でブラインド配置</small>
+            <small>ローカル対戦・オンライン対戦</small>
           </button>
           <button type="button" class="title-card" data-mode="sandbox">
             <span class="title-card-icon">🛠</span>
             <b>サンドボックス</b>
             <small>全兵種を自由に実験</small>
+          </button>
+        </div>
+        <!-- 友人対戦の選択（ローカル／オンライン） -->
+        <div id="title-friend-modes" class="title-modes hidden">
+          <button type="button" class="title-card" data-friend="local">
+            <span class="title-card-icon">👥</span>
+            <b>ローカル対戦</b>
+            <small>1 台で 2〜4 人がブラインド配置</small>
+          </button>
+          <button type="button" class="title-card primary" data-friend="online">
+            <span class="title-card-icon">🌐</span>
+            <b>オンライン対戦</b>
+            <small>タワーディフェンスで 1 対 1</small>
+          </button>
+          <button type="button" class="title-card" data-friend="back">
+            <span class="title-card-icon">↩</span>
+            <b>もどる</b>
+            <small>モード選択へ</small>
           </button>
         </div>
       </div>

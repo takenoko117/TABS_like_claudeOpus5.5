@@ -1,5 +1,6 @@
 import { Mesh, MeshLambertMaterial } from 'three';
 import { isGateTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
+import type { Team } from '../units/UnitTypes';
 import { GATE_TINTS, VoxelGrid, buildFacilityVoxelGrid } from './VoxelModel';
 
 /** 門の網の中央に出す、効果を表す絵柄（幅 9 マス以内。# が塗り） */
@@ -53,8 +54,8 @@ function stampGateGlyph(grid: VoxelGrid, glyph: readonly string[], color: number
 }
 
 /** レリックのモデルのボクセルグリッド */
-export function buildRelicVoxelGrid(id: FacilityTypeId): { grid: VoxelGrid; voxelSize: number } {
-  const model = buildFacilityVoxelGrid(id, 0);
+export function buildRelicVoxelGrid(id: FacilityTypeId, team: Team = 0): { grid: VoxelGrid; voxelSize: number } {
+  const model = buildFacilityVoxelGrid(id, team);
   const glyph = isGateTypeId(id) ? GATE_GLYPHS[id] : undefined;
   if (glyph) stampGateGlyph(model.grid, glyph, GATE_TINTS[id] ?? 0xffffff);
   return model;
@@ -126,8 +127,9 @@ export function buildGoldVoxelGrid(): { grid: VoxelGrid; voxelSize: number } {
   return { grid, voxelSize: 0.1 };
 }
 
-/** ゴールド（'gold'）やレリック（'relic:施設ID'）の表示用メッシュを作る */
-export function createRewardPropMesh(key: string): Mesh {
-  const { grid, voxelSize } = key === 'gold' ? buildGoldVoxelGrid() : buildRelicVoxelGrid(key.slice('relic:'.length) as FacilityTypeId);
+/** ゴールド（'gold'）やレリック（'relic:施設ID'）の表示用メッシュを作る。team はレリックの配色 */
+export function createRewardPropMesh(key: string, team: Team = 0): Mesh {
+  const { grid, voxelSize } =
+    key === 'gold' ? buildGoldVoxelGrid() : buildRelicVoxelGrid(key.slice('relic:'.length) as FacilityTypeId, team);
   return new Mesh(grid.toGeometry(voxelSize, [grid.sx / 2, 0, grid.sz / 2]), new MeshLambertMaterial({ vertexColors: true }));
 }

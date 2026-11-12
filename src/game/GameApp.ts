@@ -115,8 +115,13 @@ import { RealtimeTDHud, isTDTutorialDone, markTDTutorialDone } from '../ui/Realt
 import { TDVersusSession, slotColorName, verdictFor } from './TDVersusSession';
 import { TDDuel, TDLockstep } from './TDDuel';
 import { nativeRandomCallback } from './SimRandom';
-import { TDVersusClient } from '../net/TDVersusClient';
-import type { TDVersusEndReason } from '../net/tdVersusProtocol';
+import { TDVersusClient, fetchTDVersusRooms } from '../net/TDVersusClient';
+import {
+  TD_VS_LIST_POLL_MS,
+  type TDVersusEndReason,
+  type TDVersusJoinIntent,
+  type TDVersusRoomListing,
+} from '../net/tdVersusProtocol';
 import {
   CATEGORY_ICONS,
   CATEGORY_THEME_COLORS,
@@ -584,6 +589,12 @@ export class GameApp {
   private tdVsView: 'lobby' | 'battle' | 'result' | null = null;
   /** オンライン対戦の決着（リザルトに出す。winner は勝った席、null は引き分け） */
   private tdVsResult: { winner: number | null; reason: TDVersusEndReason } | null = null;
+  /** 募集中の部屋の一覧（null は読み込み中）と、取得の失敗理由 */
+  private tdVsRooms: TDVersusRoomListing[] | null = null;
+  private tdVsRoomsError: string | null = null;
+  /** 部屋の一覧を取り直すタイマー */
+  private tdVsPollTimer: number | null = null;
+  private tdVsFetching = false;
   /** オンライン対戦（対面型）の試合中の戦場と、ロックステップ */
   private tdDuel: TDDuel | null = null;
   private tdLockstep: TDLockstep | null = null;
@@ -1337,8 +1348,32 @@ export class GameApp {
 
   private bindTitleScreen(): void {
     document.querySelectorAll<HTMLButtonElement>('#title-screen [data-mode]').forEach((button) => {
-      button.addEventListener('click', () => this.leaveTitleScreen(button.dataset.mode as PlayStyle));
+      button.addEventListener('click', () => {
+        // 友人対戦は「ローカル対戦」と「オンライン対戦」を選ぶ画面を挟む
+        if (button.dataset.mode === 'versus') {
+          this.sound.playPlace();
+          this.showFriendChooser(true);
+          return;
+        }
+        this.leaveTitleScreen(button.dataset.mode as PlayStyle);
+      });
     });
+    document.querySelectorAll<HTMLButtonElement>('#title-screen [data-friend]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const kind = button.dataset.friend;
+        if (kind === 'back') {
+          this.sound.playPlace();
+          this.showFriendChooser(false);
+        } else if (kind === 'local') this.leaveTitleScreen('versus');
+        else if (kind === 'online') this.leaveTitleScreen('td', true);
+      });
+    });
+  }
+
+  /** タイトル画面で、友人対戦の選択（ローカル／オンライン）を出す・閉じる */
+  private showFriendChooser(open: boolean): void {
+    document.getElementById('title-main-modes')?.classList.toggle('hidden', open);
+    document.getElementById('title-friend-modes')?.classList.toggle('hidden', !open);
   }
 
   /** タイトル画面を開き、背景で自動対戦を流す */
@@ -1354,6 +1389,7 @@ export class GameApp {
     if (this.playStyle === 'td') this.battle.rules = null;
     this.tdVersusField?.leave();
     this.tdVsView = null;
+    this.stopTDVersusRoomPolling();
     this.td = null;
     this.tdPausedForSettings = false;
     this.tdHold = false;
@@ -1407,7 +1443,9 @@ export class GameApp {
     }
   }
 
-  private leaveTitleScreen(style: PlayStyle): void {
+  /** online なら TD のオンライン対戦のロビーを開く（友人対戦から） */
+  private leaveTitleScreen(style: PlayStyle, online = false): void {
+    this.showFriendChooser(false);
     this.onTitleScreen = false;
     document.body.classList.remove('on-title');
     document.getElementById('title-screen')?.classList.add('hidden');
@@ -1419,7 +1457,8 @@ export class GameApp {
     // 初回は戦場に集中できるようパネルを閉じ、2 回目以降は十分広い画面なら開く
     this.sidePanelVisible = !firstRun && window.innerWidth > 1100;
     this.syncSidePanelUI();
-    this.enterPlayStyle(style);
+    if (online) this.enterTDVersusMode();
+    else this.enterPlayStyle(style);
     if (firstRun) this.startTutorial();
     this.sound.playPlace();
   }
@@ -2473,8 +2512,8 @@ export class GameApp {
       },
       getVersus: () => this.tdVersusField,
       getLockstep: () => this.tdLockstep,
-      openVersus: () => this.showTDVersusLobby(),
-      vsJoin: (room) => this.joinTDVersusRoom(room),
+      vsJoin: (room, intent) => this.joinTDVersusRoom(room, intent),
+      vsRefreshRooms: () => void this.refreshTDVersusRooms(),
       vsReady: (id) => {
         this.tdVersus.setReady(id);
         this.showTDVersusLobby();
@@ -2487,8 +2526,8 @@ export class GameApp {
       vsLobby: () => this.showTDVersusLobby(),
       vsBack: () => {
         this.tdVersus.leave();
-        this.tdVsView = null;
-        this.enterTDMode();
+        this.showTitleScreen();
+        this.showFriendChooser(true);
       },
     });
     return this.tdHudField;
@@ -2505,7 +2544,7 @@ export class GameApp {
     this.tdVersusField ??= new TDVersusSession({
       onChange: () => {
         if (this.playStyle !== 'td') return;
-        if (this.tdVsView === 'lobby') this.tdHud.showVersusLobby(this.tdVersus);
+        if (this.tdVsView === 'lobby') this.showTDVersusLobby();
         else if (this.tdVsView === 'result') this.showTDVersusResult();
       },
       onStart: (seed, starters, slot) => this.startTDVersusRun(seed, starters, slot),
@@ -2538,16 +2577,74 @@ export class GameApp {
     if (this.tdVersusField) this.tdVersusField.match = null;
   }
 
-  /** ロビーを出す（未接続なら部屋名の入力、入室済みなら部屋の待機画面） */
+  /** ロビーを出す（未接続なら部屋作成と募集中の部屋の一覧、入室済みなら部屋の待機画面） */
   private showTDVersusLobby(): void {
     this.tdVsView = 'lobby';
     this.tdHud.showVersusLobby(this.tdVersus);
+    if (this.tdVersus.phase === 'idle') {
+      this.tdHud.updateVersusRooms(this.tdVsRooms, this.tdVsRoomsError);
+      this.startTDVersusRoomPolling();
+    } else this.stopTDVersusRoomPolling();
   }
 
-  private joinTDVersusRoom(room: string): void {
+  /** 友人対戦の「オンライン対戦」から TD 対戦のロビーを開く */
+  private enterTDVersusMode(): void {
+    this.playStyle = 'td';
+    this.syncModePanels();
+    this.td = null;
+    this.prepareTDField();
+    this.tdHud.reset();
+    this.tdHud.show();
+    this.tdVsRooms = null;
+    this.tdVsRoomsError = null;
+    this.showTDVersusLobby();
+  }
+
+  /** ロビーで部屋の一覧を見ている間か */
+  private get isTDVersusBrowsing(): boolean {
+    return this.playStyle === 'td' && !this.onTitleScreen && this.tdVsView === 'lobby' && this.tdVersus.phase === 'idle';
+  }
+
+  /** 募集中の部屋の一覧をすぐ取り、その後は一定間隔で取り直す */
+  private startTDVersusRoomPolling(): void {
+    void this.refreshTDVersusRooms();
+    if (this.tdVsPollTimer !== null) return;
+    this.tdVsPollTimer = window.setInterval(() => {
+      if (!this.isTDVersusBrowsing) {
+        this.stopTDVersusRoomPolling();
+        return;
+      }
+      void this.refreshTDVersusRooms();
+    }, TD_VS_LIST_POLL_MS);
+  }
+
+  private stopTDVersusRoomPolling(): void {
+    if (this.tdVsPollTimer !== null) window.clearInterval(this.tdVsPollTimer);
+    this.tdVsPollTimer = null;
+  }
+
+  /** 募集中の部屋の一覧を取り直して表示する */
+  private async refreshTDVersusRooms(): Promise<void> {
+    if (this.tdVsFetching) return;
+    this.tdVsFetching = true;
+    try {
+      const result = await fetchTDVersusRooms();
+      if (typeof result === 'string') {
+        this.tdVsRoomsError = result;
+      } else {
+        this.tdVsRooms = result;
+        this.tdVsRoomsError = null;
+      }
+    } finally {
+      this.tdVsFetching = false;
+    }
+    if (this.isTDVersusBrowsing) this.tdHud.updateVersusRooms(this.tdVsRooms, this.tdVsRoomsError);
+  }
+
+  private joinTDVersusRoom(room: string, intent: TDVersusJoinIntent): void {
     const vs = this.tdVersus;
     if (vs.connected) return;
-    const client = TDVersusClient.open(room, {
+    const client = TDVersusClient.open(room, intent, {
       onMessage: (msg) => vs.handle(msg),
       onClose: (reason) => vs.handleClose(reason),
     });
@@ -2556,6 +2653,7 @@ export class GameApp {
       this.showTDVersusLobby();
       return;
     }
+    this.stopTDVersusRoomPolling();
     vs.attach(client, client.room);
   }
 
@@ -2564,6 +2662,7 @@ export class GameApp {
     if (this.playStyle !== 'td' || this.onTitleScreen) return;
     this.tdStarter = starters[slot];
     this.tdVsResult = null;
+    this.stopTDVersusRoomPolling();
     this.tdVsView = 'battle';
     const duel = new TDDuel(seed, starters);
     this.beginTDRun(duel.sides[slot], false, duel);

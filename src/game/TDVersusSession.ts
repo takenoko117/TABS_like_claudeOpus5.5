@@ -141,8 +141,7 @@ export class TDVersusSession {
         this.events.onResult(msg.winner, msg.reason);
         break;
       case 'error':
-        this.message =
-          msg.code === 'full' ? 'その部屋は満員です' : msg.code === 'bad_name' ? '部屋名が使えません' : '通信エラーが起きました';
+        this.message = ERROR_TEXT[msg.code];
         break;
       case 'closed':
         this.message = '3分間操作がなかったため部屋が閉じられました';
@@ -213,6 +212,14 @@ export class TDVersusSession {
     this.transport?.send(msg);
   }
 }
+
+const ERROR_TEXT: Record<Extract<TDVersusServerMessage, { t: 'error' }>['code'], string> = {
+  full: 'その部屋は満員です',
+  bad_name: '部屋名が使えません',
+  bad_message: '通信エラーが起きました',
+  exists: 'その名前の部屋はすでにあります。別の名前にするか、一覧から入ってください',
+  not_found: 'その部屋はもうありません',
+};
 
 /** 勝った席から、slot の席にとっての決着を返す */
 export function verdictFor(winner: number | null, slot: number): TDVersusVerdict {

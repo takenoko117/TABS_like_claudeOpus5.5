@@ -4,7 +4,12 @@ import { TD_DUEL_TIME_LIMIT, type TDRun } from '../game/RealtimeTDMode';
 import { ROGUE_STARTERS } from '../game/RogueliteMode';
 import type { TDLockstep } from '../game/TDDuel';
 import { slotColorName, type TDVersusSession, type TDVersusVerdict } from '../game/TDVersusSession';
-import { TD_VS_IDLE_MS, TD_VS_ROOM_NAME_MAX, type TDVersusEndReason } from '../net/tdVersusProtocol';
+import {
+  TD_VS_IDLE_MS,
+  TD_VS_ROOM_NAME_MAX,
+  type TDVersusEndReason,
+  type TDVersusRoomListing,
+} from '../net/tdVersusProtocol';
 import { UNIT_TYPES } from '../units/UnitTypes';
 import { getUnitIconSvg } from './UnitIcons';
 
@@ -31,17 +36,28 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
   const message = vs.message ? `<p class="td-vs-message">${esc(vs.message)}</p>` : '';
   if (vs.phase === 'idle') {
     return `
-      <h2>🌐 オンライン対戦</h2>
+      <h2>🌐 オンライン対戦（タワーディフェンス）</h2>
       <p class="td-lead">${esc(RULES_TEXT)}</p>
-      <h3>部屋名を入力</h3>
-      <div class="td-vs-join">
-        <input type="text" class="td-vs-room" maxlength="${TD_VS_ROOM_NAME_MAX}" placeholder="例: takenoko" value="${esc(roomDraft)}" autocomplete="off" />
-        <button type="button" class="td-btn primary" data-td="vs-join">入室</button>
+      <div class="td-vs-lobby">
+        <section class="td-vs-lobby-col">
+          <h3>🏠 部屋を作る（ホスト・青）</h3>
+          <div class="td-vs-join">
+            <input type="text" class="td-vs-room" maxlength="${TD_VS_ROOM_NAME_MAX}" placeholder="部屋名 例: takenoko" value="${esc(roomDraft)}" autocomplete="off" />
+            <button type="button" class="td-btn primary" data-td="vs-create">作成</button>
+          </div>
+          <p class="td-vs-note">作った部屋は右の一覧に「募集中」として出ます。相手が入ると対戦の準備に進みます。</p>
+        </section>
+        <section class="td-vs-lobby-col">
+          <h3>🚪 募集中の部屋に入る（ゲスト・赤）
+            <button type="button" class="td-btn td-small" data-td="vs-refresh" title="一覧を更新">↻</button>
+          </h3>
+          <div class="td-vs-rooms">${renderVersusRoomList(null, null)}</div>
+        </section>
       </div>
-      <p class="td-vs-note">同じ部屋名を入れた2人が対戦できます。先に入った人がホスト（青）、後から入った人がゲスト（赤）です。${IDLE_MINUTES}分間だれも操作しない部屋は自動で消えます。</p>
+      <p class="td-vs-note">${IDLE_MINUTES}分間だれも操作しない部屋は自動で消えます。</p>
       ${message}
       <div class="td-modal-actions">
-        <button type="button" class="td-btn" data-td="vs-back">← 1人で遊ぶ</button>
+        <button type="button" class="td-btn" data-td="vs-back">← 友人対戦へ</button>
         <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
       </div>
     `;
@@ -94,6 +110,25 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
       <button type="button" class="td-btn" data-td="vs-leave">退室</button>
     </div>
   `;
+}
+
+/**
+ * 募集中の部屋の一覧（部屋名の書かれたアイコン。押すとその部屋に入る）。
+ * rooms が null なら読み込み中、error があればそれを出す
+ */
+export function renderVersusRoomList(rooms: readonly TDVersusRoomListing[] | null, error: string | null): string {
+  if (error) return `<p class="td-vs-rooms-empty">${esc(error)}</p>`;
+  if (!rooms) return '<p class="td-vs-rooms-empty">部屋を探しています…</p>';
+  if (rooms.length === 0) return '<p class="td-vs-rooms-empty">いま募集中の部屋はありません。<br />部屋を作って相手を待つか、少し待ってみてください。</p>';
+  return `<div class="td-vs-room-grid">${rooms
+    .map(
+      (r) => `<button type="button" class="td-vs-room-card" data-vs-room="${esc(r.name)}" title="部屋「${esc(r.name)}」に入る">
+        <span class="td-vs-room-icon">🏰</span>
+        <b>${esc(r.name)}</b>
+        <small>募集中 ${r.players}/2</small>
+      </button>`,
+    )
+    .join('')}</div>`;
 }
 
 /** 試合中の対戦パネル（自分の色・相手の城・通信の状態） */

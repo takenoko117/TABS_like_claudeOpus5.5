@@ -417,6 +417,8 @@ export class TDRun {
   endReason: TDEndReason | null = null;
   /** Wave の開始・反撃など、画面に出す知らせ */
   readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain'; value: number }> = [];
+  /** 対戦の相手のラン（linkOpponent で付く） */
+  private opponent: TDRun | null = null;
   /** 作り直した地形の回数（0 が開始時の地形） */
   terrainIndex = -1;
   terrainBiome: BiomeId | null = null;
@@ -510,7 +512,8 @@ export class TDRun {
 
   /** 基地とレリックを戦場に置き、ルールを有効にする（battle.configureStage の後に呼ぶ） */
   setup(battle: Battle): void {
-    battle.setFieldWalls(TD_FIELD_WALLS);
+    // 戦場の大きさを変えると今の地形が外れるので、対戦では TDDuel が両陣営の setup の前に1回だけ設定する
+    if (!this.duel) battle.setFieldWalls(TD_FIELD_WALLS);
     this.playerBase = battle.spawnFacility('hq', this.team, this.sx(TD_PLAYER_BASE_X), 0, this.facing, { hp: this.baseHp });
     TDRun.prepareBase(this.playerBase);
     this.battleRef = battle;
@@ -532,7 +535,14 @@ export class TDRun {
 
   /** 対戦で、相手の城を敵の城にする（TDDuel が両陣営の setup の後に呼ぶ） */
   linkOpponent(opponent: TDRun): void {
+    this.opponent = opponent;
     this.enemyBase = opponent.playerBase;
+    // 開始時の地形はホストのランが setup で作っているので、その状態を写す
+    if (opponent.terrainIndex > this.terrainIndex) {
+      this.terrainIndex = opponent.terrainIndex;
+      this.terrainBiome = opponent.terrainBiome;
+      this.terrainTrait = opponent.terrainTrait;
+    }
     this.lastEnemyBaseHp = this.enemyBase?.hp ?? 0;
   }
 
@@ -552,6 +562,14 @@ export class TDRun {
     const field = battle.setField(buildTDTerrain(spec), rogueFieldTraits);
     if (field) relocateUnitsOutOfTerrain(field, battle.units);
     if (this.terrainIndex > 0) this.events.push({ kind: 'terrain', value: this.terrainIndex });
+    // 対戦では地形は共通なので、相手のラン（ゲストの画面）にも同じ地形を知らせる
+    const opp = this.opponent;
+    if (opp) {
+      opp.terrainIndex = this.terrainIndex;
+      opp.terrainBiome = this.terrainBiome;
+      opp.terrainTrait = this.terrainTrait;
+      if (this.terrainIndex > 0) opp.events.push({ kind: 'terrain', value: this.terrainIndex });
+    }
   }
 
   /** デッキの兵種でシナジーを数え直す */

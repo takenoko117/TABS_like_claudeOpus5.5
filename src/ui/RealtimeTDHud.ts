@@ -25,8 +25,14 @@ import {
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { TDLockstep } from '../game/TDDuel';
 import type { TDVersusSession, TDVersusVerdict } from '../game/TDVersusSession';
-import type { TDVersusEndReason } from '../net/tdVersusProtocol';
-import { renderVersusLobby, renderVersusPanel, renderVersusResult, updateVersusPanel } from './TDVersusUi';
+import type { TDVersusEndReason, TDVersusJoinIntent, TDVersusRoomListing } from '../net/tdVersusProtocol';
+import {
+  renderVersusLobby,
+  renderVersusPanel,
+  renderVersusResult,
+  renderVersusRoomList,
+  updateVersusPanel,
+} from './TDVersusUi';
 import { BIOMES, TRAITS } from '../field/BiomeDefs';
 import { TD_TERRAIN_SECONDS } from '../game/TDTerrain';
 import type { JackpotReward } from '../game/RogueJackpot';
@@ -59,16 +65,17 @@ export interface TDHudHost {
   getVersus(): TDVersusSession | null;
   /** 対戦の試合のロックステップ（試合中でなければ null） */
   getLockstep(): TDLockstep | null;
-  /** スターター選択からオンライン対戦のロビーへ */
-  openVersus(): void;
-  vsJoin(room: string): void;
+  /** 部屋に入る（create: 部屋を作る / join: 一覧の部屋に入る） */
+  vsJoin(room: string, intent: TDVersusJoinIntent): void;
+  /** 募集中の部屋の一覧を取り直す */
+  vsRefreshRooms(): void;
   vsReady(starterId: string): void;
   vsUnready(): void;
   /** 部屋を出てロビーの入力画面へ戻る */
   vsLeave(): void;
   /** 決着後、同じ部屋のロビーへ戻る */
   vsLobby(): void;
-  /** オンライン対戦をやめて 1 人用のスターター選択へ */
+  /** オンライン対戦をやめて友人対戦の選択（タイトル）へ */
   vsBack(): void;
 }
 
@@ -283,7 +290,7 @@ export class RealtimeTDHud {
       const input = e.target as HTMLElement;
       if (!input.classList.contains('td-vs-room')) return;
       e.stopPropagation();
-      if (e.key === 'Enter') this.host.vsJoin(this.vsRoomDraft);
+      if (e.key === 'Enter') this.host.vsJoin(this.vsRoomDraft, 'create');
     });
   }
 
@@ -351,6 +358,10 @@ export class RealtimeTDHud {
     const versus = this.host.getRun()?.duel ?? false;
     this.root.classList.toggle('td-versus', versus);
     this.elVs.classList.toggle('hidden', !versus);
+    // 対戦のゲスト（赤）は、カードのモデルや城の HP バーを赤の配色にする
+    const team = this.host.getRun()?.team ?? 0;
+    this.root.classList.toggle('td-red-side', team === 1);
+    this.previews.setTeam(team);
     this.bindPreviews();
   }
 
@@ -782,16 +793,21 @@ export class RealtimeTDHud {
       this.host.vsReady(d.vsStarter);
       return;
     }
+    if (d.vsRoom !== undefined) {
+      this.host.playClick();
+      this.host.vsJoin(d.vsRoom, 'join');
+      return;
+    }
     switch (d.td) {
-      case 'versus':
-        this.host.playClick();
-        return this.host.openVersus();
-      case 'vs-join': {
+      case 'vs-create': {
         const input = this.elModal.querySelector<HTMLInputElement>('.td-vs-room');
         if (input) this.vsRoomDraft = input.value;
         this.host.playClick();
-        return this.host.vsJoin(this.vsRoomDraft);
+        return this.host.vsJoin(this.vsRoomDraft, 'create');
       }
+      case 'vs-refresh':
+        this.host.playClick();
+        return this.host.vsRefreshRooms();
       case 'vs-unready':
         return this.host.vsUnready();
       case 'vs-leave':
@@ -891,7 +907,6 @@ export class RealtimeTDHud {
       <h3>スターターを選ぶ</h3>
       <div class="td-starters">${cards}</div>
       <div class="td-modal-actions">
-        <button type="button" class="td-btn primary" data-td="versus">🌐 オンライン対戦</button>
         <button type="button" class="td-btn" data-td="howto">❓ あそびかた</button>
         <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
       </div>
@@ -908,6 +923,12 @@ export class RealtimeTDHud {
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     }
+  }
+
+  /** 募集中の部屋の一覧だけを描き直す（入力中の部屋名は消さない） */
+  updateVersusRooms(rooms: readonly TDVersusRoomListing[] | null, error: string | null): void {
+    const el = this.elModal.querySelector<HTMLElement>('.td-vs-rooms');
+    if (el) el.innerHTML = renderVersusRoomList(rooms, error);
   }
 
   /** オンライン対戦のリザルト */

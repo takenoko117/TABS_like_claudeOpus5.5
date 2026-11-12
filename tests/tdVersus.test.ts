@@ -16,13 +16,17 @@ import { TDVersusSession, verdictFor, type TDVersusSessionEvents } from '../src/
 import { withNativeRandom, withSimRandom } from '../src/game/SimRandom';
 import {
   TD_VS_IDLE_MS,
+  TD_VS_LIST_STALE_MS,
   normalizeRoomName,
   parseClientMessage,
+  parseRoomList,
   type TDDuelCommand,
   type TDVersusClientMessage,
   type TDVersusServerMessage,
 } from '../src/net/tdVersusProtocol';
 import { TDVersusRoom, type RoomOutput } from '../server/src/roomLogic';
+import { RoomDirectory, reportKey, shouldReport } from '../server/src/roomDirectory';
+import { buildRelicVoxelGrid } from '../src/render/RewardVoxelModels';
 
 const STARTERS: [RogueStarter, RogueStarter] = [ROGUE_STARTERS[0], ROGUE_STARTERS[1]];
 
@@ -448,5 +452,105 @@ describe('TD オンライン対戦: 進行（クライアント）', () => {
 
     expect(verdictFor(null, 0)).toBe('draw');
     expect(verdictFor(0, 1)).toBe('lose');
+  });
+});
+
+describe('TD オンライン対戦: 地形と城壁', () => {
+  it('対戦でも 1 人用と同じ地形（城壁つき）が残り、ゲストのランにも同じ地形が伝わる', () => {
+    const { battle, duel } = makeClient(4242, 1);
+    expect(battle.field).not.toBeNull();
+    const walls = battle.field!.layout.props.filter((p) => p.kind === 'castle_block');
+    expect(walls.length).toBeGreaterThan(0);
+    // 両軍の城のまわりに城壁がある
+    expect(walls.some((p) => p.x < 0)).toBe(true);
+    expect(walls.some((p) => p.x > 0)).toBe(true);
+    expect(duel.sides[1].terrainIndex).toBe(duel.sides[0].terrainIndex);
+    expect(duel.sides[1].terrainBiome).toBe(duel.sides[0].terrainBiome);
+  });
+
+  it('地形の作り直しは両者の画面に知らせが出る', () => {
+    const { battle, duel } = makeClient(77, 0);
+    duel.sides[0].regenerateTerrain(battle);
+    expect(battle.field).not.toBeNull();
+    expect(duel.sides[1].terrainIndex).toBe(1);
+    expect(duel.sides[1].terrainBiome).toBe(duel.sides[0].terrainBiome);
+    expect(duel.sides[0].events.some((e) => e.kind === 'terrain')).toBe(true);
+    expect(duel.sides[1].events.some((e) => e.kind === 'terrain')).toBe(true);
+  });
+});
+
+describe('TD オンライン対戦: 部屋の作成・一覧', () => {
+  it('作成は人がいる部屋だと断られ、一覧からの入室は空の部屋だと断られる', () => {
+    const room = new TDVersusRoom('test', 0);
+    expect(room.join(0, 'join')).toMatchObject({ slot: null, error: 'not_found' });
+    expect(room.empty).toBe(true);
+    expect(room.join(0, 'create').slot).toBe(0);
+    expect(room.join(0, 'create')).toMatchObject({ slot: null, error: 'exists' });
+    expect(room.join(0, 'join').slot).toBe(1);
+    expect(room.join(0, 'join')).toMatchObject({ slot: null, error: 'full' });
+  });
+
+  it('1 人で試合中でない部屋だけが募集中', () => {
+    const room = new TDVersusRoom('abc', 0, () => 0.5);
+    expect(room.listing()).toBeNull();
+    room.join(0, 'create');
+    expect(room.listing()).toEqual({ name: 'abc', players: 1 });
+    room.join(0, 'join');
+    expect(room.listing()).toBeNull();
+    room.message(0, { t: 'ready', starter: 'a' }, 0);
+    room.message(1, { t: 'ready', starter: 'b' }, 0);
+    expect(room.phase).toBe('playing');
+    // 試合中に相手が抜けても、決着がつくまでは募集しない（決着後に 1 人なら再び募集中）
+    room.leave(1, 1);
+    expect(room.phase).toBe('ended');
+    expect(room.listing()).toEqual({ name: 'abc', players: 1 });
+  });
+
+  it('一覧は募集中の部屋を新しい順に出し、閉じた・古い部屋は消える', () => {
+    const dir = new RoomDirectory();
+    dir.report({ name: 'aaa', players: 1, open: true }, 0);
+    dir.report({ name: 'BBB', players: 1, open: true }, 10);
+    expect(dir.list(20)).toEqual([
+      { name: 'bbb', players: 1 },
+      { name: 'aaa', players: 1 },
+    ]);
+    dir.report({ name: 'aaa', players: 2, open: false }, 30);
+    expect(dir.list(40).map((r) => r.name)).toEqual(['bbb']);
+    expect(dir.list(10 + TD_VS_LIST_STALE_MS)).toEqual([]);
+    expect(dir.report({ name: 'bad name!', players: 1, open: true }, 0)).toBe(false);
+  });
+
+  it('一覧は保存して戻せる', () => {
+    const dir = new RoomDirectory();
+    dir.report({ name: 'x', players: 1, open: true }, 5);
+    const back = RoomDirectory.fromJSON(JSON.parse(JSON.stringify(dir.toJSON())));
+    expect(back.list(6)).toEqual([{ name: 'x', players: 1 }]);
+    expect(RoomDirectory.fromJSON('broken').size).toBe(0);
+  });
+
+  it('部屋は内容が変わったとき・募集中なら一定時間ごとに一覧へ知らせる', () => {
+    const open = { name: 'x', players: 1, open: true };
+    expect(shouldReport(null, open, 0, 1000)).toBe(true);
+    expect(shouldReport(null, { ...open, open: false }, 0, 1000)).toBe(false);
+    const last = { key: reportKey(open), at: 0 };
+    expect(shouldReport(last, open, 500, 1000)).toBe(false);
+    expect(shouldReport(last, open, 1000, 1000)).toBe(true);
+    expect(shouldReport(last, { name: 'x', players: 2, open: false }, 10, 1000)).toBe(true);
+  });
+
+  it('クライアントは部屋の一覧の応答を検証する', () => {
+    expect(parseRoomList({ rooms: [{ name: 'Abc', players: 1 }, { name: 'bad name!', players: 1 }, 3] })).toEqual([
+      { name: 'abc', players: 1 },
+    ]);
+    expect(parseRoomList({})).toBeNull();
+    expect(parseRoomList(null)).toBeNull();
+  });
+});
+
+describe('TD オンライン対戦: 赤チームの表示', () => {
+  it('城強化などのレリックのモデルは陣営の配色で作られる', () => {
+    const blue = buildRelicVoxelGrid('hq', 0).grid;
+    const red = buildRelicVoxelGrid('hq', 1).grid;
+    expect(JSON.stringify(red)).not.toBe(JSON.stringify(blue));
   });
 });

@@ -5,6 +5,8 @@ import {
   TD_VS_ROOM_CAPACITY,
   type TDVersusClientMessage,
   type TDVersusEndReason,
+  type TDVersusJoinIntent,
+  type TDVersusRoomListing,
   type TDVersusServerMessage,
   type TDVersusSlotInfo,
 } from '../../src/net/tdVersusProtocol';
@@ -56,10 +58,30 @@ export class TDVersusRoom {
     return this.slots.map((s) => ({ present: s !== null, ready: s?.ready ?? false }));
   }
 
-  /** 入室。空き席がなければ slot は null */
-  join(now: number): { slot: number | null; out: RoomOutput[] } {
+  /** 部屋にいる人数 */
+  get players(): number {
+    return this.slots.filter((s) => s !== null).length;
+  }
+
+  /** 相手を募集中か（1 人だけで、試合中でない） */
+  get open(): boolean {
+    return this.players === 1 && this.phase !== 'playing';
+  }
+
+  /** 一覧に出す情報（募集中でなければ null） */
+  listing(): TDVersusRoomListing | null {
+    return this.open ? { name: this.name, players: this.players } : null;
+  }
+
+  /**
+   * 入室。入れなければ slot は null で、error に理由が入る。
+   * intent が create なのに人がいる部屋・join なのに空の部屋は断る（一覧と食い違ったとき）。
+   */
+  join(now: number, intent?: TDVersusJoinIntent): { slot: number | null; out: RoomOutput[]; error?: 'full' | 'exists' | 'not_found' } {
+    if (intent === 'create' && !this.empty) return { slot: null, out: [], error: 'exists' };
+    if (intent === 'join' && this.empty) return { slot: null, out: [], error: 'not_found' };
     const slot = this.slots.findIndex((s) => s === null);
-    if (slot < 0) return { slot: null, out: [] };
+    if (slot < 0) return { slot: null, out: [], error: 'full' };
     this.lastActivity = now;
     this.slots[slot] = { ready: false, starter: '' };
     const slots = this.slotInfo();

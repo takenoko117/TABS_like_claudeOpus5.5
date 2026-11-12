@@ -17,6 +17,7 @@ import { createSeededRng } from './ChallengeMode';
 import { TD_DUEL_TIME_LIMIT, TDRun } from './RealtimeTDMode';
 import type { RogueStarter } from './RogueliteMode';
 import { withSimRandom } from './SimRandom';
+import { TD_FIELD_WALLS } from './TDTerrain';
 
 // ---------------------------------------------------------------
 // 定数
@@ -71,6 +72,8 @@ export class TDDuel {
   /** 両陣営の城・砲台・レリックを置き、ルールを有効にする（battle.configureStage の後に呼ぶ） */
   setup(battle: Battle): void {
     this.battleRef = battle;
+    // 戦場の大きさは先に1回だけ決める（あとで設定し直すと、ホストのランが作った地形と城壁が外れてしまう）
+    battle.setFieldWalls(TD_FIELD_WALLS);
     withSimRandom(this.simRng, () => {
       this.sides[0].setup(battle);
       this.sides[1].setup(battle);
