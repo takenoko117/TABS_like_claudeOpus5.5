@@ -1,14 +1,17 @@
-// TD オンライン対戦の通信プロトコル。クライアント（src/net/TDVersusClient.ts）と
+// TD オンライン対戦（対面型）の通信プロトコル。クライアント（src/net/TDVersusClient.ts）と
 // 中継サーバー（server/src）の両方から読み込むので、ブラウザや Three.js に依存させない。
+//
+// 両端末が同じ戦場を同じ順で計算する（ロックステップ）。送るのは開始の合図・各ターンの操作・
+// 戦況の照合用の値（ハッシュ）・決着だけで、兵士の位置などは送らない。
 
-/** 部屋の定員 */
+/** 部屋の定員（席 0 がホスト＝青、席 1 がゲスト＝赤） */
 export const TD_VS_ROOM_CAPACITY = 2;
 /** 誰からもメッセージが来ないまま、この時間がたつと部屋を閉じて消す（ミリ秒） */
 export const TD_VS_IDLE_MS = 3 * 60 * 1000;
 /** 部屋名の最大文字数 */
 export const TD_VS_ROOM_NAME_MAX = 20;
-/** 自分の状況を相手に送る間隔（秒） */
-export const TD_VS_STATUS_INTERVAL = 1;
+/** 1 ターンに送れる操作の最大数 */
+export const TD_VS_MAX_COMMANDS = 16;
 
 /** 部屋名を整える（前後の空白を除き、英字は小文字にそろえる）。使えない名前なら null */
 export function normalizeRoomName(raw: string): string | null {
@@ -19,26 +22,27 @@ export function normalizeRoomName(raw: string): string | null {
   return name;
 }
 
-/** 相手に見せる自分の戦況 */
-export interface TDVersusStatus {
-  /** 経過時間（秒） */
-  time: number;
-  /** 自軍の城の HP と最大 HP */
-  hp: number;
-  maxHp: number;
-  level: number;
-  wave: number;
-  kills: number;
-  /** AI の敵城の残り HP の割合（0〜1） */
-  enemyBaseRatio: number;
-}
+/** 試合中の操作（両端末が同じターンに反映する） */
+export type TDDuelCommand =
+  /** カードの部隊を出撃させる */
+  | { k: 'deploy'; id: string }
+  /** 強化の3択から選ぶ（0〜2） */
+  | { k: 'choose'; i: number }
+  /** 3択を引き直す */
+  | { k: 'reroll' }
+  /** 資金供給力を上げる */
+  | { k: 'fund' }
+  /** 城を強化する */
+  | { k: 'base' }
+  /** 自動出撃の入り切り */
+  | { k: 'auto'; on: boolean };
 
 /** 決着の理由 */
 export type TDVersusEndReason =
   /** 城が落ちた */
   | 'castle'
-  /** AI の敵城を壊した */
-  | 'clear'
+  /** 制限時間で、城の残り HP の割合で決まった */
+  | 'time'
   /** 相手が抜けた・切断した */
   | 'left'
   /** 降参した */
@@ -51,14 +55,14 @@ export type TDVersusClientMessage =
   | { t: 'ready'; starter: string }
   /** 準備完了を取り消す */
   | { t: 'unready' }
-  /** 自分の戦況（相手へそのまま中継される） */
-  | { t: 'status'; status: TDVersusStatus }
-  /** 相手の戦場に敵を送り込む。seed は敵の選び方を決める乱数の種 */
-  | { t: 'send'; budget: number; seed: number }
-  /** 自分の城が落ちた（または降参した） */
-  | { t: 'lose'; reason: 'castle' | 'surrender' }
-  /** AI の敵城を壊した */
-  | { t: 'win' };
+  /** turn ターン目に反映する自分の操作（空でも毎ターン送る。相手へそのまま中継される） */
+  | { t: 'input'; turn: number; cmds: TDDuelCommand[] }
+  /** turn ターン目の戦況のハッシュ（ずれの検出用。相手へそのまま中継される） */
+  | { t: 'hash'; turn: number; h: number }
+  /** 自分の計算で決着した（winner は勝った席。null は引き分け） */
+  | { t: 'over'; winner: number | null; reason: 'castle' | 'time' }
+  /** 降参する */
+  | { t: 'surrender' };
 
 // ---- サーバー → クライアント ----
 
@@ -68,18 +72,18 @@ export interface TDVersusSlotInfo {
 }
 
 export type TDVersusServerMessage =
-  /** 入室できた。slot は自分の席（0 か 1） */
+  /** 入室できた。slot は自分の席（0 はホスト＝青、1 はゲスト＝赤） */
   | { t: 'joined'; room: string; slot: number; slots: TDVersusSlotInfo[] }
   /** 部屋の顔ぶれと準備状況が変わった */
   | { t: 'room'; slots: TDVersusSlotInfo[] }
-  /** 両者そろったので試合開始。seed は敵ウェーブ・地形・強化の3択を決める共通の種 */
+  /** 両者そろったので試合開始。seed は地形・強化の3択・宝箱などを決める共通の種、starters は席ごとのスターター */
   | { t: 'start'; seed: number; starters: string[] }
-  /** 相手の戦況 */
-  | { t: 'status'; status: TDVersusStatus }
-  /** 相手から敵が送り込まれた */
-  | { t: 'send'; budget: number; seed: number }
-  /** 決着（winner は勝った席） */
-  | { t: 'result'; winner: number; reason: TDVersusEndReason }
+  /** 相手の操作 */
+  | { t: 'input'; turn: number; cmds: TDDuelCommand[] }
+  /** 相手の戦況のハッシュ */
+  | { t: 'hash'; turn: number; h: number }
+  /** 決着（winner は勝った席。null は引き分け） */
+  | { t: 'result'; winner: number | null; reason: TDVersusEndReason }
   /** 入室できなかった・不正な操作 */
   | { t: 'error'; code: 'full' | 'bad_name' | 'bad_message' }
   /** 放置で部屋が閉じられた */
@@ -95,8 +99,28 @@ export function parseServerMessage(raw: string): TDVersusServerMessage | null {
   }
 }
 
-function finiteNumber(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v);
+function turnNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1e7;
+}
+
+/** 操作 1 つを検証する（不正なら null） */
+function parseCommand(v: unknown): TDDuelCommand | null {
+  if (!v || typeof v !== 'object') return null;
+  const c = v as Record<string, unknown>;
+  switch (c.k) {
+    case 'deploy':
+      return typeof c.id === 'string' && c.id.length > 0 && c.id.length <= 40 ? { k: 'deploy', id: c.id } : null;
+    case 'choose':
+      return c.i === 0 || c.i === 1 || c.i === 2 ? { k: 'choose', i: c.i } : null;
+    case 'reroll':
+    case 'fund':
+    case 'base':
+      return { k: c.k };
+    case 'auto':
+      return typeof c.on === 'boolean' ? { k: 'auto', on: c.on } : null;
+    default:
+      return null;
+  }
 }
 
 /** 受け取った文字列をクライアントからのメッセージとして検証する（不正なら null） */
@@ -113,21 +137,21 @@ export function parseClientMessage(raw: string): TDVersusClientMessage | null {
       return typeof msg.starter === 'string' && msg.starter.length <= 40 ? { t: 'ready', starter: msg.starter } : null;
     case 'unready':
       return { t: 'unready' };
-    case 'status': {
-      const s = msg.status as Record<string, unknown> | undefined;
-      if (!s) return null;
-      const keys = ['time', 'hp', 'maxHp', 'level', 'wave', 'kills', 'enemyBaseRatio'] as const;
-      if (!keys.every((k) => finiteNumber(s[k]))) return null;
-      const status = Object.fromEntries(keys.map((k) => [k, s[k] as number])) as unknown as TDVersusStatus;
-      return { t: 'status', status };
+    case 'input': {
+      if (!turnNumber(msg.turn) || !Array.isArray(msg.cmds) || msg.cmds.length > TD_VS_MAX_COMMANDS) return null;
+      const cmds = msg.cmds.map(parseCommand);
+      if (cmds.some((c) => c === null)) return null;
+      return { t: 'input', turn: msg.turn, cmds: cmds as TDDuelCommand[] };
     }
-    case 'send':
-      if (!finiteNumber(msg.budget) || !finiteNumber(msg.seed) || msg.budget <= 0 || msg.budget > 1e6) return null;
-      return { t: 'send', budget: msg.budget, seed: msg.seed | 0 };
-    case 'lose':
-      return msg.reason === 'castle' || msg.reason === 'surrender' ? { t: 'lose', reason: msg.reason } : null;
-    case 'win':
-      return { t: 'win' };
+    case 'hash':
+      if (!turnNumber(msg.turn) || typeof msg.h !== 'number' || !Number.isInteger(msg.h)) return null;
+      return { t: 'hash', turn: msg.turn, h: msg.h | 0 };
+    case 'over':
+      if (msg.reason !== 'castle' && msg.reason !== 'time') return null;
+      if (msg.winner !== null && msg.winner !== 0 && msg.winner !== 1) return null;
+      return { t: 'over', winner: msg.winner, reason: msg.reason };
+    case 'surrender':
+      return { t: 'surrender' };
     default:
       return null;
   }

@@ -3749,9 +3749,9 @@ export class SceneView {
   }
 
   /** 横に長い戦場で、カメラを指定の x を中心に広めに見渡す位置へ置く */
-  frameFieldAt(x: number, distance: number): void {
+  frameFieldAt(x: number, distance: number, yaw = 0): void {
     this.camTarget.set(x, 0.8, 0);
-    this.camYaw = 0;
+    this.camYaw = yaw;
     this.camPitch = 0.62;
     this.camDistance = Math.min(distance, this.maxCamDistance);
     this.updateCameraTransform();

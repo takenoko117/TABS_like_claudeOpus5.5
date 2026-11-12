@@ -35,6 +35,8 @@ import {
   rogueFieldTraits,
 } from './RogueliteMode';
 import type { BiomeId, FieldTraitId } from '../field/FieldTypes';
+import type { Team } from '../units/UnitTypes';
+import type { TDDuelCommand } from '../net/tdVersusProtocol';
 import {
   buildTDTerrain,
   pickTDTerrain,
@@ -188,18 +190,16 @@ const DIVINE_UNITS: readonly UnitTypeId[] = UNIT_TYPE_LIST.filter((u) => u.categ
 // ---------------------------------------------------------------
 
 
-// ---- オンライン対戦（並走型） ----
+// ---- オンライン対戦（対面型。ホストが青＝左の城、ゲストが赤＝右の城） ----
 
-/** 倒した敵のコストのうち、相手への送り込み予算になる割合 */
-export const TD_VS_SEND_RATIO = 0.2;
-/** 送り込みを送る間隔（秒） */
-export const TD_VS_SEND_INTERVAL = 10;
-/** これ未満の予算は次の回へ持ち越す */
-export const TD_VS_SEND_MIN = 60;
-/** 送り込まれた敵が湧き終わるまでの時間（秒） */
-export const TD_VS_SEND_SPREAD = 3;
-/** 敵ウェーブ用の乱数を、ほかの乱数と分けるための値 */
-const TD_VS_WAVE_SALT = 0x5bd1e995;
+/** 対戦の城の HP（両者同じ。城強化の増え幅もこれを基準にする） */
+export const TD_DUEL_BASE_HP = 3000;
+/** 対戦の制限時間（秒）。過ぎたら城の残り HP の割合が多いほうの勝ち（同じなら引き分け） */
+export const TD_DUEL_TIME_LIMIT = 600;
+/** 対戦で敵兵を倒したときの経験値の倍率（AI のウェーブより倒す数が少ないため多めにする） */
+export const TD_DUEL_XP_MUL = 2;
+/** 陣営ごとの乱数（宝箱・出撃のばらつき）を分けるための値 */
+const TD_DUEL_SIDE_SALT = 0x5bd1e995;
 
 /** 対戦の n 回目（0 始まり）の選択権の3択の強さ（ラウンド換算） */
 export function getVersusOfferRound(pick: number): number {
@@ -352,20 +352,16 @@ export type DeployBlock = 'cooldown' | 'money' | 'full' | 'not_owned' | 'ended';
 interface SpawnOrder {
   id: UnitTypeId;
   at: number;
-  /** sent は対戦相手から送り込まれた敵（通常の敵と同じく同時数の上限に従う） */
-  kind: 'normal' | 'counter' | 'elite' | 'boss' | 'sent';
+  kind: 'normal' | 'counter' | 'elite' | 'boss';
 }
 
 /** TDRun の追加設定 */
 export interface TDRunOptions {
-  /** オンライン対戦。敵ウェーブと強化の3択を共通の種で決め、宝箱などは各自の乱数で決める */
-  versus?: boolean;
-}
-
-/** 相手に送り込む敵（送信待ち） */
-export interface TDVersusSend {
-  budget: number;
-  seed: number;
+  /**
+   * オンライン対戦（対面型）でこのランが受け持つ陣営。0 はホスト（青・左の城）、1 はゲスト（赤・右の城）。
+   * 対戦では AI の敵ウェーブは出ず、相手の城を敵の城とする。強化の3択は共通の種で決まり、宝箱は陣営ごとの乱数で決まる。
+   */
+  duel?: { team: 0 | 1 };
 }
 
 export type TDEndReason = 'clear' | 'defeat' | 'quit';
@@ -420,35 +416,40 @@ export class TDRun {
   private lastChestTime = -Infinity;
   endReason: TDEndReason | null = null;
   /** Wave の開始・反撃など、画面に出す知らせ */
-  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain' | 'sent'; value: number }> =
-    [];
+  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain'; value: number }> = [];
   /** 作り直した地形の回数（0 が開始時の地形） */
   terrainIndex = -1;
   terrainBiome: BiomeId | null = null;
   terrainTrait: FieldTraitId | null = null;
   /** 宝箱・門・出撃のばらつきなど、プレイヤーごとの乱数 */
   private readonly rng: () => number;
-  /** 時間で湧く敵ウェーブ用の乱数（対戦では両者で同じ並びになる） */
+  /** 時間で湧く敵ウェーブ用の乱数 */
   private readonly waveRng: () => number;
-  /** オンライン対戦か */
-  readonly versus: boolean;
+  /** オンライン対戦（対面型）か */
+  readonly duel: boolean;
+  /** このランが受け持つ陣営（1 人用は 0） */
+  readonly team: Team;
+  /** 自軍の城から見た戦場の向き（team 0 は +x、team 1 は -x） */
+  readonly dir: 1 | -1;
   /** これまでに使った強化の選択権の数（対戦の3択は「何回目か」で決まる） */
   picks = 0;
-  /** 相手に送り込む予算のたまり */
-  sendBank = 0;
-  private sendTimer = 0;
-  /** 送信待ちの送り込み（GameApp が取り出してサーバーへ送る） */
-  readonly outbox: TDVersusSend[] = [];
-  /** 送り込んだ予算と、送り込まれた予算の合計 */
-  sentTotal = 0;
-  receivedTotal = 0;
-  /** 対戦の決着（サーバーから届く。null ならまだ） */
-  versusOutcome: 'win' | 'lose' | null = null;
+  /**
+   * 対戦で、画面の操作をすぐには反映せず送るための受け口（TDDuel が付ける）。
+   * 付いていれば request* は操作を送るだけで、両端末が同じ時点で execute する。
+   */
+  commandSink: ((cmd: TDDuelCommand) => void) | null = null;
+  /** 送ったがまだ反映されていない選択・引き直しの数（画面の二度押しを防ぐ） */
+  pendingChoices = 0;
+  pendingRerolls = 0;
+  /** 対戦で自動で開けた宝箱の中身（GameApp が取り出して知らせる） */
+  readonly chestLog: JackpotReward[][] = [];
 
   constructor(seed: number, starter: RogueStarter, rng?: () => number, options: TDRunOptions = {}) {
-    this.versus = options.versus ?? false;
-    this.rng = rng ?? createSeededRng(seed);
-    this.waveRng = this.versus ? createSeededRng(Math.imul(seed ^ TD_VS_WAVE_SALT, 0x9e3779b1)) : this.rng;
+    this.duel = options.duel !== undefined;
+    this.team = options.duel?.team ?? 0;
+    this.dir = this.team === 0 ? 1 : -1;
+    this.rng = rng ?? createSeededRng(this.duel ? Math.imul(seed ^ TD_DUEL_SIDE_SALT, this.team + 3) : seed);
+    this.waveRng = this.rng;
     this.run = new RogueliteRun(seed, starter);
     // スターターの初期レリックは持たず、城の近くを守る加護のトーテムを最初から置く
     this.run.relics = TD_START_RELICS.map((id) => ({ id, level: 0, active: true }));
@@ -458,7 +459,27 @@ export class TDRun {
     this.run.gold = TD_START_MONEY;
     this.run.rerollsLeft = 1;
     this.run.round = 1;
-    this.rules = new RogueliteRules();
+    this.rules = new RogueliteRules(null, this.team);
+  }
+
+  /** 自軍の城を基準にした x（team 1 は左右を反転する。戦場は点対称） */
+  private sx(x: number): number {
+    return x * this.dir;
+  }
+
+  /** 自軍の城を基準にした z（点対称なので team 1 は z も反転する） */
+  private sz(z: number): number {
+    return z * this.dir;
+  }
+
+  /** 自軍の兵・施設が敵の城を向く角度 */
+  get facing(): number {
+    return (Math.PI / 2) * this.dir;
+  }
+
+  /** 自軍の城の初期 HP */
+  get baseHp(): number {
+    return this.duel ? TD_DUEL_BASE_HP : TD_PLAYER_BASE_HP;
   }
 
   get money(): number {
@@ -490,23 +511,36 @@ export class TDRun {
   /** 基地とレリックを戦場に置き、ルールを有効にする（battle.configureStage の後に呼ぶ） */
   setup(battle: Battle): void {
     battle.setFieldWalls(TD_FIELD_WALLS);
-    this.playerBase = battle.spawnFacility('hq', 0, TD_PLAYER_BASE_X, 0, Math.PI / 2, { hp: TD_PLAYER_BASE_HP });
-    this.enemyBase = battle.spawnFacility('hq', 1, TD_ENEMY_BASE_X, 0, -Math.PI / 2, { hp: TD_ENEMY_BASE_HP });
-    for (const base of [this.playerBase, this.enemyBase]) {
-      base.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
-      base.rangedDamageMulLow = TD_BASE_RANGED_DAMAGE_MUL_STAGE2;
-      base.lowHpRatio = TD_BASE_STAGE2_RATIO;
-    }
-    this.lastEnemyBaseHp = this.enemyBase.hp;
+    this.playerBase = battle.spawnFacility('hq', this.team, this.sx(TD_PLAYER_BASE_X), 0, this.facing, { hp: this.baseHp });
+    TDRun.prepareBase(this.playerBase);
     this.battleRef = battle;
-    this.updateEnemyCannons(battle);
+    if (!this.duel) {
+      this.enemyBase = battle.spawnFacility('hq', 1, TD_ENEMY_BASE_X, 0, -Math.PI / 2, { hp: TD_ENEMY_BASE_HP });
+      TDRun.prepareBase(this.enemyBase);
+      this.lastEnemyBaseHp = this.enemyBase.hp;
+      this.updateEnemyCannons(battle);
+      battle.rules = new TDBattleRules(this);
+    }
     for (let i = 0; i < TD_START_PLAYER_CANNONS; i++) this.addPlayerCannon(0);
-    battle.rules = new TDBattleRules(this);
     battle.preferCloserFacility = true;
     this.rules.start(battle);
     this.syncTags(battle);
     this.rebuildRelics(battle);
-    this.regenerateTerrain(battle);
+    // 対戦では地形は1つなので、ホスト側のランだけが作り直す
+    if (this.team === 0) this.regenerateTerrain(battle);
+  }
+
+  /** 対戦で、相手の城を敵の城にする（TDDuel が両陣営の setup の後に呼ぶ） */
+  linkOpponent(opponent: TDRun): void {
+    this.enemyBase = opponent.playerBase;
+    this.lastEnemyBaseHp = this.enemyBase?.hp ?? 0;
+  }
+
+  /** 城は遠距離攻撃に強く、HP が半分を切るとさらに強くなる */
+  private static prepareBase(base: Facility): void {
+    base.rangedDamageMul = TD_BASE_RANGED_DAMAGE_MUL;
+    base.rangedDamageMulLow = TD_BASE_RANGED_DAMAGE_MUL_STAGE2;
+    base.lowHpRatio = TD_BASE_STAGE2_RATIO;
   }
 
   /** 地形を次のものに作り直す。重なったユニットは近くへ逃がす */
@@ -537,9 +571,9 @@ export class TDRun {
     let gateIndex = 0;
     for (const relic of active) {
       if (isGateTypeId(relic.id)) {
-        const x = getTDGateX(gateIndex, gateCount);
+        const x = this.sx(getTDGateX(gateIndex, gateCount));
         gateIndex++;
-        const facility = battle.spawnFacility(relic.id, 0, x, 0, Math.PI / 2, {
+        const facility = battle.spawnFacility(relic.id, this.team, x, 0, this.facing, {
           gateLevel: relic.level,
           enchantWidth: TD_GATE_WIDTH,
           invulnerable: true,
@@ -550,7 +584,10 @@ export class TDRun {
         const pos = TD_RELIC_POSITIONS[relic.id];
         if (!pos) continue;
         this.relicFacilities.push(
-          battle.spawnFacility(relic.id, 0, pos.x, pos.z, Math.PI / 2, { relicLevel: relic.level, invulnerable: true }),
+          battle.spawnFacility(relic.id, this.team, this.sx(pos.x), this.sz(pos.z), this.facing, {
+            relicLevel: relic.level,
+            invulnerable: true,
+          }),
         );
       }
     }
@@ -571,6 +608,10 @@ export class TDRun {
     const base = this.playerBase;
     if (base?.alive && base.hp < base.maxHp) base.hp = Math.min(base.maxHp, base.hp + this.baseRegen * dt);
     for (const [id, t] of this.cooldowns) this.cooldowns.set(id, Math.max(0, t - dt));
+    if (this.duel) {
+      this.stepDuel(battle);
+      return;
+    }
 
     while (this.wavesStarted < TD_WAVE_COUNT && this.time >= this.wavesStarted * TD_WAVE_SECONDS) {
       this.startWave(this.wavesStarted + 1);
@@ -597,11 +638,22 @@ export class TDRun {
         );
       }
     }
-    if (this.versus) this.updateSend(dt);
     this.flushQueue(battle);
     this.updateGates(battle);
     this.trackEnemyBase();
     this.clearCorpses(battle);
+    this.run.round = getWaveRound(this.wave);
+    if (this.autoDeploy) this.autoDeployReady(battle);
+  }
+
+  /** 対戦の1ステップ: AI の敵は出さず、地形・門・敵の城へのダメージ・自動出撃だけを進める */
+  private stepDuel(battle: Battle): void {
+    if (this.team === 0) {
+      while (this.time >= (this.terrainIndex + 1) * TD_TERRAIN_SECONDS && this.terrainIndex >= 0) this.regenerateTerrain(battle);
+      this.clearCorpses(battle);
+    }
+    this.updateGates(battle);
+    this.trackEnemyBase();
     this.run.round = getWaveRound(this.wave);
     if (this.autoDeploy) this.autoDeployReady(battle);
   }
@@ -679,7 +731,7 @@ export class TDRun {
     let alive = battle.aliveCount(1);
     const keep: SpawnOrder[] = [];
     for (const order of this.queue) {
-      const capped = order.kind === 'normal' || order.kind === 'sent';
+      const capped = order.kind === 'normal';
       if (order.at > this.time || (capped && alive >= TD_ENEMY_CAP)) {
         keep.push(order);
         continue;
@@ -720,6 +772,7 @@ export class TDRun {
     this.lastEnemyBaseHp = hp;
     this.baseDamage += lost;
     this.addMoney(lost * TD_BASE_DAMAGE_MONEY, false);
+    if (this.duel) return;
     const steps = Math.min(9, Math.floor((1 - hp / base.maxHp) / TD_COUNTER_STEP + 1e-9));
     while (this.counters < steps && base.alive) {
       this.counters++;
@@ -760,15 +813,15 @@ export class TDRun {
     if (this.gateFacilities.length === 0) return;
     for (const start of [...battle.units]) {
       let u = start;
-      if (!u.alive || u.team !== 0) continue;
+      if (!u.alive || u.team !== this.team) continue;
       if (!this.deployed.has(u) && u.gatesPassed.size === 0) continue;
       for (const { facility, relic } of this.gateFacilities) {
-        if (!u.alive || u.gatesPassed.has(facility.id) || u.pelvis.pos.x < facility.pos.x) continue;
+        if (!u.alive || u.gatesPassed.has(facility.id) || (u.pelvis.pos.x - facility.pos.x) * this.dir < 0) continue;
         u.gatesPassed.add(facility.id);
         if (isEnchantGate(relic.id)) {
           applyGateEnchant(battle, relic, u, rollGateCloneAngle(relic, this.rng));
           while (u.replacedBy) u = u.replacedBy;
-          battle.emitEffect({ kind: 'gate_multiply', pos: new Vector3(u.pelvis.pos.x, 0.6, u.pelvis.pos.z), team: 0 });
+          battle.emitEffect({ kind: 'gate_multiply', pos: new Vector3(u.pelvis.pos.x, 0.6, u.pelvis.pos.z), team: this.team });
         }
       }
     }
@@ -782,8 +835,94 @@ export class TDRun {
     if (!this.run.card(id)) return 'not_owned';
     if ((this.cooldowns.get(id) ?? 0) > 0) return 'cooldown';
     if (this.money < getDeployCost(id)) return 'money';
-    if (battle.aliveCount(0) >= TD_ALLY_CAP) return 'full';
+    if (battle.aliveCount(this.team) >= TD_ALLY_CAP) return 'full';
     return null;
+  }
+
+  // ---- 画面からの操作（対戦では送るだけで、反映は execute） ----
+
+  /** 出撃を頼む。出せるなら true（対戦では送っただけで、少し後に出る） */
+  requestDeploy(battle: Battle, id: UnitTypeId): boolean {
+    if (this.deployBlock(battle, id) !== null) return false;
+    if (this.commandSink) {
+      this.commandSink({ k: 'deploy', id });
+      return true;
+    }
+    return this.deploy(battle, id).length > 0;
+  }
+
+  /** 3択の index 番目を選ぶ。選べたらその選択肢を返す */
+  requestChoose(battle: Battle, index: number): RewardOption | null {
+    if (this.commandSink) {
+      const option = this.pendingChoices + this.pendingRerolls > 0 ? undefined : this.currentOptions()?.[index];
+      if (!option) return null;
+      this.pendingChoices++;
+      this.commandSink({ k: 'choose', i: index });
+      return option;
+    }
+    return this.choose(battle, index);
+  }
+
+  requestReroll(): boolean {
+    if (this.commandSink) {
+      if (this.pendingChoices + this.pendingRerolls > 0 || !this.currentOptions() || this.money < this.rerollPrice) return false;
+      this.pendingRerolls++;
+      this.commandSink({ k: 'reroll' });
+      return true;
+    }
+    return this.reroll();
+  }
+
+  requestFund(): boolean {
+    if (this.commandSink) {
+      const price = this.fundPrice;
+      if (price === null || this.money < price) return false;
+      this.commandSink({ k: 'fund' });
+      return true;
+    }
+    return this.buyFund();
+  }
+
+  requestBase(): boolean {
+    if (this.commandSink) {
+      const price = this.basePrice;
+      if (!this.playerBase?.alive || price === null || this.money < price) return false;
+      this.commandSink({ k: 'base' });
+      return true;
+    }
+    return this.upgradeBase();
+  }
+
+  requestAuto(on: boolean): void {
+    if (this.commandSink) this.commandSink({ k: 'auto', on });
+    else this.autoDeploy = on;
+  }
+
+  /** 送られてきた操作を反映する（対戦。両端末で同じステップに呼ばれる） */
+  execute(battle: Battle, cmd: TDDuelCommand): void {
+    if (this.ended) return;
+    switch (cmd.k) {
+      case 'deploy':
+        if (UNIT_TYPES[cmd.id as UnitTypeId]) this.deploy(battle, cmd.id as UnitTypeId);
+        return;
+      case 'choose':
+        this.pendingChoices = Math.max(0, this.pendingChoices - 1);
+        this.choose(battle, cmd.i);
+        return;
+      case 'reroll':
+        this.pendingRerolls = Math.max(0, this.pendingRerolls - 1);
+        this.reroll();
+        return;
+      case 'fund':
+        this.buyFund();
+        return;
+      case 'base':
+        this.upgradeBase();
+        return;
+      case 'auto':
+        this.autoDeploy = cmd.on;
+        return;
+    }
   }
 
   /** カードの部隊を基地から出撃させる。出撃した兵を返す（出せなければ空） */
@@ -792,12 +931,13 @@ export class TDRun {
     const card = this.run.card(id)!;
     this.run.gold -= getDeployCost(id);
     this.cooldowns.set(id, getDeployCooldown(id));
-    const n = Math.min(getSquadSize(id), TD_ALLY_CAP - battle.aliveCount(0));
+    const n = Math.min(getSquadSize(id), TD_ALLY_CAP - battle.aliveCount(this.team));
     const mul = getUnitLevelMul(card.level);
     const spawned: Unit[] = [];
     for (let i = 0; i < n; i++) {
       const z = (i - (n - 1) / 2) * Math.max(1.2, UNIT_TYPES[id].scale * 1.3) + (this.rng() - 0.5) * 0.6;
-      const u = battle.spawnUnit(id, 0, TD_DEPLOY_X - this.rng() * 0.6, Math.max(-9, Math.min(9, z)), Math.PI / 2);
+      const x = this.sx(TD_DEPLOY_X - this.rng() * 0.6);
+      const u = battle.spawnUnit(id, this.team, x, this.sz(Math.max(-9, Math.min(9, z))), this.facing);
       if (card.level > 1) {
         u.maxHp *= mul;
         u.hp = u.maxHp;
@@ -830,8 +970,7 @@ export class TDRun {
     this.kills++;
     const cost = victim.type.cost;
     this.addMoney(cost * TD_KILL_MONEY_RATIO, false);
-    this.gainXp(xpForKill(victim));
-    if (this.versus) this.sendBank += cost * TD_VS_SEND_RATIO;
+    this.gainXp(xpForKill(victim) * (this.duel ? TD_DUEL_XP_MUL : 1));
     if (victim.isBoss) return 2;
     if (this.time - this.lastChestTime < TD_CHEST_COOLDOWN) return null;
     const chance = TD_CHEST_CHANCE + (cost >= 300 ? TD_CHEST_HIGH_VALUE_BONUS : 0);
@@ -855,7 +994,7 @@ export class TDRun {
   openChest(battle: Battle, tier: ChestTier): JackpotReward[] {
     const rewards = this.rollChest(tier);
     const hadCards = this.snapshotCards();
-    for (const r of rewards) applyJackpotReward(r, battle, this.run, this.rng);
+    for (const r of rewards) applyJackpotReward(r, battle, this.run, this.rng, this.team);
     this.afterChestRewards(battle, hadCards);
     return rewards;
   }
@@ -880,7 +1019,7 @@ export class TDRun {
       if (!hadCards.has(c.id)) this.cooldowns.set(c.id, getDeployCooldown(c.id));
     }
     for (const u of battle.units) {
-      if (u.alive && u.team === 0 && !this.deployed.has(u) && !hadCards.has(u.type.id)) this.deployed.add(u);
+      if (u.alive && u.team === this.team && !this.deployed.has(u) && !hadCards.has(u.type.id)) this.deployed.add(u);
     }
     this.syncTags(battle);
   }
@@ -890,7 +1029,7 @@ export class TDRun {
     if (this.choices <= 0) return null;
     if (!this.options) {
       this.draws++;
-      if (this.versus) {
+      if (this.duel) {
         // 対戦: 何回目の選択権か・何回目の引き直しかだけで決め、両者に同じ候補を出す
         const round = getVersusOfferRound(this.picks);
         const rng = createSeededRng(getVersusOfferSeed(this.run.seed, this.picks, this.rerollsThisPick));
@@ -905,6 +1044,8 @@ export class TDRun {
 
   /** 3択から1つ選ぶ */
   choose(battle: Battle, index: number): RewardOption | null {
+    // 対戦では3択の表示（持ち物で変わる）を、両端末で同じ「選んだ時点の持ち物」から作り直す
+    if (this.duel) this.options = null;
     const option = this.currentOptions()?.[index];
     if (!option) return null;
     applyReward(this.run, option);
@@ -923,6 +1064,7 @@ export class TDRun {
   }
 
   reroll(): boolean {
+    if (this.duel) this.options = null;
     if (!this.currentOptions()) return false;
     const price = this.rerollPrice;
     if (price === 0) this.run.rerollsLeft--;
@@ -965,7 +1107,7 @@ export class TDRun {
     if (!base?.alive || price === null || this.money < price) return false;
     this.run.gold -= price;
     this.baseLevel++;
-    const add = TD_PLAYER_BASE_HP * TD_BASE_HP_STEP;
+    const add = this.baseHp * TD_BASE_HP_STEP;
     base.maxHp += add;
     base.hp += add;
     // 城の砲台を1基足す（段が上がるほど強い砲台）
@@ -978,42 +1120,17 @@ export class TDRun {
     const pos = TD_PLAYER_CANNON_POSITIONS[this.playerCannons.length];
     if (!pos || !this.battleRef) return;
     this.playerCannons.push(
-      this.battleRef.spawnFacility('cannon_tower', 0, pos.x, pos.z, Math.PI / 2, { relicLevel: level, invulnerable: true }),
+      this.battleRef.spawnFacility('cannon_tower', this.team, this.sx(pos.x), this.sz(pos.z), this.facing, {
+        relicLevel: level,
+        invulnerable: true,
+      }),
     );
-  }
-
-  // ---- オンライン対戦 ----
-
-  /** たまった送り込み予算を一定間隔で送信待ちにする */
-  private updateSend(dt: number): void {
-    this.sendTimer += dt;
-    if (this.sendTimer < TD_VS_SEND_INTERVAL) return;
-    this.sendTimer -= TD_VS_SEND_INTERVAL;
-    if (this.sendBank < TD_VS_SEND_MIN) return;
-    const budget = Math.round(this.sendBank);
-    this.sendBank = 0;
-    this.sentTotal += budget;
-    this.outbox.push({ budget, seed: Math.floor(this.rng() * 0x7fffffff) });
-  }
-
-  /** 相手から送り込まれた敵を、自分の今の Wave の顔ぶれで湧かせる */
-  receiveSend(budget: number, seed: number): UnitTypeId[] {
-    if (this.ended) return [];
-    const ids = pickWaveEnemies(getWaveRound(Math.max(1, this.wave)), budget, createSeededRng(seed));
-    ids.forEach((id, i) => {
-      const at = this.time + (ids.length <= 1 ? 0 : (TD_VS_SEND_SPREAD * i) / (ids.length - 1));
-      this.queue.push({ id, at, kind: 'sent' });
-    });
-    this.receivedTotal += budget;
-    this.events.push({ kind: 'sent', value: budget });
-    return ids;
   }
 
   // ---- 決着 ----
 
+  /** 1 人用の勝敗（対戦の勝敗は TDDuel が決める） */
   result(): BattleResult {
-    if (this.versusOutcome === 'win') return 0;
-    if (this.versusOutcome === 'lose') return 1;
     if (this.playerBase && !this.playerBase.alive) return 1;
     if (this.enemyBase && !this.enemyBase.alive) return 0;
     return null;

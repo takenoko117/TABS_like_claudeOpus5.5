@@ -1,7 +1,7 @@
 import { Vector3 } from 'three';
 import type { Unit } from '../units/Unit';
 import type { Battle } from './Battle';
-import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
+import { UNIT_TYPES, UNIT_TYPE_LIST, type Team, type UnitTypeId } from '../units/UnitTypes';
 import { getSquadSize, getUnitSlotCost, type RogueRoundKind, type RogueliteRun } from './RogueliteMode';
 
 /** レア度。0=コモン, 1=レア, 2=エピック, 3=レジェンド */
@@ -165,9 +165,9 @@ function emitAllyEffect(battle: Battle, u: Unit): void {
 }
 
 /** 複製する味方をランダムに選ぶ */
-export function pickCloneSources(battle: Battle, count: number, rng: () => number = Math.random): Unit[] {
+export function pickCloneSources(battle: Battle, count: number, rng: () => number = Math.random, team: Team = 0): Unit[] {
   return battle.units
-    .filter((u) => u.alive && u.team === 0)
+    .filter((u) => u.alive && u.team === team)
     .map((u) => ({ u, key: rng() }))
     .sort((a, b) => a.key - b.key)
     .slice(0, count)
@@ -206,8 +206,14 @@ export function pickSummonUnit(run: RogueliteRun, rng: () => number = Math.rando
 }
 
 /** 味方の中心付近に部隊を召喚し、カードを手持ちに加える */
-export function summonUnit(battle: Battle, run: RogueliteRun, id: UnitTypeId, rng: () => number = Math.random): Unit[] {
-  const allies = battle.units.filter((u) => u.alive && u.team === 0);
+export function summonUnit(
+  battle: Battle,
+  run: RogueliteRun,
+  id: UnitTypeId,
+  rng: () => number = Math.random,
+  team: Team = 0,
+): Unit[] {
+  const allies = battle.units.filter((u) => u.alive && u.team === team);
   const cx = allies.reduce((sum, u) => sum + u.pelvis.pos.x, 0) / Math.max(1, allies.length);
   const cz = allies.reduce((sum, u) => sum + u.pelvis.pos.z, 0) / Math.max(1, allies.length);
   run.gainUnit(id);
@@ -215,7 +221,7 @@ export function summonUnit(battle: Battle, run: RogueliteRun, id: UnitTypeId, rn
   for (let i = 0; i < getSquadSize(id); i++) {
     const angle = rng() * Math.PI * 2;
     const dist = 1 + rng() * 2;
-    const unit = battle.spawnUnit(id, 0, cx + Math.cos(angle) * dist, cz + Math.sin(angle) * dist);
+    const unit = battle.spawnUnit(id, team, cx + Math.cos(angle) * dist, cz + Math.sin(angle) * dist);
     const top = new Vector3(unit.pelvis.pos.x, 16, unit.pelvis.pos.z);
     battle.emitEffect({ kind: 'lightning', points: [top, unit.pelvis.pos.clone()] });
     emitAllyEffect(battle, unit);
@@ -231,14 +237,15 @@ export function collectUnopenedChests(run: Pick<RogueliteRun, 'gold'>, count: nu
   return gold;
 }
 
-/** 報酬をランと戦場へ適用する */
+/** 報酬をランと戦場へ適用する（team は受け取る陣営。TD の対面対戦ではゲストが 1） */
 export function applyJackpotReward(
   reward: JackpotReward,
   battle: Battle,
   run: RogueliteRun,
   rng: () => number = Math.random,
+  team: Team = 0,
 ): void {
-  const allies = battle.units.filter((u) => u.alive && u.team === 0);
+  const allies = battle.units.filter((u) => u.alive && u.team === team);
   const effect = reward.effect;
   switch (effect.kind) {
     case 'gold':
@@ -262,16 +269,16 @@ export function applyJackpotReward(
       }
       break;
     case 'clone': {
-      for (const u of pickCloneSources(battle, effect.count, rng)) cloneAlly(battle, u, rng);
+      for (const u of pickCloneSources(battle, effect.count, rng, team)) cloneAlly(battle, u, rng);
       break;
     }
     case 'summon': {
       const id = pickSummonUnit(run, rng);
-      if (id) summonUnit(battle, run, id, rng);
+      if (id) summonUnit(battle, run, id, rng, team);
       break;
     }
     case 'smite': {
-      const enemies = battle.units.filter((u) => u.alive && u.team !== 0);
+      const enemies = battle.units.filter((u) => u.alive && u.team !== team);
       enemies.forEach((u, i) => {
         if (i < MAX_SMITE_EFFECTS) {
           const top = new Vector3(u.pelvis.pos.x, 16, u.pelvis.pos.z);

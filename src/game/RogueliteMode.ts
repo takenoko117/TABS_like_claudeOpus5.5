@@ -306,11 +306,10 @@ interface MassProjectile {
 }
 
 /**
- * ローグライトの戦闘ルール。自軍（team 0）のタグの数に応じたシナジーと、
+ * ローグライトの戦闘ルール。自軍（既定は team 0。TD の対面対戦では陣営ごとに作る）のタグの数に応じたシナジーと、
  * 属性の門で付与された状態異常を戦闘に反映する。
  */
 export class RogueliteRules implements BattleRules {
-  readonly team = 0;
   tagCounts = new Map<TagId, number>();
   /** 門で兵種に加わったタグ（シナジーの数え方に入る） */
   readonly grantedByType = new Map<UnitTypeId, Set<TagId>>();
@@ -340,7 +339,11 @@ export class RogueliteRules implements BattleRules {
   /** シナジーが起こした処理の発生源（戦闘後の内訳に使う） */
   private source: string | null = null;
 
-  constructor(private readonly stats: DamageStats | null = null) {}
+  constructor(
+    private readonly stats: DamageStats | null = null,
+    /** このルールが受け持つ陣営 */
+    readonly team: Team = 0,
+  ) {}
 
   tier(tag: TagId): TagTier {
     return getTagTier(this.tagCounts.get(tag) ?? 0);

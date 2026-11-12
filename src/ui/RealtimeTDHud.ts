@@ -4,6 +4,7 @@ import {
   getDeployCost,
   levelForTotalXp,
   TD_BASE_PRICE_START,
+  TD_DUEL_TIME_LIMIT,
   TD_DURATION_SECONDS,
   TD_START_PLAYER_CANNONS,
   TD_WAVE_COUNT,
@@ -22,7 +23,8 @@ import {
   type RogueStarter,
 } from '../game/RogueliteMode';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
-import type { TDVersusSession } from '../game/TDVersusSession';
+import type { TDLockstep } from '../game/TDDuel';
+import type { TDVersusSession, TDVersusVerdict } from '../game/TDVersusSession';
 import type { TDVersusEndReason } from '../net/tdVersusProtocol';
 import { renderVersusLobby, renderVersusPanel, renderVersusResult, updateVersusPanel } from './TDVersusUi';
 import { BIOMES, TRAITS } from '../field/BiomeDefs';
@@ -55,6 +57,8 @@ export interface TDHudHost {
   retry(): void;
   /** オンライン対戦（対戦していなければ null） */
   getVersus(): TDVersusSession | null;
+  /** 対戦の試合のロックステップ（試合中でなければ null） */
+  getLockstep(): TDLockstep | null;
   /** スターター選択からオンライン対戦のロビーへ */
   openVersus(): void;
   vsJoin(room: string): void;
@@ -344,7 +348,7 @@ export class RealtimeTDHud {
     this.hideModal();
     this.elAnnounce.classList.add('hidden');
     this.root.classList.toggle('td-running', this.host.getRun() !== null);
-    const versus = this.host.getRun()?.versus ?? false;
+    const versus = this.host.getRun()?.duel ?? false;
     this.root.classList.toggle('td-versus', versus);
     this.elVs.classList.toggle('hidden', !versus);
     this.bindPreviews();
@@ -365,8 +369,7 @@ export class RealtimeTDHud {
       if (this.announceTimer <= 0) this.elAnnounce.classList.add('hidden');
     }
     this.updateTop(td);
-    const vs = this.host.getVersus();
-    if (td.versus && vs) updateVersusPanel(this.elVs, td, vs);
+    if (td.duel) updateVersusPanel(this.elVs, this.host.getLockstep());
     this.updateXp(td, realDt);
     this.updateSide(td);
     const key = td.run.cards.map((c) => c.id).join(',');
@@ -385,7 +388,7 @@ export class RealtimeTDHud {
     const events = td.events.splice(0).filter((e) => e.kind !== 'levelup');
     if (events.length === 0) return;
     // 同じフレームに重なったら最も重要なものだけを出す
-    const order = ['boss', 'counter', 'sent', 'terrain', 'elite', 'wave'] as const;
+    const order = ['boss', 'counter', 'terrain', 'elite', 'wave'] as const;
     const top = [...events].sort(
       (a, b) => order.indexOf(a.kind as (typeof order)[number]) - order.indexOf(b.kind as (typeof order)[number]),
     )[0];
@@ -401,9 +404,6 @@ export class RealtimeTDHud {
         break;
       case 'counter':
         this.announce(`🔥 敵基地の反撃！（${top.value * 10}%）`, 'counter');
-        break;
-      case 'sent':
-        this.announce(`📥 相手から敵が送り込まれた！（${top.value}）`, 'counter');
         break;
       case 'elite':
         this.announce(`😈 WAVE ${top.value} エリート出現`, 'elite');
@@ -446,11 +446,23 @@ export class RealtimeTDHud {
     };
     if (td.playerBase) setBase('.td-base.ally', td.playerBase.hp, td.playerBase.maxHp, td.playerBase.inLowHpStage);
     if (td.enemyBase) setBase('.td-base.enemy', td.enemyBase.hp, td.enemyBase.maxHp, td.enemyBase.inLowHpStage);
-    const over = td.time >= TD_DURATION_SECONDS;
-    this.elTop.querySelector('.td-wave')!.textContent = over ? '最終決戦' : `WAVE ${td.wave} / ${TD_WAVE_COUNT}`;
     const timeEl = this.elTop.querySelector<HTMLElement>('.td-time')!;
-    timeEl.textContent = over ? `+${formatTime(td.time - TD_DURATION_SECONDS)}` : formatTime(TD_DURATION_SECONDS - td.time);
-    timeEl.classList.toggle('over', over);
+    const over = !td.duel && td.time >= TD_DURATION_SECONDS;
+    if (td.duel) {
+      // 対戦: 城の名前を「あなた／相手」にし、制限時間の残りを出す
+      this.elTop.querySelector('.td-base.ally .td-base-label')!.textContent = `🏰 あなたの城（${td.team === 0 ? '青' : '赤'}）`;
+      this.elTop.querySelector('.td-base.enemy .td-base-label')!.textContent = `相手の城（${td.team === 0 ? '赤' : '青'}） 🏯`;
+      this.elTop.querySelector('.td-wave')!.textContent = '⚔ 対戦';
+      const left = Math.max(0, TD_DUEL_TIME_LIMIT - td.time);
+      timeEl.textContent = formatTime(left);
+      timeEl.classList.toggle('over', left <= 60);
+    } else {
+      this.elTop.querySelector('.td-base.ally .td-base-label')!.textContent = '🏰 自軍の城';
+      this.elTop.querySelector('.td-base.enemy .td-base-label')!.textContent = '敵軍の城 🏯';
+      this.elTop.querySelector('.td-wave')!.textContent = over ? '最終決戦' : `WAVE ${td.wave} / ${TD_WAVE_COUNT}`;
+      timeEl.textContent = over ? `+${formatTime(td.time - TD_DURATION_SECONDS)}` : formatTime(TD_DURATION_SECONDS - td.time);
+      timeEl.classList.toggle('over', over);
+    }
     const terrainEl = this.elTop.querySelector<HTMLElement>('.td-terrain')!;
     const biome = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
     if (biome) {
@@ -633,7 +645,8 @@ export class RealtimeTDHud {
 
   /** オーブが届いて見えている、まだ使っていない選択権の数 */
   private revealedChoices(td: TDRun): number {
-    return td.choices - Math.max(0, td.level - this.shownLevel);
+    // 対戦で送ったがまだ反映されていない選択は、使ったものとして数える
+    return td.choices - td.pendingChoices - Math.max(0, td.level - this.shownLevel);
   }
 
   private updateChoice(td: TDRun): void {
@@ -675,7 +688,8 @@ export class RealtimeTDHud {
     if (!options) return;
     const revealed = this.revealedChoices(td);
     const price = td.rerollPrice;
-    const key = [options.map((o) => o.title).join('|'), revealed, price, td.money >= price, td.run.rerollsLeft].join('/');
+    const waiting = td.pendingChoices + td.pendingRerolls > 0;
+    const key = [options.map((o) => o.title).join('|'), revealed, price, td.money >= price, td.run.rerollsLeft, waiting].join('/');
     if (key === this.choiceKey) return;
     this.choiceKey = key;
     const cards = options
@@ -687,7 +701,7 @@ export class RealtimeTDHud {
             : o.kind === 'gold'
               ? GOLD_VOXEL
               : '<span class="td-emoji">➕</span>';
-        return `<button type="button" class="td-choice-card ${o.rarity}" data-choose="${i}">
+        return `<button type="button" class="td-choice-card ${o.rarity}" data-choose="${i}" ${waiting ? 'disabled' : ''}>
           <span class="td-choice-key">${i + 1}</span>
           <span class="td-choice-rarity">${RARITY_LABELS[o.rarity]}</span>
           <span class="td-choice-icon">${icon}</span>
@@ -700,8 +714,8 @@ export class RealtimeTDHud {
         <h2>LEVEL UP! <small>強化を1つ選ぶ${revealed > 1 ? `（あと${revealed}回）` : ''}</small></h2>
         <div class="td-choice-cards">${cards}</div>
         <div class="td-choice-foot">
-          <button type="button" class="td-btn" data-td="reroll" ${td.money < price ? 'disabled' : ''}>🔄 引き直す（${price === 0 ? `無料 残り${td.run.rerollsLeft}` : `${price}G`}）</button>
-          <small>選んでいる間は時間が止まります</small>
+          <button type="button" class="td-btn" data-td="reroll" ${td.money < price || waiting ? 'disabled' : ''}>🔄 引き直す（${price === 0 ? `無料 残り${td.run.rerollsLeft}` : `${price}G`}）</button>
+          <small>${td.duel ? '対戦中は選んでいる間も時間が進みます' : '選んでいる間は時間が止まります'}</small>
         </div>
       </div>`;
     this.bindPreviews();
@@ -723,7 +737,7 @@ export class RealtimeTDHud {
   }
 
   private applyChoice(td: TDRun, index: number): void {
-    const option = td.choose(this.host.battle, index);
+    const option = td.requestChoose(this.host.battle, index);
     if (!option) {
       this.host.playDenied();
       return;
@@ -798,7 +812,7 @@ export class RealtimeTDHud {
     }
     switch (d.td) {
       case 'auto':
-        td.autoDeploy = !td.autoDeploy;
+        td.requestAuto(!td.autoDeploy);
         this.host.playClick();
         return;
       case 'pause':
@@ -811,15 +825,15 @@ export class RealtimeTDHud {
         this.host.retire();
         return;
       case 'reroll':
-        if (td.reroll()) this.host.playClick();
+        if (td.requestReroll()) this.host.playClick();
         else this.host.playDenied();
         this.choiceKey = '';
         this.renderChoice(td);
         return;
     }
     let ok: boolean | undefined;
-    if (d.buy === 'fund') ok = td.buyFund();
-    else if (d.buy === 'base') ok = td.upgradeBase();
+    if (d.buy === 'fund') ok = td.requestFund();
+    else if (d.buy === 'base') ok = td.requestBase();
     if (ok === undefined) return;
     if (ok) {
       this.host.playClick();
@@ -833,9 +847,9 @@ export class RealtimeTDHud {
   tryDeploy(id: UnitTypeId): void {
     const td = this.host.getRun();
     if (!td) return;
-    const spawned = td.deploy(this.host.battle, id);
+    const ok = td.requestDeploy(this.host.battle, id);
     const el = this.cardEls.get(id);
-    if (spawned.length > 0) {
+    if (ok) {
       this.host.playDeploy();
       el?.classList.remove('pop');
       void el?.offsetWidth;
@@ -897,9 +911,9 @@ export class RealtimeTDHud {
   }
 
   /** オンライン対戦のリザルト */
-  showVersusResult(td: TDRun, won: boolean, reason: TDVersusEndReason, vs: TDVersusSession): void {
+  showVersusResult(mine: TDRun, opponent: TDRun, verdict: TDVersusVerdict, reason: TDVersusEndReason, vs: TDVersusSession): void {
     this.closeChoice();
-    this.showModal(renderVersusResult(td, won, reason, vs));
+    this.showModal(renderVersusResult(mine, opponent, verdict, reason, vs));
   }
 
   showResult(td: TDRun, won: boolean): void {

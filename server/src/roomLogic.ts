@@ -1,4 +1,4 @@
-// TD オンライン対戦の部屋のルール。Cloudflare の API には触らず、入力（入室・退室・メッセージ）から
+// TD オンライン対戦（対面型）の部屋のルール。席 0 がホスト（青）、席 1 がゲスト（赤）。Cloudflare の API には触らず、入力（入室・退室・メッセージ）から
 // 「誰に何を送るか」を返すだけにして、tests/ から vitest で検証できるようにしている。
 import {
   TD_VS_IDLE_MS,
@@ -104,18 +104,19 @@ export class TDVersusRoom {
         if (this.phase === 'playing' || !me.ready) return [];
         me.ready = false;
         return this.broadcastRoom();
-      case 'status':
+      case 'input':
         if (this.phase !== 'playing' || other < 0) return [];
-        return [{ to: other, msg: { t: 'status', status: msg.status } }];
-      case 'send':
+        return [{ to: other, msg: { t: 'input', turn: msg.turn, cmds: msg.cmds } }];
+      case 'hash':
         if (this.phase !== 'playing' || other < 0) return [];
-        return [{ to: other, msg: { t: 'send', budget: msg.budget, seed: msg.seed } }];
-      case 'lose':
-        if (this.phase !== 'playing' || other < 0) return [];
-        return this.finish(other, msg.reason);
-      case 'win':
+        return [{ to: other, msg: { t: 'hash', turn: msg.turn, h: msg.h } }];
+      case 'over':
+        // 両端末が同じ計算をしているので、先に届いた知らせで決める
         if (this.phase !== 'playing') return [];
-        return this.finish(slot, 'clear');
+        return this.finish(msg.winner, msg.reason);
+      case 'surrender':
+        if (this.phase !== 'playing' || other < 0) return [];
+        return this.finish(other, 'surrender');
     }
   }
 
@@ -131,8 +132,8 @@ export class TDVersusRoom {
     return [{ to: 'all', msg: { t: 'start', seed: this.seed, starters } }];
   }
 
-  /** 決着。先に届いた知らせで決まり、あとから届いたものは無視される */
-  private finish(winner: number, reason: TDVersusEndReason): RoomOutput[] {
+  /** 決着（winner は勝った席。null は引き分け）。先に届いた知らせで決まり、あとから届いたものは無視される */
+  private finish(winner: number | null, reason: TDVersusEndReason): RoomOutput[] {
     this.phase = 'ended';
     for (const s of this.slots) if (s) s.ready = false;
     return [{ to: 'all', msg: { t: 'result', winner, reason } }];
