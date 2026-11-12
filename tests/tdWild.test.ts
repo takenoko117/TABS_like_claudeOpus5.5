@@ -231,6 +231,35 @@ describe('オンライン対戦の第三勢力: 縄張りの動き', () => {
     expect(near.pelvis.pos.z - z0).toBeGreaterThan(1);
   });
 
+  it('大型・中ボス級は、縄張りに入った小さい兵にきちんとダメージを与える（空振りしない）', () => {
+    for (const id of ['wild_troll', 'wild_chief'] as const) {
+      const battle = new Battle();
+      battle.aiEnabled = true;
+      const big = battle.spawnUnit(id, TD_WILD_TEAM, 0, 0, 0);
+      big.leash = { x: 0, z: 0, radius: 9, notice: TD_WILD_NOTICE };
+      const victim = battle.spawnUnit('swordsman', 0, 4, 0);
+      simulate(battle, 6);
+      expect(victim.hp, id).toBeLessThan(victim.maxHp * 0.5);
+    }
+  });
+
+  it('近接兵は、体の大きいヌシを空中の敵と見なさず、近ければ標的にし続ける', () => {
+    const battle = new Battle();
+    battle.aiEnabled = true;
+    const chief = battle.spawnUnit('wild_chief', TD_WILD_TEAM, 0, 0, 0);
+    chief.leash = { x: 0, z: 0, radius: 9, notice: TD_WILD_NOTICE };
+    const hunter = battle.spawnUnit('swordsman', 0, 3, 0);
+    // ヌシより遠くに別の敵
+    battle.spawnUnit('clubber', 1, 9, 0);
+    const targets = new Set<string>();
+    for (let i = 0; i < 120; i++) {
+      battle.step(1 / 60);
+      const t = (hunter as unknown as { target: Unit | null }).target;
+      if (t) targets.add(t.type.id);
+    }
+    expect([...targets]).toEqual(['wild_chief']);
+  });
+
   it('砲台は魔物を撃たない', () => {
     const battle = new Battle();
     battle.aiEnabled = true;

@@ -58,6 +58,12 @@ export interface UnitContext {
 
 const UP = new Vector3(0, 1, 0);
 const _steerDir = new Vector3();
+
+/** 第三勢力の大型・中ボス級の叩きつけの衝撃波（半径は体格 1 あたり） */
+const WILD_SLAM: Partial<Record<string, { radius: number; damage: number; knockback: number }>> = {
+  wild_troll: { radius: 1.3, damage: 30, knockback: 6.5 },
+  wild_chief: { radius: 1.35, damage: 55, knockback: 9 },
+};
 const GRAVITY = 9.81;
 /** 姿勢バネの加速度上限（数値的な暴れを防ぐ） */
 const MAX_MUSCLE_ACCEL = 300;
@@ -848,7 +854,9 @@ export class Unit {
       this.type.id === 'giant_robot' ||
       this.type.id === 'yamamuron' ||
       this.type.id === 'sezain' ||
-      this.type.id === 'lightspeed_ant'
+      this.type.id === 'lightspeed_ant' ||
+      this.type.id === 'wild_troll' ||
+      this.type.id === 'wild_chief'
         ? 0.25
         : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
@@ -1024,8 +1032,9 @@ export class Unit {
         }
       }
       // 地上近接ユニットや火炎ブレスは高空の敵よりも地上の敵を優先する
+      // 腰の高さは体格に比例するので、大きい兵（ヌシなど）が立っているだけで空中と見なさないよう体格の分を足す
       const airPenalty =
-        (this.type.range < 3.0 || this.type.style === 'breath') && u.pelvis.pos.y > 2.2 ? 160 : 0;
+        (this.type.range < 3.0 || this.type.style === 'breath') && u.pelvis.pos.y > 2.2 + Math.max(0, u.scale - 1) ? 160 : 0;
       const d = (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2 + airPenalty;
       if (d < bestD) {
         bestD = d;
@@ -1095,6 +1104,8 @@ export class Unit {
           this.type.id === 'lightspeed_ant' ||
           this.type.id === 'deoxys' ||
           this.type.id === 'hayato' ||
+          this.type.id === 'wild_troll' ||
+          this.type.id === 'wild_chief' ||
           this.type.category === 'divine'
         ? 0.16
         : 0.3;
@@ -1693,6 +1704,18 @@ export class Unit {
         this.pelvis.pos.z + this.forward.z * 0.75 * this.scale,
       );
       ctx.combat.applyRadialBlast(this, center, 1.55 * this.scale, 42, 8.0, 0.5, ctx.units, dt, 'melee');
+      ctx.combat.emitEffect({ kind: 'eagle_drop_impact', pos: new Vector3(center.x, 0.05, center.z) });
+    }
+    // 第三勢力の大型（トロル）・中ボス級（ヌシ）の叩きつけ。
+    // 体が大きすぎて武器が小さい兵の頭上を空振りするので、巨人と同じく足もとに衝撃波を出す
+    const wildSlam = WILD_SLAM[this.type.id];
+    if (wildSlam) {
+      const center = new Vector3(
+        this.pelvis.pos.x + this.forward.x * 0.7 * this.scale,
+        PELVIS_HEIGHT,
+        this.pelvis.pos.z + this.forward.z * 0.7 * this.scale,
+      );
+      ctx.combat.applyRadialBlast(this, center, wildSlam.radius * this.scale, wildSlam.damage, wildSlam.knockback, 0.45, ctx.units, dt, 'melee');
       ctx.combat.emitEffect({ kind: 'eagle_drop_impact', pos: new Vector3(center.x, 0.05, center.z) });
     }
 
@@ -3846,6 +3869,8 @@ export class Unit {
       this.type.id === 'yamamuron' ||
       this.type.id === 'sezain' ||
       this.type.id === 'deoxys' ||
+      this.type.id === 'wild_troll' ||
+      this.type.id === 'wild_chief' ||
       this.type.category === 'divine';
     const staggerMul = isSuperHeavy ? 0.7 : 2.2;
     const flatLoss = isSuperHeavy ? 0.012 : 0.05;
