@@ -18,6 +18,7 @@ import { TD_DUEL_TIME_LIMIT, TDRun } from './RealtimeTDMode';
 import type { RogueStarter } from './RogueliteMode';
 import { withSimRandom } from './SimRandom';
 import { TD_FIELD_WALLS } from './TDTerrain';
+import { TDWildCamps } from './TDWildCamps';
 
 // ---------------------------------------------------------------
 // 定数
@@ -56,6 +57,8 @@ export class TDDuel {
   readonly sides: readonly [TDRun, TDRun];
   /** 戦場を進める間だけ Math.random の代わりに使う乱数（両端末で同じ並び） */
   readonly simRng: () => number;
+  /** 第三勢力（野生の魔物）の巣 */
+  readonly wild: TDWildCamps;
   /** 通信で決まった決着（降参・切断）。戦場の計算で決まる決着より優先する */
   external: TDDuelOutcome | null = null;
   private battleRef: Battle | null = null;
@@ -67,6 +70,7 @@ export class TDDuel {
   ) {
     this.sides = [new TDRun(seed, starters[0], undefined, { duel: { team: 0 } }), new TDRun(seed, starters[1], undefined, { duel: { team: 1 } })];
     this.simRng = createSeededRng(Math.imul(seed ^ TD_DUEL_SIM_SALT, 0x9e3779b1) | 0);
+    this.wild = new TDWildCamps(seed);
   }
 
   get time(): number {
@@ -100,6 +104,17 @@ export class TDDuel {
   /** ダメージのたびに呼ばれる（戦場を進めている最中）。シナジーの処理と、撃破した側の報酬 */
   private onDamage(e: DamageEvent): void {
     for (const side of this.sides) side.rules.onDamage(e);
+    // 第三勢力の魔物: 倒した陣営に経験値・お金（ヌシは宝箱も）
+    if (this.wild.kind(e.victim)) {
+      const reward = this.wild.onDamage(e);
+      if (reward) {
+        const killer = this.sides[reward.team];
+        killer.onWildKilled(reward.spec.xp, reward.spec.money);
+        if (reward.spec.chest !== null && !killer.ended) killer.dropDuelChest(reward.spec.chest, e.pos.x, e.pos.z);
+      }
+      this.flushWildEvents();
+      return;
+    }
     if (!e.killed) return;
     const victim = e.victim;
     if (victim.team !== 0 && victim.team !== 1) return;
@@ -107,6 +122,22 @@ export class TDDuel {
     const tier = killer.onEnemyKilled(victim);
     // 対戦の宝箱は倒した側に積む。持ち主が開けると操作として送られ、両端末で同じターンに開く（中身は陣営ごとの乱数）
     if (tier !== null) killer.dropDuelChest(tier, e.pos.x, e.pos.z);
+  }
+
+  /** 魔物の巣を進める（TDDuelBattleRules.onStep から呼ぶ） */
+  stepWild(battle: Battle, dt: number): void {
+    this.wild.step(battle, this.time, dt);
+    this.flushWildEvents();
+  }
+
+  /** 魔物の知らせを両陣営の画面の知らせに移す */
+  private flushWildEvents(): void {
+    for (const ev of this.wild.events.splice(0)) {
+      for (const side of this.sides) {
+        if (ev.kind === 'chief_spawn') side.events.push({ kind: 'wild_boss', value: 0 });
+        else side.events.push({ kind: 'wild_boss_down', value: ev.team ?? -1 });
+      }
+    }
   }
 
   /** 席の操作を反映する */
@@ -162,7 +193,9 @@ export class TDDuel {
       mix(side.totalXp);
       mix(side.playerBase?.hp ?? 0);
       mix(side.pendingChests.length);
+      mix(side.wildKills);
     }
+    mix(this.wild.spawned);
     return h | 0;
   }
 }
@@ -176,6 +209,7 @@ export class TDDuelBattleRules implements BattleRules {
       side.rules.onStep(battle, dt);
       side.step(battle, dt);
     }
+    if (!this.duel.outcome()) this.duel.stepWild(battle, dt);
   }
 
   onGatePassed(battle: Battle, unit: Unit): void {

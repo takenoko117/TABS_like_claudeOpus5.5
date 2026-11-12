@@ -623,9 +623,9 @@ export class Facility {
     let targetVel: Vector3 | null = null;
     let bestDist2 = r2;
 
-    // 最寄りの敵ユニットを探す
+    // 最寄りの敵ユニットを探す（第三勢力の魔物は撃たない。砲台だけで狩場を稼げないようにする）
     for (const u of ctx.units) {
-      if (!u.alive || u.team === this.team) continue;
+      if (!u.alive || u.team === this.team || u.leash) continue;
       const d2 = u.pelvis.pos.distanceToSquared(this.pos);
       if (d2 <= bestDist2) {
         bestDist2 = d2;

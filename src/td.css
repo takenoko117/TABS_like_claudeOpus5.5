@@ -287,6 +287,8 @@ body.td-mode #btn-restore-hud {
 .td-announce.elite { border-color: var(--elite); color: #d9b8ff; }
 .td-announce.chest { font-size: 16px; }
 .td-announce.terrain { border-color: #46d17a; color: #c8ffd9; font-size: 18px; }
+/* オンライン対戦の第三勢力（ヌシの出現・撃破） */
+.td-announce.wild { border-color: #f59f00; color: #ffe8a3; }
 @keyframes td-announce-in { from { transform: translate(-50%, -12px); opacity: 0; } }
 
 /* ---- レベルアップの演出（ボクセル調） ---- */
@@ -639,6 +641,8 @@ body.td-mode #btn-restore-hud {
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+/* 横いっぱいに広げるルールのカード（第三勢力の説明） */
+.td-vs-rule.wide { grid-column: 1 / -1; }
 .td-vs-rule {
   position: relative;
   display: grid;

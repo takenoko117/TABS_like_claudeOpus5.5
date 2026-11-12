@@ -730,8 +730,14 @@ export class GameApp {
       } else if (this.playStyle === 'td' && this.td) {
         if (this.tdDuel) {
           // 対面対戦: 報酬は TDDuel が両陣営に配る。ここでは自分が倒したぶんの経験値オーブを飛ばすだけ
-          if (e.killed && e.victim.team !== this.td.team && !this.td.ended && this.mode === 'battle' && !this.tdLockstep?.spectator) {
-            this.xpOrbs.spawn(e.pos, xpForKill(e.victim) * TD_DUEL_XP_MUL);
+          if (e.killed && !this.td.ended && this.mode === 'battle' && !this.tdLockstep?.spectator) {
+            if (this.tdDuel.wild.kind(e.victim)) {
+              // 第三勢力の魔物は、自分の陣営の手柄のときだけ
+              const reward = this.tdDuel.wild.killReward(e);
+              if (reward?.team === this.td.team) this.xpOrbs.spawn(e.pos, reward.spec.xp);
+            } else if (e.victim.team !== this.td.team) {
+              this.xpOrbs.spawn(e.pos, xpForKill(e.victim) * TD_DUEL_XP_MUL);
+            }
           }
         } else {
           this.td.rules.onDamage(e);

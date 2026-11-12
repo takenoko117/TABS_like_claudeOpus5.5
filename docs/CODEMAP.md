@@ -30,6 +30,7 @@ npm run outline -- src                          # 全ファイルの行数
 | `RogueliteMode.ts` | 2548 | **巨大**。ローグライトのルール・ラン・報酬・ゲート。下の「RogueliteMode の中身」を参照 |
 | `RealtimeTDMode.ts` | 1188 | TD モード。定数（`TD_*`、対戦用は `TD_DUEL_*`）、ウェーブ・資金・経験値の計算関数、`TDRun`（1 陣営ぶんのラン状態。対戦では `team` で左右を反転し、画面操作は `request*` → `commandSink` → `execute` で反映。対戦の宝箱は `pendingChests` に積んで `requestChest` で開ける）、`TDBattleRules` |
 | `TDDuel.ts` | 400 | TD オンライン対戦（対面型）。2 陣営の `TDDuel`（撃破の報酬・宝箱を積む・勝敗・ハッシュ）、`TDDuelBattleRules`、ロックステップ `TDLockstep`（ターンごとに両席の操作がそろってから進める。`slot = null` で観戦: 記録の読み込み `loadLog` と早送り） |
+| `TDWildCamps.ts` | 250 | TD オンライン対戦の第三勢力（野生の魔物、team 2）。定数 `TD_WILD_*`（巣の配置 `TD_WILD_CAMPS`・報酬 `TD_WILD_KINDS`）、巣の管理 `TDWildCamps`（湧き・回復・倒した陣営の判定 `killReward`）。`TDDuel.wild` が持ち、魔物の縄張りの動きは `Unit.leash`（`Unit.thinkLeashed`） |
 | `SimRandom.ts` | 39 | 戦場を進める間だけ `Math.random` を共通の種の乱数に差し替える（`withSimRandom`）。描画コールバックは `nativeRandomCallback` で元に戻す |
 | `TDVersusSession.ts` | 256 | TD オンライン対戦の進行（部屋・準備・試合・決着・観戦 `spectating`）。試合中の操作は `match`（`TDLockstep`）へ回す。通信路を差し替えられ、DOM なしでテストできる |
 | `TDTerrain.ts` | 148 | TD の地形を 2 分ごとに作り直す処理 |
@@ -164,7 +165,7 @@ npm run outline -- src                          # 全ファイルの行数
 | 領域 | 主なメソッド |
 | --- | --- |
 | 生成・毎ステップ | `constructor`, `update` |
-| AI（標的選び・移動） | `think`, `findNearestEnemy`, `engageDistance`, `findNearestEnemyFacility` |
+| AI（標的選び・移動） | `think`, `findNearestEnemy`, `engageDistance`, `findNearestEnemyFacility`, 縄張りのある兵（第三勢力）の `thinkLeashed` |
 | 攻撃 | `onWindupStart`, `updateAttack`, `onStrikeStart`（巨大）, `updateStrikeContinuous`, `shootArrow`, `throwBomb` |
 | 兵種固有の技 | `updateSpecialMechanics`（巨大な分岐）, `updateGrabChain`/`tanimon*`（たにもん）, `fireMouthLaser`（はやと）, `updateYamamuronRage`/`fireVolcanoRock`（やまむろん）, `executeIaidoDash`, `triggerKawari`, `triggerDeoxysTeleport` |
 | 体の制御 | `applyMuscles`, `computePose`（巨大）, `applyMountBinding` |
@@ -204,7 +205,7 @@ npm run outline -- src                          # 全ファイルの行数
 | ローグライトの画面 | `GameApp.ts` の `showRogue*` / `renderRogue*` ＋ `style.css` 後半 |
 | TD モードの数値 | `RealtimeTDMode.ts` 冒頭の `TD_*` 定数 |
 | TD モードの画面 | `RealtimeTDHud.ts` ＋ `td.css` |
-| TD オンライン対戦 | 対面の戦場と同期 `TDDuel.ts`、陣営ごとのラン `RealtimeTDMode.ts`（`TD_DUEL_*`）、乱数 `SimRandom.ts`、進行 `TDVersusSession.ts`、通信 `src/net/`、サーバー `server/`、画面 `ui/TDVersusUi.ts`、仕様 `REALTIME_TD_SPEC.md` §16 |
+| TD オンライン対戦 | 対面の戦場と同期 `TDDuel.ts`、第三勢力 `TDWildCamps.ts`、陣営ごとのラン `RealtimeTDMode.ts`（`TD_DUEL_*`）、乱数 `SimRandom.ts`、進行 `TDVersusSession.ts`、通信 `src/net/`、サーバー `server/`、画面 `ui/TDVersusUi.ts`、仕様 `REALTIME_TD_SPEC.md` §16 |
 | 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
 | 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
 | 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |

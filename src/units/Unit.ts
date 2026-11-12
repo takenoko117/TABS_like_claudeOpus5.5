@@ -210,6 +210,11 @@ export class Unit {
   isClone = false;
   /** ボスとして強化された個体か（HP数値を常に表示する） */
   isBoss = false;
+  /**
+   * 縄張り（オンライン対戦の第三勢力）。付いている兵は巣 (x, z) から radius 以内に入った敵だけを襲い、
+   * いなければ巣へ帰る。施設は襲わない。ほかの兵からは notice 以内に近づいたときだけ標的にされる
+   */
+  leash: { x: number; z: number; radius: number; notice: number } | null = null;
   /** 門などで後から得た属性タグ */
   grantedTags: string[] = [];
   /** 通過済みの門（施設 ID）。同じ門は1体につき1回だけ効く */
@@ -633,10 +638,12 @@ export class Unit {
 
   /** AI: 目標の選択・移動・攻撃開始の判断 */
   private think(dt: number, ctx: UnitContext): void {
-    this.retargetTimer -= dt;
+    // 縄張りのある兵は標的を thinkLeashed で選ぶ（ふだんの標的選びはしない）
+    if (this.leash && this.thinkLeashed(dt, ctx, this.leash)) return;
+    if (!this.leash) this.retargetTimer -= dt;
     const targetAlive = this.target && this.target.alive;
     const facAlive = this.targetFacility && this.targetFacility.alive;
-    if ((!targetAlive && !facAlive) || this.retargetTimer <= 0) {
+    if (!this.leash && ((!targetAlive && !facAlive) || this.retargetTimer <= 0)) {
       this.target = this.findNearestEnemy(ctx.units);
       if (!this.target && ctx.facilities) {
         this.targetFacility = this.findNearestEnemyFacility(ctx.facilities);
@@ -859,6 +866,55 @@ export class Unit {
     }
   }
 
+  /**
+   * 縄張りのある兵の標的選び。縄張りの中に敵がいれば標的にして false（ふだんの移動・攻撃に任せる）。
+   * いなければ巣へ歩いて帰り true（このステップの思考を終える）
+   */
+  private thinkLeashed(dt: number, ctx: UnitContext, leash: NonNullable<Unit['leash']>): boolean {
+    this.retargetTimer -= dt;
+    const r2 = leash.radius * leash.radius;
+    const inside = (u: Unit) => (u.pelvis.pos.x - leash.x) ** 2 + (u.pelvis.pos.z - leash.z) ** 2 <= r2;
+    this.targetFacility = null;
+    if (this.target && (!this.target.alive || !inside(this.target))) this.target = null;
+    if (!this.target || this.retargetTimer <= 0) {
+      let best: Unit | null = null;
+      let bestD = Infinity;
+      const p = this.pelvis.pos;
+      for (const u of ctx.units) {
+        if (!u.alive || u.team === this.team || !inside(u)) continue;
+        const d = (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = u;
+        }
+      }
+      this.target = best;
+      this.retargetTimer = 0.4 + Math.random() * 0.4;
+    }
+    if (this.target) return false;
+    // 敵がいなければ巣へ帰る（巣の近くでは立ち止まる）
+    const dx = leash.x - this.pelvis.pos.x;
+    const dz = leash.z - this.pelvis.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 1.6 || this.mountedOn) {
+      this.moveSpeed = 0;
+      return true;
+    }
+    let mx = dx / dist;
+    let mz = dz / dist;
+    if (ctx.field) {
+      _steerDir.set(mx, 0, mz);
+      if (ctx.field.steer(this, leash.x, leash.z, _steerDir)) {
+        mx = _steerDir.x;
+        mz = _steerDir.z;
+      }
+    }
+    this.desiredFacing = Math.atan2(mx, mz);
+    this.moveDir.set(mx, 0, mz);
+    this.moveSpeed = this.type.speed * this.speedMul * 0.8;
+    return true;
+  }
+
   private engageFacilityDistance(fac: Facility): number {
     const st = this.type.style;
     if (
@@ -951,6 +1007,8 @@ export class Unit {
     const p = this.pelvis.pos;
     for (const u of units) {
       if (!u.alive || u.team === this.team) continue;
+      // 縄張りのある兵（第三勢力）は、notice 以内に近づかないと標的にしない（遠くの巣へ寄り道しない）
+      if (u.leash && (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2 > u.leash.notice * u.leash.notice) continue;
       // 草むらに隠れた敵は 8m 以内に近づかないと見つからない
       if (u.concealed && (u.pelvis.pos.x - p.x) ** 2 + (u.pelvis.pos.z - p.z) ** 2 > 64) continue;
       // 日食フレア等による索敵制限

@@ -397,6 +397,48 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <circle cx="2.4" cy="15.2" r="1.2" fill="#ffd166"/>
       </svg>`;
 
+    case 'wild_imp':
+      // 野良コボルト: 緑の小さな体・とがった耳・小さな棍棒
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="11" y="24" width="12" height="9" rx="1" fill="#f59f00"/>
+        <rect x="10" y="11" width="14" height="13" rx="1" fill="#7a9a4a"/>
+        <polygon points="10,13 4,8 10,18" fill="#7a9a4a"/>
+        <polygon points="24,13 30,8 24,18" fill="#7a9a4a"/>
+        <rect x="13" y="15" width="3" height="3" fill="#ffd43b"/>
+        <rect x="19" y="15" width="3" height="3" fill="#ffd43b"/>
+        <rect x="15" y="20" width="5" height="1.5" fill="#2b2b2b"/>
+        <rect x="26" y="18" width="4" height="10" rx="1.5" fill="#8b5a2b"/>
+      </svg>`;
+
+    case 'wild_troll':
+      // 苔岩トロル: 灰色の岩肌・苔の髪と髭・大棍棒
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="3" y="22" width="22" height="12" rx="2" fill="#7d8a80"/>
+        <rect x="5" y="6" width="18" height="17" rx="1.5" fill="#7d8a80"/>
+        <rect x="5" y="4" width="18" height="4" fill="#3f7d32"/>
+        <rect x="5" y="18" width="18" height="5" fill="#3f7d32"/>
+        <rect x="8" y="12" width="4" height="3" fill="#ff922b"/>
+        <rect x="16" y="12" width="4" height="3" fill="#ff922b"/>
+        <rect x="9" y="17" width="2" height="3" fill="#f8f9fa"/>
+        <rect x="17" y="17" width="2" height="3" fill="#f8f9fa"/>
+        <rect x="25" y="4" width="8" height="20" rx="2" fill="#5c3d1e" stroke="#3d2512" stroke-width="1.2"/>
+        <rect x="27" y="24" width="4" height="9" fill="#8b5a2b"/>
+      </svg>`;
+
+    case 'wild_chief':
+      // 金角のヌシ: 紫の巨体・黄金の大角・光る目・大斧
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="5" y="24" width="20" height="10" rx="2" fill="#2a2140"/>
+        <rect x="7" y="10" width="16" height="15" rx="1.5" fill="#5b3a8c"/>
+        <polygon points="7,12 1,2 4,1 10,10" fill="#ffd43b" stroke="#e67700" stroke-width="0.8"/>
+        <polygon points="23,12 29,2 26,1 20,10" fill="#ffd43b" stroke="#e67700" stroke-width="0.8"/>
+        <rect x="10" y="15" width="4" height="3" fill="#ff4d4f"/>
+        <rect x="17" y="15" width="4" height="3" fill="#ff4d4f"/>
+        <rect x="11" y="21" width="9" height="2" fill="#f8f9fa"/>
+        <rect x="28" y="8" width="2.5" height="25" fill="#6b4423"/>
+        <polygon points="30,8 35,10 35,18 30,16" fill="#ced4da" stroke="#495057" stroke-width="0.8"/>
+      </svg>`;
+
     case 'slime':
       // 分裂キングスライム: 黄金の王冠＋エメラルドグリーンのぷるぷるボディ
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">

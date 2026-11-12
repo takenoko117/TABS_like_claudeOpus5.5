@@ -418,7 +418,7 @@ export class RealtimeTDHud {
     const events = td.events.splice(0).filter((e) => e.kind !== 'levelup');
     if (events.length === 0) return;
     // 同じフレームに重なったら最も重要なものだけを出す
-    const order = ['boss', 'counter', 'terrain', 'elite', 'wave'] as const;
+    const order = ['boss', 'wild_boss_down', 'wild_boss', 'counter', 'terrain', 'elite', 'wave'] as const;
     const top = [...events].sort(
       (a, b) => order.indexOf(a.kind as (typeof order)[number]) - order.indexOf(b.kind as (typeof order)[number]),
     )[0];
@@ -431,6 +431,15 @@ export class RealtimeTDHud {
       }
       case 'boss':
         this.announce('👹 最終ボス出現', 'boss');
+        break;
+      case 'wild_boss':
+        this.announce('👑 金角のヌシが出現！ 倒すと宝箱', 'wild');
+        break;
+      case 'wild_boss_down':
+        this.announce(
+          top.value === td.team ? '👑 ヌシを討ち取った！ 宝箱を獲得' : top.value < 0 ? '👑 ヌシが倒れた' : '👑 相手がヌシを討ち取った…',
+          'wild',
+        );
         break;
       case 'counter':
         this.announce(`🔥 敵基地の反撃！（${top.value * 10}%）`, 'counter');

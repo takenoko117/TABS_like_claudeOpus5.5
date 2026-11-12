@@ -24,13 +24,19 @@ const LIMIT_MINUTES = Math.round(TD_DUEL_TIME_LIMIT / 60);
 const STALL_NOTICE_SECONDS = 0.4;
 
 /** ロビーで見せるルールの説明（ピクセルアートの絵・見出し・ひとこと） */
-const RULE_CARDS: ReadonlyArray<{ icon: PixelSpriteName; title: string; text: string }> = [
+const RULE_CARDS: ReadonlyArray<{ icon: PixelSpriteName; title: string; text: string; wide?: boolean }> = [
   { icon: 'house', title: '部屋を作る・入る', text: '作った人は青（左の城）、入った人は赤（右の城）' },
   { icon: 'swords', title: '兵を出し合う', text: 'カードで兵を出撃！ 相手の兵を倒すと経験値2倍' },
   { icon: 'levelup', title: '3択は同じ', text: 'レベルアップの強化3択は相手と同じ内容が出る' },
   { icon: 'chest', title: '宝箱は自分だけ', text: '戦場の宝箱か、城強化の横のボタンで開けよう' },
   { icon: 'hourglass', title: `${LIMIT_MINUTES}分で判定`, text: '城を落とせば勝ち。時間切れは城の残りHP%で勝負' },
   { icon: 'eye', title: '観戦できる', text: '対戦中の部屋を押すと、その試合を観戦できる' },
+  {
+    icon: 'crown',
+    title: '第三勢力を狩る',
+    text: '戦場のわきの巣に野生の魔物が湧き続ける。兵を出して狩れば経験値とお金。真ん中のわきに出るヌシを倒すと宝箱（砲台は魔物を撃たない）',
+    wide: true,
+  },
 ];
 
 /** ロビーの上の見出し（青の城 VS 赤の城） */
@@ -50,7 +56,7 @@ function renderVersusHero(): string {
 /** ルールの説明カード */
 function renderRuleCards(): string {
   return `<ol class="td-vs-rules">${RULE_CARDS.map(
-    (r, i) => `<li class="td-vs-rule" style="--i:${i}">
+    (r, i) => `<li class="td-vs-rule${r.wide ? ' wide' : ''}" style="--i:${i}">
       <span class="td-vs-rule-no">${i + 1}</span>
       <span class="td-vs-rule-icon">${pixelArt(r.icon)}</span>
       <b>${esc(r.title)}</b>
@@ -202,7 +208,7 @@ export function updateVersusPanel(el: HTMLElement, ls: TDLockstep | null): void 
     head.className = 'td-vs-head';
     el.querySelector<HTMLElement>('.td-vs-row')!.classList.add('hidden');
     el.querySelector<HTMLElement>('.td-vs-stats')!.textContent =
-      `青 Lv${mine.level}・撃破${mine.kills} ｜ 赤 Lv${opp.level}・撃破${opp.kills} ｜ 残り ${m}:${s}`;
+      `青 Lv${mine.level}・撃破${mine.kills}・狩り${mine.wildKills} ｜ 赤 Lv${opp.level}・撃破${opp.kills}・狩り${opp.wildKills} ｜ 残り ${m}:${s}`;
     const net = el.querySelector<HTMLElement>('.td-vs-net')!;
     if (ls.catchingUp) {
       net.textContent = `⏩ 試合に追いついています…（${(ls.lagTurns / 10).toFixed(0)}秒遅れ）`;
@@ -224,7 +230,7 @@ export function updateVersusPanel(el: HTMLElement, ls: TDLockstep | null): void 
   const ratio = base && base.maxHp > 0 ? Math.max(0, base.hp) / base.maxHp : 0;
   el.querySelector<HTMLElement>('.td-hp.enemy i')!.style.width = `${ratio * 100}%`;
   el.querySelector<HTMLElement>('.td-vs-hp')!.textContent = `${Math.ceil(Math.max(0, base?.hp ?? 0)).toLocaleString()}`;
-  el.querySelector<HTMLElement>('.td-vs-stats')!.textContent = `相手 Lv${opp.level} ｜ 撃破 ${opp.kills} ｜ 残り ${m}:${s}`;
+  el.querySelector<HTMLElement>('.td-vs-stats')!.textContent = `相手 Lv${opp.level} ｜ 撃破 ${opp.kills} ｜ 狩り ${opp.wildKills} ｜ 残り ${m}:${s}`;
   const net = el.querySelector<HTMLElement>('.td-vs-net')!;
   if (ls.desyncTurn !== null) {
     net.textContent = '⚠ 相手と戦況がずれました（勝敗は先に届いた判定で決まります）';
@@ -272,6 +278,7 @@ export function renderVersusResult(
     <div class="td-result-grid">
       <div><small>経過時間</small><b>${m}:${s}</b></div>
       <div><small>撃破数（あなた / 相手）</small><b>${mine.kills} / ${opponent.kills}</b></div>
+      <div><small>魔物狩り（あなた / 相手）</small><b>${mine.wildKills} / ${opponent.wildKills}</b></div>
       <div><small>到達レベル（あなた / 相手）</small><b>${mine.level} / ${opponent.level}</b></div>
       <div><small>城の残り（あなた / 相手）</small><b>${hpText(mine)} / ${hpText(opponent)}</b></div>
     </div>
@@ -306,6 +313,7 @@ export function renderVersusWatchResult(blue: TDRun, red: TDRun, winner: number 
     <div class="td-result-grid">
       <div><small>経過時間</small><b>${m}:${s}</b></div>
       <div><small>撃破数（青 / 赤）</small><b>${blue.kills} / ${red.kills}</b></div>
+      <div><small>魔物狩り（青 / 赤）</small><b>${blue.wildKills} / ${red.wildKills}</b></div>
       <div><small>到達レベル（青 / 赤）</small><b>${blue.level} / ${red.level}</b></div>
       <div><small>城の残り（青 / 赤）</small><b>${hpText(blue)} / ${hpText(red)}</b></div>
     </div>

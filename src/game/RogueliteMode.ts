@@ -165,6 +165,10 @@ export const UNIT_TAGS: Readonly<Record<UnitTypeId, readonly TagId[]>> = {
   deoxys: ['impact'],
   hayato: ['ranged'],
   tanimon: ['impact', 'mobile'],
+  // 第三勢力（野生の魔物）はシナジーを持たない
+  wild_imp: [],
+  wild_troll: [],
+  wild_chief: [],
 };
 
 /** シナジーの段階（0 = なし, 2 = 2種ボーナス, 4 = 4種ボーナス） */

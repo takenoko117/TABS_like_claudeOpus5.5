@@ -1004,6 +1004,48 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(2, 5, 8, 8, 6, 9, 0xd4af37);
     g.set(3, 5, 9, 0xff6b1a);
     g.set(7, 5, 9, 0xff6b1a);
+  } else if (type.id === 'wild_imp') {
+    // 野良コボルト: 左右に突き出たとがり耳と、黄色く光る目
+    g.fillBox(0, 5, 4, 1, 7, 5, look.skin);
+    g.set(0, 8, 4, look.skin);
+    g.fillBox(9, 5, 4, 10, 7, 5, look.skin);
+    g.set(10, 8, 4, look.skin);
+    g.fillBox(3, 4, 8, 4, 5, 9, 0xffd43b);
+    g.fillBox(6, 4, 8, 7, 5, 9, 0xffd43b);
+    g.set(3, 4, 9, pupil);
+    g.set(7, 4, 9, pupil);
+    // 鼻づら
+    g.fillBox(4, 2, 9, 6, 3, 9, 0x5f7a38);
+  } else if (type.id === 'wild_troll') {
+    // 苔岩トロル: 張り出した眉の岩・下あごの牙・橙色の目
+    g.fillBox(2, 6, 9, 8, 6, 9, 0x5f6b62);
+    g.fillBox(3, 4, 9, 4, 5, 9, 0xff922b);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0xff922b);
+    g.set(3, 1, 9, 0xf8f9fa);
+    g.set(3, 2, 9, 0xf8f9fa);
+    g.set(7, 1, 9, 0xf8f9fa);
+    g.set(7, 2, 9, 0xf8f9fa);
+    // 頭の苔（陣営色の帯を苔で上書き）
+    g.fillBox(2, 6, 2, 8, 6, 8, 0x3f7d32);
+  } else if (type.id === 'wild_chief') {
+    // 金角のヌシ: 左右から大きく反り上がる黄金の角・赤く光る目・額の宝玉
+    const gold = 0xd4af37;
+    const brightGold = 0xffd43b;
+    g.fillBox(1, 6, 4, 1, 7, 6, gold);
+    g.fillBox(0, 7, 4, 0, 9, 6, gold);
+    g.fillBox(0, 9, 4, 0, 11, 5, brightGold);
+    g.fillBox(9, 6, 4, 9, 7, 6, gold);
+    g.fillBox(10, 7, 4, 10, 9, 6, gold);
+    g.fillBox(10, 9, 4, 10, 11, 5, brightGold);
+    g.fillBox(3, 4, 8, 4, 5, 9, 0xff4d4f);
+    g.fillBox(6, 4, 8, 7, 5, 9, 0xff4d4f);
+    g.set(3, 4, 9, 0xffe3e3);
+    g.set(7, 4, 9, 0xffe3e3);
+    g.fillBox(2, 7, 2, 8, 8, 8, 0x2a2140);
+    g.fillBox(5, 6, 9, 5, 7, 9, 0x63e6be);
+    // 牙
+    g.set(3, 1, 9, 0xf8f9fa);
+    g.set(7, 1, 9, 0xf8f9fa);
   }
 
   return makeTemplate(g, 0.036, [5.5, 4.5, 5.5]);
@@ -1813,7 +1855,9 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
   g.fillBox(4, 2, 5, 5, 2, 6, tc.accent);
 
   const chestColor =
-    type.id === 'giant' || type.id === 'giant_eagle' ? look.skin : tc.shirt;
+    type.id === 'giant' || type.id === 'giant_eagle' || type.id === 'wild_imp' || type.id === 'wild_troll'
+      ? look.skin
+      : tc.shirt;
   g.fillBox(0, 3, 1, 9, 11, 6, chestColor);
 
   if (type.id === 'giant') {
@@ -2273,10 +2317,14 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
   if (set) return set;
   const tc = TEAM_COLORS[team];
   const isWinged = type.id === 'giant_eagle' || type.id === 'dragon';
+  // 第三勢力（野生の魔物）は手足を肌の色にする（陣営の服を着ていない）
+  const isWild = type.id === 'wild_imp' || type.id === 'wild_troll' || type.id === 'wild_chief';
   const sleeve =
-    type.look.armor ?? (type.id === 'giant' || type.id === 'warelephant' || type.id === 'slime' ? type.look.skin : tc.shirt);
+    type.look.armor ?? (type.id === 'giant' || type.id === 'warelephant' || type.id === 'slime' || isWild ? type.look.skin : tc.shirt);
   const legColor =
-    type.id === 'dragon'
+    isWild
+      ? type.look.skin
+      : type.id === 'dragon'
       ? tc.shirt
       : type.id === 'warelephant' || type.id === 'slime'
         ? type.look.skin

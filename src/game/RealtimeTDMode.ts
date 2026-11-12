@@ -411,6 +411,8 @@ export class TDRun {
   baseLevel = 1;
   autoDeploy = false;
   kills = 0;
+  /** 倒した第三勢力の魔物の数（オンライン対戦） */
+  wildKills = 0;
   /** 敵基地に与えたダメージの合計 */
   baseDamage = 0;
   /** 発動した反撃の回数 */
@@ -429,7 +431,11 @@ export class TDRun {
   private lastChestTime = -Infinity;
   endReason: TDEndReason | null = null;
   /** Wave の開始・反撃など、画面に出す知らせ */
-  readonly events: Array<{ kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain'; value: number }> = [];
+  readonly events: Array<{
+    kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain' | 'wild_boss' | 'wild_boss_down';
+    /** wild_boss_down は倒した陣営（-1 は手柄なし） */
+    value: number;
+  }> = [];
   /** 対戦の相手のラン（linkOpponent で付く） */
   private opponent: TDRun | null = null;
   /** 作り直した地形の回数（0 が開始時の地形） */
@@ -1042,6 +1048,14 @@ export class TDRun {
     if (this.rng() >= chance) return null;
     this.lastChestTime = this.time;
     return weightedIndex(TD_CHEST_TIER_WEIGHTS, this.rng) as ChestTier;
+  }
+
+  /** 第三勢力の魔物を倒した報酬（オンライン対戦。お金は資金の上限を超えて入る） */
+  onWildKilled(xp: number, money: number): void {
+    if (this.ended) return;
+    this.wildKills++;
+    this.addMoney(money, false);
+    this.gainXp(xp);
   }
 
   gainXp(amount: number): void {
