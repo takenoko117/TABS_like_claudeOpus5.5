@@ -2,6 +2,7 @@ import type { SoundManager } from '../audio/SoundManager';
 import { JackpotChest3D } from '../render/JackpotChest3D';
 import { JACKPOT_REWARDS, type ChestTier, type JackpotReward } from '../game/RogueJackpot';
 import { preloadVoxelText, setVoxelText, voxelBoxHeight, type VoxelTextOptions } from './VoxelText';
+import { retrigger } from '../fx/ui/dom';
 
 const CHEST_NAMES = ['銅の宝箱', '銀の宝箱', '金の宝箱'];
 const INTRO_TITLES = ['ボーナス！', 'スーパーボーナス!!', 'ゴールドボーナス!!!'];
@@ -58,12 +59,6 @@ function clamp01(v: number): number {
 
 function pick<T>(list: readonly T[]): T {
   return list[Math.floor(Math.random() * list.length)];
-}
-
-function retrigger(el: HTMLElement, cls: string): void {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
 }
 
 /** 宝箱からリールを回して報酬を見せる全画面の演出 */

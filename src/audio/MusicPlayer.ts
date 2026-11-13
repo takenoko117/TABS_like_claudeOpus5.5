@@ -38,6 +38,23 @@ export class MusicPlayer {
     this.applyRequestedTrack();
   }
 
+  /** テンポの倍率（残り時間が少ないときに上げる） */
+  private tempoScale = 1;
+
+  setTempoScale(scale: number): void {
+    this.tempoScale = Math.max(0.5, Math.min(2, scale));
+  }
+
+  /** 重要な告知の瞬間に BGM を一瞬下げる（ダッキング） */
+  duck(seconds = 0.6, depth = 0.35): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setTargetAtTime(this.volume * depth, t, 0.03);
+    this.master.gain.setTargetAtTime(this.volume, t + seconds, 0.15);
+  }
+
   setVolume(volume: number): void {
     this.volume = volume;
     if (this.master && this.ctx) this.master.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.02);
@@ -85,7 +102,7 @@ export class MusicPlayer {
       return;
     }
     const track = MUSIC_TRACKS[this.playing];
-    const secondsPerBeat = 60 / track.bpm;
+    const secondsPerBeat = 60 / (track.bpm * this.tempoScale);
     while (this.nextBarTime < ctx.currentTime + SCHEDULE_AHEAD_SECONDS) {
       for (const note of track.buildBar(this.bar)) {
         this.scheduleNote(note, this.nextBarTime + note.beat * secondsPerBeat, note.length * secondsPerBeat);

@@ -3,6 +3,7 @@ import { unitJackpotRarity } from '../game/RogueJackpot';
 import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
 import { getUnitIconSvg } from './UnitIcons';
 import { preloadVoxelText, setVoxelText } from './VoxelText';
+import { retrigger } from '../fx/ui/dom';
 
 const FIRST_STOP = 1.5;
 const STOP_STAGGER = 0.6;
@@ -42,12 +43,6 @@ interface Slot {
   nextAt: number;
   cursor: number;
   stopped: boolean;
-}
-
-function retrigger(el: HTMLElement, cls: string): void {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
 }
 
 function titleHeight(): number {

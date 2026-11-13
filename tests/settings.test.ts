@@ -12,12 +12,24 @@ describe('設定データ', () => {
       sfxVolume: 0,
       quality: DEFAULT_SETTINGS.quality,
       showHpBars: DEFAULT_SETTINGS.showHpBars,
+      fxLevel: DEFAULT_SETTINGS.fxLevel,
+      cameraShake: DEFAULT_SETTINGS.cameraShake,
     });
   });
 
   it('正しい設定はそのまま読み込む', () => {
-    const settings = { musicVolume: 0.2, sfxVolume: 0.8, quality: 'low', showHpBars: false };
+    const settings = { musicVolume: 0.2, sfxVolume: 0.8, quality: 'low', showHpBars: false, fxLevel: 'reduced', cameraShake: false };
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
+  });
+});
+
+describe('演出の強さの設定', () => {
+  it('初期値はフル。OS の視差効果を減らす設定が有効なら最小', () => {
+    expect(parseSettings(null).fxLevel).toBe('full');
+    expect(parseSettings(null, true).fxLevel).toBe('minimal');
+    // 保存済みの選択は OS の設定より優先する
+    expect(parseSettings(JSON.stringify({ fxLevel: 'full' }), true).fxLevel).toBe('full');
+    expect(parseSettings(JSON.stringify({ fxLevel: 'ultra' })).fxLevel).toBe('full');
   });
 });
 

@@ -1,3 +1,5 @@
+import type { FxLevel } from '../fx/FxCues';
+
 /** 描画品質。auto は実測フレームレートを見て自動で下げる */
 export type QualitySetting = 'auto' | 'high' | 'low';
 
@@ -9,6 +11,10 @@ export interface GameSettings {
   quality: QualitySetting;
   /** 傷ついたユニットの頭上に HP バーを出すか */
   showHpBars: boolean;
+  /** 演出の強さ（フル／控えめ／最小） */
+  fxLevel: FxLevel;
+  /** 画面の揺れ（演出の強さとは別に、揺れだけ切れる） */
+  cameraShake: boolean;
 }
 
 export const DEFAULT_SETTINGS: Readonly<GameSettings> = {
@@ -16,6 +22,8 @@ export const DEFAULT_SETTINGS: Readonly<GameSettings> = {
   sfxVolume: 0.55,
   quality: 'auto',
   showHpBars: true,
+  fxLevel: 'full',
+  cameraShake: true,
 };
 
 const STORAGE_KEY = 'tabs_voxel_settings_v1';
@@ -24,8 +32,9 @@ function clampVolume(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
 }
 
-/** 保存文字列を検証して設定に戻す。不正な項目は既定値にする */
-export function parseSettings(raw: string | null): GameSettings {
+/** 保存文字列を検証して設定に戻す。不正な項目は既定値にする。
+ * reducedMotion: OS の「視差効果を減らす」が有効なら、演出の強さの初期値を「最小」にする */
+export function parseSettings(raw: string | null, reducedMotion = false): GameSettings {
   let parsed: Partial<Record<keyof GameSettings, unknown>> = {};
   try {
     const value = JSON.parse(raw ?? '{}') as unknown;
@@ -41,15 +50,26 @@ export function parseSettings(raw: string | null): GameSettings {
         ? parsed.quality
         : DEFAULT_SETTINGS.quality,
     showHpBars: typeof parsed.showHpBars === 'boolean' ? parsed.showHpBars : DEFAULT_SETTINGS.showHpBars,
+    fxLevel:
+      parsed.fxLevel === 'full' || parsed.fxLevel === 'reduced' || parsed.fxLevel === 'minimal'
+        ? parsed.fxLevel
+        : reducedMotion
+          ? 'minimal'
+          : DEFAULT_SETTINGS.fxLevel,
+    cameraShake: typeof parsed.cameraShake === 'boolean' ? parsed.cameraShake : DEFAULT_SETTINGS.cameraShake,
   };
 }
 
 export function loadSettings(): GameSettings {
   try {
-    return parseSettings(window.localStorage.getItem(STORAGE_KEY));
+    return parseSettings(window.localStorage.getItem(STORAGE_KEY), reducedMotion());
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, fxLevel: reducedMotion() ? 'minimal' : DEFAULT_SETTINGS.fxLevel };
   }
+}
+
+function reducedMotion(): boolean {
+  return typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 }
 
 export function saveSettings(settings: GameSettings): void {

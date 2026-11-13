@@ -40,7 +40,7 @@ npm run outline -- src                          # 全ファイルの行数
 | `VersusMode.ts` | 264 | 友人対戦の「ローカル対戦」（配置ゾーン、`VersusSession`）。「オンライン対戦」は TD の対戦（`TDDuel` など）を使う |
 | `BattleStats.ts` / `DamageStats.ts` | 55 / 52 | リザルトの戦績集計 |
 | `LineupStore.ts` | 69 | 編成の localStorage 保存 |
-| `Settings.ts` | 94 | 設定の保存・`AdaptiveQuality`（自動画質） |
+| `Settings.ts` | 110 | 設定の保存（音量・画質・演出の強さ `fxLevel`・画面の揺れ）・`AdaptiveQuality`（自動画質） |
 
 ### src/units — 兵士
 
@@ -87,6 +87,25 @@ npm run outline -- src                          # 全ファイルの行数
 | `DroppedChests.ts` / `JackpotChest3D.ts` / `JackpotReels3D.ts` / `JackpotIcons.ts` | 200〜470 | 宝箱とリールの 3D 演出 |
 | `XpOrbs.ts` | 184 | TD の経験値オーブ |
 | `EnergyGateVisual.ts` / `RewardVoxelModels.ts` / `TitleLogo3D.ts` / `FieldMinimap.ts` | 小 | ゲートの膜、報酬モデル、タイトルロゴ、ミニマップ画像 |
+
+### src/fx — 演出の共通基盤（仕様: `FX_SPEC.md`）
+
+ゲーム側は `SceneView.emitFx(cue, tier, pos)`（中で `FxDirector.emit`）で「何が・どのくらい（tier 0〜3）」だけを伝える。数値はすべて `FxCues.ts` の表と `FX_*` 定数。Three.js・DOM 非依存の部分は `tests/fx.test.ts`、性能と対戦の同期は `tests/fxPerf.test.ts`。
+
+| ファイル | 役割 |
+| --- | --- |
+| `FxCues.ts` | 演出の表 `FX_CUES`（揺れ・キック・ズーム・ヒットストップ・スロー・フラッシュ・ユニットの白フラッシュ・音・クールダウン）、戦闘エフェクト→演出の対応 `FX_EFFECT_CUES`、強さの設定 `FX_LEVEL_SCALE`（full/reduced/minimal）、`FX_*` 定数 |
+| `FxDirector.ts` | 演出の指揮役。`emit`（表と設定から値を決めて各チャンネルへ）、フラッシュの回数制限、撃破の連鎖 `registerKill`、`suppressed`（観戦の追いつき・タイトル）、`allowBattleStop`（1 人用だけ戦場ごと止める）と `battleScale` |
+| `CameraFx.ts` | トラウマ式の揺れ（trauma² ＋なめらかなノイズ）・方向キック・ズームパンチ。`SceneView.renderFrame` が描画の間だけ足す |
+| `TimeFx.ts` | ヒットストップ（描画ストップ／戦場ストップ）とスロー、止めたぶんを取り戻す `fxDt` |
+| `BannerQueue.ts` | 告知の優先度キュー（割り込み・順番・まとめ） |
+| `ScreenFx.ts` | 画面全体のフラッシュ（DOM 1 枚） |
+| `FrameProbe.ts` | フレーム時間の計測。URL に `?perf=1` で画面の隅に表示（`GameApp.recordFrameProbe`） |
+| `ui/BannerFx.ts` | 立体文字（VoxelText）の告知。TD の `RealtimeTDHud.announce` が使う |
+| `ui/TweenNumber.ts` / `ui/LagBar.ts` / `ui/FloatText.ts` / `ui/dom.ts` | なめらかな数字（増減で緑/赤）・HP の遅延ゲージ・HUD 上の小さな数字・`retrigger`/`stagger` |
+| `fx.css` | 演出の見た目（`index.html` から読み込む） |
+
+TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`・`onKill`・`announceFinish`・`playResultFx`・出撃カードの `fx-saving`/`fx-ready`）。出撃の土煙・城の破片は `SceneView.spawnDeployFx`/`spawnCastleImpact`、ユニットの白フラッシュは `VoxelCharacterVisual.flashWhite`、効果音は `SoundManager.playFxCue`、BGM のテンポ・ダッキングは `MusicPlayer.setTempoScale`/`duck`。
 
 ### src/ui・src/audio
 
@@ -198,7 +217,8 @@ npm run outline -- src                          # 全ファイルの行数
 | --- | --- |
 | 兵種を追加する | `UnitTypes.ts`（`UnitTypeId` と `UNIT_TYPES`）→ 見た目 `VoxelModel.ts`（`buildHeadTemplate` / `buildTorsoTemplate`）→ アイコン `UnitIcons.ts` `getUnitIconSvg` → ローグライトのタグ `RogueliteMode.ts` `UNIT_TAGS`（型で必須）→ 特殊技なら `Unit.ts` `updateSpecialMechanics` |
 | 兵種の数値調整 | `UnitTypes.ts` の該当エントリ |
-| 攻撃・エフェクトを足す | `CombatSystem.ts`（`CombatEffectEvent` 型）→ 描画 `SceneView.ts` `spawnCombatEffect` → 音 `SoundManager.ts` `playEffect` |
+| 攻撃・エフェクトを足す | `CombatSystem.ts`（`CombatEffectEvent` 型）→ 描画 `SceneView.ts` `spawnCombatEffect` → 音 `SoundManager.ts` `playEffect` → 画面の揺れ `fx/FxCues.ts` `FX_EFFECT_CUES` |
+| 演出（揺れ・ヒットストップ・告知）の調整 | `fx/FxCues.ts` の `FX_CUES` と `FX_*` 定数 |
 | 施設・レリック・ゲート | `FacilityTypes.ts`（定義と数値）→ `Facility.ts`（挙動）→ ローグライトでの説明 `RogueliteMode.ts` `relicDescription` / `gateEffectText` |
 | アーケード面の追加・修正 | `ArcadeStages.ts` `ARCADE_STAGES` |
 | ローグライトの経済・難易度 | `RogueliteMode.ts` の `ROGUE_*` 定数と `getRogue*` 関数 |
@@ -217,6 +237,7 @@ npm run outline -- src                          # 全ファイルの行数
 | ファイル | 内容・状態 |
 | --- | --- |
 | `REALTIME_TD_SPEC.md` | TD モード（実装済み・調整中。§12 が優先、§16 がオンライン対戦） |
+| `FX_SPEC.md` | 演出・手触り強化の共通基盤（`src/fx/`）と TD 対戦への適用（F1〜F4 実装済み。F5 他モードは別途） |
 | `ROGUELITE_V3_SPEC.md` | ローグライト現行版（デッキ＋ゴールド強化。実装済み） |
 | `ROGUELITE_DIFFICULTY_SPEC.md` | 難易度階層・エンドレス |
 | `RELIC_UPDATE_SPEC.md` | レリック変更 5 件 |

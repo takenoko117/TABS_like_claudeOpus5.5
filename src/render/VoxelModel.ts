@@ -3333,7 +3333,18 @@ const _hayatoQ = new Quaternion();
 const _hayatoAxisX = new Vector3(1, 0, 0);
 const _hayatoAxisZ = new Vector3(0, 0, 1);
 
+/** 描画側の演出の時計（秒）。SceneView が毎フレーム進める。ユニットの白フラッシュの減衰に使う */
+let visualFxClock = 0;
+export function setVisualFxClock(seconds: number): void {
+  visualFxClock = seconds;
+}
+/** 被弾の白フラッシュが消えるまでの秒数 */
+const WHITE_FLASH_SECONDS = 0.12;
+
 export class VoxelCharacterVisual {
+  /** 被弾の白フラッシュ（描画のみ。FX_CUES の unitFlash） */
+  private whiteFlash = 0;
+  private whiteFlashAt = 0;
   readonly group = new Group();
   private readonly material: MeshLambertMaterial;
   private readonly parts: Record<BodyPartId, DestructiblePart>;
@@ -5678,10 +5689,32 @@ export class VoxelCharacterVisual {
     placeLimb(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos);
   }
 
+  /** 被弾したときに白く光らせる（描画のみ。strength 0〜1） */
+  flashWhite(strength: number): void {
+    const now = this.currentWhiteFlash();
+    this.whiteFlash = Math.max(now, Math.min(1, strength));
+    this.whiteFlashAt = visualFxClock;
+  }
+
+  private currentWhiteFlash(): number {
+    if (this.whiteFlash <= 0) return 0;
+    const k = 1 - (visualFxClock - this.whiteFlashAt) / WHITE_FLASH_SECONDS;
+    if (k <= 0) {
+      this.whiteFlash = 0;
+      return 0;
+    }
+    return this.whiteFlash * k;
+  }
+
   /** 被弾フラッシュ・感電・炎上発光と死亡時の暗転マテリアル更新 */
   private updateMaterialStatus(): void {
     const u = this.unit;
-    if (u.hitFlash > 0) {
+    const white = this.currentWhiteFlash();
+    if (white > 0.02) {
+      // 白フラッシュは他の発光より優先する（ヒットの手応え）
+      const w = white * 0.85;
+      this.material.emissive.setRGB(w, w, w);
+    } else if (u.hitFlash > 0) {
       this.material.emissive.setRGB(u.hitFlash * 0.7, u.hitFlash * 0.15, u.hitFlash * 0.1);
     } else if (u.shockTimer > 0) {
       this.material.emissive.setRGB(0.15, 0.55, 0.85);

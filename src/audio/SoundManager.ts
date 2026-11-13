@@ -13,6 +13,8 @@ export class SoundManager {
 
   /** 同じフレームで大量の音が重なって音割れするのを防ぐクールダウン記録 */
   private readonly lastPlayed = new Map<string, number>();
+  /** 種類ごとに鳴っている音の終わる時刻（同時発音数の上限に使う） */
+  private readonly voices = new Map<string, number[]>();
 
   private ensureContext(): AudioContext | null {
     if (this.muted) return null;
@@ -48,6 +50,77 @@ export class SoundManager {
     if (now - prev < minIntervalMs) return false;
     this.lastPlayed.set(key, now);
     return true;
+  }
+
+  /**
+   * 同時発音数の上限。種類 key の音が max 個鳴っている間は新しい音を鳴らさない。
+   * 鳴らしてよければ、その音が durMs で終わるものとして数える
+   */
+  private voiceGate(key: string, max: number, durMs: number): boolean {
+    const now = performance.now();
+    const list = (this.voices.get(key) ?? []).filter((end) => end > now);
+    if (list.length >= max) {
+      this.voices.set(key, list);
+      return false;
+    }
+    list.push(now + durMs);
+    this.voices.set(key, list);
+    return true;
+  }
+
+  /**
+   * 演出の効果音（FxDirector から呼ばれる）。tier で音量・音程・余韻を変え、pitch で全体の音程を上げる
+   * （連続撃破で少しずつ高くなるなど）。
+   */
+  playFxCue(name: string, tier: number, pitch = 1): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.voiceGate(`fx_${name}`, 3, 260)) return;
+    const t = ctx.currentTime;
+    const vol = 0.6 + tier * 0.15;
+    const tail = 1 + tier * 0.35;
+    switch (name) {
+      case 'castle_hit':
+        // 城壁に響く鈍い一撃
+        this.jackpotTone(ctx, 110 * pitch, t, 0.22 * tail, 'square', 0.22 * vol, 48);
+        this.jackpotTone(ctx, 62 * pitch, t, 0.3 * tail, 'sine', 0.4 * vol, 34);
+        break;
+      case 'stage2':
+        // 警報の 2 音＋低い地鳴り
+        this.jackpotTone(ctx, 880, t, 0.16, 'square', 0.14 * vol);
+        this.jackpotTone(ctx, 660, t + 0.18, 0.16, 'square', 0.14 * vol);
+        this.jackpotTone(ctx, 880, t + 0.36, 0.16, 'square', 0.14 * vol);
+        this.jackpotTone(ctx, 55, t, 0.9 * tail, 'sawtooth', 0.12 * vol, 30);
+        break;
+      case 'deploy':
+        // 出撃: 上がる短い音（連打でも単調にならないよう pitch を変える）
+        this.jackpotTone(ctx, 330 * pitch, t, 0.09, 'square', 0.1 * vol, 660 * pitch);
+        this.jackpotTone(ctx, 90, t, 0.12, 'sine', 0.3 * vol, 45);
+        break;
+      case 'rumble':
+        // 地鳴り
+        this.jackpotTone(ctx, 48, t, 0.8 * tail, 'sawtooth', 0.14 * vol, 28);
+        this.jackpotTone(ctx, 70, t + 0.05, 0.7 * tail, 'sine', 0.4 * vol, 36);
+        break;
+      case 'countdown':
+        this.jackpotTone(ctx, (tier >= 2 ? 1320 : 990) * pitch, t, 0.08, 'square', 0.12 * vol);
+        break;
+      case 'banner':
+        // 立体文字の slam（重いほど低く長い）
+        this.jackpotTone(ctx, 150 - tier * 20, t, 0.16 * tail, 'square', 0.22 * vol, 60);
+        if (tier >= 2) [523.25, 659.25, 783.99].forEach((f, i) => this.jackpotTone(ctx, f * pitch, t + 0.05 + i * 0.05, 0.25 * tail, 'triangle', 0.12));
+        break;
+      case 'combo':
+        this.jackpotTone(ctx, 660 * pitch, t, 0.07, 'square', 0.08);
+        this.jackpotTone(ctx, 990 * pitch, t + 0.04, 0.1, 'triangle', 0.1);
+        break;
+      case 'ready':
+        // カードが出せるようになった
+        this.jackpotTone(ctx, 1318.51 * pitch, t, 0.06, 'triangle', 0.08);
+        break;
+      case 'heartbeat':
+        this.playJackpotHeartbeat();
+        break;
+    }
   }
 
   setMuted(muted: boolean): void {
@@ -352,7 +425,7 @@ export class SoundManager {
    */
   playHit(heavy: boolean, metallic: boolean, partBroken: boolean): void {
     const ctx = this.ensureContext();
-    if (!ctx || !this.masterGain || !this.noiseBuffer || !this.throttle('hit', 28)) return;
+    if (!ctx || !this.masterGain || !this.noiseBuffer || !this.throttle('hit', 28) || !this.voiceGate('hit', 6, 160)) return;
     const t = ctx.currentTime;
 
     // 1. 低音の打撃インパクト

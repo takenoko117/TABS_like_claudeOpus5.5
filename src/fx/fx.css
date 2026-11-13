@@ -1,0 +1,231 @@
+/* ==== 演出の共通部品（FX_SPEC.md。src/fx/） ==== */
+
+/* ---- 画面全体のフラッシュ（ScreenFx） ---- */
+.fx-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  --fx-strength: 0.6;
+}
+.fx-screen.on { animation: fx-screen-flash 0.32s ease-out; }
+.fx-screen[data-kind='white'] { background: #fff; }
+.fx-screen[data-kind='gold'] { background: radial-gradient(circle at 50% 45%, rgba(255, 236, 160, 0.9), rgba(245, 196, 81, 0.35) 60%, rgba(245, 196, 81, 0) 85%); }
+.fx-screen[data-kind='red-edge'] { background: radial-gradient(ellipse at center, rgba(255, 40, 30, 0) 55%, rgba(255, 40, 30, 0.75) 100%); }
+.fx-screen[data-kind='red-edge'].on { animation-duration: 0.5s; }
+@keyframes fx-screen-flash {
+  from { opacity: calc(var(--fx-strength) * 0.9); }
+  to { opacity: 0; }
+}
+
+/* ---- 数値の増減（TweenNumber） ---- */
+.fx-up { animation: fx-num-up 0.45s ease-out; }
+.fx-down { animation: fx-num-down 0.45s ease-out; }
+@keyframes fx-num-up { from { color: #9dff6a; text-shadow: 0 0 8px rgba(157, 255, 106, 0.9); } }
+@keyframes fx-num-down { from { color: #ff6b5e; text-shadow: 0 0 8px rgba(255, 80, 60, 0.9); } }
+
+/* ---- HP バーの遅延ゲージ（LagBar） ---- */
+.fx-lag {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(255, 255, 255, 0.82);
+  pointer-events: none;
+}
+.td-base.enemy .fx-lag { left: auto; right: 0; }
+.td-hp i { position: relative; z-index: 1; }
+/* 半分の目盛りは塗りより手前に */
+.td-hp::after { z-index: 2; }
+
+/* ---- HUD 上の小さな数字（FloatText） ---- */
+.fx-float-layer { position: fixed; inset: 0; z-index: 30; pointer-events: none !important; overflow: hidden; }
+.fx-float {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font: 900 16px/1 'DotGothic16', var(--font-ui, sans-serif);
+  white-space: nowrap;
+  text-shadow: 0 1px 0 #000, 0 0 4px #000;
+  animation: fx-float 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+.fx-float.gain { color: #9dff6a; }
+.fx-float.loss { color: #ff8a7a; }
+.fx-float.gold { color: var(--gold, #f5c451); }
+@keyframes fx-float {
+  0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+  15% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.85); opacity: 0; }
+}
+
+/* ---- 順番に出す（stagger） ---- */
+.fx-stagger { animation: fx-stagger-in 0.35s ease-out both; animation-delay: var(--fx-delay, 0s); }
+@keyframes fx-stagger-in { from { transform: translateY(10px); opacity: 0; } }
+
+/* ---- 立体文字の告知（BannerFx） ---- */
+.fx-banner {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  z-index: 8;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  pointer-events: none !important;
+  text-align: center;
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55));
+}
+.fx-banner-title { font: 900 26px/1.1 'DotGothic16', var(--font-ui, sans-serif); color: #fff; }
+.fx-banner-sub {
+  padding: 3px 12px;
+  background: rgba(10, 16, 30, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font: 700 13px/1.35 var(--font-ui, sans-serif);
+  color: #e7ecf7;
+  max-width: 100%;
+}
+.fx-banner-sub:empty { display: none; }
+.fx-banner-count { font: 900 18px/1 'DotGothic16', var(--font-ui, sans-serif); color: var(--gold, #f5c451); }
+.fx-banner-count:empty { display: none; }
+.fx-banner-count.bump { animation: fx-bump 0.25s ease-out; }
+.fx-banner.slam { animation: fx-banner-slam 0.42s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.fx-banner.tier0.slam { animation-duration: 0.25s; }
+.fx-banner.tier2.slam,
+.fx-banner.tier3.slam { animation: fx-banner-slam-big 0.55s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.fx-banner.tier2 .fx-banner-title,
+.fx-banner.tier3 .fx-banner-title { font-size: 40px; }
+.fx-banner.boss .fx-banner-title,
+.fx-banner.counter .fx-banner-title,
+.fx-banner.lose .fx-banner-title { color: #ffb3a8; }
+.fx-banner.elite .fx-banner-title { color: #d9b8ff; }
+.fx-banner.terrain .fx-banner-title { color: #c8ffd9; }
+.fx-banner.wild .fx-banner-title,
+.fx-banner.chest .fx-banner-title,
+.fx-banner.time .fx-banner-title { color: #ffe8a3; }
+.fx-banner.stage2 .fx-banner-sub { border-color: #ffd54a; color: #fff2bf; }
+.fx-banner.finish { top: 32%; }
+@keyframes fx-banner-slam {
+  0% { transform: translateX(-50%) scale(1.8); opacity: 0; }
+  60% { transform: translateX(-50%) scale(0.94); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1); }
+}
+@keyframes fx-banner-slam-big {
+  0% { transform: translateX(-50%) scale(2.6) rotate(-4deg); opacity: 0; }
+  55% { transform: translateX(-50%) scale(0.9) rotate(1deg); opacity: 1; }
+  70% { transform: translateX(calc(-50% + 4px)) scale(1.03); }
+  85% { transform: translateX(calc(-50% - 3px)) scale(1); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+@keyframes fx-bump { 50% { transform: scale(1.35); } }
+
+/* ---- 撃破の連鎖（コンボ） ---- */
+.td-hud > .fx-combo {
+  position: absolute;
+  right: 18px;
+  top: 38%;
+  z-index: 5;
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+  color: #ffe8a3;
+  text-shadow: 0 2px 0 #000, 0 0 6px rgba(0, 0, 0, 0.8);
+}
+.fx-combo b { font: 900 44px/1 'DotGothic16', var(--font-ui, sans-serif); }
+.fx-combo small { font: 900 14px/1 'DotGothic16', var(--font-ui, sans-serif); }
+.fx-combo.bump { animation: fx-bump 0.22s ease-out; }
+
+/* ---- 残り時間・地形変化のカウントダウン ---- */
+.td-hud > .fx-count {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.6));
+  font: 900 48px/1 'DotGothic16', var(--font-ui, sans-serif);
+  color: #fff;
+}
+.fx-count.final { color: #ffb3a8; }
+.fx-count.terrain { top: 112px; font-size: 22px; color: #c8ffd9; }
+.fx-count.slam { animation: fx-banner-slam 0.35s cubic-bezier(0.2, 1.4, 0.4, 1); }
+
+/* ---- 出撃カード: 資金がたまるまでの円形ゲージと「今出せる」の光 ---- */
+.td-card.fx-saving::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(16, 24, 44, 1) 52%, transparent 54%),
+    conic-gradient(var(--gold, #f5c451) calc(var(--fx-fill, 0) * 360deg), rgba(255, 255, 255, 0.15) 0);
+  pointer-events: none;
+}
+.td-card.fx-ready { animation: fx-card-ready 0.45s ease-out; }
+@keyframes fx-card-ready {
+  0% { box-shadow: 0 0 0 2px #fff, 0 0 18px rgba(185, 242, 124, 0.95); transform: translateY(0); }
+  35% { transform: translateY(-7px) scale(1.04); }
+  100% { transform: translateY(0); }
+}
+/* 資金不足を押したとき、資金の表示が赤く 1 回光る */
+.td-money.fx-deny { animation: fx-deny 0.45s ease-out; }
+@keyframes fx-deny {
+  0% { box-shadow: 0 0 0 2px #ff5a4a, 0 0 14px rgba(255, 70, 50, 0.9); }
+  30% { transform: translateX(-3px); }
+  60% { transform: translateX(3px); }
+}
+
+/* ---- 対戦の宝箱ボタン: 開けるまで小さく揺れ、増えた瞬間は跳ねて光る ---- */
+.td-chest-btn.fx-wobble { animation: fx-wobble 1.6s ease-in-out infinite; box-shadow: 0 0 10px rgba(245, 196, 81, 0.65); }
+.td-chest-btn.fx-pop { animation: fx-chest-pop 0.5s cubic-bezier(0.2, 1.5, 0.4, 1), fx-wobble 1.6s ease-in-out 0.5s infinite; }
+@keyframes fx-wobble {
+  0%, 70%, 100% { transform: rotate(0); }
+  75% { transform: rotate(-5deg); }
+  85% { transform: rotate(5deg); }
+  95% { transform: rotate(-2deg); }
+}
+@keyframes fx-chest-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.18); box-shadow: 0 0 22px rgba(255, 230, 140, 1); }
+  100% { transform: scale(1); }
+}
+
+/* ---- 城の危険域を強める ---- */
+.td-base.danger .td-hp { animation: fx-danger 0.9s ease-in-out infinite; }
+@keyframes fx-danger { 50% { box-shadow: 0 0 10px rgba(255, 60, 40, 0.95); border-color: #ff5a4a; } }
+
+/* ---- リザルト ---- */
+.td-modal h2.fx-slam { animation: fx-result-slam 0.5s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@keyframes fx-result-slam { from { transform: scale(2.2); opacity: 0; } }
+.td-modal.fx-guard .td-modal-actions { pointer-events: none; opacity: 0.6; }
+.td-modal.fx-skip *,
+.td-modal.fx-skip h2 { animation-duration: 0s !important; animation-delay: 0s !important; }
+
+/* ---- フレーム時間の計測（?perf=1） ---- */
+.fx-perf {
+  position: fixed;
+  left: 6px;
+  bottom: 6px;
+  z-index: 60;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #9dff6a;
+  font: 11px/1.3 ui-monospace, monospace;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-banner.slam,
+  .fx-count.slam,
+  .fx-combo.bump,
+  .td-chest-btn.fx-wobble,
+  .td-chest-btn.fx-pop,
+  .td-card.fx-ready,
+  .td-base.danger .td-hp { animation: none; }
+}

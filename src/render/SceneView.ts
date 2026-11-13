@@ -46,9 +46,13 @@ import {
   getFacilityVoxelSeeds,
   getKawariLogGeometry,
   getProjectileGeometry,
+  setVisualFxClock,
   VoxelCharacterVisual,
 } from './VoxelModel';
 import { EnergyGateVisual } from './EnergyGateVisual';
+import { FxDirector } from '../fx/FxDirector';
+import { FX_PARTICLE_SCALE_BY_QUALITY, FX_SHAKE_MAX_OFFSET, type FxCueId, type FxTier } from '../fx/FxCues';
+import type { CameraOffset } from '../fx/CameraFx';
 
 /** 部位損壊や薬莢・花びら・ゼリー飛沫として地面にドロップする不透明ボクセルパーティクル */
 interface DroppedVoxel {
@@ -223,7 +227,11 @@ export class SceneView {
   private followedUnit: Unit | null = null;
   private finisherFocus: { target: Vector3; distance: number } | null = null;
   private cameraBeforeFinisher: { target: Vector3; yaw: number; pitch: number; distance: number } | null = null;
-  private cameraShake = 0;
+  /** 演出の指揮役（揺れ・ヒットストップ・フラッシュ。src/fx/） */
+  readonly fx = new FxDirector();
+  private readonly camOffset: CameraOffset = { x: 0, y: 0, z: 0, roll: 0, fovScale: 1 };
+  /** 自動画質に合わせた粒子の間引き（1 で全部出す） */
+  private particleScale = 1;
 
   // 傷ついたユニットの頭上に出す HP バー（InstancedMesh で一括描画）
   showHpBars = true;
@@ -233,8 +241,7 @@ export class SceneView {
   /** タイトル画面の背景デモ中、カメラをゆっくり回す */
   autoOrbit = false;
   private readonly cameraRestPos = new Vector3();
-  private readonly shakeEnabled =
-    typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  private readonly cameraRestQuat = new Quaternion();
 
   // 地面とのレイキャスト
   private readonly raycaster = new Raycaster();
@@ -1067,6 +1074,7 @@ export class SceneView {
     this.renderer.setPixelRatio(level === 2 ? Math.min(dpr, 2) : level === 1 ? Math.min(dpr, 1.25) : Math.min(dpr, 1));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.dirLight.castShadow = level > 0;
+    this.particleScale = FX_PARTICLE_SCALE_BY_QUALITY[level];
   }
 
   /** 指定ユニットをカメラで追い続ける（null で解除） */
@@ -1108,9 +1116,24 @@ export class SceneView {
     this.updateCameraTransform();
   }
 
-  /** 大きな衝撃で画面を揺らす（既存の揺れより強いときだけ上書きする） */
+  /**
+   * 大きな衝撃で画面を揺らす（互換用。中ではトラウマ式の CameraFx に足す）。
+   * amount は従来の揺れ幅（ワールド単位）。trauma² が揺れ幅になるので平方根で換算する
+   */
   addCameraShake(amount: number): void {
-    if (this.shakeEnabled) this.cameraShake = Math.max(this.cameraShake, Math.min(0.45, amount));
+    if (amount > 0) this.fx.addShake(Math.sqrt(Math.min(1, amount / FX_SHAKE_MAX_OFFSET)));
+  }
+
+  /** 演出を起こす。pos を渡すと、衝撃の位置からカメラへ向かう向きにカメラを押す */
+  emitFx(cue: FxCueId, tier: FxTier, pos?: { x: number; z: number } | null, unitId?: number, pitch?: number): void {
+    let dir: { x: number; z: number } | undefined;
+    if (pos) dir = { x: this.camera.position.x - pos.x, z: this.camera.position.z - pos.z };
+    this.fx.emit(cue, { tier, dir, unitId, pitch });
+  }
+
+  /** 被弾したユニットを白く光らせる（描画のみ） */
+  flashUnit(unitId: number, strength: number): void {
+    this.unitVisuals.get(unitId)?.flashWhite(strength);
   }
 
   setPlacementGuidesVisible(visible: boolean): void {
@@ -1419,6 +1442,59 @@ export class SceneView {
     this.pushDroppedVoxel(pos, vel, colorHex, size);
   }
 
+  /** 出撃した位置の演出（土煙＋光の柱）。描画のみ */
+  spawnDeployFx(pos: Vector3, team: number): void {
+    const glow = team === 1 ? 0xff7b6b : team === 0 ? 0x7db4ff : 0xb6ff8a;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
+      this.pushFxParticle(
+        new Vector3(pos.x + Math.cos(a) * 0.25, 0.08, pos.z + Math.sin(a) * 0.25),
+        new Vector3(Math.cos(a) * 1.6, 0.5 + Math.random() * 0.4, Math.sin(a) * 1.6),
+        0xcdb48a,
+        0.16 + Math.random() * 0.08,
+        0.45 + Math.random() * 0.2,
+        -1.2,
+      );
+    }
+    // 光の柱: 細く縦長の粒子を少しずつ高さをずらして昇らせる
+    for (let i = 0; i < 3; i++) {
+      this.pushFxParticle(
+        new Vector3(pos.x, 0.3 + i * 0.5, pos.z),
+        new Vector3(0, 3.2 + i * 0.6, 0),
+        glow,
+        new Vector3(0.12, 0.9, 0.12),
+        0.32,
+        0,
+        new Euler(0, 0, 0),
+      );
+    }
+  }
+
+  /** 城が大きく削られたときの破片（tier が高いほど多い）。描画のみ */
+  spawnCastleImpact(pos: Vector3, tier: number): void {
+    const n = 4 + tier * 5;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 3 + tier;
+      this.pushDroppedVoxel(
+        new Vector3(pos.x + (Math.random() - 0.5) * 1.6, 1.5 + Math.random() * 2.5, pos.z + (Math.random() - 0.5) * 1.6),
+        new Vector3(Math.cos(a) * sp, 3 + Math.random() * 4, Math.sin(a) * sp),
+        Math.random() < 0.5 ? 0x9a9488 : 0x6f6a61,
+        0.14 + Math.random() * 0.12,
+      );
+    }
+    for (let i = 0; i < 4 + tier * 3; i++) {
+      this.pushFxParticle(
+        new Vector3(pos.x + (Math.random() - 0.5) * 2, 0.6 + Math.random() * 2, pos.z + (Math.random() - 0.5) * 2),
+        new Vector3((Math.random() - 0.5) * 2, 1 + Math.random() * 1.5, (Math.random() - 0.5) * 2),
+        0x8d867a,
+        0.3 + Math.random() * 0.2,
+        0.7 + Math.random() * 0.3,
+        -0.4,
+      );
+    }
+  }
+
   /** フィールドの演出用の短命な粒子（炎・水しぶき・砂など） */
   emitFxParticle(pos: Vector3, vel: Vector3, colorHex: number, size: number, life: number, gravity = 0): void {
     this.pushFxParticle(pos, vel, colorHex, size, life, gravity);
@@ -1461,6 +1537,8 @@ export class SceneView {
     gravity = 0,
     rot?: Euler,
   ): void {
+    // 画質が下がっていたら粒子を間引く
+    if (this.particleScale < 1 && Math.random() > this.particleScale) return;
     if (this.fxParticles.length >= this.maxFxInstances - 400) {
       this.fxParticles.shift();
     }
@@ -3761,29 +3839,47 @@ export class SceneView {
     this.syncFieldWalls(battle.world.fieldWalls);
     this.followShadowCamera();
     this.updateCameraMovement(realDt);
-    for (const vis of this.unitVisuals.values()) {
-      vis.sync();
+    // ヒットストップ（描画ストップ）中は見た目を止める。戦場は進んでいるので、明けたら最新の姿勢に追いつく
+    const frozen = this.fx.time.frozen;
+    const fxDt = this.fx.time.fxDt(realDt);
+    setVisualFxClock(performance.now() / 1000);
+    if (!frozen) {
+      for (const vis of this.unitVisuals.values()) {
+        vis.sync();
+      }
     }
     this.syncFacilities(battle, realDt);
-    this.syncArrows(battle.combat.arrows);
+    if (!frozen) this.syncArrows(battle.combat.arrows);
     this.updateRogueHearts(realDt);
     this.renderRogueHearts();
-    this.updateDroppedVoxels(realDt);
-    this.updateKawariLogs(realDt);
-    this.updateFxAndDynamicVisuals(battle, realDt);
+    this.updateDroppedVoxels(fxDt);
+    this.updateKawariLogs(fxDt);
+    this.updateFxAndDynamicVisuals(battle, fxDt);
     this.updateHpBars(battle);
 
-    if (this.cameraShake > 0.004) {
-      // 揺れは描画の間だけ加え、カメラ本来の位置は動かさない
+    if (this.fx.camera.active) {
+      // 揺れ・キック・ズームは描画の間だけ加え、カメラ本来の位置は動かさない
+      const o = this.fx.camera.offset(this.camOffset);
       this.cameraRestPos.copy(this.camera.position);
-      this.camera.position.x += (Math.random() - 0.5) * this.cameraShake;
-      this.camera.position.y += (Math.random() - 0.5) * this.cameraShake;
-      this.camera.position.z += (Math.random() - 0.5) * this.cameraShake;
+      this.cameraRestQuat.copy(this.camera.quaternion);
+      const restFov = this.camera.fov;
+      this.camera.position.x += o.x;
+      this.camera.position.y += o.y;
+      this.camera.position.z += o.z;
+      if (o.roll !== 0) this.camera.rotateZ(o.roll);
+      const zoomed = Math.abs(o.fovScale - 1) > 1e-4;
+      if (zoomed) {
+        this.camera.fov = restFov * o.fovScale;
+        this.camera.updateProjectionMatrix();
+      }
       this.renderer.render(this.scene, this.camera);
       this.camera.position.copy(this.cameraRestPos);
-      this.cameraShake *= Math.exp(-realDt * 9);
+      this.camera.quaternion.copy(this.cameraRestQuat);
+      if (zoomed) {
+        this.camera.fov = restFov;
+        this.camera.updateProjectionMatrix();
+      }
     } else {
-      this.cameraShake = 0;
       this.renderer.render(this.scene, this.camera);
     }
   }

@@ -42,6 +42,45 @@ import { UnitPreviews } from '../render/UnitPreviews';
 import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
 import { getFacilityIconSvg, getUnitIconSvg } from './UnitIcons';
 import { setVoxelText, type VoxelTextOptions } from './VoxelText';
+import type { Facility } from '../facilities/Facility';
+import type { FxComboState } from '../fx/FxDirector';
+import { FX_COMBO_SHOW_FROM, FX_COMBO_WINDOW, type FxCueId, type FxLevel, type FxTier } from '../fx/FxCues';
+import { BannerFx } from '../fx/ui/BannerFx';
+import { FloatText } from '../fx/ui/FloatText';
+import { LagBar } from '../fx/ui/LagBar';
+import { TweenNumber } from '../fx/ui/TweenNumber';
+import { retrigger, stagger } from '../fx/ui/dom';
+
+/**
+ * 要素の中の数字を 0 からカウントアップする（「12 / 8」「3:05」「75%」のような文字も、数字の部分だけ数える）。
+ * 戻り値を呼ぶとすぐに最終の値にする
+ */
+function countUpText(el: HTMLElement, seconds: number, delay: number): () => void {
+  const final = el.textContent ?? '';
+  const parts = final.split(/(\d+)/);
+  if (parts.length < 2) return () => undefined;
+  // 時刻（3:05）の秒の 0 埋めを保つ
+  const widths = parts.map((p) => (/^\d+$/.test(p) ? p.length : 0));
+  let raf = 0;
+  let done = false;
+  const start = performance.now() + delay * 1000;
+  const frame = (now: number) => {
+    if (done) return;
+    const k = Math.max(0, Math.min(1, (now - start) / (seconds * 1000)));
+    const e = 1 - Math.pow(1 - k, 4);
+    el.textContent = parts
+      .map((p, i) => (widths[i] ? String(Math.round(Number(p) * e)).padStart(p.startsWith('0') ? widths[i] : 1, '0') : p))
+      .join('');
+    if (k < 1) raf = requestAnimationFrame(frame);
+    else done = true;
+  };
+  raf = requestAnimationFrame(frame);
+  return () => {
+    done = true;
+    cancelAnimationFrame(raf);
+    el.textContent = final;
+  };
+}
 
 /** HUD から GameApp に頼む操作 */
 export interface TDHudHost {
@@ -63,6 +102,19 @@ export interface TDHudHost {
   retire(): void;
   toTitle(): void;
   retry(): void;
+  /** 演出を起こす（pos を渡すと衝撃の向きにカメラを押す） */
+  emitFx(cue: FxCueId, tier: FxTier, pos?: { x: number; z: number } | null): void;
+  /** 城が大きく削られたときの破片 */
+  castleImpact(base: Facility, tier: FxTier): void;
+  /** 演出の効果音 */
+  playFxSound(name: string, tier: FxTier, pitch?: number): void;
+  /** BGM のテンポの倍率 */
+  setMusicTempo(scale: number): void;
+  /** 重要な告知の瞬間に BGM を一瞬下げる */
+  duckMusic(seconds?: number): void;
+  getFxLevel(): FxLevel;
+  /** 撃破を数える（連鎖の数と音程） */
+  registerKill(): FxComboState;
   /** 対戦で、まだ開けていない自分の宝箱の数（1 人用・観戦は 0） */
   getChestCount(): number;
   /** 対戦で、いちばん古い宝箱を開ける（宝箱ボタン）。開けられたら true */
@@ -94,6 +146,35 @@ const BLOCK_LABELS: Record<DeployBlock, string> = {
   not_owned: '未所持',
   ended: '終了',
 };
+
+/** 城が「大きく削られた」とみなす 1 フレームの減り（最大 HP に対する割合） */
+const CASTLE_BIG_HIT_RATIO = 0.035;
+/** 危険域（城の HP がこの割合未満）と、自分の城の心音の間隔（秒） */
+const CASTLE_DANGER_RATIO = 0.3;
+const CASTLE_HEARTBEAT_INTERVAL = 1.1;
+/** 対戦の残り時間の告知（秒）と、1 秒ごとに数字を出し始める残り秒数 */
+const DUEL_LAST_MINUTE = 60;
+const DUEL_FINAL_COUNT = 10;
+/** 残り 60 秒からの BGM のテンポ */
+const DUEL_LAST_MINUTE_TEMPO = 1.15;
+/** 地形変化の何秒前からカウントダウンするか */
+const TERRAIN_COUNTDOWN = 3;
+/** 連続出撃で音程を上げる間隔（秒）と 1 回ごとの上がり幅・上限の回数 */
+const DEPLOY_STREAK_WINDOW = 1.2;
+const DEPLOY_STREAK_PITCH = 0.06;
+const DEPLOY_STREAK_MAX = 6;
+/** リザルトの誤タップ防止（秒） */
+const RESULT_GUARD_SECONDS = 0.9;
+
+/** 城 1 つぶんの表示の状態（遅延ゲージ・数字・段階） */
+interface CastleFx {
+  bar: LagBar;
+  num: TweenNumber;
+  stage2: boolean;
+  danger: boolean;
+  /** 直前のフレームの HP（城強化で最大 HP が増えたときに被弾と間違えないよう、実際の HP の減りで判定する） */
+  lastHp: number;
+}
 
 /** レベルアップ演出の長さと、強化の選択を出すまでの時間（秒） */
 const LEVELUP_FX_TIME = 1.5;
@@ -243,6 +324,26 @@ export class RealtimeTDHud {
   private readonly elVs: HTMLElement;
   /** ロビーで入力中の部屋名 */
   private vsRoomDraft = '';
+  // ---- 演出（FX_SPEC.md §5） ----
+  private readonly banner: BannerFx;
+  private readonly floatText: FloatText;
+  private readonly elCombo: HTMLElement;
+  private readonly elCount: HTMLElement;
+  private comboTimer = 0;
+  private moneyNum: TweenNumber | null = null;
+  private readonly castles = new Map<string, CastleFx>();
+  private heartbeatTimer = 0;
+  /** 直前のフレームで出せなかったカード（出せるようになった瞬間を光らせる） */
+  private readonly blockedCards = new Set<UnitTypeId>();
+  private deployStreak = 0;
+  private deployStreakTimer = 0;
+  private shownChests = 0;
+  /** 対戦の残り時間の告知を出したか・最後に数字を出した秒 */
+  private lastMinuteAnnounced = false;
+  private lastCountSecond = -1;
+  private lastTerrainCount = -1;
+  private readonly countOpts: VoxelTextOptions = { height: 64, maxCell: 5, depth: 3, bold: true };
+  private readonly countSmallOpts: VoxelTextOptions = { height: 28, maxCell: 2, depth: 2, bold: true };
 
   constructor(private readonly host: TDHudHost) {
     this.root = document.createElement('div');
@@ -273,6 +374,8 @@ export class RealtimeTDHud {
       <div class="td-bar"></div>
       <div class="td-modal hidden"></div>
       <div class="td-tutorial hidden" role="dialog" aria-label="あそびかた"></div>
+      <div class="fx-combo hidden" aria-hidden="true"><b></b><small>連撃破!</small></div>
+      <div class="fx-count hidden" aria-hidden="true"></div>
     `;
     document.body.appendChild(this.root);
     this.elTop = this.root.querySelector('.td-top')!;
@@ -287,6 +390,15 @@ export class RealtimeTDHud {
     this.elTutorial = this.root.querySelector('.td-tutorial')!;
     this.elVs = this.root.querySelector('.td-vs')!;
     this.elVs.innerHTML = renderVersusPanel();
+    this.elCombo = this.root.querySelector('.fx-combo')!;
+    this.elCount = this.root.querySelector('.fx-count')!;
+    this.banner = new BannerFx(this.root);
+    this.banner.onShow = (item) => {
+      this.host.playFxSound('banner', item.tier);
+      if (item.tier >= 2) this.host.duckMusic(0.7);
+    };
+    this.floatText = new FloatText(this.root);
+    this.moneyNum = new TweenNumber(this.elSide.querySelector<HTMLElement>('.td-money b')!, undefined, 0.08, 25);
     this.renderTop();
     this.root.addEventListener('click', (e) => this.onClick(e));
     // 部屋名の入力: 打った内容を覚え、Enter で入室する
@@ -367,6 +479,8 @@ export class RealtimeTDHud {
     this.closeChoice();
     this.hideModal();
     this.elAnnounce.classList.add('hidden');
+    this.banner.clear();
+    this.resetFx();
     this.root.classList.toggle('td-running', this.host.getRun() !== null);
     const versus = this.host.getRun()?.duel ?? false;
     this.root.classList.toggle('td-versus', versus);
@@ -398,10 +512,22 @@ export class RealtimeTDHud {
       this.announceTimer -= realDt;
       if (this.announceTimer <= 0) this.elAnnounce.classList.add('hidden');
     }
+    this.banner.update(realDt);
     this.updateTop(td);
+    this.updateCastleFx(td, realDt);
+    this.updateClockFx(td);
+    if (this.comboTimer > 0) {
+      this.comboTimer -= realDt;
+      if (this.comboTimer <= 0) this.elCombo.classList.add('hidden');
+    }
     if (td.duel) updateVersusPanel(this.elVs, this.host.getLockstep());
     this.updateXp(td, realDt);
     this.updateSide(td);
+    this.moneyNum?.update(td.money, realDt);
+    if (this.deployStreakTimer > 0) {
+      this.deployStreakTimer -= realDt;
+      if (this.deployStreakTimer <= 0) this.deployStreak = 0;
+    }
     const key = td.run.cards.map((c) => c.id).join(',');
     if (key !== this.deckKey) {
       this.deckKey = key;
@@ -416,47 +542,201 @@ export class RealtimeTDHud {
     if (td.events.length === 0) return;
     // レベルアップは経験値バーにオーブが届いたときに演出するので、ここでは知らせない
     const events = td.events.splice(0).filter((e) => e.kind !== 'levelup');
-    if (events.length === 0) return;
-    // 同じフレームに重なったら最も重要なものだけを出す
-    const order = ['boss', 'wild_boss_down', 'wild_boss', 'counter', 'terrain', 'elite', 'wave'] as const;
-    const top = [...events].sort(
-      (a, b) => order.indexOf(a.kind as (typeof order)[number]) - order.indexOf(b.kind as (typeof order)[number]),
-    )[0];
-    switch (top.kind) {
-      case 'terrain': {
-        const b = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
-        const t = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
-        this.announce(`🌋 地形変化！ ${b ? `${b.icon}${b.name}` : ''}${t ? `（${t.name}: ${t.effect}）` : ''}`, 'terrain');
-        break;
+    // 重なった告知は捨てずに優先度つきのキューへ（重要なものは割り込み、軽いものは短く順番に流す）
+    const watching = this.spectating;
+    for (const ev of events) {
+      switch (ev.kind) {
+        case 'terrain': {
+          const b = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
+          const t = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
+          this.announce('地形変化!!', 'terrain', 1, `🌋 ${b ? `${b.icon}${b.name}` : ''}${t ? `（${t.name}: ${t.effect}）` : ''}`);
+          this.host.emitFx('terrain_shift', 1);
+          break;
+        }
+        case 'boss':
+          this.announce('最終ボス出現!!', 'boss', 2, '👹 倒せば勝利が近い');
+          this.host.emitFx('boss_spawn', 2);
+          break;
+        case 'wild_boss':
+          this.announce('ヌシ出現!!', 'wild', 2, '👑 金角のヌシを倒すと宝箱');
+          this.host.emitFx('boss_spawn', 2);
+          break;
+        case 'wild_boss_down':
+          if (watching) {
+            this.announce(ev.value < 0 ? 'ヌシが倒れた' : `${ev.value === 0 ? '青' : '赤'}がヌシを討ち取った!!`, 'wild', 1);
+          } else if (ev.value === td.team) {
+            this.announce('討ち取った!!', 'wild', 2, '👑 ヌシの宝箱を獲得');
+            this.host.emitFx('boss_down', 2);
+          } else if (ev.value < 0) {
+            this.announce('ヌシが倒れた', 'wild', 1);
+          } else {
+            // 相手の手柄は控えめに（悔しさは出すが邪魔しない）
+            this.announce('ヌシを奪われた…', 'wild lose', 1);
+          }
+          break;
+        case 'counter':
+          this.announce('敵基地の反撃!!', 'counter', 1, `🔥 反撃 ${ev.value * 10}%`);
+          break;
+        case 'elite':
+          this.announce(`WAVE ${ev.value} エリート`, 'elite', 1, '😈 強敵が混ざっている');
+          break;
+        case 'wave':
+          this.announce(`WAVE ${ev.value}`, 'wave', 0);
+          break;
       }
-      case 'boss':
-        this.announce('👹 最終ボス出現', 'boss');
-        break;
-      case 'wild_boss':
-        this.announce('👑 金角のヌシが出現！ 倒すと宝箱', 'wild');
-        break;
-      case 'wild_boss_down':
-        this.announce(
-          top.value === td.team ? '👑 ヌシを討ち取った！ 宝箱を獲得' : top.value < 0 ? '👑 ヌシが倒れた' : '👑 相手がヌシを討ち取った…',
-          'wild',
-        );
-        break;
-      case 'counter':
-        this.announce(`🔥 敵基地の反撃！（${top.value * 10}%）`, 'counter');
-        break;
-      case 'elite':
-        this.announce(`😈 WAVE ${top.value} エリート出現`, 'elite');
-        break;
-      case 'wave':
-        this.announce(`WAVE ${top.value}`, 'wave');
-        break;
     }
   }
 
-  announce(text: string, kind: string): void {
-    this.elAnnounce.textContent = text;
-    this.elAnnounce.className = `td-announce ${kind}`;
-    this.announceTimer = 2.2;
+  /** 立体文字の告知（tier が高いほど大きく、tier 3 は虹色） */
+  announce(text: string, kind: string, tier: FxTier = 1, sub = ''): void {
+    this.banner.push({ text, kind, tier, sub });
+  }
+
+  // ---- 演出（城・時間・撃破） ----
+
+  private resetFx(): void {
+    for (const c of this.castles.values()) {
+      c.bar.reset();
+      c.num.reset();
+    }
+    this.moneyNum?.reset();
+    this.heartbeatTimer = 0;
+    this.blockedCards.clear();
+    this.deployStreak = 0;
+    this.deployStreakTimer = 0;
+    this.shownChests = 0;
+    this.lastMinuteAnnounced = false;
+    this.lastCountSecond = -1;
+    this.lastTerrainCount = -1;
+    this.comboTimer = 0;
+    this.elCombo.classList.add('hidden');
+    this.elCount.classList.add('hidden');
+    this.host.setMusicTempo(1);
+  }
+
+  /** 城の HP バーの遅延ゲージ・数字・被弾・第二段階・危険域 */
+  private updateCastleFx(td: TDRun, realDt: number): void {
+    const watching = this.spectating;
+    const handle = (sel: string, base: Facility | null | undefined, mine: boolean) => {
+      if (!base) return;
+      const el = this.elTop.querySelector<HTMLElement>(sel)!;
+      let c = this.castles.get(sel);
+      if (!c || !c.bar.isConnected) {
+        c = {
+          bar: new LagBar(el.querySelector<HTMLElement>('.td-hp')!, el.querySelector<HTMLElement>('.td-hp i')!),
+          num: new TweenNumber(el.querySelector<HTMLElement>('.td-hp-num')!, (n) => Math.ceil(Math.max(0, n)).toLocaleString(), 0.06),
+          stage2: base.inLowHpStage,
+          danger: false,
+          lastHp: base.hp,
+        };
+        this.castles.set(sel, c);
+      }
+      const ratio = base.maxHp > 0 ? Math.max(0, base.hp) / base.maxHp : 0;
+      c.bar.update(ratio, realDt);
+      c.num.update(Math.max(0, base.hp), realDt);
+      const drop = base.maxHp > 0 ? (c.lastHp - base.hp) / base.maxHp : 0;
+      c.lastHp = base.hp;
+      if (drop > 0 && !td.ended) {
+        const big = drop >= CASTLE_BIG_HIT_RATIO;
+        const tier: FxTier = big ? 2 : 1;
+        // 自分の城なら画面の縁が赤く光る。相手の城・観戦では赤い縁を出さない
+        this.host.emitFx(mine && !watching ? 'castle_hit' : 'castle_strike', tier, base.pos);
+        if (big) this.host.castleImpact(base, tier);
+      }
+      if (base.inLowHpStage && !c.stage2 && !td.ended) {
+        // 第二段階への移行: 遠距離が 1/10 しか効かなくなる大事なルール変化
+        const who = watching ? (mine ? '青の城' : '赤の城') : mine ? 'あなたの城' : '相手の城';
+        this.announce(`${who} 第二段階!!`, mine && !watching ? 'stage2 lose' : 'stage2', 2, '遠距離攻撃は 1/10 しか効かない。近接で攻めよう');
+        this.host.emitFx('castle_stage2', 2, base.pos);
+        this.host.castleImpact(base, 3);
+      }
+      c.stage2 = base.inLowHpStage;
+      c.danger = ratio > 0 && ratio < CASTLE_DANGER_RATIO;
+    };
+    handle('.td-base.ally', td.playerBase, true);
+    handle('.td-base.enemy', td.enemyBase, false);
+    // 自分の城が危ないときは心音を鳴らす（ルーレットのリーチの心音を流用）
+    const ally = this.castles.get('.td-base.ally');
+    if (ally?.danger && !watching && !td.ended) {
+      this.heartbeatTimer -= realDt;
+      if (this.heartbeatTimer <= 0) {
+        this.heartbeatTimer = CASTLE_HEARTBEAT_INTERVAL;
+        this.host.playFxSound('heartbeat', 1);
+      }
+    } else this.heartbeatTimer = 0;
+  }
+
+  /** 対戦の残り時間（残り 60 秒の告知・残り 10 秒の数字）と地形変化のカウントダウン */
+  private updateClockFx(td: TDRun): void {
+    if (td.ended) {
+      this.elCount.classList.add('hidden');
+      return;
+    }
+    let count = -1;
+    let kind = '';
+    if (td.duel) {
+      const left = Math.max(0, TD_DUEL_TIME_LIMIT - td.time);
+      if (!this.lastMinuteAnnounced && left <= DUEL_LAST_MINUTE) {
+        this.lastMinuteAnnounced = true;
+        // 途中から観戦に入ったときなど、とっくに過ぎていたら告知しない
+        if (left > DUEL_LAST_MINUTE - 2) this.announce('残り 60 秒!!', 'time', 2, '時間切れは城の残り HP で判定');
+        this.host.setMusicTempo(DUEL_LAST_MINUTE_TEMPO);
+      }
+      if (left > 0 && left <= DUEL_FINAL_COUNT) {
+        count = Math.ceil(left);
+        kind = 'final';
+      }
+    }
+    // 地形変化の 3 秒前から数える（対戦の最後の 10 秒と重なったらそちらを優先）
+    const next = (td.terrainIndex + 1) * TD_TERRAIN_SECONDS - td.time;
+    const over = !td.duel && td.time >= TD_DURATION_SECONDS;
+    if (count < 0 && td.terrainBiome && !over && next > 0 && next <= TERRAIN_COUNTDOWN) {
+      count = Math.ceil(next);
+      kind = 'terrain';
+      if (count !== this.lastTerrainCount) {
+        this.lastTerrainCount = count;
+        this.host.playFxSound('countdown', 1);
+      }
+    } else this.lastTerrainCount = -1;
+    if (count < 0) {
+      this.elCount.classList.add('hidden');
+      this.elCount.dataset.label = '';
+      this.lastCountSecond = -1;
+      return;
+    }
+    if (kind === 'final' && count !== this.lastCountSecond) {
+      this.lastCountSecond = count;
+      this.host.emitFx('countdown', 2);
+    }
+    const label = kind === 'terrain' ? `地形変化まで ${count}` : String(count);
+    if (this.elCount.dataset.label !== label) {
+      this.elCount.dataset.label = label;
+      this.elCount.className = `fx-count ${kind}`;
+      setVoxelText(this.elCount, label, kind === 'terrain' ? this.countSmallOpts : this.countOpts);
+      retrigger(this.elCount, 'slam');
+    }
+  }
+
+  /** 自分の陣営が敵を倒したとき（GameApp から）。短い時間に続けて倒すと連鎖の数が増え、音程が上がる */
+  onKill(): void {
+    if (this.spectating) return;
+    const combo = this.host.registerKill();
+    if (combo.count < FX_COMBO_SHOW_FROM) return;
+    this.comboTimer = FX_COMBO_WINDOW;
+    this.elCombo.querySelector('b')!.textContent = String(combo.count);
+    this.elCombo.classList.remove('hidden');
+    retrigger(this.elCombo, 'bump');
+    this.host.playFxSound('combo', 0, combo.pitch);
+  }
+
+  /** 決着の立体文字（GameApp から）。勝ちは虹色 */
+  announceFinish(text: string, win: boolean, sub = ''): void {
+    this.banner.clear();
+    this.banner.push({ text, kind: win ? 'finish win' : 'finish lose', tier: win ? 3 : 2, sub });
+    this.comboTimer = 0;
+    this.elCombo.classList.add('hidden');
+    this.elCount.classList.add('hidden');
+    this.host.setMusicTempo(1);
   }
 
   private renderTop(): void {
@@ -478,10 +758,9 @@ export class RealtimeTDHud {
       el.querySelector<HTMLElement>('.td-hp')!.title = stage2
         ? '第二段階：遠距離攻撃は1/10しか効かない（近接で攻めよう）'
         : '第一段階：遠距離攻撃は半減。HPが半分を切ると第二段階';
+      // バーの幅と数字は updateCastleFx（遅延ゲージ・なめらかな数字）が描く
       const ratio = max > 0 ? Math.max(0, hp) / max : 0;
-      el.querySelector<HTMLElement>('.td-hp i')!.style.width = `${ratio * 100}%`;
-      el.querySelector<HTMLElement>('.td-hp-num')!.textContent = `${Math.ceil(Math.max(0, hp)).toLocaleString()}`;
-      el.classList.toggle('danger', ratio < 0.3);
+      el.classList.toggle('danger', ratio < CASTLE_DANGER_RATIO);
     };
     if (td.playerBase) setBase('.td-base.ally', td.playerBase.hp, td.playerBase.maxHp, td.playerBase.inLowHpStage);
     if (td.enemyBase) setBase('.td-base.enemy', td.enemyBase.hp, td.enemyBase.maxHp, td.enemyBase.inLowHpStage);
@@ -586,7 +865,6 @@ export class RealtimeTDHud {
 
   private updateSide(td: TDRun): void {
     const money = this.elSide.querySelector<HTMLElement>('.td-money')!;
-    money.querySelector('b')!.textContent = td.money.toLocaleString();
     money.querySelector('small')!.textContent = `/${td.fundCap.toLocaleString()}  +${td.fundIncome}/秒`;
     money.classList.toggle('full', td.money >= td.fundCap);
 
@@ -631,7 +909,7 @@ export class RealtimeTDHud {
         ) +
         // 対戦で開けられる宝箱があれば、城強化の横に宝箱ボタンを出す（戦場の宝箱を押さなくても開けられる）
         (chests > 0
-          ? `<button type="button" class="td-up td-chest-btn" data-buy="chest" title="宝箱を開ける（古い順。戦場の宝箱を押しても開けられる）">
+          ? `<button type="button" class="td-up td-chest-btn fx-wobble" data-buy="chest" title="宝箱を開ける（古い順。戦場の宝箱を押しても開けられる）">
               <span class="td-up-icon">${pixelArt('chest', 'td-px')}</span>
               <span class="td-up-lv">×${chests}</span>
               <span class="td-up-name">宝箱</span>
@@ -640,6 +918,11 @@ export class RealtimeTDHud {
           : '');
       this.bindPreviews();
     }
+    if (chests > this.shownChests) {
+      retrigger(this.elUps.querySelector<HTMLElement>('.td-chest-btn'), 'fx-pop');
+      this.host.emitFx('reward', 2);
+    }
+    this.shownChests = chests;
 
     const relicsKey = td.run.relics.map((r) => `${r.id}${r.level}`).join(',');
     if (relicsKey !== this.relicsKey) {
@@ -688,6 +971,17 @@ export class RealtimeTDHud {
       const total = getDeployCooldown(id);
       el.classList.toggle('ready', block === null);
       el.classList.toggle('blocked', block !== null);
+      // 資金不足: たまるまでの円形ゲージ
+      const saving = block === 'money';
+      el.classList.toggle('fx-saving', saving);
+      if (saving) el.style.setProperty('--fx-fill', String(Math.min(1, td.money / Math.max(1, getDeployCost(id)))));
+      // 出せるようになった瞬間に光って小さく跳ねる（「今出せる」が分かる）
+      if (block === null && this.blockedCards.has(id)) {
+        this.blockedCards.delete(id);
+        retrigger(el, 'fx-ready');
+        if (!this.spectating && !td.ended) this.host.playFxSound('ready', 0);
+      } else if (block === 'money' || block === 'cooldown') this.blockedCards.add(id);
+      else if (block !== null) this.blockedCards.delete(id);
       const cdEl = el.querySelector<HTMLElement>('.td-card-cd')!;
       cdEl.style.height = `${cd > 0 ? (cd / total) * 100 : 0}%`;
       const state = el.querySelector<HTMLElement>('.td-card-state')!;
@@ -921,15 +1215,22 @@ export class RealtimeTDHud {
     const ok = td.requestDeploy(this.host.battle, id);
     const el = this.cardEls.get(id);
     if (ok) {
-      this.host.playDeploy();
-      el?.classList.remove('pop');
-      void el?.offsetWidth;
-      el?.classList.add('pop');
+      // 連続出撃では演出を軽くし、音程を少しずつ変えて単調にしない
+      this.deployStreak = Math.min(DEPLOY_STREAK_MAX, this.deployStreak + 1);
+      this.deployStreakTimer = DEPLOY_STREAK_WINDOW;
+      const pitch = 1 + (this.deployStreak - 1) * DEPLOY_STREAK_PITCH;
+      this.host.playFxSound('deploy', 0, pitch);
+      if (this.deployStreak <= 2) this.host.emitFx('deploy', 0);
+      retrigger(el, 'pop');
+      // カードから資金表示へ「-120G」が飛ぶ
+      const from = FloatText.centerOf(el);
+      const to = FloatText.centerOf(this.elSide.querySelector('.td-money b'));
+      if (from && to) this.floatText.spawn(`-${getDeployCost(id).toLocaleString()}G`, from, 'loss', to);
     } else {
       this.host.playDenied();
-      el?.classList.remove('shake');
-      void el?.offsetWidth;
-      el?.classList.add('shake');
+      retrigger(el, 'shake');
+      // 資金不足なら、何が足りないかを資金表示で示す
+      if (td.deployBlock(this.host.battle, id) === 'money') retrigger(this.elSide.querySelector<HTMLElement>('.td-money'), 'fx-deny');
     }
   }
 
@@ -943,7 +1244,7 @@ export class RealtimeTDHud {
   /** 宝箱の中身を短く知らせる */
   showChestRewards(rewards: readonly JackpotReward[]): void {
     if (rewards.length === 0) return;
-    this.announce(`🎁 ${rewards.map((r) => `${r.icon}${r.name}`).join(' ')}`, 'chest');
+    this.announce('宝箱ゲット!!', 'chest', 1, `🎁 ${rewards.map((r) => `${r.icon}${r.name}`).join(' ')}`);
   }
 
   // ---- モーダル（スターター選択・リザルト） ----
@@ -990,12 +1291,39 @@ export class RealtimeTDHud {
   showVersusWatchResult(blue: TDRun, red: TDRun, winner: number | null, reason: TDVersusEndReason): void {
     this.closeChoice();
     this.showModal(renderVersusWatchResult(blue, red, winner, reason));
+    this.playResultFx();
   }
 
   /** オンライン対戦のリザルト */
   showVersusResult(mine: TDRun, opponent: TDRun, verdict: TDVersusVerdict, reason: TDVersusEndReason, vs: TDVersusSession): void {
     this.closeChoice();
     this.showModal(renderVersusResult(mine, opponent, verdict, reason, vs));
+    this.playResultFx();
+  }
+
+  /**
+   * リザルトの演出: 戦績を 1 行ずつ出し、数字をカウントアップし、見出しを slam で出す。
+   * クリックで演出を飛ばせる。出た直後は誤タップ防止でボタンを押せない
+   */
+  private playResultFx(): void {
+    const m = this.elModal;
+    m.classList.remove('fx-skip');
+    const rows = [...m.querySelectorAll<HTMLElement>('.td-result-grid > div')];
+    stagger(rows, 0.12, 0.35);
+    const stops = rows.map((row, i) => {
+      const b = row.querySelector<HTMLElement>('b');
+      return b ? countUpText(b, 0.7, 0.35 + i * 0.12) : () => undefined;
+    });
+    retrigger(m.querySelector<HTMLElement>('h2'), 'fx-slam');
+    const lead = m.querySelector<HTMLElement>('.td-lead');
+    if (lead) stagger([lead], 0, 0.35 + rows.length * 0.12);
+    m.classList.add('fx-guard');
+    window.setTimeout(() => m.classList.remove('fx-guard'), RESULT_GUARD_SECONDS * 1000);
+    const skip = () => {
+      m.classList.add('fx-skip');
+      for (const stop of stops) stop();
+    };
+    m.addEventListener('pointerdown', skip, { once: true });
   }
 
   showResult(td: TDRun, won: boolean): void {

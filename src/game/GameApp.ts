@@ -1,6 +1,9 @@
 import { Vector3 } from 'three';
 import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
+import { FX_EFFECT_CUES, FX_HEAVY_HIT_DAMAGE, FX_HEAVY_HIT_TIERS, type FxLevel, type FxTier } from '../fx/FxCues';
+import { ScreenFx } from '../fx/ScreenFx';
+import { FrameProbe } from '../fx/FrameProbe';
 import { JackpotRoulette } from '../ui/JackpotRoulette';
 import { JackpotRewardFx } from '../ui/JackpotRewardFx';
 import { DroppedChests, type DroppedChest } from '../render/DroppedChests';
@@ -437,23 +440,6 @@ const FINISH_SLOWMO_SCALE = 0.3;
 const FINISH_BANNER_DELAY_SECONDS = 1.5;
 /** 勝者が喜んで跳ねる間隔（実時間の秒数） */
 const CELEBRATE_INTERVAL_SECONDS = 0.8;
-/** 画面を揺らす大きな衝撃エフェクトと揺れの強さ */
-const SHAKE_BY_EFFECT: Readonly<Record<string, number>> = {
-  bomb_explosion: 0.12,
-  rocket_explosion: 0.16,
-  tank_explosion: 0.24,
-  eruption_explosion: 0.24,
-  yamamuron_awaken: 0.5,
-  yamamuron_quake: 0.4,
-  robot_punch_impact: 0.26,
-  satellite_beam: 0.2,
-  ramiel_beam: 0.22,
-  sachiel_cross: 0.28,
-  sahaquiel_bomb: 0.3,
-  gravity_blast: 0.16,
-  facility_destroy: 0.16,
-  stage_meteor_impact: 0.42,
-};
 
 /** ドット絵のハート（7×6 マス）。X が本体、o がハイライト */
 const HEART_PIXELS = ['.XX.XX.', 'XoXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'];
@@ -702,7 +688,13 @@ export class GameApp {
 
     // 描画・効果音のコールバックは戦場を進める最中に呼ばれる。TD の対面対戦では戦場の乱数を両端末でそろえるため、
     // ここでは本来の Math.random に戻して動かす（SimRandom.ts）
-    this.battle.onUnitAdded = nativeRandomCallback((u) => this.view.addUnitVisual(u));
+    this.battle.onUnitAdded = nativeRandomCallback((u) => {
+      this.view.addUnitVisual(u);
+      // TD の出撃: 出た位置に土煙と光の柱（描画のみ）
+      if (this.playStyle === 'td' && this.mode === 'battle' && !this.onTitleScreen && u.team <= 1) {
+        this.view.spawnDeployFx(u.pelvis.pos, u.team);
+      }
+    });
     this.battle.onUnitRemoved = nativeRandomCallback((u) => this.view.removeUnitVisual(u));
     this.battle.onFacilityAdded = nativeRandomCallback((f) => this.view.addFacilityVisual(f));
     this.battle.onFacilityRemoved = nativeRandomCallback((f) => this.view.removeFacilityVisual(f));
@@ -716,9 +708,17 @@ export class GameApp {
       this.view.spawnCombatEffect(e);
       if (this.onTitleScreen) return;
       this.sound.playEffect(e);
-      const shake = SHAKE_BY_EFFECT[e.kind];
-      if (shake !== undefined) this.view.addCameraShake(shake);
+      // 大きな衝撃は演出の表（FX_EFFECT_CUES）どおりに揺らす
+      const fxCue = FX_EFFECT_CUES[e.kind];
+      if (fxCue) this.view.emitFx(fxCue.cue, fxCue.tier, (e as { pos?: Vector3 }).pos ?? null);
     });
+    // 演出の差し込み口（画面のフラッシュ・ユニットの白フラッシュ・効果音）
+    const screenFx = new ScreenFx();
+    this.view.fx.sinks = {
+      flash: (kind, strength) => screenFx.flash(kind, strength),
+      unitFlash: (id, strength) => this.view.flashUnit(id, strength),
+      sound: (name, tier, pitch) => this.sound.playFxCue(name, tier, pitch),
+    };
     this.damageOverlay = new DamageOverlay(viewport, this.view.camera);
     this.damageOverlay.mode = loadDamageMode();
     this.battle.combat.damageListeners.push(nativeRandomCallback((e) => {
@@ -734,14 +734,21 @@ export class GameApp {
             if (this.tdDuel.wild.kind(e.victim)) {
               // 第三勢力の魔物は、自分の陣営の手柄のときだけ
               const reward = this.tdDuel.wild.killReward(e);
-              if (reward?.team === this.td.team) this.xpOrbs.spawn(e.pos, reward.spec.xp);
+              if (reward?.team === this.td.team) {
+                this.xpOrbs.spawn(e.pos, reward.spec.xp);
+                this.tdHud.onKill();
+              }
             } else if (e.victim.team !== this.td.team) {
               this.xpOrbs.spawn(e.pos, xpForKill(e.victim) * TD_DUEL_XP_MUL);
+              this.tdHud.onKill();
             }
           }
         } else {
           this.td.rules.onDamage(e);
-          if (e.killed && e.victim.team !== 0) this.onTDEnemyKilled(e.victim, e.pos);
+          if (e.killed && e.victim.team !== 0) {
+            this.onTDEnemyKilled(e.victim, e.pos);
+            this.tdHud.onKill();
+          }
         }
       }
     }));
@@ -761,7 +768,12 @@ export class GameApp {
         this.lastKillPos.copy(e.point);
         this.hasLastKillPos = true;
       }
-      if (e.damage >= 45) this.view.addCameraShake(e.damage / 420);
+      // 小ヒットはユニットの白フラッシュだけ。重い一撃から揺れとヒットストップが乗る（FX_SPEC.md 決定事項 R1）
+      if (heavy || e.damage >= FX_HEAVY_HIT_DAMAGE) {
+        const tier = FX_HEAVY_HIT_TIERS.filter((d) => e.damage >= d).length as FxTier;
+        this.view.emitFx('heavy_hit', tier, e.point, e.victim.id);
+      } else this.view.emitFx('unit_hit', 0, null, e.victim.id);
+      if (e.killed) this.view.emitFx('kill', 0, null, e.victim.id);
     });
 
     this.elTopHud = document.getElementById('top-hud');
@@ -1519,6 +1531,7 @@ export class GameApp {
     this.music.setVolume(this.settings.musicVolume);
     this.applyQualitySetting(this.settings.quality);
     this.view.showHpBars = this.settings.showHpBars;
+    this.view.fx.setLevel(this.settings.fxLevel, this.settings.cameraShake);
   }
 
   private applyQualitySetting(quality: QualitySetting): void {
@@ -1534,7 +1547,21 @@ export class GameApp {
     const sfx = document.getElementById('setting-sfx') as HTMLInputElement | null;
     const quality = document.getElementById('setting-quality') as HTMLSelectElement | null;
     const hpBars = document.getElementById('setting-hpbars') as HTMLInputElement | null;
+    const fxLevel = document.getElementById('setting-fx') as HTMLSelectElement | null;
+    const shake = document.getElementById('setting-shake') as HTMLInputElement | null;
     if (!panel || !toggle || !music || !sfx || !quality || !hpBars) return;
+    if (fxLevel && shake) {
+      fxLevel.value = this.settings.fxLevel;
+      shake.checked = this.settings.cameraShake;
+      const applyFx = () => {
+        this.settings.fxLevel = fxLevel.value as FxLevel;
+        this.settings.cameraShake = shake.checked;
+        this.view.fx.setLevel(this.settings.fxLevel, this.settings.cameraShake);
+        saveSettings(this.settings);
+      };
+      fxLevel.addEventListener('change', applyFx);
+      shake.addEventListener('change', applyFx);
+    }
 
     music.value = String(Math.round(this.settings.musicVolume * 100));
     sfx.value = String(Math.round(this.settings.sfxVolume * 100));
@@ -2524,6 +2551,15 @@ export class GameApp {
         if (this.tdStarter) this.startTDRun(this.tdStarter);
         else this.enterTDMode();
       },
+      emitFx: (cue, tier, pos) => {
+        if (!this.onTitleScreen) this.view.emitFx(cue, tier, pos);
+      },
+      castleImpact: (base, tier) => this.view.spawnCastleImpact(base.pos, tier),
+      playFxSound: (name, tier, pitch) => this.sound.playFxCue(name, tier, pitch),
+      setMusicTempo: (scale) => this.music.setTempoScale(scale),
+      duckMusic: (seconds) => this.music.duck(seconds),
+      getFxLevel: () => this.view.fx.level,
+      registerKill: () => this.view.fx.registerKill(),
       getChestCount: () => (this.td?.duel && !this.tdLockstep?.spectator ? this.td.openableChests.length : 0),
       openNextChest: () => this.openNextTDDuelChest(),
       getVersus: () => this.tdVersusField,
@@ -2798,9 +2834,9 @@ export class GameApp {
     this.syncPhaseUI();
     const begin = () => {
       if (this.td !== td) return;
-      if (watchLog) this.tdHud.announce('👁 観戦中 ― 青 vs 赤', 'wave');
-      else if (td.duel) this.tdHud.announce(`⚔ 対戦開始！ あなたは${slotColorName(td.team)}`, 'wave');
-      else this.tdHud.announce('WAVE 1', 'wave');
+      if (watchLog) this.tdHud.announce('観戦中', 'wave', 1, '👁 青 vs 赤');
+      else if (td.duel) this.tdHud.announce('対戦開始!!', 'wave', 2, `⚔ あなたは${slotColorName(td.team)}`);
+      else this.tdHud.announce('WAVE 1', 'wave', 0);
       this.sound.playBattleStart();
     };
     // 初めてのプレイでは、あそびかたを見せてから始める（見ている間は止まる・スキップ可）
@@ -2870,6 +2906,15 @@ export class GameApp {
     }
     this.tdHud.closeChoice();
     this.xpOrbsField?.clear();
+    // 決着の立体文字（観戦は中立に「青の勝利」など）
+    if (outcome && outcome.reason !== 'left') {
+      const watching = this.tdLockstep?.spectator ?? false;
+      const by = outcome.reason === 'time' ? '時間切れ' : outcome.reason === 'surrender' ? '降参' : '城を破壊';
+      if (outcome.winner === null) this.tdHud.announceFinish('引き分け', false, by);
+      else if (watching) this.tdHud.announceFinish(`${outcome.winner === 0 ? '青' : '赤'}の勝利!!`, true, by);
+      else if (outcome.winner === td.team) this.tdHud.announceFinish('勝利!!', true, by);
+      else this.tdHud.announceFinish('敗北…', false, by);
+    }
     window.setTimeout(() => {
       if (this.td !== td || this.playStyle !== 'td') return;
       this.tdVsResult ??= { winner: outcome?.winner ?? null, reason: outcome?.reason ?? 'castle' };
@@ -5380,20 +5425,53 @@ export class GameApp {
 
   /** 毎フレームの更新ループ */
   tick(realDt: number): void {
+    const frameStart = this.frameProbe ? performance.now() : 0;
+    this.tickInner(realDt);
+    if (this.frameProbe) this.recordFrameProbe(performance.now() - frameStart);
+  }
+
+  /** `?perf=1` のときだけ、フレーム時間を計測して画面の隅に出す（決定事項 R5） */
+  private readonly frameProbe: FrameProbe | null =
+    typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf') ? new FrameProbe() : null;
+  private elFrameProbe: HTMLElement | null = null;
+  private frameProbeTimer = 0;
+
+  private recordFrameProbe(ms: number): void {
+    const probe = this.frameProbe!;
+    probe.record(ms);
+    if (++this.frameProbeTimer % 30 !== 0) return;
+    if (!this.elFrameProbe) {
+      this.elFrameProbe = document.createElement('div');
+      this.elFrameProbe.className = 'fx-perf';
+      document.body.appendChild(this.elFrameProbe);
+    }
+    const st = probe.stats();
+    this.elFrameProbe.textContent =
+      `frame ${st.avg.toFixed(1)}ms  p95 ${st.p95.toFixed(1)}  max ${st.max.toFixed(1)}  ` +
+      `units ${this.battle.units.filter((u) => u.alive).length}  fx ${this.view.fx.level}`;
+  }
+
+  private tickInner(realDt: number): void {
     this.updateAdaptiveQuality(realDt);
+    // 演出（揺れ・ヒットストップ）を進める。観戦の追いつき中とタイトルのデモ中は最小にする
+    const fx = this.view.fx;
+    fx.suppressed = this.onTitleScreen || (this.tdLockstep?.catchingUp ?? false);
+    fx.update(realDt);
     if (this.finishSlowMoTimer > 0) this.finishSlowMoTimer -= realDt;
     if (this.jackpot.active) this.jackpot.update(realDt);
     if (this.jackpotFx.active) this.jackpotFx.update(realDt);
     this.updateDroppedChests(realDt);
     // オンライン対戦の試合中は、宝箱の演出中や強化を選んでいる間も時間を止めず、早送りもしない
     const versusLive = this.isTDVersusLive;
+    // 戦場ごと止めるヒットストップは 1 人用モードだけ。対戦・観戦はロックステップ同期なので描画だけ止める
+    fx.allowBattleStop = !versusLive;
     if (versusLive && this.tdLockstep && !this.tdLockstep.finished) {
       // 対面対戦: 相手の操作がそろったターンだけ、固定ステップで進める
       this.tdLockstep.advance(this.battle, realDt);
     } else if (versusLive || (!this.paused && !this.jackpotBusy && !this.tdHold)) {
       // 決着のスロー中は早送りを無視して見せ場をゆっくり見せる
       const scale = this.finishSlowMoTimer > 0 ? FINISH_SLOWMO_SCALE : versusLive ? 1 : this.timeScale;
-      this.battle.advance(realDt * scale);
+      this.battle.advance(realDt * scale * fx.battleScale());
     }
     // 観戦で早送りして追いついている間は、効果音が鳴りっぱなしにならないよう消す
     const catchingUp = this.tdLockstep?.catchingUp ?? false;
@@ -5461,6 +5539,7 @@ export class GameApp {
     this.celebrateTimer = 0.25;
     const focus = this.hasLastKillPos ? this.lastKillPos : this.getWinnerCenter();
     if (focus) this.view.playFinisherCamera(focus);
+    this.view.emitFx('finish', 3, focus);
   }
 
   private getWinnerCenter(): Vector3 | null {
