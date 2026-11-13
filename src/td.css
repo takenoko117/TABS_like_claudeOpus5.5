@@ -472,6 +472,12 @@ body.td-mode #btn-restore-hud {
 .td-choice-rarity { position: absolute; top: 4px; right: 6px; font-size: 11px; font-weight: 800; color: var(--sub); }
 .td-choice-card.rare .td-choice-rarity { color: #74c0fc; }
 .td-choice-card.legendary .td-choice-rarity { color: var(--gold); }
+/* スーパーレジェンド（対戦のレベルアップでだけ出る最上位）: 縁を太くし、金と桃の二重の段差で目立たせる */
+.td-choice-card.super_legend {
+  border: 3px solid var(--rarity-super);
+  box-shadow: var(--bevel), 4px 4px 0 var(--gold-deep), 8px 8px 0 rgba(0, 0, 0, 0.5);
+}
+.td-choice-card.super_legend .td-choice-rarity { color: var(--rarity-super); }
 .td-choice-foot { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .td-choice-foot small { color: var(--sub); font-size: 12px; }
 

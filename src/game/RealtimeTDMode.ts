@@ -25,6 +25,9 @@ import {
   getSquadSize,
   getUnitLevelMul,
   getUnitSlotCost,
+  isSuperLegendUnit,
+  SUPER_LEGEND_UNITS,
+  type SuperLegendChances,
   isEnchantGate,
   RogueliteRules,
   RogueliteRun,
@@ -192,8 +195,14 @@ const DIVINE_UNITS: readonly UnitTypeId[] = UNIT_TYPE_LIST.filter((u) => u.categ
 
 // ---- オンライン対戦（対面型。ホストが青＝左の城、ゲストが赤＝右の城） ----
 
-/** 対戦の城の HP（両者同じ。城強化の増え幅もこれを基準にする） */
-export const TD_DUEL_BASE_HP = 3000;
+/** 対戦の城の HP（両者同じ。城強化の増え幅もこれを基準にする。低めにして序盤から緊張感を出す） */
+export const TD_DUEL_BASE_HP = 300;
+/** 対戦でのスーパーレジェンドの兵種（SUPER_LEGEND_UNITS）の出撃コスト */
+export const TD_DUEL_SUPER_LEGEND_DEPLOY_COST = 2000;
+/** 対戦のレベルアップの3択にスーパーレジェンドが出る確率（ユニットは1枠ごと、レリックはレリック枠が出たとき） */
+export const TD_DUEL_SUPER_LEGEND_CHANCE: SuperLegendChances = { unit: 0.05, relic: 0.2 };
+/** 対戦の輪廻転生の門で1体が復活できる回数の上限（味方が増えすぎて重くならないように） */
+export const TD_DUEL_SAMSARA_MAX_REVIVES = 2;
 /** 対戦の制限時間（秒）。過ぎたら城の残り HP の割合が多いほうの勝ち（同じなら引き分け） */
 export const TD_DUEL_TIME_LIMIT = 600;
 /** 対戦で敵兵を倒したときの経験値の倍率（AI のウェーブより倒す数が少ないため多めにする） */
@@ -216,8 +225,9 @@ export function getDeployCooldown(id: UnitTypeId): number {
   return TD_COOLDOWN_BY_SLOT[getUnitSlotCost(id)] ?? 30;
 }
 
-/** カードの出撃コスト */
-export function getDeployCost(id: UnitTypeId): number {
+/** カードの出撃コスト（duel は対戦。スーパーレジェンドは別料金） */
+export function getDeployCost(id: UnitTypeId, duel = false): number {
+  if (duel && isSuperLegendUnit(id)) return TD_DUEL_SUPER_LEGEND_DEPLOY_COST;
   return getUnitSlotCost(id) * TD_DEPLOY_COST_PER_SLOT;
 }
 
@@ -486,6 +496,7 @@ export class TDRun {
     this.run.rerollsLeft = 1;
     this.run.round = 1;
     this.rules = new RogueliteRules(null, this.team);
+    if (this.duel) this.rules.samsaraMaxRevives = TD_DUEL_SAMSARA_MAX_REVIVES;
   }
 
   /** 自軍の城を基準にした x（team 1 は左右を反転する。戦場は点対称） */
@@ -876,7 +887,7 @@ export class TDRun {
     if (this.ended) return 'ended';
     if (!this.run.card(id)) return 'not_owned';
     if ((this.cooldowns.get(id) ?? 0) > 0) return 'cooldown';
-    if (this.money < getDeployCost(id)) return 'money';
+    if (this.money < getDeployCost(id, this.duel)) return 'money';
     if (battle.aliveCount(this.team) >= TD_ALLY_CAP) return 'full';
     return null;
   }
@@ -1000,7 +1011,7 @@ export class TDRun {
   deploy(battle: Battle, id: UnitTypeId): Unit[] {
     if (this.deployBlock(battle, id) !== null) return [];
     const card = this.run.card(id)!;
-    this.run.gold -= getDeployCost(id);
+    this.run.gold -= getDeployCost(id, this.duel);
     this.cooldowns.set(id, getDeployCooldown(id));
     const n = Math.min(getSquadSize(id), TD_ALLY_CAP - battle.aliveCount(this.team));
     const mul = getUnitLevelMul(card.level);
@@ -1024,7 +1035,7 @@ export class TDRun {
 
   /** 自動出撃: 出せるカードを、高いものから順に出す */
   private autoDeployReady(battle: Battle): void {
-    const deck = [...this.run.cards].sort((a, b) => getDeployCost(b.id) - getDeployCost(a.id));
+    const deck = [...this.run.cards].sort((a, b) => getDeployCost(b.id, this.duel) - getDeployCost(a.id, this.duel));
     for (const c of deck) {
       if (this.deployBlock(battle, c.id) === null) {
         this.deploy(battle, c.id);
@@ -1073,9 +1084,14 @@ export class TDRun {
   openChest(battle: Battle, tier: ChestTier): JackpotReward[] {
     const rewards = this.rollChest(tier);
     const hadCards = this.snapshotCards();
-    for (const r of rewards) applyJackpotReward(r, battle, this.run, this.rng, this.team);
+    for (const r of rewards) applyJackpotReward(r, battle, this.run, this.rng, this.team, this.summonExclude);
     this.afterChestRewards(battle, hadCards);
     return rewards;
+  }
+
+  /** 宝箱の増援要請で呼ばない兵種（対戦ではスーパーレジェンドを宝箱に出さない） */
+  private get summonExclude(): readonly UnitTypeId[] {
+    return this.duel ? SUPER_LEGEND_UNITS : [];
   }
 
   /** 宝箱の中身を引く（まだ適用しない。開封の演出のあとで適用する） */
@@ -1083,7 +1099,7 @@ export class TDRun {
     return rollJackpot(tier, {
       rng: this.rng,
       battleActive: true,
-      summonSlots: summonCandidates(this.run).length,
+      summonSlots: summonCandidates(this.run, this.summonExclude).length,
     });
   }
 
@@ -1112,7 +1128,7 @@ export class TDRun {
         // 対戦: 何回目の選択権か・何回目の引き直しかだけで決め、両者に同じ候補を出す
         const round = getVersusOfferRound(this.picks);
         const rng = createSeededRng(getVersusOfferSeed(this.run.seed, this.picks, this.rerollsThisPick));
-        this.options = generateSharedRewardOffers(round, rng).map((o) => sharedOfferToOption(this.run, o, round));
+        this.options = generateSharedRewardOffers(round, rng, TD_DUEL_SUPER_LEGEND_CHANCE).map((o) => sharedOfferToOption(this.run, o, round));
       } else {
         const rng = createSeededRng(Math.imul(this.run.seed ^ 0x2545f491, 31) + this.draws * 7919);
         this.options = generateRewardOptions(this.run, rng);

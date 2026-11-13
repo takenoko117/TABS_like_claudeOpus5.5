@@ -4,13 +4,26 @@ import { Battle } from '../src/game/Battle';
 import { createSeededRng } from '../src/game/ChallengeMode';
 import {
   TD_DUEL_BASE_HP,
+  TD_DUEL_SAMSARA_MAX_REVIVES,
+  TD_DUEL_SUPER_LEGEND_DEPLOY_COST,
+  TDRun,
+  getDeployCost,
   TD_DUEL_TIME_LIMIT,
   TD_DUEL_XP_MUL,
   getVersusOfferRound,
   getVersusOfferSeed,
   xpForKill,
 } from '../src/game/RealtimeTDMode';
-import { ROGUE_STARTERS, generateSharedRewardOffers, type RewardOption, type RogueStarter } from '../src/game/RogueliteMode';
+import {
+  ROGUE_STARTERS,
+  SUPER_LEGEND_RELICS,
+  SUPER_LEGEND_UNITS,
+  generateSharedRewardOffers,
+  sharedOfferToOption,
+  type RewardOption,
+  type RogueStarter,
+} from '../src/game/RogueliteMode';
+import { summonCandidates } from '../src/game/RogueJackpot';
 import { TDDuel, TDLockstep, TD_DUEL_HASH_TURNS, TD_DUEL_INPUT_DELAY, TD_DUEL_TURN_STEPS } from '../src/game/TDDuel';
 import { TDVersusSession, verdictFor, type TDVersusSessionEvents } from '../src/game/TDVersusSession';
 import { withNativeRandom, withSimRandom } from '../src/game/SimRandom';
@@ -855,3 +868,69 @@ describe('ピクセルアート', () => {
   });
 });
 
+
+describe('TD オンライン対戦: 城 HP とスーパーレジェンド', () => {
+  it('城の HP は 300 から始まる', () => {
+    expect(TD_DUEL_BASE_HP).toBe(300);
+    const { duel } = makeClient(3, 0);
+    expect(duel.sides[0].playerBase!.hp).toBe(300);
+  });
+
+  it('スーパーレジェンドの兵種は対戦でだけ出撃コスト 2000G', () => {
+    expect(TD_DUEL_SUPER_LEGEND_DEPLOY_COST).toBe(2000);
+    for (const id of SUPER_LEGEND_UNITS) {
+      expect(getDeployCost(id, true)).toBe(2000);
+      expect(getDeployCost(id)).toBeLessThan(2000);
+    }
+    expect(getDeployCost('swordsman', true)).toBe(getDeployCost('swordsman'));
+  });
+
+  it('確率 0 ならスーパーレジェンドは3択に出ず、確率 1 ならユニット 2 枚とレリックが全部スーパーレジェンド', () => {
+    for (let s = 0; s < 200; s++) {
+      for (const o of generateSharedRewardOffers(10, createSeededRng(s))) {
+        if (o.kind === 'unit') expect(SUPER_LEGEND_UNITS).not.toContain(o.unitId);
+        if (o.kind === 'relic') expect(SUPER_LEGEND_RELICS).not.toContain(o.relicId);
+      }
+    }
+    let relics = 0;
+    for (let s = 0; s < 50; s++) {
+      const offers = generateSharedRewardOffers(10, createSeededRng(s), { unit: 1, relic: 1 });
+      const units = offers.filter((o) => o.kind === 'unit');
+      expect(units.length).toBe(2);
+      for (const o of units) expect(SUPER_LEGEND_UNITS).toContain(o.unitId);
+      expect(new Set(units.map((o) => o.unitId)).size).toBe(2);
+      for (const o of offers) {
+        if (o.kind === 'relic') {
+          relics++;
+          expect(SUPER_LEGEND_RELICS).toContain(o.relicId);
+        }
+      }
+    }
+    expect(relics).toBeGreaterThan(0);
+  });
+
+  it('スーパーレジェンドの兵種は1種類しか持てない（別のものは金に替わり、同じものは強化できる）', () => {
+    const td = new TDRun(1, STARTERS[0], undefined, { duel: { team: 0 } });
+    const first = sharedOfferToOption(td.run, { kind: 'unit', unitId: 'angel_ramiel' }, 10);
+    expect(first.rarity).toBe('super_legend');
+    td.run.gainUnit('angel_ramiel');
+    expect(sharedOfferToOption(td.run, { kind: 'unit', unitId: 'angel_zeruel' }, 10).kind).toBe('gold');
+    expect(sharedOfferToOption(td.run, { kind: 'unit', unitId: 'yamamuron' }, 10).kind).toBe('gold');
+    const again = sharedOfferToOption(td.run, { kind: 'unit', unitId: 'angel_ramiel' }, 10);
+    expect(again.kind).toBe('unit');
+    expect(again.rarity).toBe('super_legend');
+    expect(sharedOfferToOption(td.run, { kind: 'relic', relicId: 'samsara_gate' }, 10).rarity).toBe('super_legend');
+  });
+
+  it('宝箱の増援要請にはスーパーレジェンドが出ない。輪廻転生の復活は 2 回まで', () => {
+    const td = new TDRun(1, STARTERS[0], undefined, { duel: { team: 0 } });
+    const solo = new TDRun(1, STARTERS[0]);
+    for (const id of SUPER_LEGEND_UNITS) {
+      expect(summonCandidates(td.run, SUPER_LEGEND_UNITS)).not.toContain(id);
+      expect(summonCandidates(solo.run)).toContain(id);
+    }
+    expect(td.rules.samsaraMaxRevives).toBe(TD_DUEL_SAMSARA_MAX_REVIVES);
+    expect(TD_DUEL_SAMSARA_MAX_REVIVES).toBe(2);
+    expect(solo.rules.samsaraMaxRevives).toBe(Infinity);
+  });
+});

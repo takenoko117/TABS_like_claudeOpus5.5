@@ -201,6 +201,27 @@ describe('レリック更新: 新規レリック', () => {
     expect(allies(battle).filter((u) => u.type.id === 'swordsman').length).toBe(0);
   });
 
+  it('輪廻転生の門: samsaraMaxRevives を超えて復活しない（TD 対戦の上限 2 回）', () => {
+    const { battle, rules } = setup();
+    let ally = battle.spawnUnit('swordsman', 0, -5, 0);
+    battle.spawnUnit('clubber', 1, 15, 0);
+    begin(battle, rules);
+    rules.setRelics([{ id: 'samsara_gate', level: 3, active: true }]);
+    rules.samsaraMaxRevives = 2;
+    battle.step(DT);
+    for (let i = 0; i < 2; i++) {
+      kill(ally);
+      battle.step(DT);
+      const revived = allies(battle).filter((u) => u.type.id === 'swordsman');
+      expect(revived.length).toBe(1);
+      ally = revived[0];
+    }
+    // 3回目は猶予内でも復活しない
+    kill(ally);
+    battle.step(DT);
+    expect(allies(battle).filter((u) => u.type.id === 'swordsman').length).toBe(0);
+  });
+
   it('輪廻転生＋転生: 猶予内なら本人が復活し、初回の死亡でだけスライムも出る', () => {
     const { battle, rules } = setup();
     const ally = battle.spawnUnit('swordsman', 0, -5, 0);

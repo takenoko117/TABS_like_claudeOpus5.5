@@ -195,15 +195,23 @@ export function unitJackpotRarity(id: UnitTypeId): JackpotRarity {
   return cost <= 150 ? 0 : cost <= 450 ? 1 : cost <= 900 ? 2 : 3;
 }
 
-/** 増援要請で呼べる兵種（未所持のエピック・レジェンドで、ユニット枠に収まるもの） */
-export function summonCandidates(run: RogueliteRun): UnitTypeId[] {
+/**
+ * 増援要請で呼べる兵種（未所持のエピック・レジェンドで、ユニット枠に収まるもの）。
+ * exclude の兵種は呼ばない（TD オンライン対戦のスーパーレジェンドは宝箱に出さない）
+ */
+export function summonCandidates(run: RogueliteRun, exclude: readonly UnitTypeId[] = []): UnitTypeId[] {
   return UNIT_TYPE_LIST.map((u) => u.id).filter(
-    (id) => unitJackpotRarity(id) >= 2 && !run.ownsUnit(id) && getUnitSlotCost(id) <= run.unitSlots,
+    (id) =>
+      unitJackpotRarity(id) >= 2 && !run.ownsUnit(id) && getUnitSlotCost(id) <= run.unitSlots && !exclude.includes(id),
   );
 }
 
-export function pickSummonUnit(run: RogueliteRun, rng: () => number = Math.random): UnitTypeId | null {
-  const candidates = summonCandidates(run);
+export function pickSummonUnit(
+  run: RogueliteRun,
+  rng: () => number = Math.random,
+  exclude: readonly UnitTypeId[] = [],
+): UnitTypeId | null {
+  const candidates = summonCandidates(run, exclude);
   return candidates.length > 0 ? candidates[Math.floor(rng() * candidates.length)] : null;
 }
 
@@ -246,6 +254,7 @@ export function applyJackpotReward(
   run: RogueliteRun,
   rng: () => number = Math.random,
   team: Team = 0,
+  summonExclude: readonly UnitTypeId[] = [],
 ): void {
   const allies = battle.units.filter((u) => u.alive && u.team === team);
   const effect = reward.effect;
@@ -275,7 +284,7 @@ export function applyJackpotReward(
       break;
     }
     case 'summon': {
-      const id = pickSummonUnit(run, rng);
+      const id = pickSummonUnit(run, rng, summonExclude);
       if (id) summonUnit(battle, run, id, rng, team);
       break;
     }

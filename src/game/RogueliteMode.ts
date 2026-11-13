@@ -323,6 +323,8 @@ export class RogueliteRules implements BattleRules {
   gateInfusions: GateInfusion[] = [];
   /** 戦闘中ずっと働くレリック（転生・輪廻転生・爆裂・磁力）のレベル */
   passive: PassiveRelicLevels = { ...NO_PASSIVE };
+  /** 輪廻転生の門で1体が復活できる回数の上限（TD オンライン対戦では重さ対策で絞る） */
+  samsaraMaxRevives = Infinity;
   /** 召喚ポータル（最大レベル）が呼び出す兵種（所持カード） */
   summonPool: UnitTypeId[] = [];
   swarmStacks = 0;
@@ -515,7 +517,7 @@ export class RogueliteRules implements BattleRules {
 
     const firstDeath = !life.died;
     life.died = true;
-    if (p.samsara >= 0 && battle.units.includes(dead)) {
+    if (p.samsara >= 0 && life.revives < this.samsaraMaxRevives && battle.units.includes(dead)) {
       const grace = SAMSARA_GRACE_SECONDS[p.samsara][Math.min(life.revives, 3)];
       if (battle.time - life.spawnTime <= grace) {
         const next = battle.reviveUnit(dead, SAMSARA_REVIVE_HP);
@@ -1310,12 +1312,25 @@ export interface OwnedRelic {
   active: boolean;
 }
 
-export type Rarity = 'common' | 'rare' | 'legendary';
+export type Rarity = 'common' | 'rare' | 'legendary' | 'super_legend';
 export const RARITY_LABELS: Readonly<Record<Rarity, string>> = {
   common: 'コモン',
   rare: 'レア',
   legendary: 'レジェンド',
+  super_legend: 'スーパーレジェンド',
 };
+
+/**
+ * スーパーレジェンド（TD オンライン対戦の最上位レア度）の兵種。
+ * レベルアップの3択でだけ出て（宝箱の増援要請には出ない）、この中から1種類しか持てない。
+ */
+export const SUPER_LEGEND_UNITS: readonly UnitTypeId[] = ['angel_ramiel', 'angel_zeruel', 'yamamuron'];
+/** スーパーレジェンドの門（味方が増える門）。レベルアップの3択でだけ出る。各種1個（強化は可） */
+export const SUPER_LEGEND_RELICS: readonly FacilityTypeId[] = ['rebirth_gate', 'samsara_gate', 'multiplier_gate'];
+
+export function isSuperLegendUnit(id: UnitTypeId): boolean {
+  return SUPER_LEGEND_UNITS.includes(id);
+}
 
 /** 報酬に出る陣地レリックとレア度 */
 export const ROGUE_RELIC_POOL: ReadonlyArray<{ id: FacilityTypeId; rarity: Rarity }> = [
@@ -1981,12 +1996,32 @@ export type SharedRewardOffer =
   | { kind: 'relic'; relicId: FacilityTypeId }
   | { kind: 'gold'; amount: number };
 
-/** 対戦用の共通の3択（ユニット2枚＋レリックかゴールド） */
-export function generateSharedRewardOffers(round: number, rng: () => number): SharedRewardOffer[] {
+/** 対戦の3択にスーパーレジェンドが出る確率（ユニットは1枠ごと、レリックはレリック枠が出たとき） */
+export interface SuperLegendChances {
+  unit: number;
+  relic: number;
+}
+
+/**
+ * 対戦用の共通の3択（ユニット2枚＋レリックかゴールド）。
+ * スーパーレジェンドは通常のレア度の抽選には入らず、superLegend の確率でだけ出る。
+ */
+export function generateSharedRewardOffers(
+  round: number,
+  rng: () => number,
+  superLegend: SuperLegendChances = { unit: 0, relic: 0 },
+): SharedRewardOffer[] {
   const offers: SharedRewardOffer[] = [];
   const picked: UnitTypeId[] = [];
-  const all = UNIT_TYPE_LIST.map((u) => u.id);
+  const all = UNIT_TYPE_LIST.map((u) => u.id).filter((id) => !isSuperLegendUnit(id));
   for (let i = 0; i < 2; i++) {
+    const superPool = SUPER_LEGEND_UNITS.filter((id) => !picked.includes(id));
+    if (superPool.length > 0 && rng() < superLegend.unit) {
+      const id = superPool[Math.floor(rng() * superPool.length)];
+      picked.push(id);
+      offers.push({ kind: 'unit', unitId: id });
+      continue;
+    }
     const candidates = all.filter((id) => !picked.includes(id));
     const rarity = rollRarity(getRarityWeights(round), rng);
     const band = candidates.filter((id) => unitRarity(id) === rarity);
@@ -1997,9 +2032,14 @@ export function generateSharedRewardOffers(round: number, rng: () => number): Sh
   }
   let relic: FacilityTypeId | undefined;
   if (rng() < REWARD_RELIC_CHANCE) {
-    const rarity = rollRarity(getRarityWeights(round), rng);
-    const band = ROGUE_RELIC_POOL.filter((r) => r.rarity === rarity);
-    relic = weightedPick(band.length > 0 ? band : ROGUE_RELIC_POOL, () => 1, rng)?.id;
+    if (rng() < superLegend.relic) {
+      relic = SUPER_LEGEND_RELICS[Math.floor(rng() * SUPER_LEGEND_RELICS.length)];
+    } else {
+      const pool = ROGUE_RELIC_POOL.filter((r) => !SUPER_LEGEND_RELICS.includes(r.id));
+      const rarity = rollRarity(getRarityWeights(round), rng);
+      const band = pool.filter((r) => r.rarity === rarity);
+      relic = weightedPick(band.length > 0 ? band : pool, () => 1, rng)?.id;
+    }
   }
   offers.push(relic ? { kind: 'relic', relicId: relic } : { kind: 'gold', amount: getGoldRewardAmount(round) });
   return offers;
@@ -2018,12 +2058,17 @@ export function sharedOfferToOption(run: RogueliteRun, offer: SharedRewardOffer,
     };
   };
   if (offer.kind === 'unit') {
+    const superLegend = isSuperLegendUnit(offer.unitId);
     const card = run.card(offer.unitId);
-    if (!card) return unitOption(offer.unitId);
+    if (!card) {
+      // スーパーレジェンドの兵種は1種類しか持てない（別のものを持っていればゴールドに替える）
+      if (superLegend && SUPER_LEGEND_UNITS.some((id) => run.ownsUnit(id))) return gold();
+      return superLegend ? { ...unitOption(offer.unitId), rarity: 'super_legend' } : unitOption(offer.unitId);
+    }
     if (card.level >= ROGUE_MAX_UNIT_LEVEL) return gold();
     return {
       kind: 'unit',
-      rarity: unitRarity(offer.unitId),
+      rarity: superLegend ? 'super_legend' : unitRarity(offer.unitId),
       unitId: offer.unitId,
       title: `${UNIT_TYPES[offer.unitId].name} 強化`,
       description: `持っている部隊が Lv${card.level} → Lv${card.level + 1} になる`,
@@ -2032,7 +2077,9 @@ export function sharedOfferToOption(run: RogueliteRun, offer: SharedRewardOffer,
   if (offer.kind === 'relic') {
     const level = run.relics.find((r) => r.id === offer.relicId)?.level ?? -1;
     if (level >= MAX_GATE_LEVEL) return gold();
-    const rarity = ROGUE_RELIC_POOL.find((r) => r.id === offer.relicId)?.rarity ?? 'rare';
+    const rarity: Rarity = SUPER_LEGEND_RELICS.includes(offer.relicId)
+      ? 'super_legend'
+      : (ROGUE_RELIC_POOL.find((r) => r.id === offer.relicId)?.rarity ?? 'rare');
     const name = FACILITY_TYPES[offer.relicId].name;
     return level >= 0
       ? {

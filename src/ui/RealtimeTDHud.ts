@@ -951,7 +951,7 @@ export class RealtimeTDHud {
         return `<button type="button" class="td-card slot${getUnitSlotCost(c.id)}" data-deploy="${c.id}" title="${esc(t.name)}${i < 10 ? `（${(i + 1) % 10} キー）` : ''}">
           <span class="td-card-icon">${unitVoxel(c.id)}</span>
           <span class="td-card-name">${esc(t.name)}</span>
-          <span class="td-card-cost">${getDeployCost(c.id)}G<small> ×${getSquadSize(c.id)}</small></span>
+          <span class="td-card-cost">${getDeployCost(c.id, td.duel)}G<small> ×${getSquadSize(c.id)}</small></span>
           ${key}
           <span class="td-card-cd"></span>
           <span class="td-card-state"></span>
@@ -977,7 +977,7 @@ export class RealtimeTDHud {
       // 資金不足: たまるまでの円形ゲージ
       const saving = block === 'money';
       el.classList.toggle('fx-saving', saving);
-      if (saving) el.style.setProperty('--fx-fill', String(Math.min(1, td.money / Math.max(1, getDeployCost(id)))));
+      if (saving) el.style.setProperty('--fx-fill', String(Math.min(1, td.money / Math.max(1, getDeployCost(id, td.duel)))));
       // 出せるようになった瞬間に光って小さく跳ねる（「今出せる」が分かる）
       if (block === null && this.blockedCards.has(id)) {
         this.blockedCards.delete(id);
@@ -1057,7 +1057,7 @@ export class RealtimeTDHud {
           <span class="td-choice-rarity">${RARITY_LABELS[o.rarity]}</span>
           <span class="td-choice-icon">${icon}</span>
           <b>${esc(o.title)}</b>
-          <small>${esc(this.optionDescription(o))}</small>
+          <small>${esc(this.optionDescription(o, td.duel))}</small>
         </button>`;
       })
       .join('');
@@ -1072,10 +1072,11 @@ export class RealtimeTDHud {
     this.bindPreviews();
   }
 
-  private optionDescription(o: RewardOption): string {
+  private optionDescription(o: RewardOption, duel: boolean): string {
     if (o.unitId) {
       const t = UNIT_TYPES[o.unitId];
-      return `出撃 ${getDeployCost(o.unitId)}G・×${getSquadSize(o.unitId)}人・待機 ${getDeployCooldown(o.unitId)}秒。${t.description ?? ''}`.trim();
+      const only = o.rarity === 'super_legend' ? '（スーパーレジェンドの兵種は1種類まで）' : '';
+      return `出撃 ${getDeployCost(o.unitId, duel)}G${only}・×${getSquadSize(o.unitId)}人・待機 ${getDeployCooldown(o.unitId)}秒。${t.description ?? ''}`.trim();
     }
     return o.description;
   }
@@ -1228,7 +1229,7 @@ export class RealtimeTDHud {
       // カードから資金表示へ「-120G」が飛ぶ
       const from = FloatText.centerOf(el);
       const to = FloatText.centerOf(this.elSide.querySelector('.td-money b'));
-      if (from && to) this.floatText.spawn(`-${getDeployCost(id).toLocaleString()}G`, from, 'loss', to);
+      if (from && to) this.floatText.spawn(`-${getDeployCost(id, td.duel).toLocaleString()}G`, from, 'loss', to);
     } else {
       this.host.playDenied();
       retrigger(el, 'shake');

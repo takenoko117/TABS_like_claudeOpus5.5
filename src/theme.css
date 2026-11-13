@@ -50,6 +50,7 @@
   --rarity-common: #5b6b8c;
   --rarity-rare: #4a9eff;
   --rarity-epic: linear-gradient(135deg, #a855f7, #ec4899);
+  --rarity-super: #ff5ad1;
 
   /* 形（ブロックなので角丸は常に 0） */
   --radius-panel: 0;
