@@ -369,6 +369,10 @@ export class RealtimeTDHud {
         <button type="button" class="td-btn" data-td="settings" title="設定（開いている間は止まる）">${vx('gear')}</button>
         <button type="button" class="td-btn" data-td="retire" title="リタイアしてタイトルへ">${vx('flag')}</button>
       </div>
+      <div class="td-stance hidden">
+        <button type="button" class="td-btn td-stance-btn" data-td="stance-castle" title="全軍が敵の城だけを狙う（兵や魔物は無視）">${vx('castle')}<b>城を狙え！</b><span class="td-stance-lock"></span></button>
+        <button type="button" class="td-btn td-stance-btn" data-td="stance-enemy" title="全軍が一番近い敵を狙う">${vx('swords')}<b>敵を倒せ！</b><span class="td-stance-lock"></span></button>
+      </div>
       <div class="td-announce hidden"></div>
       <div class="td-levelup hidden" aria-hidden="true"></div>
       <div class="td-choice hidden" role="dialog" aria-label="強化を選ぶ"></div>
@@ -547,6 +551,18 @@ export class RealtimeTDHud {
     const watching = this.spectating;
     for (const ev of events) {
       switch (ev.kind) {
+        case 'stance': {
+          const team = ev.value >> 1;
+          const castle = (ev.value & 1) === 1;
+          const who = watching ? (team === 0 ? '青' : '赤') : team === td.team ? '自軍' : '相手';
+          this.announce(
+            castle ? `${who}：城を狙え!!` : `${who}：敵を倒せ!!`,
+            'stance',
+            1,
+            castle ? `${vx('castle')} 敵の城だけを攻撃` : `${vx('swords')} 一番近い敵を攻撃`,
+          );
+          break;
+        }
         case 'terrain': {
           const b = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
           const t = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
@@ -801,6 +817,19 @@ export class RealtimeTDHud {
     } else setHtml(terrainEl, '');
     const tools = this.root.querySelector('.td-tools')!;
     tools.querySelector('[data-td="auto"]')!.classList.toggle('active', td.autoDeploy);
+    const stanceEl = this.root.querySelector<HTMLElement>('.td-stance')!;
+    stanceEl.classList.toggle('hidden', !td.duel || this.spectating);
+    if (td.duel) {
+      const left = Math.ceil(td.stanceLockLeft);
+      for (const mode of ['castle', 'enemy'] as const) {
+        const btn = stanceEl.querySelector<HTMLButtonElement>(`[data-td="stance-${mode}"]`)!;
+        const current = td.stance === mode;
+        btn.classList.toggle('active', current);
+        // 切り替え先のボタンにだけ、ロックの残り秒数を大きく出す
+        btn.disabled = current || left > 0;
+        btn.querySelector('.td-stance-lock')!.textContent = !current && left > 0 ? String(left) : '';
+      }
+    }
     tools.querySelector('[data-td="pause"]')!.classList.toggle('active', this.host.isPaused());
   }
 
@@ -907,7 +936,7 @@ export class RealtimeTDHud {
           '城強化',
           td.baseLevel,
           td.basePrice,
-          `城強化 Lv${td.baseLevel}：最大HP ${Math.round(base?.maxHp ?? 0).toLocaleString()}・自動回復 ${td.baseRegen}/秒・砲台 ${td.playerCannons.length}基。上げると最大HPと自動回復が増え、城に砲台が1基増える`,
+          `城強化 Lv${td.baseLevel}：最大HP ${Math.round(base?.maxHp ?? 0).toLocaleString()}・自動回復 ${td.baseRegen}/秒${td.duel ? '' : `・砲台 ${td.playerCannons.length}基`}。上げると最大HPと自動回復が増え${td.duel ? '' : '、城に砲台が1基増える'}`,
           can(td.basePrice) && !!base?.alive,
         ) +
         // 対戦で開けられる宝箱があれば、城強化の横に宝箱ボタンを出す（戦場の宝箱を押さなくても開けられる）
@@ -1175,6 +1204,10 @@ export class RealtimeTDHud {
       return;
     }
     switch (d.td) {
+      case 'stance-castle':
+      case 'stance-enemy':
+        if (td.requestStance(d.td === 'stance-castle' ? 'castle' : 'enemy')) this.host.playClick();
+        return;
       case 'auto':
         td.requestAuto(!td.autoDeploy);
         this.host.playClick();

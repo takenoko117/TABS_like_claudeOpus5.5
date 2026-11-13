@@ -1325,7 +1325,7 @@ export const RARITY_LABELS: Readonly<Record<Rarity, string>> = {
  * レベルアップの3択でだけ出て（宝箱の増援要請には出ない）、この中から1種類しか持てない。
  */
 export const SUPER_LEGEND_UNITS: readonly UnitTypeId[] = ['angel_ramiel', 'angel_zeruel', 'yamamuron'];
-/** スーパーレジェンドの門（味方が増える門）。レベルアップの3択でだけ出る。各種1個（強化は可） */
+/** スーパーレジェンドの門（味方が増える門）。レベルアップの3択でだけ出る。3種のうち持てるのは1種だけ（同種は強化できる） */
 export const SUPER_LEGEND_RELICS: readonly FacilityTypeId[] = ['rebirth_gate', 'samsara_gate', 'multiplier_gate'];
 
 export function isSuperLegendUnit(id: UnitTypeId): boolean {
@@ -2077,6 +2077,10 @@ export function sharedOfferToOption(run: RogueliteRun, offer: SharedRewardOffer,
   if (offer.kind === 'relic') {
     const level = run.relics.find((r) => r.id === offer.relicId)?.level ?? -1;
     if (level >= MAX_GATE_LEVEL) return gold();
+    // スーパーレジェンドの門は1種類しか持てない（別の種類を持っていればゴールドに替える。同種は強化）
+    if (level < 0 && SUPER_LEGEND_RELICS.includes(offer.relicId) && run.relics.some((r) => SUPER_LEGEND_RELICS.includes(r.id))) {
+      return gold();
+    }
     const rarity: Rarity = SUPER_LEGEND_RELICS.includes(offer.relicId)
       ? 'super_legend'
       : (ROGUE_RELIC_POOL.find((r) => r.id === offer.relicId)?.rarity ?? 'rare');

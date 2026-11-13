@@ -203,6 +203,9 @@ export const TD_DUEL_SUPER_LEGEND_DEPLOY_COST = 2000;
 export const TD_DUEL_SUPER_LEGEND_CHANCE: SuperLegendChances = { unit: 0.05, relic: 0.2 };
 /** 対戦の輪廻転生の門で1体が復活できる回数の上限（味方が増えすぎて重くならないように） */
 export const TD_DUEL_SAMSARA_MAX_REVIVES = 2;
+/** 戦略命令（城を狙え／敵を倒せ）の切り替えロック（秒） */
+export const TD_DUEL_STANCE_LOCK_SECONDS = 20;
+
 /** 対戦の制限時間（秒）。過ぎたら城の残り HP の割合が多いほうの勝ち（同じなら引き分け） */
 export const TD_DUEL_TIME_LIMIT = 600;
 /** 対戦で敵兵を倒したときの経験値の倍率（AI のウェーブより倒す数が少ないため多めにする） */
@@ -440,10 +443,14 @@ export class TDRun {
   private readonly deadSince = new WeakMap<Unit, number>();
   private lastChestTime = -Infinity;
   endReason: TDEndReason | null = null;
+  /** 戦略命令（対戦）: 'castle' は敵の城だけを狙い、'enemy' は従来どおり一番近い敵を狙う */
+  stance: 'enemy' | 'castle' = 'enemy';
+  /** この時刻（time）まで命令を切り替えられない */
+  stanceLockUntil = 0;
   /** Wave の開始・反撃など、画面に出す知らせ */
   readonly events: Array<{
-    kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain' | 'wild_boss' | 'wild_boss_down';
-    /** wild_boss_down は倒した陣営（-1 は手柄なし） */
+    kind: 'wave' | 'elite' | 'boss' | 'counter' | 'levelup' | 'terrain' | 'wild_boss' | 'wild_boss_down' | 'stance';
+    /** wild_boss_down は倒した陣営（-1 は手柄なし）。stance は 陣営*2＋（城を狙えなら1） */
     value: number;
   }> = [];
   /** 対戦の相手のラン（linkOpponent で付く） */
@@ -559,7 +566,8 @@ export class TDRun {
       this.updateEnemyCannons(battle);
       battle.rules = new TDBattleRules(this);
     }
-    for (let i = 0; i < TD_START_PLAYER_CANNONS; i++) this.addPlayerCannon(0);
+    // 対戦では城に砲台を置かない（ソロのみ）
+    if (!this.duel) for (let i = 0; i < TD_START_PLAYER_CANNONS; i++) this.addPlayerCannon(0);
     battle.preferCloserFacility = true;
     this.rules.start(battle);
     this.syncTags(battle);
@@ -967,6 +975,29 @@ export class TDRun {
     return chest;
   }
 
+  /** 命令を切り替えられるまでの残り秒 */
+  get stanceLockLeft(): number {
+    return Math.max(0, this.stanceLockUntil - this.time);
+  }
+
+  /** 戦略命令を出すよう頼む（対戦のみ。ロック中・同じ命令なら false） */
+  requestStance(mode: 'enemy' | 'castle'): boolean {
+    if (!this.commandSink || this.ended || mode === this.stance || this.stanceLockLeft > 0) return false;
+    this.commandSink({ k: 'stance', mode });
+    return true;
+  }
+
+  /** 戦略命令を全軍に即時適用し、両画面に知らせる */
+  private applyStance(battle: Battle, mode: 'enemy' | 'castle'): void {
+    if (!this.duel || mode === this.stance || this.stanceLockLeft > 0) return;
+    this.stance = mode;
+    this.stanceLockUntil = this.time + TD_DUEL_STANCE_LOCK_SECONDS;
+    battle.siegeTargets[this.team] = mode === 'castle' ? this.enemyBase : null;
+    const ev = { kind: 'stance' as const, value: this.team * 2 + (mode === 'castle' ? 1 : 0) };
+    this.events.push(ev);
+    this.opponent?.events.push({ ...ev });
+  }
+
   requestAuto(on: boolean): void {
     if (this.commandSink) this.commandSink({ k: 'auto', on });
     else this.autoDeploy = on;
@@ -995,6 +1026,9 @@ export class TDRun {
         return;
       case 'auto':
         this.autoDeploy = cmd.on;
+        return;
+      case 'stance':
+        this.applyStance(battle, cmd.mode);
         return;
       case 'chest': {
         this.requestedChests.delete(cmd.id);
@@ -1206,7 +1240,7 @@ export class TDRun {
     base.maxHp += add;
     base.hp += add;
     // 城の砲台を1基足す（段が上がるほど強い砲台）
-    this.addPlayerCannon(Math.min(MAX_GATE_LEVEL, this.baseLevel - 1));
+    if (!this.duel) this.addPlayerCannon(Math.min(MAX_GATE_LEVEL, this.baseLevel - 1));
     return true;
   }
 

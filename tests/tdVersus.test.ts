@@ -4,6 +4,7 @@ import { Battle } from '../src/game/Battle';
 import { createSeededRng } from '../src/game/ChallengeMode';
 import {
   TD_DUEL_BASE_HP,
+  TD_DUEL_STANCE_LOCK_SECONDS,
   TD_DUEL_SAMSARA_MAX_REVIVES,
   TD_DUEL_SUPER_LEGEND_DEPLOY_COST,
   TDRun,
@@ -920,6 +921,61 @@ describe('TD オンライン対戦: 城 HP とスーパーレジェンド', () =
     expect(again.kind).toBe('unit');
     expect(again.rarity).toBe('super_legend');
     expect(sharedOfferToOption(td.run, { kind: 'relic', relicId: 'samsara_gate' }, 10).rarity).toBe('super_legend');
+  });
+
+  it('スーパーレジェンドの門は3種のうち1種だけ持てる（別種は金に替わり、同種は強化できる）', () => {
+    const td = new TDRun(1, STARTERS[0], undefined, { duel: { team: 0 } });
+    expect(sharedOfferToOption(td.run, { kind: 'relic', relicId: 'rebirth_gate' }, 10).kind).toBe('relic');
+    td.run.gainRelic('rebirth_gate');
+    expect(sharedOfferToOption(td.run, { kind: 'relic', relicId: 'samsara_gate' }, 10).kind).toBe('gold');
+    expect(sharedOfferToOption(td.run, { kind: 'relic', relicId: 'multiplier_gate' }, 10).kind).toBe('gold');
+    const again = sharedOfferToOption(td.run, { kind: 'relic', relicId: 'rebirth_gate' }, 10);
+    expect(again.kind).toBe('relic');
+    expect(again.title).toContain('強化');
+  });
+
+  it('対戦では城に砲台を置かない（城強化でも増えない）。ソロは従来どおり', () => {
+    const { battle, duel } = makeClient(5, 0);
+    const mine = duel.sides[0];
+    expect(mine.playerCannons).toHaveLength(0);
+    mine.run.gold = 99999;
+    expect(mine.upgradeBase()).toBe(true);
+    expect(mine.playerCannons).toHaveLength(0);
+    const solo = new Battle();
+    solo.configureStage();
+    const td = new TDRun(1, STARTERS[0]);
+    td.setup(solo);
+    expect(td.playerCannons.length).toBeGreaterThan(0);
+    expect(battle.facilities.some((f) => f.type.id === 'cannon_tower' && f.team <= 1)).toBe(false);
+  });
+
+  it('戦略命令: 城を狙えで全軍が敵の城だけを狙い、20秒ロックされ、両画面に知らせる', () => {
+    const { battle, duel } = makeClient(7, 0);
+    const mine = duel.sides[0];
+    const foe = duel.sides[1];
+    mine.run.gold = 99999;
+    mine.deploy(battle, mine.run.cards[0].id);
+    foe.run.gold = 99999;
+    foe.deploy(battle, foe.run.cards[0].id);
+    duel.execute(battle, 0, { k: 'stance', mode: 'castle' });
+    expect(mine.stance).toBe('castle');
+    expect(battle.siegeTargets[0]).toBe(foe.playerBase);
+    expect(battle.siegeTargets[1]).toBeNull();
+    expect(mine.events.some((e) => e.kind === 'stance' && e.value === 1)).toBe(true);
+    expect(foe.events.some((e) => e.kind === 'stance' && e.value === 1)).toBe(true);
+    for (let i = 0; i < 30; i++) battle.step(battle.fixedDt);
+    for (const u of battle.units.filter((u) => u.alive && u.team === 0)) {
+      expect(u.target).toBeNull();
+      expect(u.targetFacility).toBe(foe.playerBase);
+    }
+    // ロック中は切り替えられない
+    duel.execute(battle, 0, { k: 'stance', mode: 'enemy' });
+    expect(mine.stance).toBe('castle');
+    expect(mine.stanceLockLeft).toBeGreaterThan(0);
+    mine.time += TD_DUEL_STANCE_LOCK_SECONDS;
+    duel.execute(battle, 0, { k: 'stance', mode: 'enemy' });
+    expect(mine.stance).toBe('enemy');
+    expect(battle.siegeTargets[0]).toBeNull();
   });
 
   it('宝箱の増援要請にはスーパーレジェンドが出ない。輪廻転生の復活は 2 回まで', () => {

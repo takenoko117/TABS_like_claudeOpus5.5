@@ -1048,3 +1048,34 @@ body.td-mode #btn-restore-hud {
   .td-vs-row { grid-template-columns: 44px 1fr 34px; gap: 4px; }
   .td-vs-net { font-size: 10px; }
 }
+
+/* 戦略ボタン（TD対戦: 城を狙え／敵を倒せ） */
+.td-stance {
+  position: absolute;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 5;
+}
+.td-stance.hidden { display: none; }
+.td-stance-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  padding: 10px 16px;
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  font-size: 18px;
+}
+.td-stance-btn b { font-weight: 400; }
+.td-stance-btn .td-stance-lock {
+  font-family: var(--font-pixel);
+  font-size: 28px;
+  color: #ffd84d;
+  text-shadow: var(--text-shadow-block);
+  min-width: 1ch;
+}

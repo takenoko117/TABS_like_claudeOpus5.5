@@ -54,6 +54,8 @@ export interface UnitContext {
   onUnitDied?(unit: Unit): void;
   /** 敵の施設のほうが敵兵より近ければ施設を狙う（タワーディフェンスの基地攻め） */
   readonly preferCloserFacility?: boolean;
+  /** 陣営ごとの「城だけを狙う」標的（敵の城）。null なら通常どおり一番近い敵を狙う */
+  readonly siegeTargets?: ReadonlyArray<Facility | null>;
 }
 
 const UP = new Vector3(0, 1, 0);
@@ -651,10 +653,17 @@ export class Unit {
   private think(dt: number, ctx: UnitContext): void {
     // 縄張りのある兵は標的を thinkLeashed で選ぶ（ふだんの標的選びはしない）
     if (this.leash && this.thinkLeashed(dt, ctx, this.leash)) return;
+    // 「城を狙え」の命令中は、敵兵・魔物を無視して敵の城だけを標的にする
+    const siege = this.leash ? null : (ctx.siegeTargets?.[this.team] ?? null);
+    const sieging = !!siege && siege.alive;
+    if (sieging) {
+      this.target = null;
+      this.targetFacility = siege;
+    }
     if (!this.leash) this.retargetTimer -= dt;
     const targetAlive = this.target && this.target.alive;
     const facAlive = this.targetFacility && this.targetFacility.alive;
-    if (!this.leash && ((!targetAlive && !facAlive) || this.retargetTimer <= 0)) {
+    if (!this.leash && !sieging && ((!targetAlive && !facAlive) || this.retargetTimer <= 0)) {
       this.target = this.findNearestEnemy(ctx.units);
       if (!this.target && ctx.facilities) {
         this.targetFacility = this.findNearestEnemyFacility(ctx.facilities);

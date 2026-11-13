@@ -88,6 +88,8 @@ export class Battle implements UnitContext, FacilityBattleContext {
   baseDamageMul = 1.0;
   /** 敵の施設のほうが敵兵より近ければ施設を狙う（タワーディフェンス） */
   preferCloserFacility = false;
+  /** 陣営ごとの「城だけを狙う」標的（TD対戦の戦略命令）。null なら通常どおり */
+  readonly siegeTargets: Array<Facility | null> = [null, null, null];
   /** ステージ限定ルール: 基本移動速度倍率補正 */
   baseSpeedMul = 1.0;
   /** ステージ固有状態異常（31面〜） */

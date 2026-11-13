@@ -98,6 +98,8 @@ export type TDDuelCommand =
   | { k: 'base' }
   /** 自動出撃の入り切り */
   | { k: 'auto'; on: boolean }
+  /** 戦略命令: castle は敵の城だけを狙う、enemy は一番近い敵を狙う */
+  | { k: 'stance'; mode: 'enemy' | 'castle' }
   /** id 番の宝箱を開ける（宝箱の番号は両端末で同じ順に振られる） */
   | { k: 'chest'; id: number };
 
@@ -191,6 +193,8 @@ function parseCommand(v: unknown): TDDuelCommand | null {
       return { k: c.k };
     case 'auto':
       return typeof c.on === 'boolean' ? { k: 'auto', on: c.on } : null;
+    case 'stance':
+      return c.mode === 'enemy' || c.mode === 'castle' ? { k: 'stance', mode: c.mode } : null;
     case 'chest':
       return typeof c.id === 'number' && Number.isInteger(c.id) && c.id >= 0 && c.id < 1e6 ? { k: 'chest', id: c.id } : null;
     default:
