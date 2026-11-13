@@ -104,6 +104,13 @@ const WALL_MAX_BOUNCE_SPEED = 10;
 
 const EMPTY_LIST: readonly number[] = [];
 
+/** 空間ハッシュのマス目の初期の大きさ */
+const PHYSICS_HASH_SPACING = 0.5;
+/** 空間ハッシュの初期の容量（粒子数） */
+const PHYSICS_HASH_CAPACITY = 1024;
+/** maxRadius の初期値 */
+const PHYSICS_MIN_MAX_RADIUS = 0.1;
+
 const _va = new Vector3();
 const _vb = new Vector3();
 
@@ -154,8 +161,13 @@ export class PhysicsWorld {
   }
 
   private readonly contactPool: Contact[] = [];
-  private readonly hash = new SpatialHash(0.5, 1024);
-  private maxRadius = 0.1;
+  /**
+   * 近傍探索の空間ハッシュ。表の大きさは粒子数に合わせて増えるだけなので、clear() で作り直す
+   * （前の戦闘の大きさが残ると、近傍の列挙順が端末ごとに変わり、オンライン対戦の同期がずれる）
+   */
+  private hash = new SpatialHash(PHYSICS_HASH_SPACING, PHYSICS_HASH_CAPACITY);
+  /** いちばん大きい粒子の半径（近傍探索の範囲）。増えるだけなので clear() で戻す */
+  private maxRadius = PHYSICS_MIN_MAX_RADIUS;
   private nextBodyId = 1;
 
   /** 新しいボディ ID を払い出す */
@@ -195,11 +207,17 @@ export class PhysicsWorld {
     this.boxGridDirty = true;
   }
 
+  /**
+   * 粒子・拘束を消し、戦闘をまたいで残ると結果が変わる状態も初期値に戻す。
+   * 同じ操作から同じ結果になるよう（オンライン対戦のロックステップ）、戦闘の前の履歴に左右されないようにする
+   */
   clear(): void {
     this.boxImpacts.length = 0;
     this.particles.length = 0;
     this.constraints.length = 0;
     this.contacts.length = 0;
+    this.maxRadius = PHYSICS_MIN_MAX_RADIUS;
+    this.hash = new SpatialHash(PHYSICS_HASH_SPACING, PHYSICS_HASH_CAPACITY);
   }
 
   /** 物理を dt 秒進める（固定 dt での呼び出しを推奨） */

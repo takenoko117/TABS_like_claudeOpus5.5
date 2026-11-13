@@ -11,7 +11,7 @@ import {
   xpForKill,
 } from '../src/game/RealtimeTDMode';
 import { ROGUE_STARTERS, generateSharedRewardOffers, type RewardOption, type RogueStarter } from '../src/game/RogueliteMode';
-import { TDDuel, TDLockstep, TD_DUEL_INPUT_DELAY, TD_DUEL_TURN_STEPS } from '../src/game/TDDuel';
+import { TDDuel, TDLockstep, TD_DUEL_HASH_TURNS, TD_DUEL_INPUT_DELAY, TD_DUEL_TURN_STEPS } from '../src/game/TDDuel';
 import { TDVersusSession, verdictFor, type TDVersusSessionEvents } from '../src/game/TDVersusSession';
 import { withNativeRandom, withSimRandom } from '../src/game/SimRandom';
 import {
@@ -230,6 +230,36 @@ describe('TD オンライン対戦（対面型）: ロックステップ', () =>
     expect(a.ls.desyncTurn).toBeNull();
     expect(b.ls.desyncTurn).toBeNull();
     // 物理を 2 端末ぶん 30 秒回すので、ほかのテストと並ぶと時間がかかる
+  }, 60_000);
+
+  it('前の戦闘（タイトルのデモなど）の大きい兵・多い兵が残した物理の状態に左右されず、まっさらな端末と一致する', () => {
+    const a = makeClient(2026, 0);
+    // b の戦場では、対戦の前に巨人・ドラゴンを含む大勢の戦闘があったことにする
+    const battle = new Battle();
+    battle.configureStage();
+    for (let i = 0; i < 120; i++) battle.spawnUnit(i % 8 === 0 ? 'giant' : 'swordsman', (i % 2) as 0 | 1, (i % 10) * 2 - 10, Math.floor(i / 10) * 2 - 10);
+    battle.spawnUnit('dragon', 0, 5, 5);
+    for (let i = 0; i < 10; i++) battle.step(battle.fixedDt);
+    battle.configureStage();
+    const duel = new TDDuel(2026, STARTERS);
+    duel.setup(battle);
+    battle.beginCombat();
+    const outbox: TDVersusClientMessage[] = [];
+    const b: Client = { battle, duel, ls: new TDLockstep(duel, 1, (m) => outbox.push(m)), outbox };
+    a.ls.mine.requestAuto(true);
+    b.ls.mine.requestAuto(true);
+    // ハッシュの照合（2 秒ごと）を 2 回以上通るまで進める
+    for (let frame = 0; frame < 60 * 5; frame++) {
+      a.ls.advance(a.battle, 1 / 60);
+      b.ls.advance(b.battle, 1 / 60);
+      deliver(a, b);
+      deliver(b, a);
+    }
+    expect(a.ls.turn).toBeGreaterThan(TD_DUEL_HASH_TURNS * 2);
+    expect(aliveOf(a.battle, 0).length).toBeGreaterThan(0);
+    expect(a.ls.desyncTurn).toBeNull();
+    expect(b.ls.desyncTurn).toBeNull();
+    expect(a.duel.hash(a.battle)).toBe(b.duel.hash(b.battle));
   }, 60_000);
 
   it('相手の操作が届かなければ、そのターンの手前で待つ', () => {
