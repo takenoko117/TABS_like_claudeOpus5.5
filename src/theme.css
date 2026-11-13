@@ -1,0 +1,227 @@
+/* ===============================================================
+   デザインの土台（全モード共通）
+   ボクセルの世界観に合わせ、UI も「ブロックの塊」として描く。
+   - 角は落とさない（角丸は使わない）
+   - 縁は 2px。左上を明るく・右下を暗くした面取りで立体に見せる
+   - 影はぼかさず、右下へずらした段差の影にする
+   - ボタンは押すと沈むキー（影のぶんだけ右下へ動く）
+   - 見出し・ボタン・数字はドットフォント、長い説明文だけ通常の書体
+   - 説明は文字よりも絵（src/ui/VoxelIcons.ts の vx()）で伝える
+   色や影はここのトークンだけを使い、各画面の CSS で生の値を増やさない。
+   =============================================================== */
+:root {
+  /* 地の色 */
+  --bg: #0b1120;
+  --ink: #0c0f17;
+  --panel: rgba(16, 22, 38, 0.92);
+  --panel-solid: #121a2e;
+  --panel-raised: #1c2640;
+  --panel-line: rgba(255, 255, 255, 0.1);
+  --panel-edge: #2c3858;
+  --text: #eef2fa;
+  --sub: #94a6c9;
+  --dim: #5f6f92;
+
+  /* 意味のある色 */
+  --gold: #ffd43b;
+  --gold-deep: #c98a00;
+  --cta: #e8590c;
+  --cta-deep: #a33a04;
+  --ok: #2f9e44;
+  --ok-deep: #1b6a2b;
+  --danger: #c92a2a;
+  --danger-deep: #7e1616;
+  --select: #1f6fd6;
+  --select-deep: #123f80;
+  --ally: #7db4ff;
+  --enemy: #ff9d97;
+  --heart: #ff5d73;
+  --heart-off: #3d4a68;
+  --elite: #a06be8;
+  --boss: #ef5350;
+
+  /* 陣営の色（0 赤・1 青・2 黄・3 緑） */
+  --team-red: #f03e3e;
+  --team-blue: #4dabf7;
+  --team-yellow: #ffd43b;
+  --team-green: #5ad16b;
+
+  /* レア度 */
+  --rarity-common: #5b6b8c;
+  --rarity-rare: #4a9eff;
+  --rarity-epic: linear-gradient(135deg, #a855f7, #ec4899);
+
+  /* 形（ブロックなので角丸は常に 0） */
+  --radius-panel: 0;
+  --radius-card: 0;
+  --radius-btn: 0;
+
+  /* 面取りと段差の影 */
+  --bevel: inset 2px 2px 0 rgba(255, 255, 255, 0.16), inset -2px -2px 0 rgba(0, 0, 0, 0.38);
+  --bevel-strong: inset 2px 2px 0 rgba(255, 255, 255, 0.35), inset -2px -2px 0 rgba(0, 0, 0, 0.3);
+  --bevel-pressed: inset 2px 2px 0 rgba(0, 0, 0, 0.35), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
+  --drop-sm: 2px 2px 0 rgba(0, 0, 0, 0.55);
+  --drop: 3px 3px 0 rgba(0, 0, 0, 0.55);
+  --drop-lg: 6px 6px 0 rgba(0, 0, 0, 0.55);
+  --shadow-panel: var(--bevel), var(--drop-lg);
+  --hud-glass: rgba(10, 16, 30, 0.82);
+
+  /* 書体 */
+  --font-ui: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', system-ui, sans-serif;
+  --font-pixel: 'DotGothic16', var(--font-ui);
+  --text-shadow-block: 2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* ---- ボクセルのアイコン ----
+   既定は文字の大きさに合わせる（1.25em）。文字の前に置くと少し間をあける */
+.vx {
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  flex: none;
+  vertical-align: -0.28em;
+  shape-rendering: crispEdges;
+  overflow: visible;
+}
+
+/* アイコンのすぐ後ろに文字が続いても詰まりすぎないよう、ほんの少し右をあける */
+.vx { margin-inline-end: 0.12em; }
+.vx-sm { width: 1em; height: 1em; vertical-align: -0.15em; }
+.vx-lg { width: 1.8em; height: 1.8em; vertical-align: -0.5em; }
+.vx-xl { width: 44px; height: 44px; }
+.vx-hero { width: 64px; height: 64px; }
+.vx-solo { margin: 0 !important; }
+
+/* ---- 共通の部品 ---- */
+
+/* 浮いたパネル */
+.vx-panel {
+  background: var(--panel);
+  border: 2px solid var(--panel-edge);
+  box-shadow: var(--shadow-panel);
+}
+
+/* 押すと沈むキー（ボタン）。色は --key-bg / --key-edge で変える */
+.vx-key {
+  --key-bg: var(--panel-raised);
+  --key-edge: var(--ink);
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  background: var(--key-bg);
+  border: 2px solid var(--key-edge);
+  border-radius: 0;
+  box-shadow: var(--bevel), var(--drop-sm);
+  transition: transform 0.06s, filter 0.1s, box-shadow 0.06s;
+}
+
+.vx-key:hover:not(:disabled) { filter: brightness(1.18); }
+.vx-key:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: var(--bevel-pressed); }
+.vx-key:disabled { opacity: 0.45; cursor: default; filter: grayscale(0.5); }
+
+/* 各画面のボタンも同じ「押すと沈む」手触りにそろえる */
+.ctrl-btn:active:not(:disabled),
+.start-btn:active:not(:disabled),
+.panel-close-btn:active:not(:disabled),
+.mini-link-btn:active:not(:disabled),
+.stage-btn:active:not(:disabled),
+.cat-tab:active:not(:disabled),
+.unitbar-collapse-btn:active:not(:disabled),
+.restore-hud-btn:active:not(:disabled),
+.coach-close:active:not(:disabled),
+.td-btn:active:not(:disabled),
+.versus-pcount-btn:active:not(:disabled),
+.unit-detail-close-btn:active:not(:disabled),
+.detail-toggle-btn:active:not(:disabled),
+.stage-nav-btn:active:not(:disabled),
+.wr-cta:active:not(:disabled),
+.title-card:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--bevel-pressed);
+}
+
+/* 絵と短い言葉を縦に積んだ説明（文字の説明の代わりに使う） */
+.vx-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+}
+
+.vx-legend > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 4px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid var(--panel-line);
+  box-shadow: var(--drop-sm);
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--sub);
+}
+
+.vx-legend .vx-legend-pic {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font: 400 11px/1 var(--font-pixel);
+  color: var(--text);
+}
+
+.vx-legend .vx-legend-pic .vx { width: 22px; height: 22px; margin: 0; }
+.vx-legend kbd { max-width: 100%; font-size: 10px; white-space: nowrap; }
+
+/* キーボードのキー */
+kbd,
+.vx-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.7em;
+  padding: 2px 4px;
+  font: 400 11px/1 var(--font-pixel);
+  color: var(--text);
+  background: var(--panel-raised);
+  border: 2px solid var(--ink);
+  box-shadow: var(--bevel), 1px 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* ---- 星の評価 ---- */
+.vx-stars { display: inline-flex; align-items: center; gap: 1px; vertical-align: middle; }
+.vx-stars .vx { margin: 0; }
+.stage-stars .vx { width: 11px; height: 11px; }
+
+/* リザルトの星は 1 つずつ弾むように出す */
+.result-stars { display: flex; justify-content: center; }
+.result-stars .vx-stars { gap: 6px; }
+.result-stars .vx { animation: vx-star-pop 0.5s cubic-bezier(0.2, 1.7, 0.4, 1) both; }
+.result-stars .vx:nth-child(2) { animation-delay: 0.18s; }
+.result-stars .vx:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes vx-star-pop {
+  0% { transform: scale(0) rotate(-25deg); opacity: 0; }
+  70% { transform: scale(1.25) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result-stars .vx { animation: none; }
+}
+
+/* ---- 小さな動き（コマ送りで、ブロックらしくカクカク動かす） ---- */
+.title-card:hover .title-card-icon .vx,
+.title-card:focus-visible .title-card-icon .vx {
+  animation: vx-hop 0.5s steps(4) infinite alternate;
+}
+
+@keyframes vx-hop {
+  from { transform: translateY(0); }
+  to { transform: translateY(-5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-card .title-card-icon .vx { animation: none; }
+}

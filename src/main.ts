@@ -1,9 +1,13 @@
 import { GameApp } from './game/GameApp';
+import { hydrateVoxelIcons } from './ui/VoxelIcons';
 
 const viewport = document.getElementById('viewport');
 if (!viewport) {
   throw new Error('#viewport が見つかりません');
 }
+
+// index.html の <i data-vx> をボクセルのアイコンに置き換える（GameApp がボタンを読む前に済ませる）
+hydrateVoxelIcons();
 
 let app: GameApp;
 try {

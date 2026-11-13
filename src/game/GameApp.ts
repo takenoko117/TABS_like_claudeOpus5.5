@@ -1,3 +1,5 @@
+import { vx, vxStars, type VoxelIconName } from '../ui/VoxelIcons';
+import { setHtml } from '../fx/ui/dom';
 import { Vector3 } from 'three';
 import { MusicPlayer } from '../audio/MusicPlayer';
 import { SoundManager } from '../audio/SoundManager';
@@ -453,12 +455,12 @@ const HEART_SVG_BODY = HEART_PIXELS.map((row, y) =>
 const ROOM_LOGO_VOXEL: VoxelTextOptions = { height: 32, maxCell: 2, depth: 2, bold: true };
 
 /** 速度ボタンの定義 */
-const SPEED_OPTIONS: ReadonlyArray<{ label: string; scale: number; pause?: boolean }> = [
-  { label: '⏸ 停止', scale: 0, pause: true },
-  { label: '🐢 0.25x', scale: 0.25 },
-  { label: '▶ 1x', scale: 1.0 },
-  { label: '⏩ 2x', scale: 2.0 },
-  { label: '⏭ 4x', scale: 4.0 },
+const SPEED_OPTIONS: ReadonlyArray<{ icon: VoxelIconName; label: string; scale: number; pause?: boolean }> = [
+  { icon: 'pause', label: '停止', scale: 0, pause: true },
+  { icon: 'turtle', label: '0.25x', scale: 0.25 },
+  { icon: 'play', label: '1x', scale: 1.0 },
+  { icon: 'ffwd', label: '2x', scale: 2.0 },
+  { icon: 'ffwd2', label: '4x', scale: 4.0 },
 ];
 
 export type GameMode = 'placement' | 'battle';
@@ -870,7 +872,7 @@ export class GameApp {
     this.elSidePanel?.classList.toggle('panel-hidden', !this.sidePanelVisible);
     if (this.elTogglePanelBtn) {
       this.elTogglePanelBtn.classList.toggle('active', this.sidePanelVisible);
-      this.elTogglePanelBtn.textContent = '☰ メニュー';
+      this.elTogglePanelBtn.innerHTML = `${vx('menu')} メニュー`;
     }
   }
 
@@ -956,7 +958,7 @@ export class GameApp {
         if (!this.elTouchEraseBtn) return;
         this.elTouchEraseBtn.classList.toggle('danger', this.touchEraseMode);
         this.elTouchEraseBtn.classList.toggle('active', this.touchEraseMode);
-        this.elTouchEraseBtn.textContent = this.touchEraseMode ? '🗑 削除: ON' : '🗑 削除';
+        this.elTouchEraseBtn.innerHTML = this.touchEraseMode ? `${vx('trash')} 削除: ON` : `${vx('trash')} 削除`;
       };
       syncEraseBtn();
       this.elTouchEraseBtn.addEventListener('click', () => {
@@ -1072,7 +1074,7 @@ export class GameApp {
     const btnUnlockAll = document.getElementById('btn-unlock-all');
     if (btnUnlockAll) {
       const syncUnlockBtn = () => {
-        btnUnlockAll.textContent = this.arcadeSave.unlockAllOverride ? '🔓 全解放: ON' : '🔒 全解放: OFF';
+        btnUnlockAll.innerHTML = this.arcadeSave.unlockAllOverride ? `${vx('unlock')} 全解放: ON` : `${vx('lock')} 全解放: OFF`;
       };
       syncUnlockBtn();
       btnUnlockAll.addEventListener('click', () => {
@@ -1088,22 +1090,22 @@ export class GameApp {
     if (this.elCategoryTabs) {
       this.elCategoryTabs.innerHTML = '';
       const cats: ReadonlyArray<{ id: PaletteCategory | 'all'; label: string }> = [
-        { id: 'all', label: `${CATEGORY_ICONS.all} すべて (${UNIT_TYPE_LIST.length + FACILITY_TYPE_LIST.length})` },
-        { id: 'standard', label: `${CATEGORY_ICONS.standard} ${CATEGORY_LABELS.standard}` },
-        { id: 'magic', label: `${CATEGORY_ICONS.magic} ${CATEGORY_LABELS.magic}` },
-        { id: 'modern', label: `${CATEGORY_ICONS.modern} ${CATEGORY_LABELS.modern}` },
-        { id: 'japanese', label: `${CATEGORY_ICONS.japanese} ${CATEGORY_LABELS.japanese}` },
-        { id: 'animal', label: `${CATEGORY_ICONS.animal} ${CATEGORY_LABELS.animal}` },
-        { id: 'mythical', label: `${CATEGORY_ICONS.mythical} ${CATEGORY_LABELS.mythical}` },
-        { id: 'divine', label: `${CATEGORY_ICONS.divine} ${CATEGORY_LABELS.divine}` },
-        { id: 'facility', label: `${CATEGORY_ICONS.facility} 施設 (${COMBAT_FACILITY_TYPE_LIST.length})` },
-        { id: 'terrain', label: `${CATEGORY_ICONS.terrain} 地形 (${TERRAIN_BLOCK_TYPE_LIST.length})` },
+        { id: 'all', label: `${vx(CATEGORY_ICONS.all)} すべて (${UNIT_TYPE_LIST.length + FACILITY_TYPE_LIST.length})` },
+        { id: 'standard', label: `${vx(CATEGORY_ICONS.standard)} ${CATEGORY_LABELS.standard}` },
+        { id: 'magic', label: `${vx(CATEGORY_ICONS.magic)} ${CATEGORY_LABELS.magic}` },
+        { id: 'modern', label: `${vx(CATEGORY_ICONS.modern)} ${CATEGORY_LABELS.modern}` },
+        { id: 'japanese', label: `${vx(CATEGORY_ICONS.japanese)} ${CATEGORY_LABELS.japanese}` },
+        { id: 'animal', label: `${vx(CATEGORY_ICONS.animal)} ${CATEGORY_LABELS.animal}` },
+        { id: 'mythical', label: `${vx(CATEGORY_ICONS.mythical)} ${CATEGORY_LABELS.mythical}` },
+        { id: 'divine', label: `${vx(CATEGORY_ICONS.divine)} ${CATEGORY_LABELS.divine}` },
+        { id: 'facility', label: `${vx(CATEGORY_ICONS.facility)} 施設 (${COMBAT_FACILITY_TYPE_LIST.length})` },
+        { id: 'terrain', label: `${vx(CATEGORY_ICONS.terrain)} 地形 (${TERRAIN_BLOCK_TYPE_LIST.length})` },
       ];
       cats.forEach((c) => {
         const b = document.createElement('button');
         b.className = 'cat-tab' + (c.id === this.selectedCategory ? ' active' : '');
         b.dataset.cat = c.id;
-        b.textContent = c.label;
+        b.innerHTML = c.label;
         b.addEventListener('click', () => {
           this.selectedCategory = c.id;
           this.elCategoryTabs?.querySelectorAll('.cat-tab').forEach((el) => {
@@ -1198,7 +1200,7 @@ export class GameApp {
       const backup = removed.map((r) => ({ ...r }));
       for (const record of removed) this.removeRecord(record);
       this.clearedBackup = backup;
-      this.showToast('🗑 全消去しました（↶ 戻す / Ctrl+Z で元に戻せます）');
+      this.showToast(`${vx('trash')} 全消去しました（${vx('undo')} 戻す / Ctrl+Z で元に戻せます）`);
       this.view.clearDebris();
       this.sound.playRemove();
       this.afterLineupEdited();
@@ -1230,7 +1232,8 @@ export class GameApp {
       SPEED_OPTIONS.forEach((option, index) => {
         const b = document.createElement('button');
         b.className = 'ctrl-btn';
-        b.textContent = option.label;
+        b.innerHTML = `${vx(option.icon)}<span>${option.label}</span>`;
+        b.title = option.label;
         b.addEventListener('click', () => this.applySpeedOption(index));
         container.appendChild(b);
         this.elSpeedButtons.push(b);
@@ -1453,8 +1456,8 @@ export class GameApp {
     if (arcade) {
       const stars = Object.values(this.arcadeSave.clearedStars).reduce((sum, n) => sum + n, 0);
       const cleared = Object.keys(this.arcadeSave.clearedStars).length;
-      arcade.textContent =
-        cleared > 0 ? `${cleared} / ${ARCADE_STAGES.length} 面クリア ・ ★${stars}` : `全${ARCADE_STAGES.length}面に挑戦`;
+      arcade.innerHTML =
+        cleared > 0 ? `${cleared} / ${ARCADE_STAGES.length} 面クリア ・ ${vx('star')}${stars}` : `全${ARCADE_STAGES.length}面に挑戦`;
     }
     const rogue = document.getElementById('title-roguelite-progress');
     if (rogue) {
@@ -1514,7 +1517,7 @@ export class GameApp {
     const coach = document.getElementById('coach');
     const text = document.getElementById('coach-text');
     coach?.classList.toggle('hidden', step === null);
-    if (text && step) text.textContent = step.text;
+    if (text && step) text.innerHTML = step.text;
     this.tutorialHighlight?.classList.remove('coach-highlight');
     this.tutorialHighlight = step?.highlightId ? document.getElementById(step.highlightId) : null;
     this.tutorialHighlight?.classList.add('coach-highlight');
@@ -1667,8 +1670,8 @@ export class GameApp {
         (isHazard ? ' hazard-stage' : '') +
         (idx === this.currentStageIndex ? ' active' : '') +
         (stars > 0 ? ' cleared' : '');
-      const starStr = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-      const hazardIcon = isHazard ? `<span class="stage-hazard-icon" title="状態異常: ${st.hazard!.name}">⚠️</span>` : '';
+      const starStr = vxStars(stars);
+      const hazardIcon = isHazard ? `<span class="stage-hazard-icon" title="状態異常: ${st.hazard!.name}">${vx('warn')}</span>` : '';
       btn.innerHTML = `
         <span>${hazardIcon}${st.stageNumber}面</span>
         <span class="stage-stars">${starStr}</span>
@@ -1727,7 +1730,7 @@ export class GameApp {
         const u = UNIT_TYPES[id];
         return `<button class="featured-chip" data-unit="${id}" title="クリックでこの兵種を選択">
           <span class="mini-unit-icon">${getUnitIconSvg(id)}</span>
-          <span>★ ${u.name}</span>
+          <span>${vx('star')} ${u.name}</span>
           <span class="chip-cost">${COST_ICON_SVG}${u.cost}</span>
         </button>`;
       })
@@ -1738,27 +1741,27 @@ export class GameApp {
             .map(
               (id) => `<span class="reward-chip">
                 <span class="mini-unit-icon">${getUnitIconSvg(id)}</span>
-                <span>🎁 報酬: ${UNIT_TYPES[id].name}</span>
+                <span>${vx('gift')} 報酬: ${UNIT_TYPES[id].name}</span>
               </span>`,
             )
             .join('')
-        : `<span class="reward-chip">🏆 最終決戦ステージ</span>`;
+        : `<span class="reward-chip">${vx('trophy')} 最終決戦ステージ</span>`;
 
     const hazardHtml = st.hazard
       ? `<div class="brief-hazard-card">
           <div class="hazard-card-header">
-            <span class="hazard-pulse-icon">⚠️</span>
+            <span class="hazard-pulse-icon">${vx('warn')}</span>
             <span class="hazard-card-title">【ステージ状態異常】${st.hazard.name}</span>
-            <span class="hazard-badge-pill">${st.hazard.badge}</span>
+            <span class="hazard-badge-pill">${vx(st.hazard.icon)} ${st.hazard.badge}</span>
           </div>
           <div class="hazard-card-desc">${st.hazard.description}</div>
-          <div class="hazard-card-summary">💡 <b>要警戒</b>: ${st.hazard.effectSummary}</div>
+          <div class="hazard-card-summary">${vx('lightbulb')} <b>要警戒</b>: ${st.hazard.effectSummary}</div>
         </div>`
       : '';
 
     const specialRuleHtml = st.specialRules
       ? `<div class="brief-special-rule">
-          <div class="special-rule-title">⚡ 限定ルール: ${st.specialRules.title}</div>
+          <div class="special-rule-title">${vx('bolt')} 限定ルール: ${st.specialRules.title}</div>
           <div class="special-rule-desc">${st.specialRules.description}</div>
         </div>`
       : '';
@@ -1772,8 +1775,8 @@ export class GameApp {
       <div class="brief-hint">${st.hint}</div>
       <div class="brief-badges">
         <span class="brief-badge-label">評価目標:</span>
-        <span class="reward-chip" title="このコスト以下で勝利すると★3獲得">★★★ ≤ ${st.star3Budget} pt</span>
-        <span class="enemy-unit-chip" title="このコスト以下（または生存率45%以上）で★2獲得">★★☆ ≤ ${st.star2Budget} pt</span>
+        <span class="reward-chip" title="このコスト以下で勝利すると星3つ獲得">${vxStars(3)} ≤ ${st.star3Budget} pt</span>
+        <span class="enemy-unit-chip" title="このコスト以下（または生存率45%以上）で星2つ獲得">${vxStars(2)} ≤ ${st.star2Budget} pt</span>
       </div>
       <div class="brief-badges" style="margin-top:5px;">
         <span class="brief-badge-label">敵軍編成:</span>
@@ -1821,11 +1824,11 @@ export class GameApp {
         btn.dataset.type = ut.id;
         btn.title = `${ut.name} - ${ut.description}（クリックで詳細表示）`;
         const keyLabel = idx < 9 ? `${idx + 1}` : '';
-        const featBadge = isFeatured ? `<span class="unit-featured-tag">★特効</span>` : '';
+        const featBadge = isFeatured ? `<span class="unit-featured-tag">${vx('star')}特効</span>` : '';
         const lockOverlay = !unlocked
-          ? `<div class="unit-lock-badge">🔒</div>`
+          ? `<div class="unit-lock-badge">${vx('lock')}</div>`
           : ruleViolation
-            ? `<div class="unit-lock-badge" title="${ruleViolation}">🚫</div>`
+            ? `<div class="unit-lock-badge" title="${ruleViolation}">${vx('ban')}</div>`
             : '';
         const theme = CATEGORY_THEME_COLORS[ut.category];
 
@@ -1837,7 +1840,7 @@ export class GameApp {
             </div>
             <div class="unit-head-info">
               <div class="unit-badges-line">
-                <span class="unit-cat-badge">${CATEGORY_ICONS[ut.category]} ${CATEGORY_LABELS[ut.category]}</span>
+                <span class="unit-cat-badge">${vx(CATEGORY_ICONS[ut.category])} ${CATEGORY_LABELS[ut.category]}</span>
                 ${featBadge}
                 <span class="unit-key">${keyLabel}</span>
               </div>
@@ -1854,23 +1857,23 @@ export class GameApp {
           </div>
           ${
             this.playStyle === 'roguelite'
-              ? `<div class="unit-tags">${UNIT_TAGS[ut.id].map((t) => `<span class="tag-chip">${TAG_INFO[t].icon}${TAG_INFO[t].name}</span>`).join('')}</div>`
+              ? `<div class="unit-tags">${UNIT_TAGS[ut.id].map((t) => `<span class="tag-chip">${vx(TAG_INFO[t].icon)}${TAG_INFO[t].name}</span>`).join('')}</div>`
               : `<div class="unit-desc" title="${ut.description}">${ut.description}</div>`
           }
         `;
         btn.addEventListener('click', () => {
           if (!unlocked) {
-            this.flashPhaseWarning(`🔒 「${ut.name}」はステージクリア報酬（または「☰ メニュー」内の「🔓全解放」）で使用可能になります`);
+            this.flashPhaseWarning(`${vx('lock')} 「${ut.name}」はステージクリア報酬（または「${vx('menu')} メニュー」内の「${vx('unlock')}全解放」）で使用可能になります`);
             return;
           }
           if (ruleViolation) {
-            this.flashPhaseWarning(ruleViolation);
+            this.flashPhaseWarning(`${vx('warn')} ${ruleViolation}`);
             return;
           }
           if (this.touchEraseMode) {
             this.touchEraseMode = false;
             this.elTouchEraseBtn?.classList.remove('danger', 'active');
-            if (this.elTouchEraseBtn) this.elTouchEraseBtn.textContent = '🗑 削除';
+            if (this.elTouchEraseBtn) this.elTouchEraseBtn.innerHTML = `${vx('trash')} 削除`;
           }
           this.selectPlaceable(ut.id);
         });
@@ -1910,10 +1913,10 @@ export class GameApp {
           (this.selectedCategory === 'facility' || this.selectedCategory === 'terrain') && fIdx < 9
             ? `${fIdx + 1}`
             : '';
-        const lockOverlay = ruleViolation ? `<div class="unit-lock-badge" title="${ruleViolation}">🚫</div>` : '';
+        const lockOverlay = ruleViolation ? `<div class="unit-lock-badge" title="${ruleViolation}">${vx('ban')}</div>` : '';
         const catBadge = isTerrain
-          ? `<span class="unit-cat-badge">${CATEGORY_ICONS.terrain} 地形</span>`
-          : `<span class="unit-cat-badge">${CATEGORY_ICONS.facility} 施設</span>`;
+          ? `<span class="unit-cat-badge">${vx(CATEGORY_ICONS.terrain)} 地形</span>`
+          : `<span class="unit-cat-badge">${vx(CATEGORY_ICONS.facility)} 施設</span>`;
         const relic = rogue?.relics.find((r) => r.id === fac.id);
         const facDescription = relic ? relicDescription(relic) : fac.description;
         const statsHtml = rogue
@@ -1924,7 +1927,7 @@ export class GameApp {
           : isTerrain
           ? `
             <span class="stat-pill cost" title="配置コスト（無料）">${COST_ICON_SVG}<span>0 (無料)</span></span>
-            <span class="stat-pill hp" title="破壊不可"><span>♾️ 不壊</span></span>
+            <span class="stat-pill hp" title="破壊不可"><span>${vx('shield')} 不壊</span></span>
           `
           : `
             <span class="stat-pill cost" title="配置コスト">${COST_ICON_SVG}<span>${fac.cost}</span></span>
@@ -1952,7 +1955,7 @@ export class GameApp {
         `;
         btn.addEventListener('click', () => {
           if (ruleViolation) {
-            this.flashPhaseWarning(ruleViolation);
+            this.flashPhaseWarning(`${vx('warn')} ${ruleViolation}`);
             return;
           }
           if (rogue) {
@@ -1962,7 +1965,7 @@ export class GameApp {
           if (this.touchEraseMode) {
             this.touchEraseMode = false;
             this.elTouchEraseBtn?.classList.remove('danger', 'active');
-            if (this.elTouchEraseBtn) this.elTouchEraseBtn.textContent = '🗑 削除';
+            if (this.elTouchEraseBtn) this.elTouchEraseBtn.innerHTML = `${vx('trash')} 削除`;
           }
           this.selectPlaceable(fac.id);
         });
@@ -2008,7 +2011,7 @@ export class GameApp {
     }
 
     if (this.elDetailCatBadge) {
-      this.elDetailCatBadge.textContent = `${detail.categoryIcon} ${detail.categoryLabel}`;
+      this.elDetailCatBadge.innerHTML = `${vx(detail.categoryIcon)} ${detail.categoryLabel}`;
     }
 
     if (this.elDetailFeaturedTag) {
@@ -2070,7 +2073,7 @@ export class GameApp {
   }
 
   private flashPhaseWarning(msg: string): void {
-    this.elPhaseBadge.textContent = msg;
+    setHtml(this.elPhaseBadge, msg);
     this.elPhaseBadge.classList.add('budget-over');
     // 連続で警告が出ても、最後の警告が短く消されないようにする
     if (this.warningTimer !== null) clearTimeout(this.warningTimer);
@@ -2169,10 +2172,10 @@ export class GameApp {
     }
     if (best) {
       this.view.setFollowedUnit(best);
-      this.showToast(`🎥 ${best.type.name} を追跡中（何もない場所をクリックで解除）`);
+      this.showToast(`${vx('camera')} ${best.type.name} を追跡中（何もない場所をクリックで解除）`);
     } else if (this.view.isFollowingUnit) {
       this.view.setFollowedUnit(null);
-      this.showToast('🎥 追跡を解除しました');
+      this.showToast(`${vx('camera')} 追跡を解除しました`);
     }
   }
 
@@ -2209,17 +2212,17 @@ export class GameApp {
       warning,
     });
     const overBudgetMessage = (used: number, budget: number) =>
-      `⚠ 予算オーバー！ (残り ${Math.max(0, budget - used)} pt / 必要 ${cost} pt)`;
+      `${vx('warn')} 予算オーバー！ (残り ${Math.max(0, budget - used)} pt / 必要 ${cost} pt)`;
 
     if (this.playStyle === 'arcade') {
       const st = this.currentStage;
       const facing = getStageZoneFacing(st, x, z);
       if (!isInsideStageRedZone(st, x, z)) {
-        return fail(0, '⚠ 赤枠の配置可能エリア内をタップ／クリックしてください', facing);
+        return fail(0, `${vx('warn')} 赤枠の配置可能エリア内をタップ／クリックしてください`, facing);
       }
-      if (!unlocked) return fail(0, '🔒 この兵種はまだ解放されていません', facing);
+      if (!unlocked) return fail(0, `${vx('lock')} この兵種はまだ解放されていません`, facing);
       const ruleViolation = checkStageRuleViolation(st, id, this.getCurrentRedPlacedCount());
-      if (ruleViolation) return fail(0, ruleViolation, facing);
+      if (ruleViolation) return fail(0, `${vx('warn')} ${ruleViolation}`, facing);
       const used = this.getCurrentRedCost();
       if (used + cost > st.budget) return fail(0, overBudgetMessage(used, st.budget), facing);
       return { team: 0, facing, valid: true, warning: null };
@@ -2228,9 +2231,9 @@ export class GameApp {
     if (this.playStyle === 'challenge') {
       const facing = Math.PI / 2;
       if (!isInsideVersusZone(2, 0, x, z)) {
-        return fail(0, '⚠ 赤枠の配置可能エリア内をタップ／クリックしてください', facing);
+        return fail(0, `${vx('warn')} 赤枠の配置可能エリア内をタップ／クリックしてください`, facing);
       }
-      if (!unlocked) return fail(0, '🔒 この兵種はまだ解放されていません', facing);
+      if (!unlocked) return fail(0, `${vx('lock')} この兵種はまだ解放されていません`, facing);
       const used = this.getCurrentRedCost();
       if (used + cost > CHALLENGE_PLAYER_BUDGET) {
         return fail(0, overBudgetMessage(used, CHALLENGE_PLAYER_BUDGET), facing);
@@ -2242,7 +2245,7 @@ export class GameApp {
       const team = this.versus.currentTurn;
       const facing = getVersusPlacementFacing(this.versus.playerCount, team, x, z);
       if (!isInsideVersusZone(this.versus.playerCount, team, x, z)) {
-        return fail(team, `⚠ ${team + 1}P ${TEAM_NAMES[team]}の配置枠内をタップ／クリックしてください`, facing);
+        return fail(team, `${vx('warn')} ${team + 1}P ${TEAM_NAMES[team]}の配置枠内をタップ／クリックしてください`, facing);
       }
       const used = this.getCurrentTeamCost(team);
       if (used + cost > this.versus.budget) return fail(team, overBudgetMessage(used, this.versus.budget), facing);
@@ -2363,7 +2366,7 @@ export class GameApp {
     this.placedEntities.set(record, rider);
     this.clearedBackup = [];
     this.sound.playPlace();
-    this.flashPhaseWarning(`🪜 かさね配置: ${mount.type.name}の上に${rider.type.name}を乗せた`);
+    this.flashPhaseWarning(`${vx('ladder')} かさね配置: ${mount.type.name}の上に${rider.type.name}を乗せた`);
     this.afterLineupEdited();
     return true;
   }
@@ -2408,7 +2411,7 @@ export class GameApp {
       this.spawnRecord(record);
       restored++;
     }
-    if (restored > 0) this.showToast(`💾 前回の編成を復元しました（${restored} 体）`);
+    if (restored > 0) this.showToast(`${vx('save')} 前回の編成を復元しました（${restored} 体）`);
   }
 
   /** 実体を戦場と編成の両方から取り除く */
@@ -2448,7 +2451,7 @@ export class GameApp {
       this.spawnRecords(backup);
       this.sound.playPlace();
       this.afterLineupEdited();
-      this.showToast('↶ 全消去を取り消しました');
+      this.showToast(`${vx('undo')} 全消去を取り消しました`);
       return;
     }
     const lineup = this.getActiveLineup();
@@ -2506,7 +2509,7 @@ export class GameApp {
   private showToast(message: string): void {
     const el = document.getElementById('toast');
     if (!el) return;
-    el.textContent = message;
+    el.innerHTML = message;
     el.classList.add('show');
     if (this.toastTimer !== null) clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {
@@ -2834,8 +2837,8 @@ export class GameApp {
     this.syncPhaseUI();
     const begin = () => {
       if (this.td !== td) return;
-      if (watchLog) this.tdHud.announce('観戦中', 'wave', 1, '👁 青 vs 赤');
-      else if (td.duel) this.tdHud.announce('対戦開始!!', 'wave', 2, `⚔ あなたは${slotColorName(td.team)}`);
+      if (watchLog) this.tdHud.announce('観戦中', 'wave', 1, `${vx('eye')} 青 vs 赤`);
+      else if (td.duel) this.tdHud.announce('対戦開始!!', 'wave', 2, `${vx('swords')} あなたは${slotColorName(td.team)}`);
       else this.tdHud.announce('WAVE 1', 'wave', 0);
       this.sound.playBattleStart();
     };
@@ -3104,7 +3107,7 @@ export class GameApp {
     `);
     this.elRetryBtn?.classList.add('hidden');
     if (this.elNextStageBtn) {
-      this.elNextStageBtn.textContent = `▶ ROUND ${score.round + 1} へ進む`;
+      this.elNextStageBtn.innerHTML = `${vx('arrowR')} ROUND ${score.round + 1} へ進む`;
       this.elNextStageBtn.classList.remove('hidden');
     }
     this.scheduleResultBanner();
@@ -3124,8 +3127,8 @@ export class GameApp {
     const reasonText: Readonly<Record<ChallengeEndReason, string>> = {
       defeat: '自軍が全滅しました',
       draw: '同時全滅（引き分けは敗北扱い）',
-      timeout: '⏱ 制限時間切れ',
-      quit: '🏳 中断によりスコアを確定しました',
+      timeout: `${vx('stopwatch')} 制限時間切れ`,
+      quit: `${vx('flag')} 中断によりスコアを確定しました`,
     };
     const isNewRecord =
       run.clearedRounds > 0 &&
@@ -3136,7 +3139,7 @@ export class GameApp {
     setVoxelText(this.elBannerText, 'GAME OVER', BANNER_VOXEL);
     this.elBannerSub.textContent = reasonText[reason];
     this.showChallengeBannerDetail(`
-      ${isNewRecord ? '<div class="challenge-new-record">🏆 NEW RECORD</div>' : ''}
+      ${isNewRecord ? `<div class="challenge-new-record">${vx('trophy')} NEW RECORD</div>` : ''}
       <div class="challenge-score-row total"><span>到達ラウンド</span><b>ROUND ${run.reachedRound}</b></div>
       <div class="challenge-score-row total"><span>総合スコア</span><b>${run.totalScore.toLocaleString()}</b></div>
       <div class="challenge-score-row"><span>基本点</span><b>${run.baseScore.toLocaleString()}</b></div>
@@ -3148,7 +3151,7 @@ export class GameApp {
       <div class="challenge-score-row"><span>最後の資金差</span><b>自軍 ${CHALLENGE_PLAYER_BUDGET.toLocaleString()} vs 敵 ${run.enemyBudget.toLocaleString()}</b></div>
     `);
     if (this.elRetryBtn) {
-      this.elRetryBtn.textContent = '🏠 タイトルへ';
+      this.elRetryBtn.innerHTML = `${vx('home')} タイトルへ`;
       this.elRetryBtn.classList.remove('hidden');
     }
     if (this.elNextStageBtn) {
@@ -3183,7 +3186,7 @@ export class GameApp {
         ${this.renderEnemyChips(enemies)}
       </div>
       <div class="brief-badges" style="margin-top:5px;">
-        <span class="reward-chip">🏆 ベスト ${best.bestScore.toLocaleString()} / ${best.bestRound > 0 ? `ROUND ${best.bestRound}` : '記録なし'}</span>
+        <span class="reward-chip">${vx('trophy')} ベスト ${best.bestScore.toLocaleString()} / ${best.bestRound > 0 ? `ROUND ${best.bestRound}` : '記録なし'}</span>
         <span class="enemy-unit-chip" title="同じシードなら同じ敵が出現します">シード ${run.seed}</span>
       </div>
     `;
@@ -3192,13 +3195,13 @@ export class GameApp {
 
   private formatChallengeBadge(): string {
     const run = this.challenge;
-    const head = `🔥 <b>ROUND ${run.round}</b>`;
+    const head = `${vx('fire')} <b>ROUND ${run.round}</b>`;
     const score = `スコア <b>${run.totalScore.toLocaleString()}</b>`;
     if (this.mode === 'placement') {
       return `${head} ｜ 自軍 ${CHALLENGE_PLAYER_BUDGET.toLocaleString()} pt vs 敵 ${run.enemyBudget.toLocaleString()} pt（×${run.budgetRatio.toFixed(1)}） ｜ ${score}`;
     }
     const remain = Math.max(0, (this.battle.timeLimitSeconds ?? 0) - this.battle.time);
-    return `⚔ ${head} ｜ ⏱ 残り <b>${remain.toFixed(1)}s</b> ｜ ${score}`;
+    return `${vx('swords')} ${head} ｜ ${vx('stopwatch')} 残り <b>${remain.toFixed(1)}s</b> ｜ ${score}`;
   }
 
   // ---------------------------------------------------------------
@@ -3253,7 +3256,7 @@ export class GameApp {
           <div class="rogue-card-title">${st.name}</div>
           <div class="rogue-card-units">${units}</div>
           <div class="rogue-card-desc">陣地レリック: <b>${FACILITY_TYPES[st.relic].name}</b></div>
-          <div class="rogue-card-foot">${unlocked ? 'この部隊で出撃' : `🔒 ${st.unlockText}`}</div>
+          <div class="rogue-card-foot">${unlocked ? 'この部隊で出撃' : `${vx('lock')} ${st.unlockText}`}</div>
         </button>`;
     }).join('');
     this.showRogueModal(
@@ -3439,7 +3442,7 @@ export class GameApp {
         const features = describeFieldFeatures(layout).slice(0, 3).join('・');
         return `
         <button type="button" class="rogue-card route-card" data-action="route-pick" data-index="${i}">
-          <div class="rogue-card-title">${b.icon} ${b.name}${t ? ` <span class="route-trait">${t.name}</span>` : ''}</div>
+          <div class="rogue-card-title">${vx(b.icon)} ${b.name}${t ? ` <span class="route-trait">${t.name}</span>` : ''}</div>
           ${map ? `<img class="route-map" src="${map}" alt="${b.name}の見取り図" />` : ''}
           <div class="rogue-card-desc">${b.rule}</div>
           ${features ? `<div class="route-features">${features}</div>` : ''}
@@ -3482,18 +3485,18 @@ export class GameApp {
     const hasWater = layout.bodies.some((w) => w.kind !== 'lava');
     const flammableKinds = ['tree_small', 'tree_big', 'pine', 'bush', 'haybale', 'house_wood', 'shack', 'fence', 'cart', 'log'];
     const flammable = layout.props.some((p) => flammableKinds.includes(p.kind));
-    if (tags.has('shock') && hasWater) memos.push('⚡ 水につかった敵には雷が水域ごと伝わる');
-    if (tags.has('fire') && flammable) memos.push('🔥 炎で木や木造の建物が燃え広がる（味方も巻き込む）');
-    if (tags.has('explosive')) memos.push('💥 爆発は地物を壊しやすい（1.5倍）');
-    if (tags.has('giant')) memos.push('🦣 巨体は地物を踏み倒し、深い川も渡れる');
-    if (tags.has('impact')) memos.push('💨 吹き飛ばした敵を岩や壁にぶつけると地物が壊れる');
-    if (tags.has('ranged') && layout.props.length > 0) memos.push('🏹 地物が射線を切る。岩の上から撃つと威力 +20%');
-    if (layout.bodies.some((w) => w.kind === 'river' && w.flowSpeed > 0)) memos.push('🌊 深い川に入ると流され、滝に落ちると戻れない');
+    if (tags.has('shock') && hasWater) memos.push(`${vx('bolt')} 水につかった敵には雷が水域ごと伝わる`);
+    if (tags.has('fire') && flammable) memos.push(`${vx('fire')} 炎で木や木造の建物が燃え広がる（味方も巻き込む）`);
+    if (tags.has('explosive')) memos.push(`${vx('boom')} 爆発は地物を壊しやすい（1.5倍）`);
+    if (tags.has('giant')) memos.push(`${vx('giant')} 巨体は地物を踏み倒し、深い川も渡れる`);
+    if (tags.has('impact')) memos.push(`${vx('wind')} 吹き飛ばした敵を岩や壁にぶつけると地物が壊れる`);
+    if (tags.has('ranged') && layout.props.length > 0) memos.push(`${vx('arrow')} 地物が射線を切る。岩の上から撃つと威力 +20%`);
+    if (layout.bodies.some((w) => w.kind === 'river' && w.flowSpeed > 0)) memos.push(`${vx('wave')} 深い川に入ると流され、滝に落ちると戻れない`);
     return `
       <div class="wr-field">
         ${map ? `<img class="wr-field-map" src="${map}" alt="戦場の見取り図" />` : ''}
         <div class="wr-field-info">
-          <div class="wr-field-name">${b.icon} ${b.name}${t ? ` <span class="route-trait">${t.name}</span>` : ''}</div>
+          <div class="wr-field-name">${vx(b.icon)} ${b.name}${t ? ` <span class="route-trait">${t.name}</span>` : ''}</div>
           <div class="wr-field-rule">${b.rule}${t ? `／${t.effect}` : ''}</div>
           ${memos.slice(0, 3).map((m) => `<div class="wr-field-memo">${m}</div>`).join('')}
         </div>
@@ -3803,12 +3806,12 @@ export class GameApp {
       }
       const isMidBoss = round === ROGUE_MID_BOSS_ROUND;
       setVoxelText(this.elBannerText, isMidBoss ? `ROUND ${round} ボス撃破！` : `ROUND ${round} 突破！`, BANNER_VOXEL);
-      const hardNotice = isMidBoss ? `🔥 ROUND ${ROGUE_HARD_START_ROUND} からハードモード突入！ ｜ ` : '';
-      this.elBannerSub.textContent = `${hardNotice}獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ 💰 +${getRogueWinBonus(round)}G`;
+      const hardNotice = isMidBoss ? `${vx('fire')} ROUND ${ROGUE_HARD_START_ROUND} からハードモード突入！ ｜ ` : '';
+      this.elBannerSub.innerHTML = `${hardNotice}獲得 +${gained.toLocaleString()} ｜ スコア ${run.score.toLocaleString()} ｜ ${vx('coin')} +${getRogueWinBonus(round)}G`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
-        this.elNextStageBtn.textContent = run.eliteRewardPicks > 1 ? `🎁 報酬を${run.eliteRewardPicks}回選ぶ (Space)` : '🎁 報酬を選ぶ (Space)';
+        this.elNextStageBtn.innerHTML = run.eliteRewardPicks > 1 ? `${vx('gift')} 報酬を${run.eliteRewardPicks}回選ぶ (Space)` : `${vx('gift')} 報酬を選ぶ (Space)`;
         this.elNextStageBtn.classList.remove('hidden');
       }
     } else {
@@ -3822,11 +3825,11 @@ export class GameApp {
         return;
       }
       setVoxelText(this.elBannerText, `ROUND ${round} 敗北…`, BANNER_VOXEL);
-      this.elBannerSub.textContent = `ライフ -1（残り ${'❤'.repeat(run.lives)}）｜ 💰 +${lossGold}G（勝利の${ROGUE_LOSS_GOLD_MUL}倍）｜ 🛟 報酬${run.lossRewardPicks}回`;
+      this.elBannerSub.innerHTML = `ライフ -1（残り ${vx('heart').repeat(run.lives)}）｜ ${vx('coin')} +${lossGold}G（勝利の${ROGUE_LOSS_GOLD_MUL}倍）｜ ${vx('medkit')} 報酬${run.lossRewardPicks}回`;
       this.showChallengeBannerDetail(report);
       this.elRetryBtn?.classList.add('hidden');
       if (this.elNextStageBtn) {
-        this.elNextStageBtn.textContent = '🛟 逆転の報酬を選ぶ (Space)';
+        this.elNextStageBtn.innerHTML = `${vx('medkit')} 逆転の報酬を選ぶ (Space)`;
         this.elNextStageBtn.classList.remove('hidden');
       }
     }
@@ -3840,7 +3843,7 @@ export class GameApp {
     const st = this.battleStats;
     const sources = st
       .topSources(4)
-      .map(([name, dmg]) => `<div class="challenge-score-row"><span>✨ ${name}</span><b>${formatDamage(dmg)}</b></div>`)
+      .map(([name, dmg]) => `<div class="challenge-score-row"><span>${vx('sparkle')} ${name}</span><b>${formatDamage(dmg)}</b></div>`)
       .join('');
     return `
       <div class="challenge-score-row total"><span>与ダメージ合計</span><b>${formatDamage(st.total)}</b></div>
@@ -3853,10 +3856,10 @@ export class GameApp {
   /** この戦闘で宝箱から得た報酬の一覧 */
   private renderJackpotReport(): string {
     const { count, gold } = this.jackpotCollected;
-    const collected = count > 0 ? `<div class="challenge-score-row"><span>📦 未開封の宝箱 ${count}個</span><b>+${gold.toLocaleString()}G</b></div>` : '';
+    const collected = count > 0 ? `<div class="challenge-score-row"><span>${vx('chest')} 未開封の宝箱 ${count}個</span><b>+${gold.toLocaleString()}G</b></div>` : '';
     if (this.jackpotRewards.length === 0) return collected;
-    const items = this.jackpotRewards.map((r) => `${r.icon} ${r.detail}`).join('<br>');
-    return `<div class="challenge-score-row"><span>🎰 ボーナス ${this.jackpotRewards.length}個</span><b>${items}</b></div>${collected}`;
+    const items = this.jackpotRewards.map((r) => `${vx(r.icon)} ${r.detail}`).join('<br>');
+    return `<div class="challenge-score-row"><span>${vx('slot')} ボーナス ${this.jackpotRewards.length}個</span><b>${items}</b></div>${collected}`;
   }
 
   /** ラウンドごとの与ダメージの成長曲線（SVG） */
@@ -3906,7 +3909,7 @@ export class GameApp {
   }
 
   private rogueTagChips(id: UnitTypeId): string {
-    return UNIT_TAGS[id].map((t) => `<span class="tag-chip">${TAG_INFO[t].icon}${TAG_INFO[t].name}</span>`).join('');
+    return UNIT_TAGS[id].map((t) => `<span class="tag-chip">${vx(TAG_INFO[t].icon)}${TAG_INFO[t].name}</span>`).join('');
   }
 
   /** 報酬カードに添える、今の状況に合わせた一言 */
@@ -3938,7 +3941,7 @@ export class GameApp {
           : o.relicId
             ? this.relicVoxelHtml(o.relicId)
             : o.kind === 'gold'
-              ? this.propVoxelHtml('gold', '<span class="unit-portrait-svg prop-fallback">💰</span>')
+              ? this.propVoxelHtml('gold', `<span class="unit-portrait-svg prop-fallback">${vx('coin')}</span>`)
               : `<span class="reward-slot-art" aria-hidden="true">${UNIT_SLOT_ICON_SVG}</span>`;
         const hint = this.rogueRewardHint(run, o);
         return `
@@ -3966,7 +3969,7 @@ export class GameApp {
     const lead = lost
       ? `あと${run.lossRewardPicks}回選べます（レア以上のユニットが出やすい）`
       : isMidBoss
-        ? `ROUND ${run.round} ボス突破（次から🔥ハードモード） ・ あと${run.eliteRewardPicks}回選べます`
+        ? `ROUND ${run.round} ボス突破（次から${vx('fire')}ハードモード） ・ あと${run.eliteRewardPicks}回選べます`
         : elite
           ? `ROUND ${run.round} 突破 ・ あと${run.eliteRewardPicks}回選べます`
           : `ROUND ${run.round} 突破`;
@@ -4029,7 +4032,7 @@ export class GameApp {
       const isHard = isRogueHardMode(n);
       const kind = (isBoss ? ' boss' : isElite ? ' elite' : '') + (isHard ? ' hard' : '');
       // エリートは悪魔、ボスは鬼のマークで示す
-      const mark = isBoss ? '👹' : isElite ? '😈' : String(n);
+      const mark = isBoss ? `${vx('oni')}` : isElite ? `${vx('demon')}` : String(n);
       const modeTag = isHard ? 'ハード・' : '';
       const kindLabel = isBoss ? 'ボス' : isElite ? 'エリート' : isHard ? 'ハード' : '';
       const label = kindLabel ? `ROUND ${n}（${isBoss || isElite ? modeTag : ''}${kindLabel}）` : `ROUND ${n}`;
@@ -4040,12 +4043,12 @@ export class GameApp {
     const hardRow = Array.from({ length: hardCount }, (_, i) => renderNode(ROGUE_MID_BOSS_ROUND + 1 + i)).join('');
     return `
       <div class="wr-nodes-row">${normalRow}</div>
-      <div class="wr-nodes-row is-hard"><span class="wr-hard-tag" title="ROUND ${ROGUE_HARD_START_ROUND}〜${ROGUE_FINAL_ROUND}: ハードモード（高額強力な敵が増加）">🔥HARD</span>${hardRow}</div>`;
+      <div class="wr-nodes-row is-hard"><span class="wr-hard-tag" title="ROUND ${ROGUE_HARD_START_ROUND}〜${ROGUE_FINAL_ROUND}: ハードモード（高額強力な敵が増加）">${vx('fire')}HARD</span>${hardRow}</div>`;
   }
 
   /** 「次はエリート戦」などの、この先の山場の案内 */
   private rogueContextBadge(run: RogueliteRun): { text: string; kind: 'elite' | 'boss' } | null {
-    const hardPrefix = run.isHardMode ? '🔥 ハード ・ ' : '';
+    const hardPrefix = run.isHardMode ? `${vx('fire')} ハード ・ ` : '';
     if (run.roundKind === 'boss') {
       return { text: `${hardPrefix}${run.round >= ROGUE_FINAL_ROUND ? '最終ボス戦' : 'ボス戦'}`, kind: 'boss' };
     }
@@ -4203,7 +4206,7 @@ export class GameApp {
     el.innerHTML = `
       <div class="wed-head">
         <span class="wed-icon" style="background:${d.theme.bg};border-color:${d.theme.border}">${d.iconSvg}</span>
-        <span class="wed-name"><b>${d.name}</b><small>${d.categoryIcon} ${d.categoryLabel}</small></span>
+        <span class="wed-name"><b>${d.name}</b><small>${vx(d.categoryIcon)} ${d.categoryLabel}</small></span>
         <span class="wr-enemy-count">×${row.dataset.enemyCount}</span>
       </div>
       <div class="wed-stats">${pills}</div>
@@ -4291,7 +4294,7 @@ export class GameApp {
   private rogueSynergyDetail(tag: TagId, count: number): string {
     const tier = getTagTier(count);
     const info = TAG_INFO[tag];
-    const head = `<b>${info.icon} ${info.name} ${count}/${tier >= 2 ? 4 : 2}</b>`;
+    const head = `<b>${vx(info.icon)} ${info.name} ${count}/${tier >= 2 ? 4 : 2}</b>`;
     if (tier === 4) return `${head}${info.tier2} ／ ${info.tier4}`;
     if (tier === 2) return `${head}${info.tier2}<i>あと${4 - count}種で: ${info.tier4}</i>`;
     return `${head}<i>あと${2 - count}種で: ${info.tier2}</i>`;
@@ -4378,14 +4381,14 @@ export class GameApp {
         <div class="wr-status">
           ${this.rogueHeartsHtml(run.lives)}
           <div class="room-gold" aria-label="所持ゴールド">
-            ${this.propVoxelHtml('gold', '<span class="unit-portrait-svg prop-fallback">💰</span>')}
+            ${this.propVoxelHtml('gold', `<span class="unit-portrait-svg prop-fallback">${vx('coin')}</span>`)}
             <b class="room-gold-value">${run.gold.toLocaleString()}</b><span class="room-gold-unit">G</span>
           </div>
         </div>
       </header>
       <div class="wr-panel">
         <section class="wr-col wr-col-enemy" aria-label="次の敵">
-          <h2 class="wr-title">次の敵 <span>ROUND ${run.round}${run.isHardMode ? ' 🔥 HARD' : ''}</span></h2>
+          <h2 class="wr-title">次の敵 <span>ROUND ${run.round}${run.isHardMode ? ` ${vx('fire')} HARD` : ''}</span></h2>
           ${
             this.rogueEnemyExpanded
               ? `<button type="button" class="wr-enemy-collapse" data-action="enemy-toggle" aria-expanded="true">▲ サマリ表示に戻す</button>
@@ -4532,27 +4535,27 @@ export class GameApp {
     );
 
     const reasonText: Readonly<Record<RogueEndReason, string>> = {
-      clear: `🏆 全${ROGUE_FINAL_ROUND}ラウンド突破！`,
+      clear: `${vx('trophy')} 全${ROGUE_FINAL_ROUND}ラウンド突破！`,
       defeat: 'ライフが尽きました',
-      quit: '🏳 ランを終了しました',
+      quit: `${vx('flag')} ランを終了しました`,
     };
     setVoxelText(this.elBannerText, reason === 'clear' ? 'RUN CLEAR!' : 'GAME OVER', BANNER_VOXEL);
     this.elBannerSub.textContent = reasonText[reason];
     const relics = run.relics.map((r) => relicDisplayName(r)).join('・');
     const units = run.cards.map((c) => `${UNIT_TYPES[c.id].name} Lv${c.level}`).join('・');
     this.showChallengeBannerDetail(`
-      ${isNewRecord ? '<div class="challenge-new-record">🏆 NEW RECORD</div>' : ''}
+      ${isNewRecord ? `<div class="challenge-new-record">${vx('trophy')} NEW RECORD</div>` : ''}
       <div class="challenge-score-row total"><span>到達</span><b>ROUND ${run.endReason === 'clear' ? ROGUE_FINAL_ROUND : run.round}</b></div>
       <div class="challenge-score-row total"><span>スコア</span><b>${run.score.toLocaleString()}</b></div>
       ${this.renderGrowthChart()}
       <div class="challenge-score-row"><span>最終編成</span><b>${units}</b></div>
       <div class="challenge-score-row"><span>陣地レリック</span><b>${relics}</b></div>
-      ${newlyUnlocked.map((st) => `<div class="result-unlock">🎉 新スターター解放: ${st.name}</div>`).join('')}
+      ${newlyUnlocked.map((st) => `<div class="result-unlock">${vx('star')} 新スターター解放: ${st.name}</div>`).join('')}
       <div class="challenge-score-divider"></div>
       <div class="challenge-score-row"><span>ベスト</span><b>${this.rogueMeta.bestScore.toLocaleString()} ／ ROUND ${this.rogueMeta.bestRound}</b></div>
     `);
     if (this.elRetryBtn) {
-      this.elRetryBtn.textContent = '🏠 タイトルへ';
+      this.elRetryBtn.innerHTML = `${vx('home')} タイトルへ`;
       this.elRetryBtn.classList.remove('hidden');
     }
     if (this.elNextStageBtn) {
@@ -4694,7 +4697,7 @@ export class GameApp {
         const next = tier === 4 ? '' : tier === 2 ? `あと${4 - c}種で: ${info.tier4}` : `あと${2 - c}種で: ${info.tier2}`;
         const active = tier === 4 ? `${info.tier2} ／ ${info.tier4}` : tier === 2 ? info.tier2 : '';
         return `<div class="tag-row tier-${tier}" title="${next}">
-          <span class="tag-name">${info.icon} ${info.name} <b>${c}</b></span>
+          <span class="tag-name">${vx(info.icon)} ${info.name} <b>${c}</b></span>
           <span class="tag-effect">${active || `<i>${next}</i>`}</span>
         </div>`;
       })
@@ -4725,11 +4728,11 @@ export class GameApp {
     const relics = run.relics
       .map((r) => `<span class="reward-chip">${relicDisplayName(r)}${r.active ? '' : '（OFF）'}</span>`)
       .join('');
-    const kind = run.roundKind === 'boss' ? '👑 ボス' : run.roundKind === 'elite' ? '⚔ エリート' : '';
-    const hard = run.isHardMode ? '🔥 ハード' : '';
+    const kind = run.roundKind === 'boss' ? `${vx('crown')} ボス` : run.roundKind === 'elite' ? `${vx('swords')} エリート` : '';
+    const hard = run.isHardMode ? `${vx('fire')} ハード` : '';
     this.elRoguePanel.innerHTML = `
       <div class="brief-title">ROUND ${run.round} / ${ROGUE_FINAL_ROUND} ${hard} ${kind}</div>
-      <div class="brief-sub">❤ ${'❤'.repeat(run.lives)}${'♡'.repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ｜ 💰 ${run.gold}G ｜ 敵 ${run.enemyBudget.toLocaleString()}pt ｜ スコア ${run.score.toLocaleString()}</div>
+      <div class="brief-sub">${vx('heart')} ${vx('heart').repeat(run.lives)}${vx('heartEmpty').repeat(Math.max(0, ROGUE_MAX_LIVES - run.lives))} ｜ ${vx('coin')} ${run.gold}G ｜ 敵 ${run.enemyBudget.toLocaleString()}pt ｜ スコア ${run.score.toLocaleString()}</div>
       <div class="brief-badges"><span class="brief-badge-label">レリック枠 ${run.activeRelics.length}/${run.relicSlots} ｜ ユニット枠 ${run.usedUnitSlots}/${run.unitSlots}:</span>${relics}</div>
       <div class="tag-panel">${tagRows || '<div class="brief-hint">デッキにユニットを入れるとタグのシナジーが表示されます</div>'}</div>
       <div class="brief-badges">
@@ -4751,14 +4754,14 @@ export class GameApp {
 
   private formatRogueBadge(): string {
     const run = this.rogue;
-    if (!run) return '🎲 ローグライト ｜ スターター部隊を選んでください';
-    const hard = run.isHardMode ? ' 🔥HARD' : '';
-    const head = `🎲 <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}${hard}</b> ${this.rogueHeartSlotHtml(run.lives)}`;
+    if (!run) return `${vx('dice')} ローグライト ｜ スターター部隊を選んでください`;
+    const hard = run.isHardMode ? ` ${vx('fire')}HARD` : '';
+    const head = `${vx('dice')} <b>ROUND ${run.round}/${ROGUE_FINAL_ROUND}${hard}</b> ${this.rogueHeartSlotHtml(run.lives)}`;
     if (this.mode === 'placement') {
       return `${head} ｜ ゴールド ${COST_ICON_SVG} <b>${run.gold}</b> G ｜ 全軍 <b>${this.battle.aliveCount(0)}</b> 体 ｜ 敵 ${run.enemyBudget.toLocaleString()} pt`;
     }
     const remain = Math.max(0, (this.battle.timeLimitSeconds ?? 0) - this.battle.time);
-    return `⚔ ${head} ｜ ⏱ 残り <b>${remain.toFixed(1)}s</b> ｜ 与ダメージ <b>${formatDamage(this.battleStats.total)}</b>`;
+    return `${vx('swords')} ${head} ｜ ${vx('stopwatch')} 残り <b>${remain.toFixed(1)}s</b> ｜ 与ダメージ <b>${formatDamage(this.battleStats.total)}</b>`;
   }
 
   /** 友人対戦モード（2〜4人・ブラインド順番配置）を開始・リセットする */
@@ -4815,16 +4818,16 @@ export class GameApp {
         const isDone = this.versus.completed[t];
         const statusText =
           this.mode === 'battle'
-            ? '⚔ 交戦中'
+            ? `${vx('swords')} 交戦中`
             : isDone
-              ? '🙈 配置完了 (ブラインド中)'
+              ? `${vx('eyeOff')} 配置完了 (ブラインド中)`
               : isCurrent
-                ? `👉 配置中 (残り ${Math.max(0, this.versus.budget - this.getCurrentTeamCost(t))} pt)`
-                : '⏳ 待機中';
+                ? `${vx('pointer')} 配置中 (残り ${Math.max(0, this.versus.budget - this.getCurrentTeamCost(t))} pt)`
+                : `${vx('hourglass')} 待機中`;
         const rowClass = isCurrent ? 'versus-turn-row active' : isDone ? 'versus-turn-row done' : 'versus-turn-row';
         rows.push(`
           <div class="${rowClass}">
-            <span>${TEAM_ICONS[t]} ${i + 1}P ${TEAM_NAMES[t]}</span>
+            <span>${vx(TEAM_ICONS[t])} ${i + 1}P ${TEAM_NAMES[t]}</span>
             <span class="turn-state">${statusText}</span>
           </div>
         `);
@@ -4839,7 +4842,7 @@ export class GameApp {
     const team = this.versus.currentTurn;
     const forceCount = this.battle.aliveCount(team) + this.battle.aliveFacilityCount(team);
     if (forceCount === 0) {
-      this.flashPhaseWarning(`⚠ ${team + 1}P ${TEAM_NAMES[team]}のユニットまたは防衛施設を1つ以上配置してください`);
+      this.flashPhaseWarning(`${vx('warn')} ${team + 1}P ${TEAM_NAMES[team]}のユニットまたは防衛施設を1つ以上配置してください`);
       return;
     }
 
@@ -4957,14 +4960,14 @@ export class GameApp {
         }
       }
       if (activeTeams < 2) {
-        this.flashPhaseWarning('⚠ 2チーム以上のユニットまたは施設が配置されている必要があります');
+        this.flashPhaseWarning(`${vx('warn')} 2チーム以上のユニットまたは施設が配置されている必要があります`);
         return;
       }
     } else {
       const redForce = this.battle.aliveCount(0) + this.battle.aliveFacilityCount(0);
       const blueForce = this.battle.aliveCount(1) + this.battle.aliveFacilityCount(1);
       if (redForce === 0) {
-        this.flashPhaseWarning('⚠ 赤軍ユニットまたは施設を配置してから戦闘開始してください');
+        this.flashPhaseWarning(`${vx('warn')} 赤軍ユニットまたは施設を配置してから戦闘開始してください`);
         return;
       }
       if (blueForce === 0) {
@@ -4974,7 +4977,7 @@ export class GameApp {
     if (this.playStyle === 'roguelite') {
       if (!this.rogue || this.rogue.ended) return;
       if (this.rogue.deck.length === 0) {
-        this.flashPhaseWarning('⚠ デッキにユニットを1枚以上入れてください');
+        this.flashPhaseWarning(`${vx('warn')} デッキにユニットを1枚以上入れてください`);
         return;
       }
       this.hideRogueModal();
@@ -5080,12 +5083,12 @@ export class GameApp {
   private formatArcadeBudgetBadge(st: ArcadeStage, used: number): string {
     const starPreview =
       used === 0
-        ? `★3目安 ≤${st.star3Budget}`
+        ? `${vxStars(3)} 目安 ≤${st.star3Budget}`
         : used <= st.star3Budget
-          ? '★★★圏内'
+          ? `${vxStars(3)}圏内`
           : used <= st.star2Budget
-            ? '★★☆圏内'
-            : '★☆☆圏内';
+            ? `${vxStars(2)}圏内`
+            : `${vxStars(1)}圏内`;
     const maxUnitsStr =
       st.specialRules?.maxUnits !== undefined
         ? ` ｜ 配置数: <b>${this.getCurrentRedPlacedCount()}</b>/${st.specialRules.maxUnits}体`
@@ -5099,7 +5102,7 @@ export class GameApp {
     const used = this.getCurrentTeamCost(t);
     const budget = this.versus.budget;
     const remain = Math.max(0, budget - used);
-    return `👥 ${this.versus.playerCount}人対戦 ｜ ${TEAM_ICONS[t]} <b>${t + 1}P ${TEAM_NAMES[t]}の配置番</b> ｜ 予算: ${COST_ICON_SVG} 残り <b>${remain}</b> / ${budget} pt ｜ 完了OKでブラインドして次へ`;
+    return `${vx('people')} ${this.versus.playerCount}人対戦 ｜ ${vx(TEAM_ICONS[t])} <b>${t + 1}P ${TEAM_NAMES[t]}の配置番</b> ｜ 予算: ${COST_ICON_SVG} 残り <b>${remain}</b> / ${budget} pt ｜ 完了OKでブラインドして次へ`;
   }
 
   private syncPhaseUI(): void {
@@ -5133,31 +5136,31 @@ export class GameApp {
 
     if (this.mode === 'placement') {
       if (this.playStyle === 'roguelite') {
-        this.elPhaseBadge.innerHTML = this.formatRogueBadge();
-        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        setHtml(this.elPhaseBadge, this.formatRogueBadge());
+        this.elStartBtn.innerHTML = `${vx('swords')} 戦闘開始`;
         this.elStartBtn.className = 'start-btn';
         this.elStartBtn.disabled = !this.rogue;
       } else if (this.playStyle === 'challenge') {
-        this.elPhaseBadge.innerHTML = this.formatChallengeBadge();
-        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        setHtml(this.elPhaseBadge, this.formatChallengeBadge());
+        this.elStartBtn.innerHTML = `${vx('swords')} 戦闘開始`;
         this.elStartBtn.className = 'start-btn';
       } else if (this.playStyle === 'arcade') {
         const st = this.currentStage;
         const used = this.getCurrentRedCost();
-        this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(st, used);
-        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        setHtml(this.elPhaseBadge, this.formatArcadeBudgetBadge(st, used));
+        this.elStartBtn.innerHTML = `${vx('swords')} 戦闘開始`;
         this.elStartBtn.className = 'start-btn';
       } else if (this.playStyle === 'versus') {
         const t = this.versus.currentTurn;
         const isLastTurn = t + 1 >= this.versus.playerCount;
-        this.elPhaseBadge.innerHTML = this.formatVersusBudgetBadge();
-        this.elStartBtn.textContent = isLastTurn
-          ? `✅ ${t + 1}P 配置完了OK（全員完了→⚔戦闘開始！）`
-          : `✅ ${t + 1}P (${TEAM_NAMES[t]}) 配置完了OK → 🙈ブラインドして${t + 2}Pへ`;
+        setHtml(this.elPhaseBadge, this.formatVersusBudgetBadge());
+        this.elStartBtn.innerHTML = isLastTurn
+          ? `${vx('check')} ${t + 1}P 配置完了OK（全員完了→${vx('swords')}戦闘開始！）`
+          : `${vx('check')} ${t + 1}P (${TEAM_NAMES[t]}) 配置完了OK → ${vx('eyeOff')}ブラインドして${t + 2}Pへ`;
         this.elStartBtn.className = isLastTurn ? 'start-btn' : 'start-btn confirm-turn';
       } else {
-        this.elPhaseBadge.textContent = '配置フェーズ（左半分：赤軍 ／ 右半分：青軍）';
-        this.elStartBtn.textContent = '⚔ 戦闘開始';
+        setHtml(this.elPhaseBadge, '配置フェーズ（左半分：赤軍 ／ 右半分：青軍）');
+        this.elStartBtn.innerHTML = `${vx('swords')} 戦闘開始`;
         this.elStartBtn.className = 'start-btn';
       }
       this.elPhaseBadge.className = 'phase-badge placement';
@@ -5165,44 +5168,46 @@ export class GameApp {
     } else {
       const hazardStr =
         this.playStyle === 'arcade' && this.currentStage.hazard
-          ? ` ｜ <span class="hud-hazard-badge">${this.currentStage.hazard.badge} 発動中</span>`
+          ? ` ｜ <span class="hud-hazard-badge">${vx(this.currentStage.hazard.icon)} ${this.currentStage.hazard.badge} 発動中</span>`
           : '';
-      this.elPhaseBadge.innerHTML =
+      setHtml(
+        this.elPhaseBadge,
         this.playStyle === 'arcade'
           ? `戦闘中 - ${this.currentStage.name}${hazardStr}`
           : this.playStyle === 'versus'
-            ? `⚔ 友人対戦 (${this.versus.playerCount}人バトル) - 戦闘中！`
-            : '戦闘中';
+            ? `${vx('swords')} 友人対戦 (${this.versus.playerCount}人バトル) - 戦闘中！`
+            : '戦闘中',
+      );
       this.elPhaseBadge.className = 'phase-badge battle';
-      this.elStartBtn.textContent = '↺ 配置に戻る';
+      this.elStartBtn.innerHTML = `${vx('refresh')} 配置に戻る`;
       this.elStartBtn.className = 'start-btn stop';
       this.elUnitBar.classList.add('disabled');
       if (this.playStyle === 'roguelite') {
-        this.elPhaseBadge.innerHTML = this.formatRogueBadge();
+        setHtml(this.elPhaseBadge, this.formatRogueBadge());
         if (!this.rogue || this.rogue.ended) {
           this.elStartBtn.textContent = this.rogue?.endReason === 'clear' ? 'RUN CLEAR' : 'GAME OVER';
           this.elStartBtn.disabled = true;
         } else if (this.announcedResult !== null) {
-          this.elStartBtn.textContent = this.rogue.lossRewardPicks > 0
-            ? '🛟 逆転の報酬を選ぶ (Space)'
+          this.elStartBtn.innerHTML = this.rogue.lossRewardPicks > 0
+            ? `${vx('medkit')} 逆転の報酬を選ぶ (Space)`
             : this.rogue.pendingRewards
-              ? '🎁 報酬を選ぶ (Space)'
-              : '▶ 次のラウンドへ (Space)';
+              ? `${vx('gift')} 報酬を選ぶ (Space)`
+              : `${vx('arrowR')} 次のラウンドへ (Space)`;
           this.elStartBtn.className = 'start-btn';
         } else {
-          this.elStartBtn.textContent = '🏳 ランを終了';
+          this.elStartBtn.innerHTML = `${vx('flag')} ランを終了`;
         }
       }
       if (this.playStyle === 'challenge') {
-        this.elPhaseBadge.innerHTML = this.formatChallengeBadge();
+        setHtml(this.elPhaseBadge, this.formatChallengeBadge());
         if (this.challenge.ended) {
           this.elStartBtn.textContent = 'GAME OVER';
           this.elStartBtn.disabled = true;
         } else if (this.announcedResult !== null) {
-          this.elStartBtn.textContent = '▶ 次のラウンドへ (Space)';
+          this.elStartBtn.innerHTML = `${vx('arrowR')} 次のラウンドへ (Space)`;
           this.elStartBtn.className = 'start-btn';
         } else {
-          this.elStartBtn.textContent = '🏳 ギブアップ';
+          this.elStartBtn.innerHTML = `${vx('flag')} ギブアップ`;
         }
       }
     }
@@ -5267,33 +5272,33 @@ export class GameApp {
           panel.el.classList.toggle('active-turn', isCurrent);
 
           if (isDone) {
-            panel.el.innerHTML = `
-              <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]} <span class="blind-tag">🙈 配置完了</span></div>
+            setHtml(panel.el, `
+              <div class="team-title">${vx(TEAM_ICONS[team])} ${i + 1}P ${TEAM_NAMES[team]} <span class="blind-tag">${vx('eyeOff')} 配置完了</span></div>
               <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:100%"></div></div>
-            `;
+            `);
           } else if (isCurrent) {
             const s = statsFor(team);
-            panel.el.innerHTML = `
-              <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]}: ${s.alive}体 <span class="cost-tag">${COST_ICON_SVG}${s.cost}/${budget}</span></div>
+            setHtml(panel.el, `
+              <div class="team-title">${vx(TEAM_ICONS[team])} ${i + 1}P ${TEAM_NAMES[team]}: ${s.alive}体 <span class="cost-tag">${COST_ICON_SVG}${s.cost}/${budget}</span></div>
               <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:${s.ratio}%"></div></div>
-            `;
+            `);
           } else {
-            panel.el.innerHTML = `
-              <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]} <span class="cost-tag">待機中 (予算${budget})</span></div>
+            setHtml(panel.el, `
+              <div class="team-title">${vx(TEAM_ICONS[team])} ${i + 1}P ${TEAM_NAMES[team]} <span class="cost-tag">待機中 (予算${budget})</span></div>
               <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:0%"></div></div>
-            `;
+            `);
           }
         } else {
           const s = statsFor(team);
-          panel.el.innerHTML = `
-            <div class="team-title">${TEAM_ICONS[team]} ${i + 1}P ${TEAM_NAMES[team]}: ${s.alive}/${s.total} <span class="cost-tag">${COST_ICON_SVG}${s.cost}</span></div>
+          setHtml(panel.el, `
+            <div class="team-title">${vx(TEAM_ICONS[team])} ${i + 1}P ${TEAM_NAMES[team]}: ${s.alive}/${s.total} <span class="cost-tag">${COST_ICON_SVG}${s.cost}</span></div>
             <div class="hp-bar"><div class="hp-fill ${panel.fillClass}" style="width:${s.ratio}%"></div></div>
-          `;
+          `);
         }
       }
 
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
-        this.elPhaseBadge.innerHTML = this.formatVersusBudgetBadge();
+        setHtml(this.elPhaseBadge, this.formatVersusBudgetBadge());
       }
       return;
     }
@@ -5303,64 +5308,64 @@ export class GameApp {
     if (this.playStyle === 'roguelite') {
       // 人数はどの表示も battle.aliveCount（生きているユニットの数）から描く
       const gold = this.rogue?.gold ?? 0;
-      this.elRedStats.innerHTML = `
+      setHtml(this.elRedStats, `
         <div class="rg-count"><span>自軍</span><b>${this.battle.aliveCount(0)}</b><small>${gold.toLocaleString()} G</small></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
-      `;
-      this.elBlueStats.innerHTML = `
+      `);
+      setHtml(this.elBlueStats, `
         <div class="rg-count"><span>敵軍</span><b>${this.battle.aliveCount(1)}</b></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
-      `;
+      `);
       if (this.mode === 'battle') this.updateRogueBattleHud();
       if (!this.elPhaseBadge.classList.contains('budget-over')) {
-        this.elPhaseBadge.innerHTML = this.formatRogueBadge();
+        setHtml(this.elPhaseBadge, this.formatRogueBadge());
       }
       // 配置が変わったらタグのシナジー表示を更新する
       if (this.mode === 'placement' && this.computeRogueTagKey() !== this.rogueTagKey) this.renderRoguePanel();
     } else if (this.playStyle === 'challenge') {
-      this.elRedStats.innerHTML = `
-        <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${CHALLENGE_PLAYER_BUDGET}</span></div>
+      setHtml(this.elRedStats, `
+        <div class="team-title">${vx('teamRed')} 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${CHALLENGE_PLAYER_BUDGET}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
-      `;
-      this.elBlueStats.innerHTML = `
-        <div class="team-title">🔵 敵軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
+      `);
+      setHtml(this.elBlueStats, `
+        <div class="team-title">${vx('teamBlue')} 敵軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
-      `;
+      `);
       if (!this.elPhaseBadge.classList.contains('budget-over')) {
-        this.elPhaseBadge.innerHTML = this.formatChallengeBadge();
+        setHtml(this.elPhaseBadge, this.formatChallengeBadge());
       }
     } else if (this.playStyle === 'arcade') {
       const budget = this.currentStage.budget;
-      this.elRedStats.innerHTML = `
-        <div class="team-title">🔴 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${budget}</span></div>
+      setHtml(this.elRedStats, `
+        <div class="team-title">${vx('teamRed')} 自軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}/${budget}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
-      `;
-      this.elBlueStats.innerHTML = `
-        <div class="team-title">🔵 敵軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
+      `);
+      setHtml(this.elBlueStats, `
+        <div class="team-title">${vx('teamBlue')} 敵軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
-      `;
+      `);
       if (this.mode === 'placement' && !this.elPhaseBadge.classList.contains('budget-over')) {
-        this.elPhaseBadge.innerHTML = this.formatArcadeBudgetBadge(this.currentStage, r.cost);
+        setHtml(this.elPhaseBadge, this.formatArcadeBudgetBadge(this.currentStage, r.cost));
       } else if (this.mode === 'battle') {
         const hazardStr = this.currentStage.hazard
-          ? ` ｜ <span class="hud-hazard-badge">${this.currentStage.hazard.badge} 発動中</span>`
+          ? ` ｜ <span class="hud-hazard-badge">${vx(this.currentStage.hazard.icon)} ${this.currentStage.hazard.badge} 発動中</span>`
           : '';
         if (this.battle.timeLimitSeconds !== null) {
           const remain = Math.max(0, this.battle.timeLimitSeconds - this.battle.time);
-          this.elPhaseBadge.innerHTML = `戦闘中 - ${this.currentStage.name} ｜ ⏱ 残り時間: <b>${remain.toFixed(1)}s</b>${hazardStr}`;
+          setHtml(this.elPhaseBadge, `戦闘中 - ${this.currentStage.name} ｜ ${vx('stopwatch')} 残り時間: <b>${remain.toFixed(1)}s</b>${hazardStr}`);
         } else {
-          this.elPhaseBadge.innerHTML = `戦闘中 - ${this.currentStage.name}${hazardStr}`;
+          setHtml(this.elPhaseBadge, `戦闘中 - ${this.currentStage.name}${hazardStr}`);
         }
       }
     } else {
-      this.elRedStats.innerHTML = `
-        <div class="team-title">🔴 赤軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}</span></div>
+      setHtml(this.elRedStats, `
+        <div class="team-title">${vx('teamRed')} 赤軍: ${r.alive}/${r.total} <span class="cost-tag">${COST_ICON_SVG}${r.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill red" style="width:${r.ratio}%"></div></div>
-      `;
-      this.elBlueStats.innerHTML = `
-        <div class="team-title">🔵 青軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
+      `);
+      setHtml(this.elBlueStats, `
+        <div class="team-title">${vx('teamBlue')} 青軍: ${b.alive}/${b.total} <span class="cost-tag">${COST_ICON_SVG}${b.cost}</span></div>
         <div class="hp-bar"><div class="hp-fill blue" style="width:${b.ratio}%"></div></div>
-      `;
+      `);
     }
   }
 
@@ -5378,7 +5383,7 @@ export class GameApp {
       const pill = document.getElementById('rg-pill');
       if (pill) {
         pill.innerHTML = `
-          <span class="rg-round">ROUND <b>${run.round}</b> / ${ROGUE_FINAL_ROUND}${run.isHardMode ? ' 🔥' : ''}</span>
+          <span class="rg-round">ROUND <b>${run.round}</b> / ${ROGUE_FINAL_ROUND}${run.isHardMode ? ` ${vx('fire')}` : ''}</span>
           ${this.rogueHeartSlotHtml(run.lives)}
           <span class="rg-time${!decided && remain <= 10 ? ' low' : ''}">${decided ? '決着' : `残り <b>${Math.ceil(remain)}</b> 秒`}</span>`;
       }
@@ -5637,7 +5642,7 @@ export class GameApp {
     this.elBannerChallenge?.classList.add('hidden');
     this.elNextStageBtn?.classList.add('hidden');
     if (this.elRetryBtn) {
-      this.elRetryBtn.textContent = '↺ 配置に戻る';
+      this.elRetryBtn.innerHTML = `${vx('refresh')} 配置に戻る`;
       this.elRetryBtn.classList.remove('hidden');
     }
 
@@ -5668,7 +5673,7 @@ export class GameApp {
         const newlyUnlocked = recordStageClear(this.arcadeSave, st, stars);
 
         if (this.elBannerStars) {
-          this.elBannerStars.textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+          this.elBannerStars.innerHTML = vxStars(stars, 3, 'vx-xl');
           this.elBannerStars.classList.remove('hidden');
         }
         setVoxelText(this.elBannerText, `ステージ ${st.stageNumber} クリア！`, BANNER_VOXEL);
@@ -5676,12 +5681,12 @@ export class GameApp {
 
         if (newlyUnlocked.length > 0 && this.elBannerUnlock) {
           const names = newlyUnlocked.map((id) => UNIT_TYPES[id].name).join('・');
-          this.elBannerUnlock.textContent = `🎉 新ユニット解放: ${names}！`;
+          this.elBannerUnlock.innerHTML = `${vx('star')} 新ユニット解放: ${names}！`;
           this.elBannerUnlock.classList.remove('hidden');
         }
 
         if (this.currentStageIndex < ARCADE_STAGES.length - 1 && this.elNextStageBtn) {
-          this.elNextStageBtn.textContent = `▶ 第${st.stageNumber + 1}面へ進む`;
+          this.elNextStageBtn.innerHTML = `${vx('arrowR')} 第${st.stageNumber + 1}面へ進む`;
           this.elNextStageBtn.classList.remove('hidden');
         }
 
@@ -5695,7 +5700,7 @@ export class GameApp {
           res === 'draw'
             ? '引き分け！'
             : isTimeout
-              ? '⏱ タイムアップ！ 作戦失敗'
+              ? `${vx('stopwatch')} タイムアップ！ 作戦失敗`
               : '敗北… 作戦失敗',
           BANNER_VOXEL,
         );
@@ -5706,11 +5711,11 @@ export class GameApp {
         setVoxelText(this.elBannerText, '引き分け！', BANNER_VOXEL);
         this.elBannerSub.textContent = '全軍ともに全滅しました';
       } else {
-        setVoxelText(this.elBannerText, `${TEAM_ICONS[res]} ${res + 1}P（${TEAM_NAMES[res]}）の勝利！`, BANNER_VOXEL);
+        setVoxelText(this.elBannerText, `${res + 1}P（${TEAM_NAMES[res]}）の勝利！`, BANNER_VOXEL);
         this.elBannerSub.textContent = `生存ユニット: ${this.battle.aliveCount(res)} 体 ｜ 設定予算: ${this.versus.budget} pt`;
       }
       if (this.elNextStageBtn) {
-        this.elNextStageBtn.textContent = '🎲 新しいランダム予算で次の対戦へ';
+        this.elNextStageBtn.innerHTML = `${vx('dice')} 新しいランダム予算で次の対戦へ`;
         this.elNextStageBtn.classList.remove('hidden');
       }
     } else {

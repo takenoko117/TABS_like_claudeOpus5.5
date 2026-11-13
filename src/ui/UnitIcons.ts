@@ -1,20 +1,21 @@
+import type { VoxelIconName } from './VoxelIcons';
 import type { FacilityTypeId } from '../facilities/FacilityTypes';
 import type { UnitCategory, UnitTypeId } from '../units/UnitTypes';
 
 export type PaletteCategory = UnitCategory | 'facility' | 'terrain';
 
 /** カテゴリごとのシンボルアイコン（タブ・バッジ表示用） */
-export const CATEGORY_ICONS: Readonly<Record<PaletteCategory | 'all', string>> = {
-  all: '🗂️',
-  standard: '⚔️',
-  magic: '🔮',
-  modern: '💣',
-  japanese: '⛩️',
-  animal: '🐾',
-  mythical: '🐉',
-  divine: '👁️',
-  facility: '🏛️',
-  terrain: '🧱',
+export const CATEGORY_ICONS: Readonly<Record<PaletteCategory | 'all', VoxelIconName>> = {
+  all: 'grid',
+  standard: 'swords',
+  magic: 'orb',
+  modern: 'bomb',
+  japanese: 'torii',
+  animal: 'paw',
+  mythical: 'dragon',
+  divine: 'eye',
+  facility: 'temple',
+  terrain: 'brick',
 };
 
 /** カテゴリごとのテーマ背景グラデーション色 */

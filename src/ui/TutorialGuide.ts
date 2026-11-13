@@ -1,3 +1,5 @@
+import { vx } from './VoxelIcons';
+
 /** 初回プレイの案内ステップ。イベントが起きると次のステップへ進む */
 export type TutorialEvent = 'placed' | 'battle_started' | 'battle_ended';
 
@@ -26,8 +28,8 @@ export function buildTutorialSteps(isTouch: boolean): TutorialStep[] {
     {
       id: 'start',
       text: isTouch
-        ? '② 予算の範囲で置けたら「⚔ 戦闘開始」！ 「↶ 戻す」で取り消せます'
-        : '② 予算の範囲で置けたら「⚔ 戦闘開始」！ Ctrl+Z で取り消し、右クリックで削除できます',
+        ? `② 予算の範囲で置けたら「${vx('swords')} 戦闘開始」！ 「${vx('undo')} 戻す」で取り消せます`
+        : `② 予算の範囲で置けたら「${vx('swords')} 戦闘開始」！ Ctrl+Z で取り消し、右クリックで削除できます`,
       highlightId: 'btn-start',
       advanceOn: 'battle_started',
     },

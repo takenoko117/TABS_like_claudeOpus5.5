@@ -44,7 +44,7 @@
 .fx-float {
   position: absolute;
   transform: translate(-50%, -50%);
-  font: 900 16px/1 'DotGothic16', var(--font-ui, sans-serif);
+  font: 400 16px/1 var(--font-pixel);
   white-space: nowrap;
   text-shadow: 0 1px 0 #000, 0 0 4px #000;
   animation: fx-float 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
@@ -78,7 +78,7 @@
   text-align: center;
   filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55));
 }
-.fx-banner-title { font: 900 26px/1.1 'DotGothic16', var(--font-ui, sans-serif); color: #fff; }
+.fx-banner-title { font: 400 26px/1.1 var(--font-pixel); color: #fff; }
 .fx-banner-sub {
   padding: 3px 12px;
   background: rgba(10, 16, 30, 0.82);
@@ -88,7 +88,7 @@
   max-width: 100%;
 }
 .fx-banner-sub:empty { display: none; }
-.fx-banner-count { font: 900 18px/1 'DotGothic16', var(--font-ui, sans-serif); color: var(--gold, #f5c451); }
+.fx-banner-count { font: 400 18px/1 var(--font-pixel); color: var(--gold, #f5c451); }
 .fx-banner-count:empty { display: none; }
 .fx-banner-count.bump { animation: fx-bump 0.25s ease-out; }
 .fx-banner.slam { animation: fx-banner-slam 0.42s cubic-bezier(0.2, 1.4, 0.4, 1); }
@@ -133,8 +133,8 @@
   color: #ffe8a3;
   text-shadow: 0 2px 0 #000, 0 0 6px rgba(0, 0, 0, 0.8);
 }
-.fx-combo b { font: 900 44px/1 'DotGothic16', var(--font-ui, sans-serif); }
-.fx-combo small { font: 900 14px/1 'DotGothic16', var(--font-ui, sans-serif); }
+.fx-combo b { font: 400 44px/1 var(--font-pixel); }
+.fx-combo small { font: 400 14px/1 var(--font-pixel); }
 .fx-combo.bump { animation: fx-bump 0.22s ease-out; }
 
 /* ---- 残り時間・地形変化のカウントダウン ---- */
@@ -146,7 +146,7 @@
   transform: translateX(-50%);
   pointer-events: none;
   filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.6));
-  font: 900 48px/1 'DotGothic16', var(--font-ui, sans-serif);
+  font: 400 48px/1 var(--font-pixel);
   color: #fff;
 }
 .fx-count.final { color: #ffb3a8; }

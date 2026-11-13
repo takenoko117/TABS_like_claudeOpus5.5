@@ -37,6 +37,12 @@ npm run dev             # 開発サーバー（.claude/launch.json の "dev"、p
 - 遊び方が変わる変更をしたら `README.md` も更新する。
 - 新しいモードの数値は、各モードのファイル冒頭の定数（`TD_*`、`ROGUE_*` など）にまとめる。
 
+## デザイン規約（ボクセルのブロック UI）
+
+- 説明は文字より絵で。UI の絵は `src/ui/VoxelIcons.ts` の `vx('名前')` だけを使い、**絵文字は使わない**（`tests/voxelIcons.test.ts` が検出する）。新しい絵は `SPRITES` に描き足し、`icons.html` で確認する。
+- 色・縁・影・書体は `src/theme.css` のトークン（`--panel`・`--panel-edge`・`--bevel`・`--drop`・`--font-pixel` など）を使う。角丸とぼかした影は使わない。縁は 2px、ボタンは面取り＋段差の影で、押すと沈む。
+- 見出し・ボタン・数字はドットフォント（`var(--font-pixel)`、太さは 400 のみ）、長い説明文は `var(--font-ui)`。
+
 # 作業ルール
 
 ## 実装後の GitHub への push 確認

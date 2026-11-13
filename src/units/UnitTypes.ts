@@ -1,9 +1,12 @@
+import type { VoxelIconName } from '../ui/VoxelIcons';
+
 /** 陣営（0 = 赤軍, 1 = 青軍, 2 = 黄軍, 3 = 緑軍） */
 export type Team = 0 | 1 | 2 | 3;
 
 export const TEAM_NAMES: readonly string[] = ['赤軍', '青軍', '黄軍', '緑軍'];
 
-export const TEAM_ICONS: readonly string[] = ['🔴', '🔵', '🟡', '🟢'];
+/** 陣営ごとのボクセルアイコン名（0 赤・1 青・2 黄・3 緑） */
+export const TEAM_ICONS: readonly VoxelIconName[] = ['teamRed', 'teamBlue', 'teamYellow', 'teamGreen'];
 
 export interface TeamPalette {
   readonly shirt: number;

@@ -22,3 +22,12 @@ export function stagger(els: Iterable<HTMLElement>, stepSeconds = 0.09, startSec
 export function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 }
+
+const htmlCache = new WeakMap<Element, string>();
+
+/** 中身が変わったときだけ innerHTML を書き換える（毎フレーム更新する HUD 向け。アイコンの SVG を作り直さない） */
+export function setHtml(el: Element | null | undefined, html: string): void {
+  if (!el || htmlCache.get(el) === html) return;
+  htmlCache.set(el, html);
+  el.innerHTML = html;
+}

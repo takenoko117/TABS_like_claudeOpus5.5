@@ -6,7 +6,7 @@
     <title>エクスブロックスウォー：EXBLOCKS WAR — ボクセル物理バトル</title>
     <meta name="description" content="ボクセル軍団を配置して爆発四散させるブラウザ物理バトル。全40面のアーケードやサバイバル、友人対戦を無料で遊べます。" />
     <meta name="theme-color" content="#101622" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23e8590c'/%3E%3Crect x='10' y='5' width='12' height='10' fill='%23ffd43b'/%3E%3Crect x='8' y='16' width='16' height='11' fill='%23c92a2a'/%3E%3Crect x='13' y='8' width='2' height='3' fill='%23222'/%3E%3Crect x='18' y='8' width='2' height='3' fill='%23222'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23e8590c'/%3E%3Crect x='10' y='5' width='12' height='10' fill='%23ffd43b'/%3E%3Crect x='8' y='16' width='16' height='11' fill='%23c92a2a'/%3E%3Crect x='13' y='8' width='2' height='3' fill='%23222'/%3E%3Crect x='18' y='8' width='2' height='3' fill='%23222'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/td.css" />
     <link rel="stylesheet" href="/src/fx/fx.css" />
@@ -21,32 +21,32 @@
         <p class="title-tagline">ボクセル軍団が爆発四散する物理バトル</p>
         <div id="title-main-modes" class="title-modes">
           <button type="button" class="title-card primary" data-mode="arcade">
-            <span class="title-card-icon">🏆</span>
+            <span class="title-card-icon"><i data-vx="trophy" data-vx-class="vx-xl"></i></span>
             <b>アーケード</b>
             <small id="title-arcade-progress"></small>
           </button>
           <button type="button" class="title-card" data-mode="challenge">
-            <span class="title-card-icon">🔥</span>
+            <span class="title-card-icon"><i data-vx="fire" data-vx-class="vx-xl"></i></span>
             <b>チャレンジ</b>
             <small id="title-challenge-progress"></small>
           </button>
           <button type="button" class="title-card" data-mode="roguelite">
-            <span class="title-card-icon">🎲</span>
+            <span class="title-card-icon"><i data-vx="dice" data-vx-class="vx-xl"></i></span>
             <b>ローグライト</b>
             <small id="title-roguelite-progress"></small>
           </button>
           <button type="button" class="title-card" data-mode="td">
-            <span class="title-card-icon">🏰</span>
+            <span class="title-card-icon"><i data-vx="castle" data-vx-class="vx-xl"></i></span>
             <b>タワーディフェンス</b>
             <small>10分間のリアルタイム攻防</small>
           </button>
           <button type="button" class="title-card" data-mode="versus">
-            <span class="title-card-icon">👥</span>
+            <span class="title-card-icon"><i data-vx="people" data-vx-class="vx-xl"></i></span>
             <b>友人対戦</b>
             <small>ローカル対戦・オンライン対戦</small>
           </button>
           <button type="button" class="title-card" data-mode="sandbox">
-            <span class="title-card-icon">🛠</span>
+            <span class="title-card-icon"><i data-vx="hammer" data-vx-class="vx-xl"></i></span>
             <b>サンドボックス</b>
             <small>全兵種を自由に実験</small>
           </button>
@@ -54,17 +54,17 @@
         <!-- 友人対戦の選択（ローカル／オンライン） -->
         <div id="title-friend-modes" class="title-modes hidden">
           <button type="button" class="title-card" data-friend="local">
-            <span class="title-card-icon">👥</span>
+            <span class="title-card-icon"><i data-vx="people" data-vx-class="vx-xl"></i></span>
             <b>ローカル対戦</b>
             <small>1 台で 2〜4 人がブラインド配置</small>
           </button>
           <button type="button" class="title-card primary" data-friend="online">
-            <span class="title-card-icon">🌐</span>
+            <span class="title-card-icon"><i data-vx="globe" data-vx-class="vx-xl"></i></span>
             <b>オンライン対戦</b>
             <small>タワーディフェンスで 1 対 1</small>
           </button>
           <button type="button" class="title-card" data-friend="back">
-            <span class="title-card-icon">↩</span>
+            <span class="title-card-icon"><i data-vx="undo" data-vx-class="vx-xl"></i></span>
             <b>もどる</b>
             <small>モード選択へ</small>
           </button>
@@ -74,7 +74,7 @@
 
     <!-- 全UI非表示時の復帰ボタン -->
     <button id="btn-restore-hud" class="restore-hud-btn hidden" title="UIを再表示する">
-      👁 UI表示
+      <i data-vx="eye"></i> UI表示
     </button>
 
     <!-- 上部 HUD: 両軍ステータス・開始ボタン -->
@@ -86,21 +86,21 @@
 
       <div class="center-panel">
         <div class="phase-row">
-          <button id="btn-stage-prev" type="button" class="stage-nav-btn hidden" title="前の面へ" aria-label="前の面へ">◀</button>
+          <button id="btn-stage-prev" type="button" class="stage-nav-btn hidden" title="前の面へ" aria-label="前の面へ"><i data-vx="arrowL"></i></button>
           <div id="phase-badge" class="phase-badge placement">配置フェーズ</div>
-          <button id="btn-stage-next" type="button" class="stage-nav-btn hidden" title="次の面へ" aria-label="次の面へ">▶</button>
+          <button id="btn-stage-next" type="button" class="stage-nav-btn hidden" title="次の面へ" aria-label="次の面へ"><i data-vx="arrowR"></i></button>
         </div>
 
         <!-- 友人対戦モード専用: 人数・ランダム予算＆手動編集バー -->
         <div id="versus-hud-bar" class="versus-hud-bar hidden">
-          <span class="versus-hud-label">👥 人数:</span>
+          <span class="versus-hud-label"><i data-vx="people"></i> 人数:</span>
           <div id="versus-hud-players" class="versus-hud-players">
             <button type="button" class="versus-pcount-btn active" data-pcount="2">2人</button>
             <button type="button" class="versus-pcount-btn" data-pcount="3">3人</button>
             <button type="button" class="versus-pcount-btn" data-pcount="4">4人</button>
           </div>
           <span class="versus-hud-sep">｜</span>
-          <label class="versus-hud-label" for="versus-hud-budget">💰 予算:</label>
+          <label class="versus-hud-label" for="versus-hud-budget"><i data-vx="coin"></i> 予算:</label>
           <input
             id="versus-hud-budget"
             type="number"
@@ -113,7 +113,7 @@
           />
           <span class="versus-hud-unit">pt</span>
           <button id="btn-hud-random-budget" type="button" class="mini-link-btn" title="予算をランダムに再決定">
-            🎲 ランダム
+            <i data-vx="dice"></i> ランダム
           </button>
         </div>
 
@@ -121,18 +121,18 @@
 
         <div class="main-actions">
           <button id="btn-toggle-panel" class="ctrl-btn mode-toggle-btn active" title="ゲームモード・ステージ選択パネルの表示/非表示 (Tab)">
-            ☰ メニュー
+            <i data-vx="menu"></i> メニュー
           </button>
-          <button id="btn-start" class="start-btn">⚔ 戦闘開始 (Space)</button>
-          <button id="btn-rogue-shop" class="ctrl-btn hidden" title="デッキ編成と強化">🧭 作戦室</button>
+          <button id="btn-start" class="start-btn"><i data-vx="swords"></i> 戦闘開始 (Space)</button>
+          <button id="btn-rogue-shop" class="ctrl-btn hidden" title="デッキ編成と強化"><i data-vx="compass"></i> 作戦室</button>
           <button id="btn-touch-erase" class="ctrl-btn" title="タップでユニットを削除するモードに切り替えます">
-            🗑 削除
+            <i data-vx="trash"></i> 削除
           </button>
-          <button id="btn-undo" class="ctrl-btn" title="直前の配置を取り消します (Ctrl+Z)">↶ 戻す</button>
+          <button id="btn-undo" class="ctrl-btn" title="直前の配置を取り消します (Ctrl+Z)"><i data-vx="undo"></i> 戻す</button>
           <button id="btn-clear" class="ctrl-btn danger" title="配置したユニットを全消去">全消去</button>
-          <button id="btn-settings" class="ctrl-btn" title="音量と描画品質の設定">⚙ 設定</button>
+          <button id="btn-settings" class="ctrl-btn" title="音量と描画品質の設定"><i data-vx="gear"></i> 設定</button>
           <button id="btn-toggle-hud" class="ctrl-btn" title="すべてのUIを非表示にして画面を広く使います (H)">
-            👁 UI隠す
+            <i data-vx="eye"></i> UI隠す
           </button>
         </div>
       </div>
@@ -146,10 +146,10 @@
     <!-- 左上: モード切替・ステージ/プリセット選択・速度操作 -->
     <aside id="side-panel" class="side-panel">
       <div class="side-panel-header">
-        <span class="side-panel-title">🎮 設定</span>
-        <button id="btn-to-title" class="panel-close-btn" title="タイトル画面へ戻ります">🏠 タイトル</button>
+        <span class="side-panel-title"><i data-vx="gamepad"></i> 設定</span>
+        <button id="btn-to-title" class="panel-close-btn" title="タイトル画面へ戻ります"><i data-vx="home"></i> タイトル</button>
         <button id="btn-close-panel" class="panel-close-btn" title="このパネルを非表示にして戦場を広く表示します">
-          ✕ パネルを隠す
+          <i data-vx="close"></i> パネルを隠す
         </button>
       </div>
 
@@ -157,7 +157,7 @@
       <div id="arcade-panel" class="panel-section">
         <div class="section-header-row">
           <div class="section-label">ステージ選択 (全40面)</div>
-          <button id="btn-unlock-all" class="mini-link-btn" title="全兵種・全ステージを解放／通常進行に戻す">🔓 全解放</button>
+          <button id="btn-unlock-all" class="mini-link-btn" title="全兵種・全ステージを解放／通常進行に戻す"><i data-vx="unlock"></i> 全解放</button>
         </div>
         <div id="stage-buttons" class="stage-grid"></div>
         <div id="stage-briefing" class="stage-briefing"></div>
@@ -165,7 +165,7 @@
 
       <!-- オフライン友人対戦モード用パネル -->
       <div id="versus-panel" class="panel-section hidden">
-        <div class="section-label">👥 対戦人数 (2〜4人)</div>
+        <div class="section-label"><i data-vx="people"></i> 対戦人数 (2〜4人)</div>
         <div id="versus-player-buttons" class="btn-group">
           <button type="button" class="ctrl-btn active" data-pcount="2">2人対戦</button>
           <button type="button" class="ctrl-btn" data-pcount="3">3人対戦</button>
@@ -173,9 +173,9 @@
         </div>
 
         <div class="section-header-row" style="margin-top: 8px;">
-          <div class="section-label">💰 予算 (ランダム決定＋手動編集可)</div>
+          <div class="section-label"><i data-vx="coin"></i> 予算 (ランダム決定＋手動編集可)</div>
           <button id="btn-versus-random-budget" type="button" class="mini-link-btn" title="予算をランダムに決定する">
-            🎲 ランダム決定
+            <i data-vx="dice"></i> ランダム決定
           </button>
         </div>
         <div class="versus-budget-row">
@@ -197,29 +197,29 @@
           <button type="button" class="ctrl-btn mini-budget-btn" data-budget="2500">2500pt</button>
         </div>
 
-        <div class="section-label" style="margin-top: 8px;">🙈 ブラインド配置状況</div>
+        <div class="section-label" style="margin-top: 8px;"><i data-vx="eyeOff"></i> ブラインド配置状況</div>
         <div id="versus-turn-status" class="versus-turn-status"></div>
 
         <button id="btn-versus-reset" type="button" class="ctrl-btn full" style="margin-top: 8px;">
-          🔄 新規ラウンド（予算ランダム＆初期化）
+          <i data-vx="refresh"></i> 新規ラウンド（予算ランダム＆初期化）
         </button>
       </div>
 
       <!-- チャレンジモード用パネル -->
       <div id="challenge-panel" class="panel-section hidden">
-        <div class="section-label">🔥 チャレンジ</div>
+        <div class="section-label"><i data-vx="fire"></i> チャレンジ</div>
         <div id="challenge-status" class="stage-briefing"></div>
         <button id="btn-challenge-quit" type="button" class="ctrl-btn danger full" style="margin-top: 6px;">
-          🏳 中断してスコアを確定
+          <i data-vx="flag"></i> 中断してスコアを確定
         </button>
       </div>
 
       <!-- ローグライトモード用パネル -->
       <div id="roguelite-panel" class="panel-section hidden">
-        <div class="section-label">🎲 ローグライト</div>
+        <div class="section-label"><i data-vx="dice"></i> ローグライト</div>
         <div id="roguelite-status" class="stage-briefing"></div>
         <button id="btn-rogue-quit" type="button" class="ctrl-btn danger full hidden" style="margin-top: 6px;">
-          🏳 ランを終了してスコアを確定
+          <i data-vx="flag"></i> ランを終了してスコアを確定
         </button>
       </div>
 
@@ -239,20 +239,25 @@
       </div>
       <div class="panel-section">
         <div class="section-label">視点・操作ヘルプ</div>
-        <button id="btn-cam-reset" class="ctrl-btn full">🎥 視点リセット</button>
-        <ul class="help-list">
-          <li><b>タップ / 左クリック:</b> ユニット配置（ドラッグで連続配置、🗑削除ON時は削除）</li>
-          <li><b>Ctrl+Z / ↶戻す:</b> 直前の配置を取り消し</li>
-          <li><b>戦闘中にユニットをクリック:</b> カメラで追跡、<b>P:</b> 一時停止、<b>F:</b> 早送り</li>
-          <li><b>1本指ドラッグ / 右ドラッグ:</b> カメラ回転、<b>ピンチ / ホイール:</b> ズーム</li>
-          <li><b>2本指スワイプ / WASD / 矢印:</b> カメラ平行移動、<b>右クリック:</b> 削除</li>
-          <li><b>Enter:</b> リザルトの次へ進む</li>
-          <li><b>1〜9 キー:</b> 兵種切替、<b>Space:</b> 戦闘開始、<b>Tab / H:</b> UI開閉</li>
-        </ul>
+        <button id="btn-cam-reset" class="ctrl-btn full"><i data-vx="camera"></i> 視点リセット</button>
+        <div class="vx-legend help-legend">
+          <div><span class="vx-legend-pic"><i data-vx="hand"></i></span><kbd>タップ</kbd><span>配置</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="hand"></i></span><kbd>ドラッグ</kbd><span>連続配置</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="trash"></i></span><kbd>右クリック</kbd><span>削除</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="undo"></i></span><kbd>Ctrl+Z</kbd><span>戻す</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="camera"></i></span><kbd>ユニットをタップ</kbd><span>追跡</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="refresh"></i></span><kbd>右ドラッグ</kbd><span>回転</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="target"></i></span><kbd>ホイール</kbd><span>ズーム</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="arrowR"></i></span><kbd>WASD</kbd><span>移動</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="swords"></i></span><kbd>Space</kbd><span>戦闘開始</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="pause"></i></span><kbd>P</kbd><span>一時停止</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="ffwd"></i></span><kbd>F</kbd><span>早送り</span></div>
+          <div><span class="vx-legend-pic"><i data-vx="eyeOff"></i></span><kbd>Tab / H</kbd><span>UI 開閉</span></div>
+        </div>
       </div>
     </aside>
 
-    <div id="pause-indicator" class="pause-indicator hidden">⏸ 一時停止中（P で再開）</div>
+    <div id="pause-indicator" class="pause-indicator hidden"><i data-vx="pause"></i> 一時停止中（P で再開）</div>
 
     <!-- ローグライトの戦闘 HUD（戦場を広く使うため、左パネルの代わりに浮かせて置く） -->
     <div id="rogue-hud" class="rogue-hud hidden">
@@ -281,13 +286,13 @@
     <!-- 音量・描画品質の設定 -->
     <section id="settings-panel" class="settings-panel hidden" aria-label="設定">
       <div class="settings-header">
-        <b>⚙ 設定</b>
-        <button id="btn-settings-close" class="panel-close-btn" aria-label="設定を閉じる">✕</button>
+        <b><i data-vx="gear"></i> 設定</b>
+        <button id="btn-settings-close" class="panel-close-btn" aria-label="設定を閉じる"><i data-vx="close"></i></button>
       </div>
-      <label class="settings-row"><span>🎵 BGM</span><input id="setting-music" type="range" min="0" max="100" /></label>
-      <label class="settings-row"><span>🔊 効果音</span><input id="setting-sfx" type="range" min="0" max="100" /></label>
+      <label class="settings-row"><span><i data-vx="music"></i> BGM</span><input id="setting-music" type="range" min="0" max="100" /></label>
+      <label class="settings-row"><span><i data-vx="speaker"></i> 効果音</span><input id="setting-sfx" type="range" min="0" max="100" /></label>
       <label class="settings-row">
-        <span>🖥 描画品質</span>
+        <span><i data-vx="monitor"></i> 描画品質</span>
         <select id="setting-quality">
           <option value="auto">自動</option>
           <option value="high">高</option>
@@ -295,7 +300,7 @@
         </select>
       </label>
       <label class="settings-row">
-        <span>✨ 演出の強さ</span>
+        <span><i data-vx="sparkle"></i> 演出の強さ</span>
         <select id="setting-fx">
           <option value="full">フル</option>
           <option value="reduced">控えめ</option>
@@ -303,14 +308,14 @@
         </select>
       </label>
       <label class="settings-row">
-        <span>📳 画面の揺れ</span>
+        <span><i data-vx="vibrate"></i> 画面の揺れ</span>
         <input id="setting-shake" type="checkbox" />
       </label>
       <label class="settings-row">
-        <span>❤ HP バー</span>
+        <span><i data-vx="heart"></i> HP バー</span>
         <input id="setting-hpbars" type="checkbox" />
       </label>
-      <button id="btn-reset-progress" type="button" class="ctrl-btn danger full">🗑 進行データを消去</button>
+      <button id="btn-reset-progress" type="button" class="ctrl-btn danger full"><i data-vx="trash"></i> 進行データを消去</button>
     </section>
 
     <!-- 初回プレイの案内 -->
@@ -337,8 +342,8 @@
       <div id="result-stats" class="result-stats hidden"></div>
       <div id="result-challenge" class="result-challenge hidden"></div>
       <div class="result-actions">
-        <button id="btn-retry" class="ctrl-btn">↺ 配置に戻る</button>
-        <button id="btn-next-stage" class="start-btn hidden">▶ 次の面へ進む</button>
+        <button id="btn-retry" class="ctrl-btn"><i data-vx="refresh"></i> 配置に戻る</button>
+        <button id="btn-next-stage" class="start-btn hidden"><i data-vx="arrowR"></i> 次の面へ進む</button>
       </div>
     </div>
 
@@ -353,9 +358,9 @@
               <div class="unit-detail-title-line">
                 <span id="detail-name" class="unit-detail-name"></span>
                 <span id="detail-cat-badge" class="unit-cat-badge"></span>
-                <span id="detail-featured-tag" class="unit-featured-tag hidden">★特効</span>
+                <span id="detail-featured-tag" class="unit-featured-tag hidden"><i data-vx="star"></i>特効</span>
               </div>
-              <button id="btn-close-detail" class="unit-detail-close-btn" title="詳細説明を閉じる" aria-label="詳細説明を閉じる">✕</button>
+              <button id="btn-close-detail" class="unit-detail-close-btn" title="詳細説明を閉じる" aria-label="詳細説明を閉じる"><i data-vx="close"></i></button>
             </div>
             <div id="detail-stats-row" class="unit-detail-stats-row"></div>
             <div id="detail-desc" class="unit-detail-desc"></div>
@@ -367,7 +372,7 @@
       <div class="bottom-hud-top-row">
         <div id="category-tabs" class="category-tabs"></div>
         <button id="btn-toggle-detail" class="detail-toggle-btn active" title="ユニット詳細説明の表示/非表示">
-          ℹ️ 詳細
+          <i data-vx="info"></i> 詳細
         </button>
         <button id="btn-toggle-unitbar" class="unitbar-collapse-btn" title="兵種パレットを折りたたむ／展開する">
           ▼ 兵種バー

@@ -1,3 +1,4 @@
+import type { VoxelIconName } from '../ui/VoxelIcons';
 import { Vector3 } from 'three';
 import type { Unit } from '../units/Unit';
 import type { Battle } from './Battle';
@@ -57,7 +58,8 @@ export interface JackpotReward {
   id: string;
   name: string;
   detail: string;
-  icon: string;
+  /** ボクセルのアイコン名（画面では vx() で描く） */
+  icon: VoxelIconName;
   rarity: JackpotRarity;
   /** battle はこの戦闘だけ、run はランの最後まで残る */
   scope: 'battle' | 'run';
@@ -65,21 +67,21 @@ export interface JackpotReward {
 }
 
 export const JACKPOT_REWARDS: readonly JackpotReward[] = [
-  { id: 'heal_s', name: '応急手当', detail: '全軍 HP 30%回復', icon: '🩹', rarity: 0, scope: 'battle', effect: { kind: 'heal', ratio: 0.3 } },
-  { id: 'atk_s', name: '闘志', detail: '全軍 攻撃 +25%', icon: '⚔️', rarity: 0, scope: 'battle', effect: { kind: 'buff', damage: 1.25 } },
-  { id: 'spd_s', name: '追い風', detail: '全軍 速度 +100%', icon: '💨', rarity: 0, scope: 'battle', effect: { kind: 'buff', speed: 2 } },
-  { id: 'guard_s', name: '鉄壁', detail: '全軍 被ダメ -20%', icon: '🛡️', rarity: 0, scope: 'battle', effect: { kind: 'buff', guard: 0.8 } },
-  { id: 'budget_m', name: '千両箱', detail: 'ゴールド +100G', icon: '💰', rarity: 1, scope: 'run', effect: { kind: 'gold', amount: 100 } },
-  { id: 'reroll', name: '引き直し券', detail: '報酬・ショップの引き直し +1', icon: '🎟️', rarity: 1, scope: 'run', effect: { kind: 'reroll' } },
-  { id: 'heal_l', name: '大回復', detail: '全軍 HP 全快', icon: '💖', rarity: 1, scope: 'battle', effect: { kind: 'heal', ratio: 1 } },
-  { id: 'smite', name: '天罰', detail: '敵全体に雷撃', icon: '⚡', rarity: 1, scope: 'battle', effect: { kind: 'smite', ratio: 0.25, cap: 300 } },
-  { id: 'budget_l', name: '黄金の山', detail: 'ゴールド +200G', icon: '🏆', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 200 } },
-  { id: 'overdrive', name: 'オーバードライブ', detail: '攻撃 +50% 速度 +30%', icon: '🔥', rarity: 2, scope: 'battle', effect: { kind: 'buff', damage: 1.5, speed: 1.3 } },
-  { id: 'reinforce', name: '援軍', detail: '抽選で味方3体を複製', icon: '👥', rarity: 2, scope: 'battle', effect: { kind: 'clone', count: 3, show: 'lottery' } },
-  { id: 'budget_xl', name: '大財宝', detail: 'ゴールド +300G', icon: '👑', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 300 } },
-  { id: 'judgement', name: '神の裁き', detail: '敵全体に大雷撃', icon: '🌩️', rarity: 2, scope: 'battle', effect: { kind: 'smite', ratio: 0.6, cap: 900 } },
-  { id: 'army', name: '全軍複製', detail: '味方を最大16体複製', icon: '🌟', rarity: 3, scope: 'battle', effect: { kind: 'clone', count: MAX_CLONES_PER_REWARD, show: 'barrage' } },
-  { id: 'summon', name: '増援要請', detail: '未所持の強兵を召喚し仲間に', icon: '📯', rarity: 3, scope: 'battle', effect: { kind: 'summon' } },
+  { id: 'heal_s', name: '応急手当', detail: '全軍 HP 30%回復', icon: 'medkit', rarity: 0, scope: 'battle', effect: { kind: 'heal', ratio: 0.3 } },
+  { id: 'atk_s', name: '闘志', detail: '全軍 攻撃 +25%', icon: 'swords', rarity: 0, scope: 'battle', effect: { kind: 'buff', damage: 1.25 } },
+  { id: 'spd_s', name: '追い風', detail: '全軍 速度 +100%', icon: 'wind', rarity: 0, scope: 'battle', effect: { kind: 'buff', speed: 2 } },
+  { id: 'guard_s', name: '鉄壁', detail: '全軍 被ダメ -20%', icon: 'shield', rarity: 0, scope: 'battle', effect: { kind: 'buff', guard: 0.8 } },
+  { id: 'budget_m', name: '千両箱', detail: 'ゴールド +100G', icon: 'coin', rarity: 1, scope: 'run', effect: { kind: 'gold', amount: 100 } },
+  { id: 'reroll', name: '引き直し券', detail: '報酬・ショップの引き直し +1', icon: 'ticket', rarity: 1, scope: 'run', effect: { kind: 'reroll' } },
+  { id: 'heal_l', name: '大回復', detail: '全軍 HP 全快', icon: 'heartPink', rarity: 1, scope: 'battle', effect: { kind: 'heal', ratio: 1 } },
+  { id: 'smite', name: '天罰', detail: '敵全体に雷撃', icon: 'bolt', rarity: 1, scope: 'battle', effect: { kind: 'smite', ratio: 0.25, cap: 300 } },
+  { id: 'budget_l', name: '黄金の山', detail: 'ゴールド +200G', icon: 'trophy', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 200 } },
+  { id: 'overdrive', name: 'オーバードライブ', detail: '攻撃 +50% 速度 +30%', icon: 'fire', rarity: 2, scope: 'battle', effect: { kind: 'buff', damage: 1.5, speed: 1.3 } },
+  { id: 'reinforce', name: '援軍', detail: '抽選で味方3体を複製', icon: 'people', rarity: 2, scope: 'battle', effect: { kind: 'clone', count: 3, show: 'lottery' } },
+  { id: 'budget_xl', name: '大財宝', detail: 'ゴールド +300G', icon: 'crown', rarity: 2, scope: 'run', effect: { kind: 'gold', amount: 300 } },
+  { id: 'judgement', name: '神の裁き', detail: '敵全体に大雷撃', icon: 'storm', rarity: 2, scope: 'battle', effect: { kind: 'smite', ratio: 0.6, cap: 900 } },
+  { id: 'army', name: '全軍複製', detail: '味方を最大16体複製', icon: 'star', rarity: 3, scope: 'battle', effect: { kind: 'clone', count: MAX_CLONES_PER_REWARD, show: 'barrage' } },
+  { id: 'summon', name: '増援要請', detail: '未所持の強兵を召喚し仲間に', icon: 'horn', rarity: 3, scope: 'battle', effect: { kind: 'summon' } },
 ];
 
 function pickWeighted(weights: readonly number[], rng: () => number): number {

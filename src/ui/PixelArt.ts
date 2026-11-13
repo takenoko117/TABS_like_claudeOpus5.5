@@ -1,5 +1,6 @@
-// ボクセル調のピクセルアート（小さな SVG）。文字の並びで描いた絵を、1 マスずつ「面」と「奥行きの影」の
-// 2 枚の四角にして、積み木のように少し浮き出て見せる。オンライン対戦のロビーなどで使う。
+// ボクセル調の挿絵（小さな SVG）。文字の並びで描いた絵を、アイコンと同じ描き方（VoxelIcons.ts の buildVoxelBody）で
+// 積み木の塊のように立体に見せる。オンライン対戦のロビーなど、アイコンより大きな挿絵に使う。
+import { buildVoxelBody } from './VoxelIcons';
 
 /** 絵の名前 */
 export type PixelSpriteName =
@@ -157,19 +158,6 @@ const SPRITES: Record<PixelSpriteName, PixelSprite> = {
   },
 };
 
-/** 奥行きの影のずれ（マスの何割か） */
-const DEPTH = 0.32;
-
-/** 色を明るさ factor 倍にする（#rrggbb） */
-function shade(hex: string, factor: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v * factor)));
-  const r = ch((n >> 16) & 255);
-  const g = ch((n >> 8) & 255);
-  const b = ch(n & 255);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
-
 /** 絵のマス目（幅・高さ・塗るマス）。テスト用にも使う */
 export function pixelCells(name: PixelSpriteName): { width: number; height: number; cells: Array<{ x: number; y: number; color: string }> } {
   const sprite = SPRITES[name];
@@ -194,17 +182,15 @@ export function unknownPixelChars(name: PixelSpriteName): string[] {
 
 const cache = new Map<string, string>();
 
-/** ボクセル調のピクセルアートの SVG（大きさは CSS で決める。cls は svg に付けるクラス） */
+/** ボクセル調の挿絵の SVG（大きさは CSS で決める。cls は svg に付けるクラス）。
+ * 描き方はアイコンと同じ buildVoxelBody（正面・明るい上面・暗い側面・縁取り）に合わせ、画面全体で絵の質感をそろえる */
 export function pixelArt(name: PixelSpriteName, cls = ''): string {
   const key = `${name}|${cls}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const { width, height, cells } = pixelCells(name);
-  const depth = cells.map((c) => `<rect x="${c.x + DEPTH}" y="${c.y + DEPTH}" width="1" height="1" fill="${shade(c.color, 0.5)}"/>`).join('');
-  const faces = cells.map((c) => `<rect x="${c.x}" y="${c.y}" width="1.02" height="1.02" fill="${c.color}"/>`).join('');
-  // 面の上側に細い光を入れて、ブロックの角を立たせる
-  const shine = cells.map((c) => `<rect x="${c.x}" y="${c.y}" width="1" height="0.2" fill="${shade(c.color, 1.3)}"/>`).join('');
-  const svg = `<svg class="px-art ${cls}" viewBox="0 0 ${width + DEPTH} ${height + DEPTH}" aria-hidden="true" shape-rendering="crispEdges">${depth}${faces}${shine}</svg>`;
+  const sprite = SPRITES[name];
+  const { viewBox, body } = buildVoxelBody(sprite.rows, sprite.palette, false);
+  const svg = `<svg class="px-art vx-art ${cls}" viewBox="${viewBox}" aria-hidden="true" shape-rendering="crispEdges">${body}</svg>`;
   cache.set(key, svg);
   return svg;
 }

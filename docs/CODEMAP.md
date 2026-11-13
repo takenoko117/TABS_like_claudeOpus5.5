@@ -113,7 +113,8 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | --- | --- | --- |
 | `ui/RealtimeTDHud.ts` | 1021 | TD モードの HUD 全部（上部バー・配置バー・強化 3 択・チュートリアル・結果） |
 | `ui/TDVersusUi.ts` | 318 | TD オンライン対戦のロビー（ピクセルアートの見出しとルールのカード `RULE_CARDS`・部屋の作成・部屋の一覧 `renderVersusRoomList`〈募集中は入室、対戦中は観戦〉・席の色）・試合中の対戦パネル（相手の城・通信待ち・ずれ・観戦の追いつき）・リザルト（観戦は `renderVersusWatchResult`）の HTML |
-| `ui/PixelArt.ts` | 210 | ボクセル調のピクセルアート（文字の並びで描いた小さな絵を SVG にする `pixelArt`）。城・剣・宝箱・王冠・砂時計・目など |
+| `ui/VoxelIcons.ts` | 600 | **UI の絵はすべてここ**（絵文字は使わない）。文字の並びで描いたドット絵を、正面・明るい上面・暗い側面・縁取りの「積み木」SVG にする `buildVoxelBody`、アイコン `vx(名前, クラス)`・陣営 `vxTeam`・星の評価 `vxStars`、`index.html` の `<i data-vx="名前">` を置き換える `hydrateVoxelIcons`（`main.ts` で呼ぶ）。一覧は開発用ページ `icons.html`（`src/iconGallery.ts`） |
+| `ui/PixelArt.ts` | 190 | オンライン対戦のロビーの大きめの挿絵（城・兵士・剣・宝箱など）。描き方は `VoxelIcons.buildVoxelBody` と共通 |
 | `ui/UnitIcons.ts` | 1093 | 兵種・施設の SVG アイコン（ほぼデータ） |
 | `ui/JackpotRoulette.ts` / `JackpotRewardFx.ts` | 462 / 269 | 宝箱開封の進行と報酬演出 |
 | `ui/UnitDetailHelper.ts` | 231 | 兵種詳細パネルの表示データ |
@@ -135,6 +136,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 
 ### その他
 
+- `src/theme.css`: **デザインの土台**。色・面取り・段差の影・書体のトークン（`--panel`・`--bevel`・`--drop`・`--font-pixel` など）、アイコン `.vx` の大きさ、共通部品（`.vx-panel`・`.vx-key`・`.vx-legend`・`kbd`）、ボタンの「押すと沈む」動き。`style.css` の先頭で読み込む。各画面の CSS はここのトークンを使い、角丸・ぼかし影は使わない
 - `src/style.css`（5450 行）: 全 UI。前半が共通 UI・スマホ対応・ダメージ数字、「ローグライト」見出し以降（全体の後ろ 6 割）がローグライト（作戦室・報酬・宝箱演出）。`npm run outline -- src/style.css` で見出しを確認する
 - `src/td.css`（778 行）: TD モード（末尾近くにオンライン対戦のロビーと対戦パネル）
 - `index.html`: 画面の DOM の骨組み（id 付き要素を `GameApp` が取得）
@@ -229,6 +231,8 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
 | 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
 | 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |
+| UI の絵・アイコンを足す | `ui/VoxelIcons.ts` の `SPRITES` に行を足す → `vx('名前')`。見た目は `icons.html` で確認。色・枠・影は `theme.css` のトークン |
+| 毎フレーム書き換える HUD の文字 | `fx/ui/dom.ts` の `setHtml`（中身が変わったときだけ innerHTML を書き換える） |
 
 ## 仕様書（ルート直下の .md）
 

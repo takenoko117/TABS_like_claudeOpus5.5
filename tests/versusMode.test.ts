@@ -16,7 +16,7 @@ import { TEAM_COLORS, TEAM_ICONS, TEAM_NAMES } from '../src/units/UnitTypes';
 describe('オフライン友人対戦モード (VersusMode)', () => {
   it('4チーム分の名称・アイコン・カラーが定義されている', () => {
     expect(TEAM_NAMES).toEqual(['赤軍', '青軍', '黄軍', '緑軍']);
-    expect(TEAM_ICONS).toEqual(['🔴', '🔵', '🟡', '🟢']);
+    expect(TEAM_ICONS).toEqual(['teamRed', 'teamBlue', 'teamYellow', 'teamGreen']);
     expect(TEAM_COLORS.length).toBe(4);
     expect(TEAM_COLORS[2].css).toBe('#f59f00');
     expect(TEAM_COLORS[3].css).toBe('#20c997');

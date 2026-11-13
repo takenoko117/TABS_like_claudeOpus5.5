@@ -1,3 +1,4 @@
+import type { VoxelIconName } from '../ui/VoxelIcons';
 import type { StageVisualTheme } from '../game/ArcadeStages';
 import { fieldRng, hashSeed, pick } from './FieldRng';
 import type { BiomeId, FieldTraitId } from './FieldTypes';
@@ -6,7 +7,8 @@ import type { BiomeId, FieldTraitId } from './FieldTypes';
 export interface BiomeDef {
   id: BiomeId;
   name: string;
-  icon: string;
+  /** ボクセルのアイコン名（画面では vx() で描く） */
+  icon: VoxelIconName;
   /** 進路カードに出てよい最初のラウンド（専用フィールドは 0） */
   minRound: number;
   /** 進路カードに出てよい最後のラウンド */
@@ -20,7 +22,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   plains: {
     id: 'plains',
     name: '平原',
-    icon: '🌾',
+    icon: 'wheat',
     minRound: 1,
     maxRound: 8,
     rule: '基準のフィールド。小川とあぜ道',
@@ -29,7 +31,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   forest: {
     id: 'forest',
     name: '森',
-    icon: '🌲',
+    icon: 'tree',
     minRound: 2,
     maxRound: 30,
     rule: '木が射線を切る。炎が燃え広がる',
@@ -38,7 +40,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   town: {
     id: 'town',
     name: '街',
-    icon: '🏘',
+    icon: 'home',
     minRound: 4,
     maxRound: 30,
     rule: '建物が射線を切る。爆発樽が誘爆する',
@@ -47,7 +49,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   desert: {
     id: 'desert',
     name: '砂漠',
-    icon: '🏜',
+    icon: 'desert',
     minRound: 6,
     maxRound: 30,
     rule: '流砂に沈む。砂嵐で索敵範囲が狭い。雷が地面に逃げる',
@@ -56,7 +58,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   swamp: {
     id: 'swamp',
     name: '湿地',
-    icon: '🌫',
+    icon: 'fog',
     minRound: 6,
     maxRound: 30,
     rule: '沼で足が遅く、毒が2倍。爆風が弱まる',
@@ -65,7 +67,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   snow: {
     id: 'snow',
     name: '雪原',
-    icon: '❄',
+    icon: 'snow',
     minRound: 9,
     maxRound: 30,
     rule: '氷の上は滑る。巨体が乗ると氷が割れる。炎がすぐ消える',
@@ -74,7 +76,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   volcano: {
     id: 'volcano',
     name: '火山',
-    icon: '🌋',
+    icon: 'volcano',
     minRound: 11,
     maxRound: 30,
     rule: '溶岩で炎上。噴気口が打ち上げる。毒が熱で消える',
@@ -83,7 +85,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   pass: {
     id: 'pass',
     name: '関所',
-    icon: '⛩',
+    icon: 'torii',
     minRound: 0,
     maxRound: 0,
     rule: '中央に石橋1本と浅瀬2本の川。橋の取り合い',
@@ -92,7 +94,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   castle: {
     id: 'castle',
     name: '城下町',
-    icon: '🏯',
+    icon: 'castleRed',
     minRound: 0,
     maxRound: 0,
     rule: '建物が密集し、中央に壊せる城壁',
@@ -101,7 +103,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomeDef>> = {
   sanctum: {
     id: 'sanctum',
     name: '神域',
-    icon: '⛪',
+    icon: 'church',
     minRound: 0,
     maxRound: 0,
     rule: '石畳の円形広場。外周の柱がボスの大技で崩れる',

@@ -1,3 +1,4 @@
+import type { VoxelIconName } from '../ui/VoxelIcons';
 import { FACILITY_TYPES, isTerrainBlockId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { ChasmSpec, ObstacleCylinder, PitSpec } from '../physics/PhysicsWorld';
 import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId, type UnitCategory } from '../units/UnitTypes';
@@ -22,6 +23,8 @@ export type StageHazardType =
 export interface StageHazardConfig {
   type: StageHazardType;
   name: string;
+  /** 状態異常のボクセルアイコン名 */
+  icon: VoxelIconName;
   badge: string;
   description: string;
   effectSummary: string;
@@ -1351,7 +1354,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'inferno',
       name: 'マグマ熱波（熱傷・炎上）',
-      badge: '🔥 マグマ熱波',
+      icon: 'fire',
+      badge: 'マグマ熱波',
       description: '3.2秒ごとに地底から熱波が噴き出し、全地上ユニットに炎上ダメージ（DoT）とパニック走りを付与！',
       effectSummary: '地上ユニット定期炎上＋パニック！飛行兵や耐火・高耐久が有利。',
     },
@@ -1420,7 +1424,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'blizzard',
       name: '極低温凍結（フロストバイト）',
-      badge: '❄️ 極低温凍結',
+      icon: 'snow',
+      badge: '極低温凍結',
       description: '常時移動速度40%低下！さらに4.5秒ごとに猛吹雪が吹き荒れ、1.8秒間全ユニットが完全硬直（凍結停止）！',
       effectSummary: '移動速度40%低下＋周期完全凍結！高速機動兵や長射程兵が対抗の鍵。',
     },
@@ -1489,7 +1494,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'poison_swamp',
       name: '腐食毒霧（コロージョン）',
-      badge: '🧪 腐食毒霧',
+      icon: 'potion',
+      badge: '腐食毒霧',
       description: '常時毒スリップダメージ（速度低下）＋装甲腐食により全ユニットの被ダメージが1.5倍に増加！',
       effectSummary: '常時毒＋被ダメージ1.5倍！分裂スライム、召喚ポータル、瞬殺速攻が有効。',
     },
@@ -1560,7 +1566,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'gravity_flux',
       name: '重力特異点（斥力パルス）',
-      badge: '🌀 重力特異点',
+      icon: 'vortex',
+      badge: '重力特異点',
       description: '超低重力(0.25G)＋4秒ごとに空間斥力パルスが炸裂し、全ユニットが空中に跳ね上げられて外側へ弾き飛ばされる！',
       effectSummary: '外周奈落＋周期斥力バウンス！重量級ユニットや地形壁ブロックが生命線。',
     },
@@ -1621,7 +1628,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'thunderstorm',
       name: '電磁嵐（落雷＆連鎖放電）',
-      badge: '⚡ 電磁嵐',
+      icon: 'bolt',
+      badge: '電磁嵐',
       description: '2.5秒ごとに戦場へ落雷直撃！感電したユニットから周囲3m以内の味方へ電流が連鎖しスタン麻痺＋ダメージ！',
       effectSummary: '落雷＆密集連鎖放電！密集配置は厳禁。分散配置と高機動兵で各個撃破せよ。',
     },
@@ -1702,7 +1710,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'bloodlust',
       name: '狂戦士の呪縛（攻撃2倍・被ダメ2倍）',
-      badge: '🩸 狂戦士の呪縛',
+      icon: 'blood',
+      badge: '狂戦士の呪縛',
       description: '移動速度1.6倍、与ダメージ200%、被ダメージ200%！一瞬の激突ですべてが決着する超ハイスピードデスマッチ。',
       effectSummary: '攻撃力2倍・被ダメ2倍・超猛進！盾兵のガードと先制攻撃が勝利の鍵。',
     },
@@ -1773,7 +1782,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'null_magic',
       name: '虚無領域（飛び道具・魔法威力半減）',
-      badge: '🌑 虚無領域',
+      icon: 'voidOrb',
+      badge: '虚無領域',
       description: '矢・銃撃・爆撃・砲弾・魔法・ビームダメージが50%減！純粋な物理打撃と近接戦闘のみが通用する。',
       effectSummary: '遠距離攻撃＆魔法50%カット！重装歩兵や巨大ロボによる白兵戦で押し切れ。',
     },
@@ -1844,7 +1854,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'time_slip',
       name: '時空歪曲（周期加速2倍 ⇄ 超低速0.35倍）',
-      badge: '⏳ 時空歪曲',
+      icon: 'hourglass',
+      badge: '時空歪曲',
       description: '3秒ごとに「時間加速（行動速度2.0倍）」と「時間超減速（行動速度0.35倍）」が交互に切り替わる！',
       effectSummary: '3秒ごとに超高速2倍と超低速0.35倍が反転！タイミングを見極めて間合いを詰めろ。',
     },
@@ -1926,7 +1937,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'chaos_flare',
       name: '日食フレア（索敵縮小＆周期ブラインド）',
-      badge: '🌘 日食フレア',
+      icon: 'eclipse',
+      badge: '日食フレア',
       description: '索敵射程が通常の40%に大幅制限！さらに3.5秒ごとに金環フレアが炸裂して命中照準が激しくブレる！',
       effectSummary: '索敵距離40%制限＋周期ブラインド閃光！接近戦・範囲爆風・奇襲が有利。',
     },
@@ -2001,7 +2013,8 @@ export const ARCADE_STAGES: readonly ArcadeStage[] = [
     hazard: {
       type: 'apocalypse',
       name: '終末崩壊（メテオストライク＆カタストロフィ）',
-      badge: '💥 終末崩壊',
+      icon: 'boom',
+      badge: '終末崩壊',
       description: '3秒ごとに巨大隕石がランダム落下して爆発！さらに熱波の火柱・電磁パルスが複合して襲いかかる究極の天変地異！',
       effectSummary: '周期巨大隕石爆撃＋全状態異常複合！背後空挺と増殖ゲートを駆使して完全制覇せよ！',
     },
@@ -2153,26 +2166,26 @@ export function checkStageRuleViolation(
   if (!rules) return null;
 
   if (rules.maxUnits !== undefined && currentPlacedCount >= rules.maxUnits) {
-    return `⚠ 【ステージ限定ルール】この面は最大 ${rules.maxUnits} 体までしか配置できません！`;
+    return `【ステージ限定ルール】この面は最大 ${rules.maxUnits} 体までしか配置できません！`;
   }
 
   const isFac = itemId in FACILITY_TYPES;
   if (isFac) {
     if (rules.banFacilities) {
-      return `⚠ 【ステージ限定ルール】この面では施設の配置が禁止されています！`;
+      return `【ステージ限定ルール】この面では施設の配置が禁止されています！`;
     }
     if (rules.allowedCategories && !rules.allowedCategories.includes('facility')) {
-      return `⚠ 【ステージ限定ルール】この面では施設は使用できません（${rules.title}）`;
+      return `【ステージ限定ルール】この面では施設は使用できません（${rules.title}）`;
     }
   } else {
     const uid = itemId as UnitTypeId;
     if (rules.bannedUnitIds && rules.bannedUnitIds.includes(uid)) {
-      return `⚠ 【ステージ限定ルール】「${UNIT_TYPES[uid].name}」はこの面では使用禁止です！`;
+      return `【ステージ限定ルール】「${UNIT_TYPES[uid].name}」はこの面では使用禁止です！`;
     }
     if (rules.allowedCategories) {
       const cat = UNIT_TYPES[uid].category;
       if (!rules.allowedCategories.includes(cat)) {
-        return `⚠ 【ステージ限定ルール】「${UNIT_TYPES[uid].name}」はカテゴリ制限により使用できません（${rules.title}）`;
+        return `【ステージ限定ルール】「${UNIT_TYPES[uid].name}」はカテゴリ制限により使用できません（${rules.title}）`;
       }
     }
   }

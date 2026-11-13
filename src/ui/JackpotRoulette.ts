@@ -1,3 +1,4 @@
+import { vx } from './VoxelIcons';
 import type { SoundManager } from '../audio/SoundManager';
 import { JackpotChest3D } from '../render/JackpotChest3D';
 import { JACKPOT_REWARDS, type ChestTier, type JackpotReward } from '../game/RogueJackpot';
@@ -446,7 +447,7 @@ export class JackpotRoulette {
     const chip = document.createElement('div');
     chip.className = `jk-chip r${reward.rarity}`;
     chip.title = `${reward.name}: ${reward.detail}`;
-    chip.textContent = reward.icon;
+    chip.innerHTML = vx(reward.icon);
     this.strip.appendChild(chip);
   }
 

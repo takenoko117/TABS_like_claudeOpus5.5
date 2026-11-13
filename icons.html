@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ボクセルアイコン一覧</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      html, body { overflow: auto; touch-action: auto; }
+      body { padding: 16px; }
+      h1 { font: 400 22px/1.2 var(--font-pixel); margin: 0 0 4px; }
+      p { color: var(--sub); font-size: 13px; margin: 0 0 14px; }
+      .bg-toggle { margin-bottom: 14px; display: flex; gap: 6px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+      .cell { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; }
+      .cell code { font-size: 11px; color: var(--sub); }
+      .sizes { display: flex; align-items: flex-end; gap: 6px; font-size: 14px; }
+      body.light { background: #9fb7c9; }
+      .samples { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+    </style>
+  </head>
+  <body>
+    <h1>ボクセルアイコン一覧</h1>
+    <p>src/ui/VoxelIcons.ts の全アイコン。大・中・文字サイズの 3 段で表示（開発用ページ）。</p>
+    <div class="bg-toggle">
+      <button type="button" class="ctrl-btn" id="bg">背景を切り替え</button>
+    </div>
+    <div class="samples" id="samples"></div>
+    <div class="grid" id="grid"></div>
+    <script type="module" src="/src/iconGallery.ts"></script>
+  </body>
+</html>

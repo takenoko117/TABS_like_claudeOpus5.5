@@ -71,7 +71,7 @@ export class BannerFx {
     this.el.dataset.key = item.key;
     this.el.className = `fx-banner tier${item.tier} ${item.kind}`;
     setVoxelText(this.titleEl, item.text, this.optionsFor(item.tier));
-    this.subEl.textContent = item.sub;
+    this.subEl.innerHTML = item.sub;
     this.countEl.textContent = item.count > 1 ? `×${item.count}` : '';
     if (merged) retrigger(this.countEl, 'bump');
     else {

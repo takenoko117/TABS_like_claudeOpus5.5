@@ -1,3 +1,4 @@
+import { vx } from './VoxelIcons';
 import type { Battle } from '../game/Battle';
 import {
   getDeployCooldown,
@@ -49,7 +50,7 @@ import { BannerFx } from '../fx/ui/BannerFx';
 import { FloatText } from '../fx/ui/FloatText';
 import { LagBar } from '../fx/ui/LagBar';
 import { TweenNumber } from '../fx/ui/TweenNumber';
-import { retrigger, stagger } from '../fx/ui/dom';
+import { retrigger, setHtml, stagger } from '../fx/ui/dom';
 
 /**
  * 要素の中の数字を 0 からカウントアップする（「12 / 8」「3:05」「75%」のような文字も、数字の部分だけ数える）。
@@ -200,7 +201,7 @@ function relicVoxel(id: FacilityTypeId): string {
   return propVoxel(`relic:${id}`, getFacilityIconSvg(id));
 }
 
-const GOLD_VOXEL = propVoxel('gold', '<span class="td-emoji">💰</span>');
+const GOLD_VOXEL = propVoxel('gold', `<span class="td-emoji">${vx('coin')}</span>`);
 
 /** 簡易チュートリアルの1ページ */
 export interface TDTutorialPage {
@@ -363,10 +364,10 @@ export class RealtimeTDHud {
       </div>
       <div class="td-tools">
         <button type="button" class="td-btn td-auto" data-td="auto" title="クールタイムが明けたカードを自動で出撃させる">AUTO</button>
-        <button type="button" class="td-btn" data-td="pause" title="一時停止 (P)">⏸</button>
+        <button type="button" class="td-btn" data-td="pause" title="一時停止 (P)">${vx('pause')}</button>
         <button type="button" class="td-btn" data-td="howto" title="あそびかた（見ている間は止まる）">？</button>
-        <button type="button" class="td-btn" data-td="settings" title="設定（開いている間は止まる）">⚙</button>
-        <button type="button" class="td-btn" data-td="retire" title="リタイアしてタイトルへ">🏳</button>
+        <button type="button" class="td-btn" data-td="settings" title="設定（開いている間は止まる）">${vx('gear')}</button>
+        <button type="button" class="td-btn" data-td="retire" title="リタイアしてタイトルへ">${vx('flag')}</button>
       </div>
       <div class="td-announce hidden"></div>
       <div class="td-levelup hidden" aria-hidden="true"></div>
@@ -485,11 +486,11 @@ export class RealtimeTDHud {
     const versus = this.host.getRun()?.duel ?? false;
     this.root.classList.toggle('td-versus', versus);
     this.elVs.classList.toggle('hidden', !versus);
-    // 観戦では操作の UI を隠し、🏳 は「観戦をやめる」にする
+    // 観戦では操作の UI を隠し、旗のボタンは「観戦をやめる」にする
     const watching = this.spectating;
     this.root.classList.toggle('td-spectate', watching);
     const retire = this.root.querySelector<HTMLElement>('[data-td="retire"]')!;
-    retire.textContent = watching ? '✖' : '🏳';
+    retire.innerHTML = watching ? `${vx('close')}` : `${vx('flag')}`;
     retire.title = watching ? '観戦をやめて部屋の一覧へ戻る' : 'リタイアしてタイトルへ';
     // 対戦のゲスト（赤）は、カードのモデルや城の HP バーを赤の配色にする
     const team = this.host.getRun()?.team ?? 0;
@@ -549,23 +550,23 @@ export class RealtimeTDHud {
         case 'terrain': {
           const b = td.terrainBiome ? BIOMES[td.terrainBiome] : null;
           const t = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
-          this.announce('地形変化!!', 'terrain', 1, `🌋 ${b ? `${b.icon}${b.name}` : ''}${t ? `（${t.name}: ${t.effect}）` : ''}`);
+          this.announce('地形変化!!', 'terrain', 1, `${vx('volcano')} ${b ? `${vx(b.icon)}${b.name}` : ''}${t ? `（${t.name}: ${t.effect}）` : ''}`);
           this.host.emitFx('terrain_shift', 1);
           break;
         }
         case 'boss':
-          this.announce('最終ボス出現!!', 'boss', 2, '👹 倒せば勝利が近い');
+          this.announce('最終ボス出現!!', 'boss', 2, `${vx('oni')} 倒せば勝利が近い`);
           this.host.emitFx('boss_spawn', 2);
           break;
         case 'wild_boss':
-          this.announce('ヌシ出現!!', 'wild', 2, '👑 金角のヌシを倒すと宝箱');
+          this.announce('ヌシ出現!!', 'wild', 2, `${vx('crown')} 金角のヌシを倒すと宝箱`);
           this.host.emitFx('boss_spawn', 2);
           break;
         case 'wild_boss_down':
           if (watching) {
             this.announce(ev.value < 0 ? 'ヌシが倒れた' : `${ev.value === 0 ? '青' : '赤'}がヌシを討ち取った!!`, 'wild', 1);
           } else if (ev.value === td.team) {
-            this.announce('討ち取った!!', 'wild', 2, '👑 ヌシの宝箱を獲得');
+            this.announce('討ち取った!!', 'wild', 2, `${vx('crown')} ヌシの宝箱を獲得`);
             this.host.emitFx('boss_down', 2);
           } else if (ev.value < 0) {
             this.announce('ヌシが倒れた', 'wild', 1);
@@ -575,10 +576,10 @@ export class RealtimeTDHud {
           }
           break;
         case 'counter':
-          this.announce('敵基地の反撃!!', 'counter', 1, `🔥 反撃 ${ev.value * 10}%`);
+          this.announce('敵基地の反撃!!', 'counter', 1, `${vx('fire')} 反撃 ${ev.value * 10}%`);
           break;
         case 'elite':
-          this.announce(`WAVE ${ev.value} エリート`, 'elite', 1, '😈 強敵が混ざっている');
+          this.announce(`WAVE ${ev.value} エリート`, 'elite', 1, `${vx('demon')} 強敵が混ざっている`);
           break;
         case 'wave':
           this.announce(`WAVE ${ev.value}`, 'wave', 0);
@@ -741,13 +742,13 @@ export class RealtimeTDHud {
 
   private renderTop(): void {
     this.elTop.innerHTML = `
-      <div class="td-base ally"><span class="td-base-label">🏰 自軍の城</span><div class="td-hp"><i></i></div><b class="td-hp-num"></b></div>
+      <div class="td-base ally"><span class="td-base-label">${vx('castle')} 自軍の城</span><div class="td-hp"><i></i></div><b class="td-hp-num"></b></div>
       <div class="td-clock">
         <div class="td-wave"></div>
         <div class="td-time"></div>
         <div class="td-terrain"></div>
       </div>
-      <div class="td-base enemy"><span class="td-base-label">敵軍の城 🏯</span><div class="td-hp"><i></i></div><b class="td-hp-num"></b></div>
+      <div class="td-base enemy"><span class="td-base-label">敵軍の城 ${vx('castleRed')}</span><div class="td-hp"><i></i></div><b class="td-hp-num"></b></div>
     `;
   }
 
@@ -766,23 +767,25 @@ export class RealtimeTDHud {
     if (td.enemyBase) setBase('.td-base.enemy', td.enemyBase.hp, td.enemyBase.maxHp, td.enemyBase.inLowHpStage);
     const timeEl = this.elTop.querySelector<HTMLElement>('.td-time')!;
     const over = !td.duel && td.time >= TD_DURATION_SECONDS;
+    // 城の名前・時間・地形は毎フレーム呼ばれるので、setHtml で中身が変わったときだけ書き換える
+    const allyLabel = this.elTop.querySelector('.td-base.ally .td-base-label')!;
+    const enemyLabel = this.elTop.querySelector('.td-base.enemy .td-base-label')!;
+    const waveEl = this.elTop.querySelector('.td-wave')!;
     if (td.duel) {
-      // 対戦: 城の名前を「あなた／相手」にし、制限時間の残りを出す（観戦は「青／赤」）
+      // 対戦: 城の名前を「あなた／相手」にし、制限時間の残りを出す（観戦は「青／赤」）。城の旗は陣営の色
       const watching = this.spectating;
-      this.elTop.querySelector('.td-base.ally .td-base-label')!.textContent = watching
-        ? '🏰 青の城（ホスト）'
-        : `🏰 あなたの城（${td.team === 0 ? '青' : '赤'}）`;
-      this.elTop.querySelector('.td-base.enemy .td-base-label')!.textContent = watching
-        ? '赤の城（ゲスト） 🏯'
-        : `相手の城（${td.team === 0 ? '赤' : '青'}） 🏯`;
-      this.elTop.querySelector('.td-wave')!.textContent = watching ? '👁 観戦中' : '⚔ 対戦';
+      const allyCastle = vx(watching || td.team === 0 ? 'castle' : 'castleRed');
+      const enemyCastle = vx(watching || td.team === 0 ? 'castleRed' : 'castle');
+      setHtml(allyLabel, watching ? `${allyCastle} 青の城（ホスト）` : `${allyCastle} あなたの城（${td.team === 0 ? '青' : '赤'}）`);
+      setHtml(enemyLabel, watching ? `赤の城（ゲスト） ${enemyCastle}` : `相手の城（${td.team === 0 ? '赤' : '青'}） ${enemyCastle}`);
+      setHtml(waveEl, watching ? `${vx('eye')} 観戦中` : `${vx('swords')} 対戦`);
       const left = Math.max(0, TD_DUEL_TIME_LIMIT - td.time);
       timeEl.textContent = formatTime(left);
       timeEl.classList.toggle('over', left <= 60);
     } else {
-      this.elTop.querySelector('.td-base.ally .td-base-label')!.textContent = '🏰 自軍の城';
-      this.elTop.querySelector('.td-base.enemy .td-base-label')!.textContent = '敵軍の城 🏯';
-      this.elTop.querySelector('.td-wave')!.textContent = over ? '最終決戦' : `WAVE ${td.wave} / ${TD_WAVE_COUNT}`;
+      setHtml(allyLabel, `${vx('castle')} 自軍の城`);
+      setHtml(enemyLabel, `敵軍の城 ${vx('castleRed')}`);
+      setHtml(waveEl, over ? '最終決戦' : `WAVE ${td.wave} / ${TD_WAVE_COUNT}`);
       timeEl.textContent = over ? `+${formatTime(td.time - TD_DURATION_SECONDS)}` : formatTime(TD_DURATION_SECONDS - td.time);
       timeEl.classList.toggle('over', over);
     }
@@ -791,11 +794,11 @@ export class RealtimeTDHud {
     if (biome) {
       const trait = td.terrainTrait ? TRAITS[td.terrainTrait] : null;
       const next = Math.max(0, (td.terrainIndex + 1) * TD_TERRAIN_SECONDS - td.time);
-      const label = `${biome.icon}${biome.name}${trait ? `・${trait.name}` : ''}`;
-      terrainEl.textContent = over ? label : `${label} ｜ 変化まで ${formatTime(next)}`;
+      const label = `${vx(biome.icon)}${biome.name}${trait ? `・${trait.name}` : ''}`;
+      setHtml(terrainEl, over ? label : `${label} ｜ 変化まで ${formatTime(next)}`);
       terrainEl.title = `${biome.rule}${trait ? `／${trait.effect}` : ''}`;
       terrainEl.classList.toggle('soon', !over && next <= 10);
-    } else terrainEl.textContent = '';
+    } else setHtml(terrainEl, '');
     const tools = this.root.querySelector('.td-tools')!;
     tools.querySelector('[data-td="auto"]')!.classList.toggle('active', td.autoDeploy);
     tools.querySelector('[data-td="pause"]')!.classList.toggle('active', this.host.isPaused());
@@ -849,7 +852,7 @@ export class RealtimeTDHud {
     this.elLevelUp.innerHTML = `
       <div class="td-lu-burst">${cubes}</div>
       <div class="td-lu-text">${letters}</div>
-      <div class="td-lu-lv">Lv ${level - 1} ▶ <b>${level}</b></div>`;
+      <div class="td-lu-lv">Lv ${level - 1} ${vx('arrowR')} <b>${level}</b></div>`;
     // 続けてレベルが上がったときも演出を最初から流す
     this.elLevelUp.classList.add('hidden');
     void this.elLevelUp.offsetWidth;
@@ -1048,7 +1051,7 @@ export class RealtimeTDHud {
             ? relicVoxel(o.relicId)
             : o.kind === 'gold'
               ? GOLD_VOXEL
-              : '<span class="td-emoji">➕</span>';
+              : `<span class="td-emoji">${vx('plus')}</span>`;
         return `<button type="button" class="td-choice-card ${o.rarity}" data-choose="${i}" ${waiting ? 'disabled' : ''}>
           <span class="td-choice-key">${i + 1}</span>
           <span class="td-choice-rarity">${RARITY_LABELS[o.rarity]}</span>
@@ -1062,7 +1065,7 @@ export class RealtimeTDHud {
         <h2>LEVEL UP! <small>強化を1つ選ぶ${revealed > 1 ? `（あと${revealed}回）` : ''}</small></h2>
         <div class="td-choice-cards">${cards}</div>
         <div class="td-choice-foot">
-          <button type="button" class="td-btn" data-td="reroll" ${td.money < price || waiting ? 'disabled' : ''}>🔄 引き直す（${price === 0 ? `無料 残り${td.run.rerollsLeft}` : `${price}G`}）</button>
+          <button type="button" class="td-btn" data-td="reroll" ${td.money < price || waiting ? 'disabled' : ''}>${vx('refresh')} 引き直す（${price === 0 ? `無料 残り${td.run.rerollsLeft}` : `${price}G`}）</button>
           <small>${td.duel ? '対戦中は選んでいる間も時間が進みます' : '選んでいる間は時間が止まります'}</small>
         </div>
       </div>`;
@@ -1244,7 +1247,7 @@ export class RealtimeTDHud {
   /** 宝箱の中身を短く知らせる */
   showChestRewards(rewards: readonly JackpotReward[]): void {
     if (rewards.length === 0) return;
-    this.announce('宝箱ゲット!!', 'chest', 1, `🎁 ${rewards.map((r) => `${r.icon}${r.name}`).join(' ')}`);
+    this.announce('宝箱ゲット!!', 'chest', 1, `${vx('gift')} ${rewards.map((r) => `${vx(r.icon)}${r.name}`).join(' ')}`);
   }
 
   // ---- モーダル（スターター選択・リザルト） ----
@@ -1258,13 +1261,13 @@ export class RealtimeTDHud {
       </button>`,
     ).join('');
     this.showModal(`
-      <h2>🏰 タワーディフェンス</h2>
+      <h2>${vx('castle')} タワーディフェンス</h2>
       <p class="td-lead">10分以内に敵の城を破壊せよ！ 敵を倒して経験値をため、自軍を強化しよう。敵の城を攻撃すると反撃を食らうので、攻めるタイミングに注意。</p>
       <h3>スターターを選ぶ</h3>
       <div class="td-starters">${cards}</div>
       <div class="td-modal-actions">
-        <button type="button" class="td-btn" data-td="howto">❓ あそびかた</button>
-        <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
+        <button type="button" class="td-btn" data-td="howto">${vx('question')} あそびかた</button>
+        <button type="button" class="td-btn" data-td="title">${vx('home')} タイトルへ</button>
       </div>
     `);
   }
@@ -1330,7 +1333,7 @@ export class RealtimeTDHud {
     const time = formatTime(td.time);
     this.closeChoice();
     this.showModal(`
-      <h2 class="${won ? 'win' : 'lose'}">${won ? '🏆 敵軍の城を破壊！' : '💥 城が陥落…'}</h2>
+      <h2 class="${won ? 'win' : 'lose'}">${won ? `${vx('trophy')} 敵軍の城を破壊！` : `${vx('boom')} 城が陥落…`}</h2>
       <div class="td-result-grid">
         <div><small>経過時間</small><b>${time}</b></div>
         <div><small>到達 WAVE</small><b>${td.wave}</b></div>
@@ -1340,8 +1343,8 @@ export class RealtimeTDHud {
         <div><small>反撃を受けた回数</small><b>${td.counters}</b></div>
       </div>
       <div class="td-modal-actions">
-        <button type="button" class="td-btn primary" data-td="retry">↺ もう一度</button>
-        <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
+        <button type="button" class="td-btn primary" data-td="retry">${vx('refresh')} もう一度</button>
+        <button type="button" class="td-btn" data-td="title">${vx('home')} タイトルへ</button>
       </div>
     `);
   }
@@ -1391,7 +1394,7 @@ export class RealtimeTDHud {
       (_, i) =>
         `<button type="button" class="td-tut-dot${i === index ? ' on' : ''}" data-tut-page="${i}" aria-label="${i + 1}ページ目"></button>`,
     ).join('');
-    const prev = index > 0 ? '<button type="button" class="td-btn" data-td="tut-prev">◀ もどる</button>' : '';
+    const prev = index > 0 ? `<button type="button" class="td-btn" data-td="tut-prev">${vx('arrowL')} もどる</button>` : '';
     this.elTutorial.innerHTML = `
       <div class="td-tut-card" style="--tut-color: ${page.color}">
         <div class="td-tut-cubes" aria-hidden="true">${'<i></i>'.repeat(6)}</div>
@@ -1404,10 +1407,10 @@ export class RealtimeTDHud {
         <ul class="td-tut-lines">${page.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
         <div class="td-tut-dots">${dots}</div>
         <div class="td-tut-actions">
-          <button type="button" class="td-btn td-tut-skip" data-td="tut-skip">スキップ ⏭</button>
+          <button type="button" class="td-btn td-tut-skip" data-td="tut-skip">スキップ ${vx('ffwd2')}</button>
           <span class="td-tut-spacer"></span>
           ${prev}
-          <button type="button" class="td-btn primary td-tut-next" data-td="tut-next">${last ? 'たたかう！ ⚔' : 'つぎへ ▶'}</button>
+          <button type="button" class="td-btn primary td-tut-next" data-td="tut-next">${last ? `たたかう！ ${vx('swords')}` : `つぎへ ${vx('arrowR')}`}</button>
         </div>
       </div>
     `;

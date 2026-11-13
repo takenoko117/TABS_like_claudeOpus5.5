@@ -1,5 +1,7 @@
 // TD オンライン対戦（対面型）の画面（ロビー・試合中の対戦パネル・リザルト）の HTML を組み立てる。
 // 表示の切り替えとクリックの処理は RealtimeTDHud が受け持つ。
+import { vx } from './VoxelIcons';
+import { setHtml } from '../fx/ui/dom';
 import { TD_DUEL_TIME_LIMIT, type TDRun } from '../game/RealtimeTDMode';
 import { ROGUE_STARTERS } from '../game/RogueliteMode';
 import type { TDLockstep } from '../game/TDDuel';
@@ -99,13 +101,13 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
       </div>
       <div class="td-modal-actions">
         <button type="button" class="td-btn" data-td="vs-back">← 友人対戦へ</button>
-        <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
+        <button type="button" class="td-btn" data-td="title">${vx('home')} タイトルへ</button>
       </div>
     `;
   }
   if (vs.phase === 'connecting') {
     return `
-      <h2>🌐 オンライン対戦</h2>
+      <h2>${vx('globe')} オンライン対戦</h2>
       <p class="td-lead">部屋「${esc(vs.room)}」に${vs.spectating ? '観戦で' : ''}接続しています…</p>
       <div class="td-modal-actions"><button type="button" class="td-btn" data-td="vs-leave">やめる</button></div>
     `;
@@ -140,7 +142,7 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
     })
     .join('');
   return `
-    <h2>🌐 部屋「${esc(vs.room)}」</h2>
+    <h2>${vx('globe')} 部屋「${esc(vs.room)}」</h2>
     <p class="td-lead">あなたは <b class="td-vs-color ${vs.slot === 1 ? 'red' : 'blue'}">${slotColorName(vs.slot)}</b>（${vs.slot === 0 ? '左' : '右'}の城）です。</p>
     <div class="td-vs-slots">${slotCards}</div>
     <h3>スターターを選ぶ</h3>
@@ -204,17 +206,17 @@ export function updateVersusPanel(el: HTMLElement, ls: TDLockstep | null): void 
   const s = String(Math.floor(left % 60)).padStart(2, '0');
   if (ls.slot === null) {
     // 観戦: 両陣営の様子と、追いついているかを出す
-    head.textContent = '👁 観戦中（青 vs 赤）';
+    setHtml(head, `${vx('eye')} 観戦中（青 vs 赤）`);
     head.className = 'td-vs-head';
     el.querySelector<HTMLElement>('.td-vs-row')!.classList.add('hidden');
     el.querySelector<HTMLElement>('.td-vs-stats')!.textContent =
       `青 Lv${mine.level}・撃破${mine.kills}・狩り${mine.wildKills} ｜ 赤 Lv${opp.level}・撃破${opp.kills}・狩り${opp.wildKills} ｜ 残り ${m}:${s}`;
     const net = el.querySelector<HTMLElement>('.td-vs-net')!;
     if (ls.catchingUp) {
-      net.textContent = `⏩ 試合に追いついています…（${(ls.lagTurns / 10).toFixed(0)}秒遅れ）`;
+      setHtml(net, `${vx('ffwd')} 試合に追いついています…（${(ls.lagTurns / 10).toFixed(0)}秒遅れ）`);
       net.className = 'td-vs-net wait';
     } else if (ls.stalled && ls.stallTime >= STALL_NOTICE_SECONDS) {
-      net.textContent = `⏳ 通信を待っています… ${ls.stallTime.toFixed(1)}s`;
+      setHtml(net, `${vx('hourglass')} 通信を待っています… ${ls.stallTime.toFixed(1)}s`);
       net.className = 'td-vs-net wait';
     } else {
       net.textContent = '';
@@ -224,7 +226,7 @@ export function updateVersusPanel(el: HTMLElement, ls: TDLockstep | null): void 
   }
   el.querySelector<HTMLElement>('.td-vs-row')!.classList.remove('hidden');
   const color = slotColorName(ls.slot);
-  head.textContent = `⚔ あなた：${color}（${ls.slot === 0 ? '左' : '右'}の城）`;
+  setHtml(head, `${vx('swords')} あなた：${color}（${ls.slot === 0 ? '左' : '右'}の城）`);
   head.className = `td-vs-head ${ls.slot === 1 ? 'red' : 'blue'}`;
   const base = opp.playerBase;
   const ratio = base && base.maxHp > 0 ? Math.max(0, base.hp) / base.maxHp : 0;
@@ -233,10 +235,10 @@ export function updateVersusPanel(el: HTMLElement, ls: TDLockstep | null): void 
   el.querySelector<HTMLElement>('.td-vs-stats')!.textContent = `相手 Lv${opp.level} ｜ 撃破 ${opp.kills} ｜ 狩り ${opp.wildKills} ｜ 残り ${m}:${s}`;
   const net = el.querySelector<HTMLElement>('.td-vs-net')!;
   if (ls.desyncTurn !== null) {
-    net.textContent = '⚠ 相手と戦況がずれました（勝敗は先に届いた判定で決まります）';
+    setHtml(net, `${vx('warn')} 相手と戦況がずれました（勝敗は先に届いた判定で決まります）`);
     net.className = 'td-vs-net warn';
   } else if (ls.stalled && ls.stallTime >= STALL_NOTICE_SECONDS) {
-    net.textContent = `⏳ 相手の通信を待っています… ${ls.stallTime.toFixed(1)}s`;
+    setHtml(net, `${vx('hourglass')} 相手の通信を待っています… ${ls.stallTime.toFixed(1)}s`);
     net.className = 'td-vs-net wait';
   } else {
     net.textContent = '';
@@ -252,9 +254,9 @@ const REASON_TEXT: Record<TDVersusEndReason, Record<TDVersusVerdict, string>> = 
 };
 
 const VERDICT_TITLE: Record<TDVersusVerdict, string> = {
-  win: '🏆 勝利！',
-  lose: '💥 敗北…',
-  draw: '🤝 引き分け',
+  win: `${vx('trophy')} 勝利！`,
+  lose: `${vx('boom')} 敗北…`,
+  draw: `${vx('handshake')} 引き分け`,
 };
 
 /** 対戦のリザルト */
@@ -283,9 +285,9 @@ export function renderVersusResult(
       <div><small>城の残り（あなた / 相手）</small><b>${hpText(mine)} / ${hpText(opponent)}</b></div>
     </div>
     <div class="td-modal-actions">
-      ${canRematch ? '<button type="button" class="td-btn primary" data-td="vs-lobby">↺ 同じ部屋で再戦</button>' : ''}
+      ${canRematch ? `<button type="button" class="td-btn primary" data-td="vs-lobby">↺ 同じ部屋で再戦</button>` : ''}
       <button type="button" class="td-btn" data-td="vs-leave">退室</button>
-      <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
+      <button type="button" class="td-btn" data-td="title">${vx('home')} タイトルへ</button>
     </div>
   `;
 }
@@ -298,7 +300,7 @@ export function renderVersusWatchResult(blue: TDRun, red: TDRun, winner: number 
     const b = run.playerBase;
     return b ? `${Math.round((Math.max(0, b.hp) / b.maxHp) * 100)}%` : '-';
   };
-  const title = winner === null ? '🤝 引き分け' : `${winner === 0 ? '青' : '赤'}の勝利！`;
+  const title = winner === null ? `${vx('handshake')} 引き分け` : `${winner === 0 ? '青' : '赤'}の勝利！`;
   const reasonText: Record<TDVersusEndReason, string> = {
     castle: winner === null ? '両方の城が同時に陥落' : '城を落として決着',
     time: '時間切れ。城の残り HP で判定',
@@ -320,7 +322,7 @@ export function renderVersusWatchResult(blue: TDRun, red: TDRun, winner: number 
     <p class="td-vs-note">同じ部屋で次の試合が始まると、続けて観戦できます。</p>
     <div class="td-modal-actions">
       <button type="button" class="td-btn primary" data-td="vs-leave">部屋の一覧へ</button>
-      <button type="button" class="td-btn" data-td="title">🏠 タイトルへ</button>
+      <button type="button" class="td-btn" data-td="title">${vx('home')} タイトルへ</button>
     </div>
   `;
 }

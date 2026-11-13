@@ -1,3 +1,4 @@
+import type { VoxelIconName } from '../ui/VoxelIcons';
 import { Vector3 } from 'three';
 import { fieldGoldBonus, getRogueFieldOptions, type FieldOption } from '../field/BiomeDefs';
 import type { DamageEvent } from '../combat/CombatSystem';
@@ -57,7 +58,8 @@ export const TAG_IDS: readonly TagId[] = [
 
 export interface TagInfo {
   name: string;
-  icon: string;
+  /** ボクセルのアイコン名（画面では vx() で描く） */
+  icon: VoxelIconName;
   tier2: string;
   tier4: string;
 }
@@ -66,61 +68,61 @@ export interface TagInfo {
 export const TAG_INFO: Readonly<Record<TagId, TagInfo>> = {
   swarm: {
     name: '群れ',
-    icon: '👥',
+    icon: 'people',
     tier2: '群れの兵の被ダメージ-15%',
     tier4: '味方が倒れるたび、群れの兵の攻撃+5%（ラウンド中累積・上限+50%）',
   },
   ranged: {
     name: '射撃',
-    icon: '🏹',
+    icon: 'arrow',
     tier2: '射撃の兵の攻撃+20%',
     tier4: 'さらに攻撃+25%、当たった敵がよろめく',
   },
   explosive: {
     name: '爆発',
-    icon: '💥',
+    icon: 'boom',
     tier2: '爆発の兵の攻撃+25%',
     tier4: '爆発で倒れた敵が小爆発する（誘爆・4段まで）',
   },
   impact: {
     name: '衝撃',
-    icon: '🔨',
+    icon: 'hammer',
     tier2: '吹き飛ばし+30%',
     tier4: '吹き飛んだ敵が他の敵に当たるとダメージ（質量弾）',
   },
   fire: {
     name: '炎',
-    icon: '🔥',
+    icon: 'fire',
     tier2: '燃焼時間+2秒',
     tier4: '燃えている敵が倒れると周囲3mに延焼',
   },
   shock: {
     name: '雷',
-    icon: '⚡',
+    icon: 'bolt',
     tier2: '感電時間+0.8秒',
     tier4: '感電した敵の被ダメージ+25%',
   },
   poison: {
     name: '毒',
-    icon: '☠️',
+    icon: 'skull',
     tier2: '毒の時間+2秒',
     tier4: '毒で倒れた敵から毒霧が広がる',
   },
   clone: {
     name: '分身',
-    icon: '👯',
+    icon: 'clone',
     tier2: '複製・分裂で生まれた個体の攻撃+25%',
     tier4: '分身が倒れると煙幕で周囲の敵が1.5秒止まる',
   },
   mobile: {
     name: '機動',
-    icon: '💨',
+    icon: 'wind',
     tier2: '開戦3秒間、機動の兵の移動速度+40%',
     tier4: '敵を倒すと3秒間、移動速度+50%・攻撃+30%',
   },
   giant: {
     name: '巨体',
-    icon: '🗿',
+    icon: 'stone',
     tier2: '巨体の兵のHP+25%',
     tier4: '巨体が倒れると地震が起き、周囲6mの敵を吹き飛ばす',
   },
