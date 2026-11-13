@@ -17,6 +17,7 @@ import {
   LineSegments,
   Matrix4,
   Mesh,
+  type Object3D,
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshPhysicalMaterial,
@@ -66,6 +67,7 @@ import {
   MOUTH_LASER_PIERCE,
 } from '../units/HayatoHead';
 import { J } from '../units/Skeleton';
+import type { OutlineDetail, ShadowDetail } from './RenderDetail';
 import type { Unit } from '../units/Unit';
 import { TEAM_COLORS, type Team, type UnitType, type UnitTypeId, type WeaponKind } from '../units/UnitTypes';
 
@@ -2760,11 +2762,14 @@ function addUnitOutline(mesh: Mesh, teamColor: number): void {
     [0x000000, OUTLINE_OUTER],
     [teamColor, OUTLINE_INNER],
   ];
-  for (const [color, thickness] of layers) {
+  for (let li = 0; li < layers.length; li++) {
+    const [color, thickness] = layers[li];
     const hull = new Mesh(mesh.geometry, getOutlineMaterial(color));
     hull.castShadow = false;
     hull.receiveShadow = false;
     hull.userData.isOutline = true;
+    /** 0: 外側の黒 / 1: 内側の陣営色（描画の簡略化で使い分ける） */
+    hull.userData.outlineLayer = li;
     fitOutlineHull(hull, mesh.scale.x, thickness);
     // 部位破壊などで親のジオメトリが差し替わったら追従する
     hull.onBeforeRender = () => {
@@ -3348,6 +3353,13 @@ export class VoxelCharacterVisual {
   readonly group = new Group();
   private readonly material: MeshLambertMaterial;
   private readonly parts: Record<BodyPartId, DestructiblePart>;
+  /** 描画の簡略化（setRenderDetail）の対象。コンストラクタの最後に集める */
+  private readonly outerHulls: Mesh[] = [];
+  private readonly innerHulls: Mesh[] = [];
+  /** 影を落とすメッシュと、影を残す最低の段階（0: 常に / 1: 段階1以上 / 2: 段階2のみ） */
+  private readonly shadowCasters: Array<{ mesh: Mesh; minLevel: ShadowDetail }> = [];
+  private outlineDetail: OutlineDetail = 2;
+  private shadowDetail: ShadowDetail = 2;
   private readonly weaponMesh: Mesh | null;
   private readonly bowMesh: Mesh | null;
 
@@ -3986,7 +3998,45 @@ export class VoxelCharacterVisual {
       this.ramielAtFieldInner = makeRamielAtLayer(0.55 * s, 0x38bdf8, 0xffffff);
     }
 
+    this.collectRenderDetailTargets();
     this.sync();
+  }
+
+  /** アウトラインの殻と、影を落とす部位を集める（描画の簡略化で表示を切り替える） */
+  private collectRenderDetailTargets(): void {
+    const torso = this.parts.torso.mesh;
+    const head = this.parts.head.mesh;
+    const thinnable = new Set<Object3D>();
+    for (const id of Object.keys(this.parts) as BodyPartId[]) thinnable.add(this.parts[id].mesh);
+    if (this.weaponMesh) thinnable.add(this.weaponMesh);
+    if (this.bowMesh) thinnable.add(this.bowMesh);
+    this.group.traverse((o) => {
+      if (!(o instanceof Mesh)) return;
+      if (o.userData.isOutline) {
+        (o.userData.outlineLayer === 1 ? this.innerHulls : this.outerHulls).push(o);
+        return;
+      }
+      if (!o.castShadow) return;
+      // 標準の部位と武器だけを間引く（特殊ユニットの大きな飾りは影を残す）
+      const minLevel: ShadowDetail = o === torso || !thinnable.has(o) ? 0 : o === head ? 1 : 2;
+      this.shadowCasters.push({ mesh: o, minLevel });
+    });
+  }
+
+  /**
+   * 描画の細かさを切り替える（RenderDetail.unitRenderDetail で決めた値）。
+   * 描画だけの変更なので、端末ごとに違ってよい
+   */
+  setRenderDetail(outline: OutlineDetail, shadow: ShadowDetail): void {
+    if (outline !== this.outlineDetail) {
+      this.outlineDetail = outline;
+      for (const h of this.outerHulls) h.visible = outline === 2;
+      for (const h of this.innerHulls) h.visible = outline >= 1;
+    }
+    if (shadow !== this.shadowDetail) {
+      this.shadowDetail = shadow;
+      for (const c of this.shadowCasters) c.mesh.castShadow = shadow >= c.minLevel;
+    }
   }
 
   /** 物理粒子の現在位置に合わせて各ボクセルメッシュの座標・回転・発光色を更新する */

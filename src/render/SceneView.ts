@@ -1,3 +1,4 @@
+import { unitRenderDetail } from './RenderDetail';
 import {
   AmbientLight,
   BoxGeometry,
@@ -232,6 +233,8 @@ export class SceneView {
   private readonly camOffset: CameraOffset = { x: 0, y: 0, z: 0, roll: 0, fovScale: 1 };
   /** 自動画質に合わせた粒子の間引き（1 で全部出す） */
   private particleScale = 1;
+  /** 現在の画質段階（ユニットの描画の簡略化に使う） */
+  private qualityLevel: 0 | 1 | 2 = 2;
 
   // 傷ついたユニットの頭上に出す HP バー（InstancedMesh で一括描画）
   showHpBars = true;
@@ -1075,6 +1078,23 @@ export class SceneView {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.dirLight.castShadow = level > 0;
     this.particleScale = FX_PARTICLE_SCALE_BY_QUALITY[level];
+    this.qualityLevel = level;
+  }
+
+  /**
+   * ユニットが多いときや画質を落としたとき、遠いユニットのアウトラインと、影を落とす部位を減らす。
+   * ドローコールの発行（CPU の仕事）を減らすための描画だけの簡略化で、シミュレーションには影響しない
+   */
+  private updateUnitRenderDetail(): void {
+    const count = this.unitVisuals.size;
+    const cam = this.camera.position;
+    const quality = this.qualityLevel;
+    for (const vis of this.unitVisuals.values()) {
+      const u = vis.unit;
+      const d = cam.distanceTo(u.chest.pos);
+      const detail = unitRenderDetail(d, count, quality, u.alive);
+      vis.setRenderDetail(detail.outline, detail.shadow);
+    }
   }
 
   /** 指定ユニットをカメラで追い続ける（null で解除） */
@@ -3848,6 +3868,7 @@ export class SceneView {
         vis.sync();
       }
     }
+    this.updateUnitRenderDetail();
     this.syncFacilities(battle, realDt);
     if (!frozen) this.syncArrows(battle.combat.arrows);
     this.updateRogueHearts(realDt);

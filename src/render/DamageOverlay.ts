@@ -15,6 +15,16 @@ export const DAMAGE_NUMBER_MODE_LABELS: Readonly<Record<DamageNumberMode, string
 export const MAX_DAMAGE_LABELS = 60;
 /** 同時に出す HP の数字の上限（HP バーの上限に合わせる） */
 export const MAX_HP_LABELS = 400;
+/** 生きているユニットがこれより多いときは、減っている HP とボスの数字だけを出す（DOM の書き込みを減らす） */
+export const HP_NUMBER_CROWD_UNITS = 40;
+/** 混雑時に出す HP の数字の上限 */
+export const HP_NUMBER_CROWD_MAX = 40;
+
+/** HP の数字を出すかどうか（混雑時は減っている HP とボスだけにする） */
+export function shouldShowHpNumber(hp: number, maxHp: number, isBoss: boolean, crowded: boolean): boolean {
+  if (!crowded) return true;
+  return isBoss || hp < maxHp;
+}
 /** この時間内の同じユニット・同じ種類のダメージは1つの数字に合算する（秒） */
 export const DAMAGE_MERGE_WINDOW = 0.3;
 /** この値以上の一撃は特大表示にする */
@@ -74,8 +84,13 @@ export class DamageOverlay {
   private readonly root: HTMLDivElement;
   private readonly labels: DamageLabel[] = [];
   private readonly hpLabels: HTMLDivElement[] = [];
+  /** HP の数字の表示状態と位置（同じ値なら DOM に書き込まない） */
+  private readonly hpShown: boolean[] = [];
+  private readonly hpTransforms: string[] = [];
   private width = 1;
   private height = 1;
+  /** 大きさを測り直す必要があるか（毎フレーム測るとレイアウトの再計算が走る） */
+  private sizeDirty = true;
 
   constructor(
     container: HTMLElement,
@@ -84,6 +99,11 @@ export class DamageOverlay {
     this.root = document.createElement('div');
     this.root.className = 'damage-overlay';
     container.appendChild(this.root);
+    const markDirty = () => {
+      this.sizeDirty = true;
+    };
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(markDirty).observe(this.root);
+    else window.addEventListener('resize', markDirty);
   }
 
   /** ダメージを受け取り、表示する数字を追加または合算する */
@@ -166,7 +186,13 @@ export class DamageOverlay {
       l.active = false;
       l.el.style.display = 'none';
     }
-    for (const el of this.hpLabels) el.style.display = 'none';
+    for (let i = 0; i < this.hpLabels.length; i++) this.setHpShown(i, false);
+  }
+
+  private setHpShown(i: number, shown: boolean): void {
+    if (this.hpShown[i] === shown) return;
+    this.hpShown[i] = shown;
+    this.hpLabels[i].style.display = shown ? 'block' : 'none';
   }
 
   /**
@@ -175,9 +201,12 @@ export class DamageOverlay {
    * @param showHpNumbers HP の数字を表示するか（配置フェーズや HP バー非表示の設定では出さない）
    */
   update(units: readonly Unit[], dt: number, showHpNumbers: boolean): void {
-    const rect = this.root.getBoundingClientRect();
-    this.width = Math.max(1, rect.width);
-    this.height = Math.max(1, rect.height);
+    if (this.sizeDirty) {
+      const rect = this.root.getBoundingClientRect();
+      this.width = Math.max(1, rect.width);
+      this.height = Math.max(1, rect.height);
+      this.sizeDirty = false;
+    }
 
     for (const l of this.labels) {
       if (!l.active) continue;
@@ -202,22 +231,31 @@ export class DamageOverlay {
     // HP バー本体は SceneView が描くので、ここでは全ユニットの HP の数字だけを重ねる
     let used = 0;
     if (showHpNumbers) {
+      let aliveCount = 0;
+      for (const u of units) if (u.alive) aliveCount++;
+      const crowded = aliveCount > HP_NUMBER_CROWD_UNITS;
+      const max = crowded ? HP_NUMBER_CROWD_MAX : MAX_HP_LABELS;
       for (const u of units) {
-        if (used >= MAX_HP_LABELS) break;
-        if (!u.alive) continue;
+        if (used >= max) break;
+        if (!u.alive || !shouldShowHpNumber(u.hp, u.maxHp, u.isBoss, crowded)) continue;
         _proj.set(u.chest.pos.x, u.chest.pos.y + 0.72 * u.scale + 0.25, u.chest.pos.z);
         if (!this.project(_proj)) continue;
-        const el = this.getHpLabel(used++);
-        el.style.display = 'block';
-        // 数が多いので、変わらない className と文字は書き換えない
+        const i = used++;
+        const el = this.getHpLabel(i);
+        this.setHpShown(i, true);
+        // 数が多いので、変わらない className・位置・文字は書き換えない
         const className = `hp-number team-${u.team}${u.isBoss ? ' boss' : ''}`;
         if (el.className !== className) el.className = className;
-        el.style.transform = `translate(${_proj.x}px, ${_proj.y}px) translate(-50%, -135%)`;
+        const transform = `translate(${Math.round(_proj.x)}px, ${Math.round(_proj.y)}px) translate(-50%, -135%)`;
+        if (this.hpTransforms[i] !== transform) {
+          this.hpTransforms[i] = transform;
+          el.style.transform = transform;
+        }
         const text = `${formatDamage(Math.max(0, u.hp))} / ${formatDamage(u.maxHp)}`;
         if (el.textContent !== text) el.textContent = text;
       }
     }
-    for (let i = used; i < this.hpLabels.length; i++) this.hpLabels[i].style.display = 'none';
+    for (let i = used; i < this.hpLabels.length; i++) this.setHpShown(i, false);
   }
 
   private getHpLabel(i: number): HTMLDivElement {
@@ -225,8 +263,11 @@ export class DamageOverlay {
     if (!el) {
       el = document.createElement('div');
       el.className = 'hp-number';
+      el.style.display = 'none';
       this.root.appendChild(el);
       this.hpLabels[i] = el;
+      this.hpShown[i] = false;
+      this.hpTransforms[i] = '';
     }
     return el;
   }

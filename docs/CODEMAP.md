@@ -57,7 +57,7 @@ npm run outline -- src                          # 全ファイルの行数
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
 | `combat/CombatSystem.ts` | 1552 | 当たり判定・ダメージ・投射物・爆発・雷・特殊技（使徒のビームなど） |
-| `physics/PhysicsWorld.ts` | 573 | 自前 Verlet 物理（粒子・拘束・地面・障害物・壁） |
+| `physics/PhysicsWorld.ts` | 650 | 自前 Verlet 物理（粒子・拘束・地面・障害物・壁）。軽量化の定数 `PHYSICS_ITERATIONS`・`PHYSICS_COLLISION_INTERVAL`（体どうしの衝突は 1 ステップおき、武器は毎ステップ）・`PHYSICS_LARGE_RADIUS`（大きい粒子は別リストで探索）。**全端末一律にすること**（画質に連動させると対戦がずれる）。止まった死体は `Battle.sleepSettledCorpses` が物理から外す。検証は `tests/performance.test.ts` |
 | `physics/Particle.ts` / `Constraint.ts` / `SpatialHash.ts` | 小 | 物理の部品 |
 | `facilities/FacilityTypes.ts` | 443 | 施設・レリック・ゲートの定義と、レベル別の数値テーブル |
 | `facilities/Facility.ts` | 662 | 施設の実体（兵舎・トーテム・砲台・ゲートの更新処理、`applyStatGate`） |
@@ -81,7 +81,8 @@ npm run outline -- src                          # 全ファイルの行数
 | `VoxelModel.ts` | 6817 | **最大**。兵種ごとのボクセルモデル生成と `VoxelCharacterVisual`（見た目の同期・部位破壊）、施設モデル。下の「VoxelModel の中身」を参照 |
 | `SceneView.ts` | 3758 | **巨大**。シーン・カメラ・入力・地形描画・エフェクト・HP バー・ローグライトのハート |
 | `FieldRenderer.ts` | 446 | 手続き生成フィールドの描画 |
-| `DamageOverlay.ts` | 242 | ダメージ数値の表示 |
+| `DamageOverlay.ts` | 270 | ダメージ数値と HP の数字の表示（混雑時は `shouldShowHpNumber` で減っている HP とボスだけ、DOM は差分だけ書く） |
+| `RenderDetail.ts` | 55 | 描画の簡略化の判定 `unitRenderDetail`（ユニット数・距離・画質でアウトラインと影を落とす部位を減らす）。`SceneView.updateUnitRenderDetail` → `VoxelCharacterVisual.setRenderDetail`。端末ごとに変えてよい |
 | `UnitPreviews.ts` | 405 | カード上で動くユニットのミニプレビュー |
 | `DragonModel.ts` / `HayatoHeadModel.ts` / `TanimonArmModel.ts` / `YamamuronAwakenedModel.ts` | 200〜640 | 特殊兵種の専用モデル |
 | `DroppedChests.ts` / `JackpotChest3D.ts` / `JackpotReels3D.ts` / `JackpotIcons.ts` | 200〜470 | 宝箱とリールの 3D 演出 |

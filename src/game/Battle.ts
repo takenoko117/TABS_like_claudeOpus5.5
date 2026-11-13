@@ -17,6 +17,13 @@ import { BATTLE_FIELD_WALLS, type FieldWalls } from '../physics/PhysicsWorld';
 import { FieldRuntime, type FieldUnitTraitsFn } from '../field/FieldRuntime';
 import { FIELD_COLS, FIELD_DEFAULT_HALF_X, FIELD_ROWS, setFieldHalfWidth, type FieldLayout } from '../field/FieldTypes';
 
+/** 死んでからこの秒数が過ぎ、体がほぼ止まった死体は物理から外す（衝突・拘束の計算を減らす） */
+export const CORPSE_SLEEP_MIN_SECONDS = 2;
+/** 動き続けていても、死んでからこの秒数が過ぎた死体は物理から外す */
+export const CORPSE_SLEEP_MAX_SECONDS = 6;
+/** 「ほぼ止まった」とみなす 1 ステップあたりの移動量の上限（m） */
+const CORPSE_SLEEP_MAX_STEP_DISP = 0.004;
+
 export type BattleResult = Team | 'draw' | null;
 
 /** 1 戦ぶんの舞台設定。省略した項目は標準（平地・ルールなし）になる */
@@ -542,11 +549,36 @@ export class Battle implements UnitContext, FacilityBattleContext {
     // ユニットの更新（バフが適用された状態で移動・攻撃を実行）
     for (const u of this.units) u.update(dt, this);
     this.world.step(dt);
+    this.sleepSettledCorpses();
     this.combat.processContacts(this.world.contacts, dt, this.units);
     this.combat.updateArrows(dt, this.units, this.world.obstacles, this.facilities);
     this.field?.postStep(this.units, this.facilities, dt, this.aiEnabled);
     if (this.aiEnabled) this.rules?.onStepEnd?.(this, dt);
     if (!this.opening) this.time += dt;
+  }
+
+  /**
+   * 倒れて止まった死体の粒子を物理ワールドから外す。粒子そのものは Unit が持ち続けるので、
+   * 描画はその場に残り、計算だけが減る（増殖戦や終盤でも物理の重さが積み上がらない）。
+   * 判定はシミュレーションの値だけで決まるので、オンライン対戦でも全端末で同じになる
+   */
+  private sleepSettledCorpses(): void {
+    const maxD2 = CORPSE_SLEEP_MAX_STEP_DISP * CORPSE_SLEEP_MAX_STEP_DISP;
+    for (const u of this.units) {
+      if (u.alive || u.physicsAsleep || u.deadTime < CORPSE_SLEEP_MIN_SECONDS) continue;
+      if (u.deadTime < CORPSE_SLEEP_MAX_SECONDS) {
+        let settled = true;
+        for (const p of u.joints) {
+          if (p.pos.distanceToSquared(p.prev) > maxD2) {
+            settled = false;
+            break;
+          }
+        }
+        if (!settled) continue;
+      }
+      u.physicsAsleep = true;
+      this.world.removeBody(u.bodyId);
+    }
   }
 
   /** ステージ状態異常（31面〜）の周期・常時効果を適用する */

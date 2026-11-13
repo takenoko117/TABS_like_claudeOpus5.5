@@ -110,6 +110,21 @@ const PHYSICS_HASH_SPACING = 0.5;
 const PHYSICS_HASH_CAPACITY = 1024;
 /** maxRadius の初期値 */
 const PHYSICS_MIN_MAX_RADIUS = 0.1;
+/**
+ * 拘束の反復回数（全端末一律。端末の画質設定に連動させるとオンライン対戦がずれる）。
+ * 8→4 にしても関節のばねの見た目はほぼ変わらず、物理の 3 割強を占める反復計算が半分になる
+ */
+export const PHYSICS_ITERATIONS = 4;
+/**
+ * 粒子同士の衝突（体どうしの押し合い）を解く間隔（ステップ数。全端末一律）。
+ * 武器など接触を記録する粒子（PF_RECORD_CONTACT）は当たり判定のため毎ステップ解く
+ */
+export const PHYSICS_COLLISION_INTERVAL = 2;
+/**
+ * これより半径が大きい粒子（巨人・ドラゴンなど）は「大きい粒子」として別に扱う。
+ * 近傍探索の範囲が全体の最大半径に引っ張られ、全員分の探索が重くなるのを防ぐ
+ */
+export const PHYSICS_LARGE_RADIUS = 0.3;
 
 const _va = new Vector3();
 const _vb = new Vector3();
@@ -126,13 +141,15 @@ export class PhysicsWorld {
   readonly constraints: DistanceConstraint[] = [];
   readonly gravity = new Vector3(0, -9.81, 0);
   /** 拘束の反復回数 */
-  iterations = 8;
+  iterations = PHYSICS_ITERATIONS;
   /** 空気抵抗的な速度減衰（1 ステップあたりの残存率） */
   damping = 0.998;
   groundY = 0;
   /** 1 秒あたりの最大移動速度（数値爆発の防止） */
   maxSpeed = 60;
   collisionsEnabled = true;
+  /** 粒子同士の衝突を解く間隔（ステップ数）。1 で毎ステップ */
+  collisionInterval = PHYSICS_COLLISION_INTERVAL;
   /** 直近の step() で記録された接触 */
   readonly contacts: Contact[] = [];
   /** 戦場の障害物リスト */
@@ -169,6 +186,11 @@ export class PhysicsWorld {
   /** いちばん大きい粒子の半径（近傍探索の範囲）。増えるだけなので clear() で戻す */
   private maxRadius = PHYSICS_MIN_MAX_RADIUS;
   private nextBodyId = 1;
+  /** clear() からのステップ数（衝突を解くステップの判定に使う。戦闘ごとに 0 へ戻す） */
+  private stepCount = 0;
+  /** 衝突判定の作業用リスト（毎ステップ詰め直す） */
+  private readonly smallList: Particle[] = [];
+  private readonly largeList: Particle[] = [];
 
   /** 新しいボディ ID を払い出す */
   createBodyId(): number {
@@ -217,6 +239,9 @@ export class PhysicsWorld {
     this.constraints.length = 0;
     this.contacts.length = 0;
     this.maxRadius = PHYSICS_MIN_MAX_RADIUS;
+    this.stepCount = 0;
+    this.smallList.length = 0;
+    this.largeList.length = 0;
     this.hash = new SpatialHash(PHYSICS_HASH_SPACING, PHYSICS_HASH_CAPACITY);
   }
 
@@ -237,7 +262,12 @@ export class PhysicsWorld {
       if (hasBoxes && (it & 1) === 1) this.solveBoxes(false, dt);
       this.solveFieldWalls(dt);
     }
-    if (this.collisionsEnabled) this.solveParticleCollisions(dt);
+    if (this.collisionsEnabled) {
+      const interval = Math.max(1, this.collisionInterval | 0);
+      // 間引くステップでは、接触を記録する粒子（武器など）が関わる組だけ解く
+      this.solveParticleCollisions(dt, this.stepCount % interval !== 0);
+    }
+    this.stepCount++;
     if (this.obstacles.length > 0) this.solveObstacles();
     if (hasBoxes) this.solveBoxes(true, dt);
     this.solveFieldWalls(dt);
@@ -523,52 +553,105 @@ export class PhysicsWorld {
     }
   }
 
-  private solveParticleCollisions(dt: number): void {
+  /**
+   * 粒子同士の衝突を解く。
+   * - 衝突しない粒子（PF_NO_COLLIDE）は空間ハッシュにも入れない
+   * - 半径が PHYSICS_LARGE_RADIUS を超える粒子は別リストにし、小さい粒子どうしの探索範囲を小さく保つ
+   * - recordOnly のときは、接触を記録する粒子（PF_RECORD_CONTACT）が関わる組だけ解く
+   */
+  private solveParticleCollisions(dt: number, recordOnly: boolean): void {
     const ps = this.particles;
-    const n = ps.length;
-    if (n < 2) return;
-    const maxR = this.maxRadius;
-    this.hash.spacing = Math.max(0.25, maxR * 2);
-    this.hash.build(ps);
-    const ids = this.hash.queryIds;
-    for (let i = 0; i < n; i++) {
-      const pi = ps[i];
-      if (pi.flags & PF_NO_COLLIDE) continue;
-      this.hash.query(pi.pos, pi.radius + maxR);
-      const count = this.hash.queryCount;
-      for (let q = 0; q < count; q++) {
-        const j = ids[q];
-        if (j <= i) continue;
-        const pj = ps[j];
-        if (pj.flags & PF_NO_COLLIDE) continue;
-        if (pi.bodyId >= 0 && pi.bodyId === pj.bodyId) continue;
-        const dx = pj.pos.x - pi.pos.x;
-        const dy = pj.pos.y - pi.pos.y;
-        const dz = pj.pos.z - pi.pos.z;
-        const rr = pi.radius + pj.radius;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 >= rr * rr || d2 < 1e-12) continue;
-        const w = pi.invMass + pj.invMass;
-        if (w === 0) continue;
-        const d = Math.sqrt(d2);
-        const nx = dx / d;
-        const ny = dy / d;
-        const nz = dz / d;
-        if ((pi.flags | pj.flags) & PF_RECORD_CONTACT) {
-          this.recordContact(pi, pj, nx, ny, nz, dt);
-        }
-        // めり込みを質量比で押し戻す
-        const corr = (rr - d) / w;
-        const ci = corr * pi.invMass;
-        const cj = corr * pj.invMass;
-        pi.pos.x -= nx * ci;
-        pi.pos.y -= ny * ci;
-        pi.pos.z -= nz * ci;
-        pj.pos.x += nx * cj;
-        pj.pos.y += ny * cj;
-        pj.pos.z += nz * cj;
+    if (ps.length < 2) return;
+    const small = this.smallList;
+    const large = this.largeList;
+    small.length = 0;
+    large.length = 0;
+    let smallMaxR = PHYSICS_MIN_MAX_RADIUS;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      if (p.flags & PF_NO_COLLIDE) continue;
+      if (p.radius > PHYSICS_LARGE_RADIUS) {
+        large.push(p);
+      } else {
+        small.push(p);
+        if (p.radius > smallMaxR) smallMaxR = p.radius;
       }
     }
+    const hash = this.hash;
+    hash.spacing = Math.max(0.25, smallMaxR * 2);
+    hash.build(small);
+    const ids = hash.queryIds;
+
+    // 小さい粒子どうし
+    const ns = small.length;
+    for (let i = 0; i < ns; i++) {
+      const pi = small[i];
+      const iRec = (pi.flags & PF_RECORD_CONTACT) !== 0;
+      if (recordOnly && !iRec) continue;
+      hash.query(pi.pos, pi.radius + smallMaxR);
+      const count = hash.queryCount;
+      for (let q = 0; q < count; q++) {
+        const j = ids[q];
+        if (j === i) continue;
+        const pj = small[j];
+        if (recordOnly) {
+          // 両方が記録対象の組は添字の小さい側で 1 回だけ解く
+          if (j < i && pj.flags & PF_RECORD_CONTACT) continue;
+        } else if (j < i) {
+          continue;
+        }
+        this.collidePair(pi, pj, dt);
+      }
+    }
+
+    // 大きい粒子と小さい粒子・大きい粒子どうし
+    const nl = large.length;
+    for (let i = 0; i < nl; i++) {
+      const pi = large[i];
+      const iRec = (pi.flags & PF_RECORD_CONTACT) !== 0;
+      hash.query(pi.pos, pi.radius + smallMaxR);
+      const count = hash.queryCount;
+      for (let q = 0; q < count; q++) {
+        const pj = small[ids[q]];
+        if (recordOnly && !iRec && !(pj.flags & PF_RECORD_CONTACT)) continue;
+        this.collidePair(pi, pj, dt);
+      }
+      for (let j = i + 1; j < nl; j++) {
+        const pj = large[j];
+        if (recordOnly && !iRec && !(pj.flags & PF_RECORD_CONTACT)) continue;
+        this.collidePair(pi, pj, dt);
+      }
+    }
+  }
+
+  /** 2 粒子が重なっていれば押し戻し、必要なら接触を記録する（同じボディ同士は無視） */
+  private collidePair(pi: Particle, pj: Particle, dt: number): void {
+    if (pi.bodyId >= 0 && pi.bodyId === pj.bodyId) return;
+    const dx = pj.pos.x - pi.pos.x;
+    const dy = pj.pos.y - pi.pos.y;
+    const dz = pj.pos.z - pi.pos.z;
+    const rr = pi.radius + pj.radius;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 >= rr * rr || d2 < 1e-12) return;
+    const w = pi.invMass + pj.invMass;
+    if (w === 0) return;
+    const d = Math.sqrt(d2);
+    const nx = dx / d;
+    const ny = dy / d;
+    const nz = dz / d;
+    if ((pi.flags | pj.flags) & PF_RECORD_CONTACT) {
+      this.recordContact(pi, pj, nx, ny, nz, dt);
+    }
+    // めり込みを質量比で押し戻す
+    const corr = (rr - d) / w;
+    const ci = corr * pi.invMass;
+    const cj = corr * pj.invMass;
+    pi.pos.x -= nx * ci;
+    pi.pos.y -= ny * ci;
+    pi.pos.z -= nz * ci;
+    pj.pos.x += nx * cj;
+    pj.pos.y += ny * cj;
+    pj.pos.z += nz * cj;
   }
 
   private recordContact(a: Particle, b: Particle, nx: number, ny: number, nz: number, dt: number): void {

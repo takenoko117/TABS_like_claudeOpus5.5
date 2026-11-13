@@ -164,6 +164,10 @@ export class Unit {
 
   hp: number;
   alive = true;
+  /** 死んでからの経過秒（生きている間は 0） */
+  deadTime = 0;
+  /** 死体の粒子を物理ワールドから外して止めたか（Battle.sleepSettledCorpses が設定する） */
+  physicsAsleep = false;
   /** 筋力（0〜1）。被弾で低下し、時間で回復する。0 で完全なラグドール */
   muscle = 1;
   /** 向いている方位角（ラジアン。0 で +Z 方向） */
@@ -508,6 +512,7 @@ export class Unit {
       this.gateCooldown = Math.max(0, this.gateCooldown - dt);
     }
     if (!this.alive) {
+      this.deadTime += dt;
       this.laserActive = false;
       this.grabbedUnit = null;
       return;
