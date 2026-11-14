@@ -9,10 +9,36 @@ import type {
   TDVersusServerMessage,
   TDVersusSlotInfo,
 } from '../net/tdVersusProtocol';
-import { ROGUE_STARTERS, type RogueStarter } from './RogueliteMode';
+import type { RogueStarter } from './RogueliteMode';
+import type { UnitTypeId } from '../units/UnitTypes';
+import {
+  TD_DRAFT_PICK_SECONDS,
+  TD_DRAFT_ROUNDS,
+  draftStarter,
+  generateDraftPool,
+  recommendDraftPick,
+  resolveDraftDecks,
+  resolveDraftPick,
+  type DraftRecommendation,
+} from './TDDraft';
 
-/** idle: 未接続 / connecting: 接続中 / room: 部屋で待機 / playing: 試合中 / ended: 決着後（同じ部屋に残っている） */
-export type TDVersusPhase = 'idle' | 'connecting' | 'room' | 'playing' | 'ended';
+/**
+ * idle: 未接続 / connecting: 接続中 / room: 部屋で待機 / drafting: 試合前のドラフト /
+ * playing: 試合中 / ended: 決着後（同じ部屋に残っている）
+ */
+export type TDVersusPhase = 'idle' | 'connecting' | 'room' | 'drafting' | 'playing' | 'ended';
+
+/** ドラフトの進み具合 */
+export interface TDVersusDraftState {
+  /** 今の巡（0 始まり） */
+  round: number;
+  /** 開いた巡までの、席ごとのピック */
+  picks: [UnitTypeId[], UnitTypeId[]];
+  /** 今の巡で自分が選んだ兵種（まだなら null。相手には開くまで見えない） */
+  myPick: UnitTypeId | null;
+  /** 今の巡が始まった時刻（ミリ秒） */
+  roundStartedAt: number;
+}
 
 /** 自分から見た決着 */
 export type TDVersusVerdict = 'win' | 'lose' | 'draw';
@@ -32,7 +58,7 @@ export interface TDVersusMatchSink {
 export interface TDVersusSessionEvents {
   /** 表示を更新してほしいとき */
   onChange(): void;
-  /** 試合開始。seed は両者共通の種、starters は席ごとのスターター、slot は自分の席 */
+  /** 試合開始。seed は両者共通の種、starters は席ごとのドラフトしたデッキ、slot は自分の席 */
   onStart(seed: number, starters: [RogueStarter, RogueStarter], slot: 0 | 1): void;
   /** 観戦を始めた（観戦中に次の試合が始まったときも呼ぶ）。log はそれまでの操作、result は決着済みならその結果 */
   onWatch(
@@ -58,8 +84,12 @@ export class TDVersusSession {
   slot = -1;
   slots: TDVersusSlotInfo[] = [];
   result: { winner: number | null; reason: TDVersusEndReason } | null = null;
-  /** 選んだスターター（準備完了のときに送る） */
-  starterId: string | null = null;
+  /** ドラフトの9枚を決める部屋ごとの種 */
+  draftSeed = 0;
+  /** 巡ごとの3択（draftSeed から作る） */
+  draftPool: UnitTypeId[][] = [];
+  /** ドラフト中の状態（ドラフト中でなければ null） */
+  draft: TDVersusDraftState | null = null;
   /** 最後のエラー・切断の理由 */
   message: string | null = null;
   /** 試合中の操作の受け取り先 */
@@ -68,7 +98,11 @@ export class TDVersusSession {
   spectating = false;
   private transport: TDVersusTransport | null = null;
 
-  constructor(private readonly events: TDVersusSessionEvents) {}
+  constructor(
+    private readonly events: TDVersusSessionEvents,
+    /** 今の時刻（ミリ秒）。ドラフトの制限時間に使う。テストでは差し替える */
+    private readonly now: () => number = () => Date.now(),
+  ) {}
 
   /** 接続を始めた。spectating なら観戦として入る */
   attach(transport: TDVersusTransport, room: string, spectating = false): void {
@@ -124,20 +158,38 @@ export class TDVersusSession {
         this.room = msg.room;
         this.slot = msg.slot;
         this.slots = msg.slots;
+        this.setDraftSeed(msg.draftSeed);
         break;
       case 'room':
         this.slots = msg.slots;
+        // ドラフト中に相手が抜けたら、部屋での待機に戻る（サーバーも取りやめている）
+        if (this.phase === 'drafting' && !this.opponentPresent) {
+          this.phase = 'room';
+          this.draft = null;
+        }
         break;
+      case 'draft':
+        if (this.spectating || (this.phase !== 'room' && this.phase !== 'ended')) return;
+        this.phase = 'drafting';
+        this.result = null;
+        this.draft = { round: 0, picks: [[], []], myPick: null, roundStartedAt: this.now() };
+        break;
+      case 'reveal': {
+        const d = this.draft;
+        if (this.phase !== 'drafting' || !d || msg.round !== d.round) return;
+        for (const i of [0, 1] as const) d.picks[i].push(resolveDraftPick(this.draftPool, d.round, msg.picks[i]));
+        d.round++;
+        d.myPick = null;
+        d.roundStartedAt = this.now();
+        break;
+      }
       case 'start': {
         if (this.slot !== 0 && this.slot !== 1) return;
         this.phase = 'playing';
         this.result = null;
+        this.draft = null;
         this.slots = this.slots.map((s) => ({ ...s, ready: false }));
-        const starters = [0, 1].map((i) => findStarter(msg.starters[i] ?? (i === this.slot ? this.starterId : null))) as [
-          RogueStarter,
-          RogueStarter,
-        ];
-        this.events.onStart(msg.seed, starters, this.slot);
+        this.events.onStart(msg.seed, draftStarters(this.draftSeed, msg.decks), this.slot);
         break;
       }
       case 'watch': {
@@ -146,8 +198,7 @@ export class TDVersusSession {
         this.slot = -1;
         this.result = msg.result;
         this.phase = msg.result ? 'ended' : 'playing';
-        const starters = [0, 1].map((i) => findStarter(msg.starters[i] ?? null)) as [RogueStarter, RogueStarter];
-        this.events.onWatch(msg.seed, starters, msg.log, msg.result);
+        this.events.onWatch(msg.seed, draftStarters(msg.draftSeed, msg.decks), msg.log, msg.result);
         break;
       }
       case 'input':
@@ -181,6 +232,7 @@ export class TDVersusSession {
     this.phase = 'idle';
     this.slots = [];
     this.slot = -1;
+    this.draft = null;
     this.message = reason;
     this.events.onClosed(reason);
     // 試合中に自分の接続が切れたら、その試合は続けられないので負け扱いで終える（観戦は何もしない）
@@ -192,11 +244,53 @@ export class TDVersusSession {
     this.events.onChange();
   }
 
-  /** スターターを選んで準備完了にする */
-  setReady(starterId: string): void {
+  /** 準備完了にする（両者がそろうとドラフトが始まる） */
+  setReady(): void {
     if (this.spectating || (this.phase !== 'room' && this.phase !== 'ended')) return;
-    this.starterId = starterId;
-    this.send({ t: 'ready', starter: starterId });
+    this.send({ t: 'ready' });
+  }
+
+  private setDraftSeed(seed: number): void {
+    this.draftSeed = seed;
+    this.draftPool = generateDraftPool(seed);
+  }
+
+  /** 今の巡の3択（ドラフト中でなければ空） */
+  get draftOffer(): readonly UnitTypeId[] {
+    return this.draft ? (this.draftPool[this.draft.round] ?? []) : [];
+  }
+
+  /** 今の巡のおすすめ（相手の直前のピックと、自分のこれまでのピックから決める） */
+  get draftRecommendation(): DraftRecommendation | null {
+    const d = this.draft;
+    if (!d || (this.slot !== 0 && this.slot !== 1)) return null;
+    const mine = d.picks[this.slot];
+    const theirs = d.picks[1 - this.slot];
+    return recommendDraftPick(this.draftOffer, mine, theirs[theirs.length - 1] ?? null);
+  }
+
+  /** 今の巡の残り時間（秒） */
+  draftSecondsLeft(): number {
+    if (!this.draft) return 0;
+    return Math.max(0, TD_DRAFT_PICK_SECONDS - (this.now() - this.draft.roundStartedAt) / 1000);
+  }
+
+  /** ドラフトで今の巡の兵種を選ぶ（3択にないもの・選び済みなら何もしない） */
+  pick(id: UnitTypeId): boolean {
+    const d = this.draft;
+    if (this.phase !== 'drafting' || !d || d.myPick || d.round >= TD_DRAFT_ROUNDS) return false;
+    if (!this.draftOffer.includes(id)) return false;
+    d.myPick = id;
+    this.send({ t: 'pick', round: d.round, id });
+    this.events.onChange();
+    return true;
+  }
+
+  /** 制限時間を過ぎてまだ選んでいなければ「おすすめ」を選ぶ（毎フレームか一定間隔で呼ぶ）。選んだら true */
+  tickDraft(): boolean {
+    if (!this.draft || this.draft.myPick || this.draftSecondsLeft() > 0) return false;
+    const rec = this.draftRecommendation;
+    return rec ? this.pick(rec.id) : false;
   }
 
   unready(): void {
@@ -227,6 +321,7 @@ export class TDVersusSession {
     this.slots = [];
     this.slot = -1;
     this.result = null;
+    this.draft = null;
     this.match = null;
     this.spectating = false;
     this.events.onChange();
@@ -251,6 +346,8 @@ export function verdictFor(winner: number | null, slot: number): TDVersusVerdict
   return winner === null ? 'draw' : winner === slot ? 'win' : 'lose';
 }
 
-function findStarter(id: string | null): RogueStarter {
-  return ROGUE_STARTERS.find((s) => s.id === id) ?? ROGUE_STARTERS[0];
+/** サーバーから届いた席ごとのピックを、対戦のランに渡す形にする */
+function draftStarters(draftSeed: number, decks: readonly (readonly string[])[]): [RogueStarter, RogueStarter] {
+  const [a, b] = resolveDraftDecks(draftSeed, decks);
+  return [draftStarter(a), draftStarter(b)];
 }

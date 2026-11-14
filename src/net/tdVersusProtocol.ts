@@ -6,6 +6,8 @@
 
 /** 部屋の定員（席 0 がホスト＝青、席 1 がゲスト＝赤） */
 export const TD_VS_ROOM_CAPACITY = 2;
+/** 試合前の初期デッキ・ドラフトの巡の数（src/game/TDDraft.ts の TD_DRAFT_ROUNDS もこの値） */
+export const TD_VS_DRAFT_ROUNDS = 3;
 /** 誰からもメッセージが来ないまま、この時間がたつと部屋を閉じて消す（ミリ秒） */
 export const TD_VS_IDLE_MS = 3 * 60 * 1000;
 /** 部屋名の最大文字数 */
@@ -117,8 +119,10 @@ export type TDVersusEndReason =
 // ---- クライアント → サーバー ----
 
 export type TDVersusClientMessage =
-  /** スターターを選び終えて準備完了（決着後に送ると再戦の準備になる） */
-  | { t: 'ready'; starter: string }
+  /** 準備完了（両者がそろうとドラフトが始まる。決着後に送ると再戦の準備になる） */
+  | { t: 'ready' }
+  /** ドラフトの round 巡目（0 始まり）に選んだ兵種。両者が選ぶまで相手には見えない */
+  | { t: 'pick'; round: number; id: string }
   /** 準備完了を取り消す */
   | { t: 'unready' }
   /** turn ターン目に反映する自分の操作（空でも毎ターン送る。相手へそのまま中継される） */
@@ -138,12 +142,16 @@ export interface TDVersusSlotInfo {
 }
 
 export type TDVersusServerMessage =
-  /** 入室できた。slot は自分の席（0 はホスト＝青、1 はゲスト＝赤） */
-  | { t: 'joined'; room: string; slot: number; slots: TDVersusSlotInfo[] }
+  /** 入室できた。slot は自分の席（0 はホスト＝青、1 はゲスト＝赤）。draftSeed はドラフトの9枚を決める部屋ごとの種 */
+  | { t: 'joined'; room: string; slot: number; slots: TDVersusSlotInfo[]; draftSeed: number }
   /** 部屋の顔ぶれと準備状況が変わった */
   | { t: 'room'; slots: TDVersusSlotInfo[] }
-  /** 両者そろったので試合開始。seed は地形・強化の3択・宝箱などを決める共通の種、starters は席ごとのスターター */
-  | { t: 'start'; seed: number; starters: string[] }
+  /** 両者が準備完了したのでドラフト（1巡目）を始める */
+  | { t: 'draft' }
+  /** ドラフトの round 巡目の両者のピックを同時に開く（picks は席ごと） */
+  | { t: 'reveal'; round: number; picks: string[] }
+  /** ドラフトが終わったので試合開始。seed は地形・強化の3択・宝箱などを決める共通の種、decks は席ごとのドラフトのピック */
+  | { t: 'start'; seed: number; decks: string[][] }
   /** 相手の操作（観戦者には slot〈どちらの席の操作か〉が付く） */
   | { t: 'input'; turn: number; cmds: TDDuelCommand[]; slot?: number }
   /** 観戦を始めた・観戦中に次の試合が始まった。log はそれまでの操作、result は決着していればその結果 */
@@ -151,7 +159,8 @@ export type TDVersusServerMessage =
       t: 'watch';
       room: string;
       seed: number;
-      starters: string[];
+      draftSeed: number;
+      decks: string[][];
       log: TDVersusInputLog;
       result: { winner: number | null; reason: TDVersusEndReason } | null;
     }
@@ -213,7 +222,10 @@ export function parseClientMessage(raw: string): TDVersusClientMessage | null {
   if (!msg || typeof msg !== 'object') return null;
   switch (msg.t) {
     case 'ready':
-      return typeof msg.starter === 'string' && msg.starter.length <= 40 ? { t: 'ready', starter: msg.starter } : null;
+      return { t: 'ready' };
+    case 'pick':
+      if (typeof msg.round !== 'number' || !Number.isInteger(msg.round) || msg.round < 0 || msg.round >= TD_VS_DRAFT_ROUNDS) return null;
+      return typeof msg.id === 'string' && msg.id.length > 0 && msg.id.length <= 40 ? { t: 'pick', round: msg.round, id: msg.id } : null;
     case 'unready':
       return { t: 'unready' };
     case 'input': {

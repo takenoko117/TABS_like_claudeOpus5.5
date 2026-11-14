@@ -33,6 +33,7 @@ import {
   renderVersusResult,
   renderVersusRoomList,
   renderVersusWatchResult,
+  updateDraftTimer,
   updateVersusPanel,
 } from './TDVersusUi';
 import { pixelArt } from './PixelArt';
@@ -130,8 +131,13 @@ export interface TDHudHost {
   vsRefreshRooms(): void;
   /** 対戦中の部屋を観戦する */
   vsWatch(room: string): void;
-  vsReady(starterId: string): void;
+  /** 準備完了（両者がそろうとドラフトが始まる） */
+  vsReady(): void;
   vsUnready(): void;
+  /** ドラフトで今の巡の兵種を選ぶ。選べたら true */
+  vsPick(id: UnitTypeId): boolean;
+  /** ドラフトの今の巡の残り秒数 */
+  getDraftSecondsLeft(): number;
   /** 部屋を出てロビーの入力画面へ戻る */
   vsLeave(): void;
   /** 決着後、同じ部屋のロビーへ戻る */
@@ -1158,9 +1164,9 @@ export class RealtimeTDHud {
     if (d.td === 'title') return this.host.toTitle();
     if (d.td === 'retry') return this.host.retry();
     // オンライン対戦のロビー
-    if (d.vsStarter !== undefined) {
-      this.host.playClick();
-      this.host.vsReady(d.vsStarter);
+    if (d.vsPick !== undefined) {
+      if (this.host.vsPick(d.vsPick as UnitTypeId)) this.host.playClick();
+      else this.host.playDenied();
       return;
     }
     if (d.vsRoom !== undefined) {
@@ -1183,6 +1189,9 @@ export class RealtimeTDHud {
       case 'vs-refresh':
         this.host.playClick();
         return this.host.vsRefreshRooms();
+      case 'vs-ready':
+        this.host.playClick();
+        return this.host.vsReady();
       case 'vs-unready':
         return this.host.vsUnready();
       case 'vs-leave':
@@ -1316,6 +1325,13 @@ export class RealtimeTDHud {
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     }
+  }
+
+  /** ドラフトの残り時間の表示だけを書き換える（3択は描き直さない） */
+  updateVersusDraftTimer(seconds: number): void {
+    const el = this.elModal.querySelector<HTMLElement>('.td-draft-timer');
+    if (!el) return;
+    updateDraftTimer(el, seconds);
   }
 
   /** 募集中の部屋の一覧だけを描き直す（入力中の部屋名は消さない） */

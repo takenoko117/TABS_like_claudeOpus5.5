@@ -583,6 +583,8 @@ export class GameApp {
   private tdVsRoomsError: string | null = null;
   /** 部屋の一覧を取り直すタイマー */
   private tdVsPollTimer: number | null = null;
+  /** ドラフトの制限時間を進めるタイマー（ドラフト中だけ動く） */
+  private tdDraftTimer: number | null = null;
   private tdVsFetching = false;
   /** オンライン対戦（対面型）の試合中の戦場と、ロックステップ */
   private tdDuel: TDDuel | null = null;
@@ -2569,10 +2571,12 @@ export class GameApp {
       getLockstep: () => this.tdLockstep,
       vsJoin: (room, intent) => this.joinTDVersusRoom(room, intent),
       vsRefreshRooms: () => void this.refreshTDVersusRooms(),
-      vsReady: (id) => {
-        this.tdVersus.setReady(id);
+      vsReady: () => {
+        this.tdVersus.setReady();
         this.showTDVersusLobby();
       },
+      vsPick: (id) => this.tdVersus.pick(id),
+      getDraftSecondsLeft: () => this.tdVersus.draftSecondsLeft(),
       vsUnready: () => this.tdVersus.unready(),
       vsLeave: () => {
         const watching = this.tdVersus.spectating;
@@ -2602,6 +2606,7 @@ export class GameApp {
   private get tdVersus(): TDVersusSession {
     this.tdVersusField ??= new TDVersusSession({
       onChange: () => {
+        this.syncTDDraftTimer();
         if (this.playStyle !== 'td') return;
         if (this.tdVsView === 'lobby') this.showTDVersusLobby();
         else if (this.tdVsView === 'result') this.showTDVersusResult();
@@ -2681,6 +2686,28 @@ export class GameApp {
     this.showTDVersusLobby();
   }
 
+  /**
+   * ドラフト中だけ、制限時間の表示と時間切れの自動ピックを進めるタイマーを動かす。
+   * 背景のタブでも止まらないよう requestAnimationFrame ではなく setInterval を使う
+   */
+  private syncTDDraftTimer(): void {
+    const drafting = this.tdVersusField?.phase === 'drafting';
+    if (drafting && this.tdDraftTimer === null) {
+      this.tdDraftTimer = window.setInterval(() => {
+        const vs = this.tdVersusField;
+        if (!vs || vs.phase !== 'drafting') {
+          this.syncTDDraftTimer();
+          return;
+        }
+        vs.tickDraft();
+        if (this.playStyle === 'td' && this.tdVsView === 'lobby') this.tdHud.updateVersusDraftTimer(vs.draftSecondsLeft());
+      }, 200);
+    } else if (!drafting && this.tdDraftTimer !== null) {
+      window.clearInterval(this.tdDraftTimer);
+      this.tdDraftTimer = null;
+    }
+  }
+
   /** ロビーで部屋の一覧を見ている間か */
   private get isTDVersusBrowsing(): boolean {
     return this.playStyle === 'td' && !this.onTitleScreen && this.tdVsView === 'lobby' && this.tdVersus.phase === 'idle';
@@ -2738,10 +2765,11 @@ export class GameApp {
     vs.attach(client, client.room, intent === 'watch');
   }
 
-  /** 対戦の試合を始める。両端末が共通の種から同じ戦場を作り、席 slot の陣営を操作する */
+  /** 対戦の試合を始める。両端末が共通の種から同じ戦場を作り、席 slot の陣営を操作する（starters はドラフトしたデッキ） */
   private startTDVersusRun(seed: number, starters: [RogueStarter, RogueStarter], slot: 0 | 1): void {
     if (this.playStyle !== 'td' || this.onTitleScreen) return;
-    this.tdStarter = starters[slot];
+    // 対戦のデッキはドラフトで決まるので、1人用の「もう一度」に使うスターターは覚えない
+    this.tdStarter = null;
     this.tdVsResult = null;
     this.stopTDVersusRoomPolling();
     this.tdVsView = 'battle';

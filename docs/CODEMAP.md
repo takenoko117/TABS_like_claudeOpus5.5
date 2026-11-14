@@ -31,8 +31,9 @@ npm run outline -- src                          # 全ファイルの行数
 | `RealtimeTDMode.ts` | 1188 | TD モード。定数（`TD_*`、対戦用は `TD_DUEL_*`）、ウェーブ・資金・経験値の計算関数、`TDRun`（1 陣営ぶんのラン状態。対戦では `team` で左右を反転し、画面操作は `request*` → `commandSink` → `execute` で反映。対戦の宝箱は `pendingChests` に積んで `requestChest` で開ける）、`TDBattleRules` |
 | `TDDuel.ts` | 400 | TD オンライン対戦（対面型）。2 陣営の `TDDuel`（撃破の報酬・宝箱を積む・勝敗・ハッシュ）、`TDDuelBattleRules`、ロックステップ `TDLockstep`（ターンごとに両席の操作がそろってから進める。`slot = null` で観戦: 記録の読み込み `loadLog` と早送り） |
 | `TDWildCamps.ts` | 250 | TD オンライン対戦の第三勢力（野生の魔物、team 2）。定数 `TD_WILD_*`（巣の配置 `TD_WILD_CAMPS`・報酬 `TD_WILD_KINDS`）、巣の管理 `TDWildCamps`（湧き・回復・倒した陣営の判定 `killReward`）。`TDDuel.wild` が持ち、魔物の縄張りの動きは `Unit.leash`（`Unit.thinkLeashed`） |
+| `TDDraft.ts` | 216 | TD オンライン対戦の試合前の初期デッキ・ドラフト（3択×3巡）。定数 `TD_DRAFT_*`、部屋の種から9枚を作る `generateDraftPool`、ピックの正規化 `resolveDraftPick`/`resolveDraftDecks`、おすすめ `recommendDraftPick`（役割 `TD_DRAFT_ROLES`・対策 `TD_DRAFT_COUNTERS`・コスト効率 `TD_DRAFT_EFFICIENCY`）、デッキをランに渡す `draftStarter` |
 | `SimRandom.ts` | 39 | 戦場を進める間だけ `Math.random` を共通の種の乱数に差し替える（`withSimRandom`）。描画コールバックは `nativeRandomCallback` で元に戻す |
-| `TDVersusSession.ts` | 256 | TD オンライン対戦の進行（部屋・準備・試合・決着・観戦 `spectating`）。試合中の操作は `match`（`TDLockstep`）へ回す。通信路を差し替えられ、DOM なしでテストできる |
+| `TDVersusSession.ts` | 353 | TD オンライン対戦の進行（部屋・準備・ドラフト `draft`/`pick`/`tickDraft`・試合・決着・観戦 `spectating`）。試合中の操作は `match`（`TDLockstep`）へ回す。通信路を差し替えられ、DOM なしでテストできる |
 | `TDTerrain.ts` | 148 | TD の地形を 2 分ごとに作り直す処理 |
 | `RogueJackpot.ts` | 285 | 戦闘中の宝箱ドロップ判定とリール報酬（ローグライト・TD 共通） |
 | `ArcadeStages.ts` | 2302 | アーケード全 40 面のデータ（`ARCADE_STAGES` が大半）と星評価・セーブ |
@@ -113,7 +114,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
 | `ui/RealtimeTDHud.ts` | 1021 | TD モードの HUD 全部（上部バー・配置バー・強化 3 択・チュートリアル・結果） |
-| `ui/TDVersusUi.ts` | 318 | TD オンライン対戦のロビー（ピクセルアートの見出しとルールのカード `RULE_CARDS`・部屋の作成・部屋の一覧 `renderVersusRoomList`〈募集中は入室、対戦中は観戦〉・席の色）・試合中の対戦パネル（相手の城・通信待ち・ずれ・観戦の追いつき）・リザルト（観戦は `renderVersusWatchResult`）の HTML |
+| `ui/TDVersusUi.ts` | 318 | TD オンライン対戦のロビー（ピクセルアートの見出しとルールのカード `RULE_CARDS`・ドラフト画面 `renderVersusDraft`・部屋の作成・部屋の一覧 `renderVersusRoomList`〈募集中は入室、対戦中は観戦〉・席の色）・試合中の対戦パネル（相手の城・通信待ち・ずれ・観戦の追いつき）・リザルト（観戦は `renderVersusWatchResult`）の HTML |
 | `ui/VoxelIcons.ts` | 600 | **UI の絵はすべてここ**（絵文字は使わない）。文字の並びで描いたドット絵を、正面・明るい上面・暗い側面・縁取りの「積み木」SVG にする `buildVoxelBody`、アイコン `vx(名前, クラス)`・陣営 `vxTeam`・星の評価 `vxStars`、`index.html` の `<i data-vx="名前">` を置き換える `hydrateVoxelIcons`（`main.ts` で呼ぶ）。一覧は開発用ページ `icons.html`（`src/iconGallery.ts`） |
 | `ui/PixelArt.ts` | 190 | オンライン対戦のロビーの大きめの挿絵（城・兵士・剣・宝箱など）。描き方は `VoxelIcons.buildVoxelBody` と共通 |
 | `ui/UnitIcons.ts` | 1093 | 兵種・施設の SVG アイコン（ほぼデータ） |
@@ -131,7 +132,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | --- | --- | --- |
 | `src/net/tdVersusProtocol.ts` | 233 | 通信メッセージの型・検証（試合中の操作 `TDDuelCommand`・ハッシュ・決着・観戦の `watch` と操作の記録 `TDVersusInputLog`）、部屋名の整形、部屋の一覧の行 `TDVersusRoomListing`（`status` 募集中/対戦中）と検証 `parseRoomList`、入室のしかた `TDVersusJoinIntent`（create/join/watch）、定数（放置で消すまでの `TD_VS_IDLE_MS`、一覧の取り直し間隔 `TD_VS_LIST_POLL_MS` など）。クライアントとサーバーで共用 |
 | `src/net/TDVersusClient.ts` | 92 | WebSocket の接続（`open` に部屋を作る・一覧から入るの区別を付ける）と、募集中の部屋の一覧の取得 `fetchTDVersusRooms`。URL はビルド時の `VITE_TD_VS_SERVER`（未設定の開発時は `ws://localhost:8787`） |
-| `server/src/roomLogic.ts` | 210 | 部屋のルール `TDVersusRoom`（入室〈作成・一覧からの入室の区別〉・一覧に出す情報 `listing`・準備・開始・操作とハッシュの中継・決着・放置判定・観戦 `watch`〈操作の記録を渡す〉）。席 0 がホスト。Cloudflare 非依存で `tests/tdVersus.test.ts` から検証 |
+| `server/src/roomLogic.ts` | 210 | 部屋のルール `TDVersusRoom`（入室〈作成・一覧からの入室の区別〉・一覧に出す情報 `listing`・準備・ドラフト `beginDraft`/`pick`〈部屋ごとの種 `draftSeed`〉・開始・操作とハッシュの中継・決着・放置判定・観戦 `watch`〈操作の記録を渡す〉）。席 0 がホスト。Cloudflare 非依存で `tests/tdVersus.test.ts` から検証 |
 | `server/src/roomDirectory.ts` | 105 | 募集中の部屋の一覧 `RoomDirectory`（部屋からの知らせ・古い部屋の削除）と、知らせ直す判定 `shouldReport`。`tests/tdVersus.test.ts` から検証 |
 | `server/src/index.ts` | 230 | Cloudflare Worker と Durable Object `VersusRoomObject`（部屋名ごとに 1 つ、アラームで放置部屋を消す）・`LobbyObject`（部屋の一覧、`GET /rooms`）。手順は `server/README.md` |
 
@@ -159,7 +160,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | アーケード | `loadArcadeStage`, `renderArcadeStageButtons`, `renderStageBriefing`, `renderEnemyChips` |
 | サンドボックス | `loadPreset`, `PRESETS`（ファイル冒頭の定数） |
 | TD モード | `enterTDMode`, `startTDRun`, `beginTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
-| TD オンライン対戦 | `enterTDVersusMode`（友人対戦→オンライン対戦の入口）, `tdVersus`（セッションとイベント）, `showTDVersusLobby`, `refreshTDVersusRooms`/`startTDVersusRoomPolling`（募集中の部屋の一覧）, `joinTDVersusRoom`, `startTDVersusRun`（`TDDuel` と `TDLockstep` を作る）, `startTDVersusWatch`（観戦）, `syncTDDuelChests`/`openNextTDDuelChest`（対戦の宝箱）, `handleTDVersusEnd`, `showTDVersusResult`, `disposeTDDuel`, `isTDVersusLive`（対戦中は `tick` で `tdLockstep.advance`） |
+| TD オンライン対戦 | `enterTDVersusMode`（友人対戦→オンライン対戦の入口）, `tdVersus`（セッションとイベント）, `syncTDDraftTimer`（ドラフトの制限時間）, `showTDVersusLobby`, `refreshTDVersusRooms`/`startTDVersusRoomPolling`（募集中の部屋の一覧）, `joinTDVersusRoom`, `startTDVersusRun`（`TDDuel` と `TDLockstep` を作る）, `startTDVersusWatch`（観戦）, `syncTDDuelChests`/`openNextTDDuelChest`（対戦の宝箱）, `handleTDVersusEnd`, `showTDVersusResult`, `disposeTDDuel`, `isTDVersusLive`（対戦中は `tick` で `tdLockstep.advance`） |
 | チャレンジ | `enterChallengeMode`, `loadChallengeRound`, `handleChallengeBattleEnd`, `renderChallengePanel` |
 | ローグライト | `enterRogueliteMode`, `startRogueRun`, `loadRogueRound`, `showRogueWarRoom`（作戦室）, `showRogueRewards`, `handleRogueBattleEnd`, `renderRoguePanel`, `showRogueModal` |
 | 宝箱（共通） | `onRogueEnemyKilled`, `openDroppedChest`, `applyJackpotRewards`, `playJackpotRewardFx` |
@@ -228,7 +229,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | ローグライトの画面 | `GameApp.ts` の `showRogue*` / `renderRogue*` ＋ `style.css` 後半 |
 | TD モードの数値 | `RealtimeTDMode.ts` 冒頭の `TD_*` 定数 |
 | TD モードの画面 | `RealtimeTDHud.ts` ＋ `td.css` |
-| TD オンライン対戦 | 対面の戦場と同期 `TDDuel.ts`、第三勢力 `TDWildCamps.ts`、陣営ごとのラン `RealtimeTDMode.ts`（`TD_DUEL_*`）、乱数 `SimRandom.ts`、進行 `TDVersusSession.ts`、通信 `src/net/`、サーバー `server/`、画面 `ui/TDVersusUi.ts`、仕様 `REALTIME_TD_SPEC.md` §16 |
+| TD オンライン対戦 | 対面の戦場と同期 `TDDuel.ts`、初期デッキのドラフト `TDDraft.ts`、第三勢力 `TDWildCamps.ts`、陣営ごとのラン `RealtimeTDMode.ts`（`TD_DUEL_*`）、乱数 `SimRandom.ts`、進行 `TDVersusSession.ts`、通信 `src/net/`、サーバー `server/`、画面 `ui/TDVersusUi.ts`、仕様 `REALTIME_TD_SPEC.md` §16 |
 | 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
 | 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
 | 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |

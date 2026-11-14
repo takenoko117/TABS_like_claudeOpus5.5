@@ -373,12 +373,22 @@ function sent(out: RoomOutput[], to: number): TDVersusServerMessage[] {
   return out.filter((o) => o.to === to || o.to === 'all').map((o) => o.msg);
 }
 
+/** 両者が準備完了し、ドラフト3巡を終えて試合を始める（最後の出力を返す） */
+function readyAndDraft(room: TDVersusRoom, now = 0, decks: [string[], string[]] = [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3']]): RoomOutput[] {
+  room.message(0, { t: 'ready' }, now);
+  let out = room.message(1, { t: 'ready' }, now);
+  for (let r = 0; r < 3; r++) {
+    room.message(0, { t: 'pick', round: r, id: decks[0][r] }, now);
+    out = room.message(1, { t: 'pick', round: r, id: decks[1][r] }, now);
+  }
+  return out;
+}
+
 function playingRoom(): TDVersusRoom {
   const room = new TDVersusRoom('test', 0, () => 0.25);
   room.join(0);
   room.join(0);
-  room.message(0, { t: 'ready', starter: 'a' }, 0);
-  room.message(1, { t: 'ready', starter: 'b' }, 0);
+  readyAndDraft(room);
   return room;
 }
 
@@ -396,9 +406,11 @@ describe('TD オンライン対戦: 部屋（サーバー）', () => {
     const room = new TDVersusRoom('test', 0, () => 0.25);
     room.join(0);
     room.join(0);
-    expect(room.message(0, { t: 'ready', starter: 'a' }, 1).some((o) => o.msg.t === 'start')).toBe(false);
-    const out = room.message(1, { t: 'ready', starter: 'b' }, 2);
-    expect(out).toEqual([{ to: 'all', msg: { t: 'start', seed: Math.floor(0.25 * 0x7fffffff), starters: ['a', 'b'] } }]);
+    const out = readyAndDraft(room, 2);
+    expect(out).toEqual([
+      { to: 'all', msg: { t: 'reveal', round: 2, picks: ['a3', 'b3'] } },
+      { to: 'all', msg: { t: 'start', seed: Math.floor(0.25 * 0x7fffffff), decks: [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3']] } },
+    ]);
     const cmds: TDDuelCommand[] = [{ k: 'deploy', id: 'clubber' }];
     expect(room.message(0, { t: 'input', turn: 3, cmds }, 3)).toEqual([{ to: 1, msg: { t: 'input', turn: 3, cmds } }]);
     expect(room.message(1, { t: 'hash', turn: 20, h: 9 }, 3)).toEqual([{ to: 0, msg: { t: 'hash', turn: 20, h: 9 } }]);
@@ -411,8 +423,8 @@ describe('TD オンライン対戦: 部屋（サーバー）', () => {
     ]);
     expect(room.message(0, { t: 'over', winner: 1, reason: 'castle' }, 2)).toEqual([]);
     expect(room.phase).toBe('ended');
-    room.message(0, { t: 'ready', starter: 'a' }, 3);
-    expect(room.message(1, { t: 'ready', starter: 'a' }, 3)[0].msg.t).toBe('start');
+    room.message(0, { t: 'ready' }, 3);
+    expect(room.message(1, { t: 'ready' }, 3)[0].msg.t).toBe('draft');
   });
 
   it('引き分けと降参', () => {
@@ -459,17 +471,23 @@ describe('TD オンライン対戦: 進行（クライアント）', () => {
     };
     const session = new TDVersusSession(events);
     session.attach({ send: (m) => outbox.push(m), close: () => log.push('close') }, 'room');
-    session.handle({ t: 'joined', room: 'room', slot, slots: [{ present: true, ready: false }, { present: true, ready: false }] });
+    session.handle({
+      t: 'joined',
+      room: 'room',
+      slot,
+      slots: [{ present: true, ready: false }, { present: true, ready: false }],
+      draftSeed: 77,
+    });
     return { session, log, outbox };
   }
 
-  it('試合が始まると両席のスターターと自分の席を渡し、試合中の操作を受け取り先へ回す', () => {
+  it('試合が始まると両席のドラフトのデッキと自分の席を渡し、試合中の操作を受け取り先へ回す', () => {
     const { session, log, outbox } = makeSession(1);
     expect(session.isHost).toBe(false);
-    session.setReady(STARTERS[1].id);
-    expect(outbox).toEqual([{ t: 'ready', starter: STARTERS[1].id }]);
-    session.handle({ t: 'start', seed: 42, starters: [STARTERS[0].id, STARTERS[1].id] });
-    expect(log).toContain(`start:42:${STARTERS[0].id}+${STARTERS[1].id}:1`);
+    session.setReady();
+    expect(outbox).toEqual([{ t: 'ready' }]);
+    session.handle({ t: 'start', seed: 42, decks: [[], []] });
+    expect(log).toContain('start:42:draft+draft:1');
     expect(session.phase).toBe('playing');
     const got: string[] = [];
     session.match = {
@@ -487,14 +505,14 @@ describe('TD オンライン対戦: 進行（クライアント）', () => {
 
   it('決着が届くと自分から見た勝敗になる。試合中に切断したら負け扱い', () => {
     const a = makeSession(1);
-    a.session.handle({ t: 'start', seed: 1, starters: ['', ''] });
+    a.session.handle({ t: 'start', seed: 1, decks: [[], []] });
     a.session.handle({ t: 'result', winner: 1, reason: 'castle' });
     expect(a.log).toContain('result:1:castle');
     expect(a.session.verdict).toBe('win');
     expect(a.session.phase).toBe('ended');
 
     const b = makeSession(0);
-    b.session.handle({ t: 'start', seed: 1, starters: ['', ''] });
+    b.session.handle({ t: 'start', seed: 1, decks: [[], []] });
     b.session.handleClose('切断');
     expect(b.log).toContain('result:1:left');
     expect(b.session.phase).toBe('idle');
@@ -546,8 +564,7 @@ describe('TD オンライン対戦: 部屋の作成・一覧', () => {
     expect(room.listing()).toEqual({ name: 'abc', players: 1, status: 'open', watchers: 0 });
     room.join(0, 'join');
     expect(room.listing()).toBeNull();
-    room.message(0, { t: 'ready', starter: 'a' }, 0);
-    room.message(1, { t: 'ready', starter: 'b' }, 0);
+    readyAndDraft(room);
     expect(room.phase).toBe('playing');
     // 対戦中の部屋は「対戦中」として一覧に出る（観戦できる）
     expect(room.listing()).toEqual({ name: 'abc', players: 2, status: 'playing', watchers: 0 });
@@ -685,8 +702,7 @@ describe('TD オンライン対戦: 観戦（サーバー）', () => {
     expect(room.watch()).toEqual({ error: 'not_playing' });
     room.join(0);
     room.join(0);
-    room.message(0, { t: 'ready', starter: 'a' }, 0);
-    room.message(1, { t: 'ready', starter: 'b' }, 0);
+    readyAndDraft(room);
     room.message(0, { t: 'input', turn: 3, cmds: [] }, 1);
     room.message(1, { t: 'input', turn: 3, cmds: [{ k: 'fund' }] }, 1);
     room.message(0, { t: 'input', turn: 4, cmds: [{ k: 'deploy', id: 'clubber' }] }, 1);
@@ -695,7 +711,8 @@ describe('TD オンライン対戦: 観戦（サーバー）', () => {
       t: 'watch',
       room: 'w',
       seed: Math.floor(0.25 * 0x7fffffff),
-      starters: ['a', 'b'],
+      draftSeed: Math.floor(0.25 * 0x7fffffff),
+      decks: [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3']],
       log: {
         upTo: [4, 3],
         cmds: [
@@ -728,8 +745,7 @@ describe('TD オンライン対戦: 観戦（サーバー）', () => {
     });
     // 決着後は一覧に出ない（2 人いる募集でも対戦でもない）
     expect(room.listing()).toBeNull();
-    room.message(0, { t: 'ready', starter: 'a' }, 3);
-    const next = room.message(1, { t: 'ready', starter: 'b' }, 3);
+    const next = readyAndDraft(room, 3);
     const watch = next.find((o) => o.to === 'watchers')?.msg;
     expect(watch).toMatchObject({ t: 'watch', log: { upTo: [-1, -1], cmds: [] }, result: null });
   });
@@ -753,8 +769,7 @@ describe('TD オンライン対戦: 観戦（クライアント）', () => {
     const room = new TDVersusRoom('w', 0, () => 0.5);
     room.join(0);
     room.join(0);
-    room.message(0, { t: 'ready', starter: STARTERS[0].id }, 0);
-    room.message(1, { t: 'ready', starter: STARTERS[1].id }, 0);
+    readyAndDraft(room);
     const a = makeClient(seed, 0);
     const b = makeClient(seed, 1);
     let watcher: (Client & { log: TDVersusInputLog }) | null = null;
@@ -823,8 +838,8 @@ describe('TD オンライン対戦: 観戦（クライアント）', () => {
     });
     session.attach({ send: (m) => outbox.push(m), close: () => {} }, 'w', true);
     expect(session.spectating).toBe(true);
-    session.handle({ t: 'watch', room: 'w', seed: 9, starters: [STARTERS[0].id, STARTERS[1].id], log: { upTo: [5, 4], cmds: [] }, result: null });
-    expect(log).toEqual([`watch:9:${STARTERS[1].id}:5,4`]);
+    session.handle({ t: 'watch', room: 'w', seed: 9, draftSeed: 3, decks: [[], []], log: { upTo: [5, 4], cmds: [] }, result: null });
+    expect(log).toEqual(['watch:9:draft:5,4']);
     expect(session.phase).toBe('playing');
     const got: string[] = [];
     session.match = { receiveInput: (turn, cmds, from) => got.push(`${from}:${turn}`), receiveHash: () => got.push('hash') };
@@ -833,7 +848,7 @@ describe('TD オンライン対戦: 観戦（クライアント）', () => {
     session.sendMatch({ t: 'input', turn: 1, cmds: [] });
     session.reportOver(0, 'castle');
     session.surrender();
-    session.setReady(STARTERS[0].id);
+    session.setReady();
     expect(outbox).toEqual([]);
     session.handleClose('閉じた');
     expect(log.some((l) => l.startsWith('result'))).toBe(false);

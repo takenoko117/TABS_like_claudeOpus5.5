@@ -843,9 +843,6 @@ body.td-mode #btn-restore-hud {
 .td-vs-slot.me { background: rgba(255, 255, 255, 0.11); }
 .td-vs-color.blue { color: #7fb0ff; }
 .td-vs-color.red { color: #ff8a80; }
-.td-starter.selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(255, 200, 80, 0.35) inset; }
-.td-starter:disabled { cursor: default; opacity: 0.55; }
-.td-starter.selected:disabled { opacity: 1; }
 
 /* 対戦中は一時停止できないのでボタンを隠す */
 .td-hud.td-versus .td-tools [data-td='pause'] { display: none; }
@@ -1078,4 +1075,81 @@ body.td-mode #btn-restore-hud {
   color: #ffd84d;
   text-shadow: var(--text-shadow-block);
   min-width: 1ch;
+}
+
+/* ---- オンライン対戦: 初期デッキ・ドラフト ---- */
+.td-draft-reveal { margin: 0 0 8px; color: var(--sub); font-size: 13px; }
+.td-draft-reveal b { color: var(--text); font-family: var(--font-pixel); font-weight: 400; }
+.td-draft-timer { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.td-draft-timer-bar {
+  flex: 1;
+  height: 12px;
+  border: 2px solid var(--panel-edge);
+  background: var(--ink);
+}
+.td-draft-timer-bar > i { display: block; height: 100%; background: var(--gold); transition: width 0.2s linear; }
+.td-draft-timer b { min-width: 2ch; font: 400 24px/1 var(--font-pixel); color: var(--gold); text-align: right; }
+.td-draft-timer.urgent .td-draft-timer-bar > i { background: var(--danger); }
+.td-draft-timer.urgent b { color: var(--enemy); }
+.td-draft-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.td-draft-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 24px 8px 10px;
+  border: 3px solid var(--rarity-common);
+  background: var(--panel-solid);
+  box-shadow: var(--bevel), var(--drop);
+  color: var(--text);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  min-width: 0;
+}
+.td-draft-card.rare { border-color: var(--rarity-rare); }
+.td-draft-card.rare .td-choice-rarity { color: #74c0fc; }
+.td-draft-card:hover:not(:disabled) { transform: translateY(-3px); filter: brightness(1.15); }
+.td-draft-card:active:not(:disabled) { transform: translateY(2px); box-shadow: var(--bevel-pressed); }
+.td-draft-card:disabled { cursor: default; opacity: 0.45; }
+.td-draft-card.picked:disabled { opacity: 1; border-color: var(--gold); box-shadow: var(--bevel), 0 0 0 3px var(--gold-deep); }
+.td-draft-card b { font: 400 15px/1.2 var(--font-pixel); }
+.td-draft-card small { display: flex; align-items: center; gap: 4px; color: var(--sub); font-size: 12px; }
+.td-draft-icon { width: 96px; height: 96px; }
+.td-draft-icon svg { max-width: 100%; max-height: 100%; }
+.td-draft-card.recommended { border-color: var(--gold); }
+.td-draft-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 2px solid var(--gold-deep);
+  background: var(--gold);
+  color: var(--ink);
+  font: 400 12px/1.2 var(--font-pixel);
+  white-space: nowrap;
+}
+.td-draft-badge small { color: var(--ink); font: 400 11px/1.2 var(--font-ui); font-weight: 700; }
+.td-draft-decks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.td-draft-deck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 2px solid var(--panel-edge);
+  background: var(--panel);
+}
+.td-draft-deck.blue { border-left: 6px solid var(--team-blue); }
+.td-draft-deck.red { border-left: 6px solid var(--team-red); }
+.td-draft-deck small { color: var(--sub); font-size: 12px; min-width: 3em; }
+.td-draft-deck > span { display: flex; gap: 4px; }
+.td-draft-empty { border: 2px dashed var(--panel-edge); box-sizing: border-box; }
+@media (max-width: 560px) {
+  .td-draft-icon { width: 64px; height: 64px; }
+  .td-draft-card { padding: 22px 4px 8px; }
+  .td-draft-card b { font-size: 12px; }
+  .td-draft-decks { grid-template-columns: 1fr; }
 }

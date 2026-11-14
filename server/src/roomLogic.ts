@@ -1,6 +1,7 @@
 // TD オンライン対戦（対面型）の部屋のルール。席 0 がホスト（青）、席 1 がゲスト（赤）。Cloudflare の API には触らず、入力（入室・退室・メッセージ）から
 // 「誰に何を送るか」を返すだけにして、tests/ から vitest で検証できるようにしている。
 import {
+  TD_VS_DRAFT_ROUNDS,
   TD_VS_IDLE_MS,
   TD_VS_MAX_WATCHERS,
   TD_VS_ROOM_CAPACITY,
@@ -20,11 +21,13 @@ export interface RoomOutput {
   msg: TDVersusServerMessage;
 }
 
-export type RoomPhase = 'waiting' | 'playing' | 'ended';
+/** waiting: 待機 / drafting: 試合前のドラフト / playing: 試合中 / ended: 決着後 */
+export type RoomPhase = 'waiting' | 'drafting' | 'playing' | 'ended';
 
 interface SlotState {
   ready: boolean;
-  starter: string;
+  /** ドラフトで選んだ兵種（巡ごと） */
+  picks: string[];
 }
 
 export class TDVersusRoom {
@@ -36,8 +39,12 @@ export class TDVersusRoom {
   seed = 0;
   /** 観戦している人数 */
   watchers = 0;
-  /** 今の試合の席ごとのスターター（観戦を始めた人に渡す） */
-  private starters: string[] = [];
+  /** ドラフトの9枚を決める部屋ごとの種（空の部屋に最初の人が入るたびに引き直す。再戦では同じ種） */
+  draftSeed = 0;
+  /** ドラフトの今の巡（0 始まり） */
+  draftRound = 0;
+  /** 今の試合の席ごとのドラフトのピック（観戦を始めた人に渡す） */
+  private decks: string[][] = [];
   /** 今の試合の操作の記録（観戦を始めた人に渡す） */
   private log: TDVersusInputLog = { upTo: [-1, -1], cmds: [] };
   /** 直前の試合の決着（観戦者が決着後に入ったとき用） */
@@ -109,7 +116,8 @@ export class TDVersusRoom {
       t: 'watch',
       room: this.name,
       seed: this.seed,
-      starters: [...this.starters],
+      draftSeed: this.draftSeed,
+      decks: this.decks.map((d) => [...d]),
       log: { upTo: [this.log.upTo[0], this.log.upTo[1]], cmds: this.log.cmds.map(([s, t, c]) => [s, t, [...c]]) },
       result: this.phase === 'playing' ? null : this.lastResult,
     };
@@ -132,9 +140,11 @@ export class TDVersusRoom {
     const slot = this.slots.findIndex((s) => s === null);
     if (slot < 0) return { slot: null, out: [], error: 'full' };
     this.lastActivity = now;
-    this.slots[slot] = { ready: false, starter: '' };
+    // 部屋を作り直したら（空の部屋に入ったら）ドラフトの9枚を引き直す
+    if (this.empty) this.draftSeed = Math.floor(this.random() * 0x7fffffff);
+    this.slots[slot] = { ready: false, picks: [] };
     const slots = this.slotInfo();
-    const out: RoomOutput[] = [{ to: slot, msg: { t: 'joined', room: this.name, slot, slots } }];
+    const out: RoomOutput[] = [{ to: slot, msg: { t: 'joined', room: this.name, slot, slots, draftSeed: this.draftSeed } }];
     for (let i = 0; i < this.slots.length; i++) {
       if (i !== slot && this.slots[i]) out.push({ to: i, msg: { t: 'room', slots } });
     }
@@ -151,6 +161,10 @@ export class TDVersusRoom {
       const winner = this.slots.findIndex((s) => s !== null);
       if (winner >= 0) out.push(...this.finish(winner, 'left'));
       else this.phase = 'ended';
+    } else if (this.phase === 'drafting') {
+      // ドラフト中に抜けたら取りやめ。残った人は部屋での待機に戻る
+      this.phase = 'waiting';
+      for (const s of this.slots) if (s) s.ready = false;
     }
     if (this.empty) this.phase = 'waiting';
     out.push(...this.broadcastRoom());
@@ -165,16 +179,17 @@ export class TDVersusRoom {
     const other = this.otherOf(slot);
     switch (msg.t) {
       case 'ready': {
-        if (this.phase === 'playing') return [];
+        if (this.phase === 'playing' || this.phase === 'drafting') return [];
         me.ready = true;
-        me.starter = msg.starter;
-        if (this.slots.every((s) => s?.ready)) return this.start();
+        if (this.slots.every((s) => s?.ready)) return this.beginDraft();
         return this.broadcastRoom();
       }
       case 'unready':
-        if (this.phase === 'playing' || !me.ready) return [];
+        if (this.phase === 'playing' || this.phase === 'drafting' || !me.ready) return [];
         me.ready = false;
         return this.broadcastRoom();
+      case 'pick':
+        return this.pick(me, msg.round, msg.id);
       case 'input': {
         if (this.phase !== 'playing' || other < 0) return [];
         this.record(slot, msg.turn, msg.cmds);
@@ -199,15 +214,35 @@ export class TDVersusRoom {
     return this.slots.findIndex((s, i) => i !== slot && s !== null);
   }
 
+  /** 両者が準備完了したのでドラフトを始める */
+  private beginDraft(): RoomOutput[] {
+    this.phase = 'drafting';
+    this.draftRound = 0;
+    for (const s of this.slots) if (s) s.picks = [];
+    return [{ to: 'all', msg: { t: 'draft' } }];
+  }
+
+  /** ドラフトのピック。両者がそろったら同時に開き、最後の巡なら試合を始める */
+  private pick(me: SlotState, round: number, id: string): RoomOutput[] {
+    if (this.phase !== 'drafting' || round !== this.draftRound || me.picks.length !== round) return [];
+    me.picks.push(id);
+    if (!this.slots.every((s) => s && s.picks.length > round)) return [];
+    const picks = this.slots.map((s) => s?.picks[round] ?? '');
+    const out: RoomOutput[] = [{ to: 'all', msg: { t: 'reveal', round, picks } }];
+    this.draftRound++;
+    if (this.draftRound >= TD_VS_DRAFT_ROUNDS) out.push(...this.start());
+    return out;
+  }
+
   private start(): RoomOutput[] {
     this.phase = 'playing';
     this.seed = Math.floor(this.random() * 0x7fffffff);
-    const starters = this.slots.map((s) => s?.starter ?? '');
+    const decks = this.slots.map((s) => [...(s?.picks ?? [])]);
     for (const s of this.slots) if (s) s.ready = false;
-    this.starters = starters;
+    this.decks = decks;
     this.log = { upTo: [-1, -1], cmds: [] };
     this.lastResult = null;
-    const out: RoomOutput[] = [{ to: 'all', msg: { t: 'start', seed: this.seed, starters } }];
+    const out: RoomOutput[] = [{ to: 'all', msg: { t: 'start', seed: this.seed, decks } }];
     // 観戦を続けている人には、次の試合を最初から見せる
     if (this.watchers > 0) out.push({ to: 'watchers', msg: this.watchMessage() });
     return out;

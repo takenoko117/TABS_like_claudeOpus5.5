@@ -3,7 +3,8 @@
 import { vx } from './VoxelIcons';
 import { setHtml } from '../fx/ui/dom';
 import { TD_DUEL_TIME_LIMIT, type TDRun } from '../game/RealtimeTDMode';
-import { ROGUE_STARTERS } from '../game/RogueliteMode';
+import { RARITY_LABELS, getSquadSize, unitRarity } from '../game/RogueliteMode';
+import { TD_DRAFT_PICK_SECONDS, TD_DRAFT_ROUNDS } from '../game/TDDraft';
 import type { TDLockstep } from '../game/TDDuel';
 import { slotColorName, type TDVersusSession, type TDVersusVerdict } from '../game/TDVersusSession';
 import {
@@ -12,7 +13,7 @@ import {
   type TDVersusEndReason,
   type TDVersusRoomListing,
 } from '../net/tdVersusProtocol';
-import { UNIT_TYPES } from '../units/UnitTypes';
+import { UNIT_TYPES, type UnitTypeId } from '../units/UnitTypes';
 import { pixelArt, type PixelSpriteName } from './PixelArt';
 import { getUnitIconSvg } from './UnitIcons';
 
@@ -33,6 +34,12 @@ const RULE_CARDS: ReadonlyArray<{ icon: PixelSpriteName; title: string; text: st
   { icon: 'chest', title: '宝箱は自分だけ', text: '戦場の宝箱か、城強化の横のボタンで開けよう' },
   { icon: 'hourglass', title: `${LIMIT_MINUTES}分で判定`, text: '城を落とせば勝ち。時間切れは城の残りHP%で勝負' },
   { icon: 'eye', title: '観戦できる', text: '対戦中の部屋を押すと、その試合を観戦できる' },
+  {
+    icon: 'levelup',
+    title: '初期デッキをドラフト',
+    text: `両者が準備完了したら、同じ3択から1枚ずつ×${TD_DRAFT_ROUNDS}巡。同時に選んで同時に開く（同じカードでもOK）。レジェンド以上は試合中の3択だけ`,
+    wide: true,
+  },
   {
     icon: 'crown',
     title: '第三勢力を狩る',
@@ -112,14 +119,8 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
       <div class="td-modal-actions"><button type="button" class="td-btn" data-td="vs-leave">やめる</button></div>
     `;
   }
+  if (vs.phase === 'drafting') return renderVersusDraft(vs);
   const ready = vs.ready;
-  const cards = ROGUE_STARTERS.map(
-    (st) => `<button type="button" class="td-starter${vs.starterId === st.id ? ' selected' : ''}" data-vs-starter="${st.id}" ${ready ? 'disabled' : ''}>
-      <b>${esc(st.name)}</b>
-      <span class="td-starter-units">${st.units.map((id) => `<span class="td-mini">${getUnitIconSvg(id)}</span>`).join('')}</span>
-      <small>${st.units.map((id) => UNIT_TYPES[id].name).join('・')}</small>
-    </button>`,
-  ).join('');
   const slotCards = [0, 1]
     .map((i) => {
       const info = vs.slots[i];
@@ -129,12 +130,12 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
       const state = isMe
         ? isReady
           ? '準備OK（相手を待っています）'
-          : 'スターターを選ぶと準備完了'
+          : '準備完了を押してください'
         : !present
           ? '相手を待っています…'
           : isReady
             ? '準備OK'
-            : 'スターターを選んでいます';
+            : '準備中';
       return `<div class="td-vs-slot ${i === 0 ? 'blue' : 'red'}${isMe ? ' me' : ''}${present ? '' : ' empty'}${isReady ? ' ready' : ''}">
         <span class="td-vs-slot-icon">${pixelArt(i === 0 ? 'castleBlue' : 'castleRed')}</span>
         <small>${slotLabel(i)}${isMe ? ' ― あなた' : ''}</small><b>${state}</b>
@@ -145,15 +146,94 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
     <h2>${vx('globe')} 部屋「${esc(vs.room)}」</h2>
     <p class="td-lead">あなたは <b class="td-vs-color ${vs.slot === 1 ? 'red' : 'blue'}">${slotColorName(vs.slot)}</b>（${vs.slot === 0 ? '左' : '右'}の城）です。</p>
     <div class="td-vs-slots">${slotCards}</div>
-    <h3>スターターを選ぶ</h3>
-    <div class="td-starters">${cards}</div>
+    <p class="td-vs-note">両者が準備完了すると、初期デッキのドラフト（3択×${TD_DRAFT_ROUNDS}巡・1巡${TD_DRAFT_PICK_SECONDS}秒）が始まります。</p>
     <p class="td-vs-note">${IDLE_MINUTES}分間だれも操作しないと部屋は消えます。</p>
     ${message}
     <div class="td-modal-actions">
-      ${ready ? '<button type="button" class="td-btn" data-td="vs-unready">選び直す</button>' : ''}
+      ${
+        ready
+          ? '<button type="button" class="td-btn" data-td="vs-unready">取り消す</button>'
+          : `<button type="button" class="td-btn primary" data-td="vs-ready">${vx('check')} 準備完了</button>`
+      }
       <button type="button" class="td-btn" data-td="vs-leave">退室</button>
     </div>
   `;
+}
+
+/** ドラフトのカード1枚 */
+function draftCard(id: UnitTypeId, opts: { picked: boolean; locked: boolean; badge: string | null }): string {
+  const t = UNIT_TYPES[id];
+  const rarity = unitRarity(id);
+  const badge = opts.badge
+    ? `<span class="td-draft-badge">${vx('star')} おすすめ<small>${esc(opts.badge)}</small></span>`
+    : '';
+  return `<button type="button" class="td-draft-card ${rarity}${opts.picked ? ' picked' : ''}${opts.badge ? ' recommended' : ''}" data-vs-pick="${id}" ${opts.locked ? 'disabled' : ''}>
+    ${badge}
+    <span class="td-choice-rarity">${RARITY_LABELS[rarity]}</span>
+    <span class="td-draft-icon"><span class="unit-voxel td-voxel" data-unit-preview="${id}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span></span>
+    <b>${esc(t.name)}</b>
+    <small>${vx('coin')} ${t.cost}　${vx('people')} ×${getSquadSize(id)}</small>
+  </button>`;
+}
+
+/** 選び終えたデッキの小さなアイコンの列（まだの巡は空き枠） */
+function draftDeckRow(picks: readonly UnitTypeId[]): string {
+  return Array.from({ length: TD_DRAFT_ROUNDS }, (_, r) => {
+    const id = picks[r];
+    return id
+      ? `<span class="td-mini" title="${esc(UNIT_TYPES[id].name)}">${getUnitIconSvg(id)}</span>`
+      : '<span class="td-mini td-draft-empty"></span>';
+  }).join('');
+}
+
+/** ドラフトの画面（3択・おすすめ・制限時間・両者のデッキ） */
+export function renderVersusDraft(vs: TDVersusSession): string {
+  const d = vs.draft;
+  if (!d || (vs.slot !== 0 && vs.slot !== 1)) return '';
+  const mine = d.picks[vs.slot];
+  const theirs = d.picks[1 - vs.slot];
+  const rec = vs.draftRecommendation;
+  const offer = vs.draftOffer;
+  const cards = offer
+    .map((id) => draftCard(id, { picked: d.myPick === id, locked: d.myPick !== null, badge: rec?.id === id ? rec.reason : null }))
+    .join('');
+  const lastRound = d.round - 1;
+  const lastReveal =
+    lastRound >= 0
+      ? `<p class="td-draft-reveal">${lastRound + 1}巡目 ― あなた <b>${esc(UNIT_TYPES[mine[lastRound]].name)}</b> ／ 相手 <b>${esc(UNIT_TYPES[theirs[lastRound]].name)}</b></p>`
+      : '<p class="td-draft-reveal">同じ3択から同時に選び、同時に開きます。同じカードを選んでもOK</p>';
+  const color = vs.slot === 1 ? 'red' : 'blue';
+  return `
+    <h2>${vx('swords')} 初期デッキ・ドラフト <small>${Math.min(d.round + 1, TD_DRAFT_ROUNDS)} / ${TD_DRAFT_ROUNDS} 巡</small></h2>
+    ${lastReveal}
+    <div class="td-draft-timer" data-left="${TD_DRAFT_PICK_SECONDS}">
+      <span class="td-draft-timer-bar"><i style="width:${(vs.draftSecondsLeft() / TD_DRAFT_PICK_SECONDS) * 100}%"></i></span>
+      <b>${Math.ceil(vs.draftSecondsLeft())}</b>
+    </div>
+    <div class="td-draft-cards">${cards}</div>
+    <p class="td-vs-note">${
+      d.myPick
+        ? `${vx('hourglass')} 相手の選択を待っています…`
+        : `時間切れになると「おすすめ」が自動で選ばれます`
+    }</p>
+    <div class="td-draft-decks">
+      <div class="td-draft-deck ${color}"><small>あなた</small><span>${draftDeckRow(mine)}</span></div>
+      <div class="td-draft-deck ${color === 'blue' ? 'red' : 'blue'}"><small>相手</small><span>${draftDeckRow(theirs)}</span></div>
+    </div>
+    <div class="td-modal-actions">
+      <button type="button" class="td-btn" data-td="vs-leave">退室</button>
+    </div>
+  `;
+}
+
+/** ドラフトの残り時間の表示を書き換える（3択は描き直さない） */
+export function updateDraftTimer(el: HTMLElement, seconds: number): void {
+  const bar = el.querySelector<HTMLElement>('.td-draft-timer-bar > i');
+  if (bar) bar.style.width = `${Math.max(0, Math.min(1, seconds / TD_DRAFT_PICK_SECONDS)) * 100}%`;
+  const num = el.querySelector<HTMLElement>('b');
+  const text = String(Math.ceil(seconds));
+  if (num && num.textContent !== text) num.textContent = text;
+  el.classList.toggle('urgent', seconds <= 3);
 }
 
 /**
