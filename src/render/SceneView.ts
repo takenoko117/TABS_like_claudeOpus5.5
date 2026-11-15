@@ -31,6 +31,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { BATTLE_FIELD_WALLS, type FieldWalls } from '../physics/PhysicsWorld';
+import { boundaryThemeKind, generateBoundaryTerrain, type BoundaryBox } from '../field/BoundaryTerrain';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
 import type { Facility } from '../facilities/Facility';
 import { getGateOpeningWidth, isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
@@ -188,17 +189,13 @@ export class SceneView {
   private readonly terrainGroup = new Group();
   /** 戦場外周の山と海（見えない壁の位置を示す背景） */
   private readonly boundaryGroup = new Group();
-  /** 標準の戦場の外側に置く木と岩（横に長い戦場では戦場の中に入るので隠す） */
-  private readonly ringDecorGroup = new Group();
   /** 山と海を作った壁の位置（戦場の壁が変わったら作り直す） */
   private builtWalls: Readonly<FieldWalls> = BATTLE_FIELD_WALLS;
+  /** 外周の地形のシード（ステージが変わるたびに引き直す） */
+  private boundarySeed = (Math.random() * 0x7fffffff) | 0;
   private readonly boundaryMats = {
-    rock: new MeshLambertMaterial(),
-    rockDark: new MeshLambertMaterial(),
-    cap: new MeshLambertMaterial(),
-    sand: new MeshLambertMaterial(),
-    sea: new MeshBasicMaterial(),
-    foam: new MeshBasicMaterial(),
+    solid: new MeshLambertMaterial({ color: 0xffffff }),
+    liquid: new MeshBasicMaterial({ color: 0xffffff }),
   };
   private ghostGroup: Group | null = null;
   private ghostLane: Mesh | null = null;
@@ -365,51 +362,6 @@ export class SceneView {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    const rockMat = new MeshLambertMaterial({ color: 0x7b8288 });
-    const trunkMat = new MeshLambertMaterial({ color: 0x6b4423 });
-    const leafMat = new MeshLambertMaterial({ color: 0x3e7a34 });
-    const cube = new BoxGeometry(1, 1, 1);
-
-    const ringCount = 28;
-    for (let i = 0; i < ringCount; i++) {
-      const a = (i / ringCount) * Math.PI * 2 + (i % 3) * 0.07;
-      const r = 34 + (i % 5) * 3.5;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      // 手前側は海なので木や岩を置かない
-      if (z > BATTLE_FIELD_WALLS.maxZ - 1) continue;
-      if (i % 2 === 0) {
-        const tree = new Group();
-        const h = 2.2 + (i % 3) * 0.6;
-        const trunk = new Mesh(cube, trunkMat);
-        trunk.scale.set(0.6, h, 0.6);
-        trunk.position.y = h / 2;
-        trunk.castShadow = true;
-        tree.add(trunk);
-
-        const crown = new Mesh(cube, leafMat);
-        const cs = 2.0 + (i % 2) * 0.5;
-        crown.scale.set(cs, cs * 1.1, cs);
-        crown.position.y = h + cs * 0.45;
-        crown.castShadow = true;
-        tree.add(crown);
-
-        tree.position.set(x, 0, z);
-        this.ringDecorGroup.add(tree);
-      } else {
-        const rock = new Mesh(cube, rockMat);
-        const sx = 1.4 + (i % 3) * 0.6;
-        const sy = 0.9 + (i % 2) * 0.5;
-        const sz = 1.2 + ((i + 1) % 3) * 0.5;
-        rock.scale.set(sx, sy, sz);
-        rock.position.set(x, sy / 2, z);
-        rock.rotation.y = a;
-        rock.castShadow = true;
-        rock.receiveShadow = true;
-        this.ringDecorGroup.add(rock);
-      }
-    }
-    this.scene.add(this.ringDecorGroup);
 
     const lineGeo = new BoxGeometry(0.14, 0.03, 0.9);
     const whiteMat = new MeshBasicMaterial({ color: 0xf8f8f2 });
@@ -447,84 +399,46 @@ export class SceneView {
     this.rogueHeartScene.add(this.rogueHeartGroup);
   }
 
-  /** 見えない壁の外側に、左右と奥の山・手前の砂浜と海を作る（カメラの初期位置側は視界を塞がない海にする） */
+  /**
+   * 見えない壁の外側に広がる地形を作る。4 方向それぞれにランダムなバイオーム（山岳・海・森・荒野・
+   * 湿地・草原・氷河・火山・遺跡など）を割り当て、ボクセルで組み立てる（生成は field/BoundaryTerrain.ts）。
+   */
   private buildFieldBoundary(): void {
-    const { maxX, maxZ } = this.builtWalls;
-    const { rock, rockDark, cap, sand, sea, foam } = this.boundaryMats;
-    const cube = new BoxGeometry(1, 1, 1);
-    let seed = 1;
-    const rand = () => {
-      const v = Math.sin(seed++ * 127.1) * 43758.5453;
-      return v - Math.floor(v);
-    };
-
-    const addBox = (mat: MeshLambertMaterial | MeshBasicMaterial, sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
-      const box = new Mesh(cube, mat);
-      box.scale.set(sx, sy, sz);
-      box.position.set(x, y, z);
-      this.boundaryGroup.add(box);
-      return box;
-    };
-
-    /** 上に行くほど細くなるボクセルの山 */
-    const addPeak = (x: number, z: number, width: number, height: number) => {
-      const layers = 4;
-      const layerH = height / layers;
-      for (let i = 0; i < layers; i++) {
-        const w = width * (1 - (i / layers) * 0.8);
-        const mat = i === layers - 1 ? cap : i % 2 === 0 ? rock : rockDark;
-        addBox(mat, w, layerH, w, x, layerH * (i + 0.5), z).castShadow = i === 0;
+    for (const child of [...this.boundaryGroup.children]) {
+      this.boundaryGroup.remove(child);
+      if (child instanceof InstancedMesh) {
+        child.geometry.dispose();
+        child.dispose();
       }
-    };
-
-    /** 壁沿いに手前の低い山と奥の高い山の2列を並べる。place は (壁に沿った座標, 壁からの距離) を受け取る */
-    const addRange = (from: number, to: number, place: (along: number, depth: number, width: number, height: number) => void) => {
-      for (let along = from; along <= to; along += 4.5) {
-        const inner = 5 + rand() * 3;
-        place(along + rand() * 1.5, inner / 2, inner, 2.5 + rand() * 2.5);
-        const outer = 8 + rand() * 5;
-        place(along + rand() * 2, inner + outer / 2 - 1, outer, 7 + rand() * 6);
-      }
-    };
-    for (const side of [-1, 1]) {
-      addRange(-maxZ - 12, maxZ - 2, (along, depth, w, h) => addPeak(side * (maxX + depth), along, w, h));
     }
-    addRange(-maxX, maxX, (along, depth, w, h) => addPeak(along, -(maxZ + depth), w, h));
-
-    // 手前の砂浜と海。地面の端（±60）まで水面で覆う
-    const beachW = maxX * 2 + 40;
-    const seaDepth = 60 - maxZ;
-    addBox(sand, beachW, 0.04, 2.4, 0, 0.03, maxZ - 1.2).receiveShadow = true;
-    addBox(sea, beachW + 80, 0.05, seaDepth, 0, 0.04, maxZ + seaDepth / 2);
-    addBox(foam, beachW, 0.06, 0.3, 0, 0.045, maxZ + 0.1);
-    for (let i = 0; i < 26; i++) {
-      addBox(foam, 1.5 + rand() * 3, 0.06, 0.16, (rand() - 0.5) * (maxX * 2 + 30), 0.045, maxZ + 2 + rand() * 24);
-    }
-
-    this.applyBoundaryTheme(this.currentVisualTheme ?? undefined);
+    const terrain = generateBoundaryTerrain({
+      walls: this.builtWalls,
+      seed: this.boundarySeed,
+      theme: boundaryThemeKind(this.currentVisualTheme?.particleType),
+    });
+    const near = terrain.solids.filter((b) => !b.far);
+    const far = terrain.solids.filter((b) => b.far);
+    this.boundaryGroup.add(this.makeBoundaryMesh(near, this.boundaryMats.solid, true));
+    this.boundaryGroup.add(this.makeBoundaryMesh(far, this.boundaryMats.solid, false));
+    this.boundaryGroup.add(this.makeBoundaryMesh(terrain.liquids, this.boundaryMats.liquid, false));
   }
 
-  /** ステージの雰囲気に合わせて山と海の色を変える（火山なら溶岩、雪原なら氷河など） */
-  private applyBoundaryTheme(theme?: StageVisualTheme): void {
-    const m = this.boundaryMats;
-    const set = (rock: number, rockDark: number, cap: number, sand: number, sea: number, foam: number) => {
-      m.rock.color.setHex(rock);
-      m.rockDark.color.setHex(rockDark);
-      m.cap.color.setHex(cap);
-      m.sand.color.setHex(sand);
-      m.sea.color.setHex(sea);
-      m.foam.color.setHex(foam);
-    };
-    const type = theme?.particleType;
-    if (!type) set(0x6f7f58, 0x5f6e4c, 0xf1f5f9, 0xe3cf94, 0x2f8fc4, 0xeaf6ff);
-    else if (type === 'embers') set(0x3a2a26, 0x2c201d, 0xf97316, 0x4a3a32, 0xe2480f, 0xffc04d);
-    else if (type === 'snow') set(0x8fa3b8, 0x7c90a6, 0xffffff, 0xe5eef5, 0x7ec8e3, 0xffffff);
-    else if (type === 'spores') set(0x4b5d32, 0x3e4e29, 0x84cc16, 0x5d5a3a, 0x5b8a2c, 0xc5e384);
-    else {
-      const glow = new Color(theme?.particleColor ?? 0x8899aa);
-      const dimmed = glow.clone().multiplyScalar(0.45);
-      set(0x44465a, 0x37394b, glow.getHex(), 0x5a5a6b, dimmed.getHex(), glow.getHex());
-    }
+  /** 箱のリストを 1 つの InstancedMesh にまとめる（色は箱ごと） */
+  private makeBoundaryMesh(boxes: readonly BoundaryBox[], mat: Material, shadow: boolean): InstancedMesh {
+    const mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), mat, Math.max(1, boxes.length));
+    const m = new Matrix4();
+    const col = new Color();
+    boxes.forEach((b, i) => {
+      m.makeScale(b.sx, b.sy, b.sz);
+      m.setPosition(b.x, b.y, b.z);
+      mesh.setMatrixAt(i, m);
+      mesh.setColorAt(i, col.setHex(b.color));
+    });
+    mesh.count = boxes.length;
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    mesh.computeBoundingSphere();
+    return mesh;
   }
 
   /** ステージ固有のビジュアル環境（背景色・フォグ・床テクスチャ・環境光・天候）を適用する */
@@ -547,7 +461,9 @@ export class SceneView {
     }
 
     this.drawGroundTexture(theme);
-    this.applyBoundaryTheme(theme);
+    // ステージが変わるたびに外周の地形を引き直す（飽きないように毎回ちがう景色にする）
+    this.boundarySeed = (Math.random() * 0x7fffffff) | 0;
+    this.buildFieldBoundary();
   }
 
   private drawGroundTexture(theme?: StageVisualTheme): void {
@@ -3815,10 +3731,7 @@ export class SceneView {
   private syncFieldWalls(walls: Readonly<FieldWalls> | null): void {
     if (!walls || (walls.maxX === this.builtWalls.maxX && walls.maxZ === this.builtWalls.maxZ)) return;
     this.builtWalls = { maxX: walls.maxX, maxZ: walls.maxZ };
-    for (const child of [...this.boundaryGroup.children]) this.boundaryGroup.remove(child);
     this.buildFieldBoundary();
-    const wide = walls.maxX > BATTLE_FIELD_WALLS.maxX + 5;
-    this.ringDecorGroup.visible = !wide;
     this.camDistance = Math.min(this.camDistance, this.maxCamDistance);
     this.updateCameraTransform();
   }

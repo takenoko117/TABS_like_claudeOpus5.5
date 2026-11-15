@@ -74,6 +74,7 @@ npm run outline -- src                          # 全ファイルの行数
 | `PropBuilder.ts` | 453 | 木・家などの小物のボクセル形状 |
 | `BiomeDefs.ts` | 192 | バイオームと特性の定義、ルート選択肢 |
 | `FieldRng.ts` | 59 | 乱数・ノイズ |
+| `BoundaryTerrain.ts` | 823 | 戦場の外周（壁の外）の背景地形。4 方向にランダムなバイオーム（山岳・海・森・荒野・湿地・草原・氷河・火山・遺跡）を割り当ててボクセル化 `generateBoundaryTerrain`。描画は SceneView の `buildFieldBoundary` |
 
 ### src/render — 描画（Three.js）
 
@@ -198,7 +199,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 
 | 領域 | 主なメソッド |
 | --- | --- |
-| シーン構築・テーマ | `setupLights`, `setupEnvironment`, `setStageTheme`, `setStageTerrain`, `drawGroundTexture` |
+| シーン構築・テーマ | `setupLights`, `setupEnvironment`, `buildFieldBoundary`（外周地形、`setStageTheme` のたびに引き直す）, `setStageTheme`, `setStageTerrain`, `drawGroundTexture` |
 | 入力・カメラ | `setupInputListeners`, `screenToGround`, `updateCameraMovement`, `updateAutoCamera`, `playFinisherCamera`, `addCameraShake` |
 | 配置ゴースト | `updatePlacementGhost`, `setVersusZones` |
 | ユニット・施設の見た目 | `addUnitVisual`, `addFacilityVisual`, `syncFacilities` |
