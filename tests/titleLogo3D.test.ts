@@ -54,4 +54,20 @@ describe('タイトルロゴのボクセル', () => {
     const buried = logo.voxels.filter((v) => dirs.every(([dx, dy, dz]) => occupied.has(`${v.x + dx},${v.y + dy},${v.z + dz}`)));
     expect(buried.length).toBe(0);
   });
+
+  it('題字 11 文字・英字 11 文字の位置があり、左から順に着地する', () => {
+    expect(logo.titleChars).toHaveLength(11);
+    expect(logo.subChars).toHaveLength(11);
+    for (let k = 1; k < logo.titleChars.length; k++) {
+      expect(logo.titleChars[k].x).toBeGreaterThan(logo.titleChars[k - 1].x);
+      expect(logo.titleChars[k].landT).toBeGreaterThan(logo.titleChars[k - 1].landT);
+    }
+    expect(logo.titleChars.every((c) => c.landT < logo.introEnd)).toBe(true);
+  });
+
+  it('文字の根元に接地影が入り、同じ色でも暗いブロックがある', () => {
+    const outlineFront = logo.voxels.filter((v) => v.part === 'outline');
+    const colors = new Set(outlineFront.map((v) => v.color));
+    expect(colors.size).toBeGreaterThan(4);
+  });
 });
