@@ -1841,9 +1841,10 @@ body.on-title #btn-restore-hud {
 
 .title-logo {
   position: relative;
-  width: 100%;
-  aspect-ratio: 4 / 1;
-  max-height: 26vh;
+  /* 横長のロゴなので、ボタンの列より広く取る */
+  width: min(1040px, 96vw);
+  aspect-ratio: 4.4 / 1;
+  max-height: 30vh;
   margin: 0;
 }
 

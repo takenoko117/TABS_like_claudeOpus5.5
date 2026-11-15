@@ -1428,7 +1428,8 @@ export class GameApp {
     setAllyBluePalette(false);
     document.body.classList.add('on-title');
     document.getElementById('title-screen')?.classList.remove('hidden');
-    this.titleLogo ??= new TitleLogo3D(document.querySelector<HTMLElement>('.title-logo')!);
+    if (this.titleLogo) this.titleLogo.playIntro();
+    else this.titleLogo = new TitleLogo3D(document.querySelector<HTMLElement>('.title-logo')!);
     this.renderTitleProgress();
     this.view.setRogueHeartsVisible(false);
     this.view.resetCamera();
