@@ -160,6 +160,11 @@ export function renderVersusLobby(vs: TDVersusSession, roomDraft: string): strin
   `;
 }
 
+/** ボクセルモデルの表示先（UnitPreviews が描く。WebGL が使えないときだけ下のアイコンが見える） */
+function unitModel(id: UnitTypeId): string {
+  return `<span class="unit-voxel td-voxel" data-unit-preview="${id}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span>`;
+}
+
 /** ドラフトのカード1枚 */
 function draftCard(id: UnitTypeId, opts: { picked: boolean; locked: boolean; badge: string | null }): string {
   const t = UNIT_TYPES[id];
@@ -170,7 +175,7 @@ function draftCard(id: UnitTypeId, opts: { picked: boolean; locked: boolean; bad
   return `<button type="button" class="td-draft-card ${rarity}${opts.picked ? ' picked' : ''}${opts.badge ? ' recommended' : ''}" data-vs-pick="${id}" ${opts.locked ? 'disabled' : ''}>
     ${badge}
     <span class="td-choice-rarity">${RARITY_LABELS[rarity]}</span>
-    <span class="td-draft-icon"><span class="unit-voxel td-voxel" data-unit-preview="${id}">${getUnitIconSvg(id)}<canvas aria-hidden="true"></canvas></span></span>
+    <span class="td-draft-icon">${unitModel(id)}</span>
     <b>${esc(t.name)}</b>
     <small>${vx('coin')} ${t.cost}　${vx('people')} ×${getSquadSize(id)}</small>
   </button>`;
@@ -181,8 +186,8 @@ function draftDeckRow(picks: readonly UnitTypeId[]): string {
   return Array.from({ length: TD_DRAFT_ROUNDS }, (_, r) => {
     const id = picks[r];
     return id
-      ? `<span class="td-mini" title="${esc(UNIT_TYPES[id].name)}">${getUnitIconSvg(id)}</span>`
-      : '<span class="td-mini td-draft-empty"></span>';
+      ? `<span class="td-draft-slot" title="${esc(UNIT_TYPES[id].name)}">${unitModel(id)}</span>`
+      : '<span class="td-draft-slot td-draft-empty"></span>';
   }).join('');
 }
 

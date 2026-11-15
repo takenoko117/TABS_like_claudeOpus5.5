@@ -514,8 +514,8 @@ export class RealtimeTDHud {
   update(realDt: number): void {
     const td = this.host.getRun();
     if (!td) {
-      // スターター選択中にあそびかたを開いたときもモデルを動かす
-      if (this.isTutorialOpen) this.previews.update(realDt);
+      // ランがない間（スターター選択・あそびかた・オンライン対戦のドラフトなど）も、画面にあるモデルを動かす
+      this.previews.update(realDt);
       return;
     }
     this.consumeEvents(td);
@@ -1318,6 +1318,8 @@ export class RealtimeTDHud {
   /** オンライン対戦のロビー（部屋名の入力・部屋での待機）。部屋の状態が変わるたびに呼ぶ */
   showVersusLobby(vs: TDVersusSession): void {
     const focused = document.activeElement?.classList.contains('td-vs-room') ?? false;
+    // ドラフトのモデルは自分の席の色（ゲストは赤）で見せる
+    this.previews.setTeam(vs.slot === 1 ? 1 : 0);
     this.showModal(renderVersusLobby(vs, this.vsRoomDraft));
     this.bindPreviews();
     const input = this.elModal.querySelector<HTMLInputElement>('.td-vs-room');

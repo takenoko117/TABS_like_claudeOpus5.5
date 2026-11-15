@@ -1146,6 +1146,7 @@ body.td-mode #btn-restore-hud {
 .td-draft-deck.red { border-left: 6px solid var(--team-red); }
 .td-draft-deck small { color: var(--sub); font-size: 12px; min-width: 3em; }
 .td-draft-deck > span { display: flex; gap: 4px; }
+.td-draft-slot { display: block; width: 44px; height: 44px; }
 .td-draft-empty { border: 2px dashed var(--panel-edge); box-sizing: border-box; }
 @media (max-width: 560px) {
   .td-draft-icon { width: 64px; height: 64px; }
