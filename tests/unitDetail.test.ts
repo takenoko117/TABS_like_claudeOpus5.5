@@ -56,6 +56,15 @@ describe('UnitDetailHelper', () => {
     expect(specialPill?.value).toContain('遠距離無効');
   });
 
+  it('ステータスピルの値には HTML（アイコンの SVG）を含めない（textContent で表示されるため）', () => {
+    const ids = [...UNIT_TYPE_LIST.map((ut) => ut.id), ...FACILITY_TYPE_IDS];
+    for (const id of ids) {
+      for (const pill of getPlaceableDetail(id).statPills) {
+        expect(String(pill.value)).not.toContain('<');
+      }
+    }
+  });
+
   it('特殊攻撃や各スタイルのダメージ表示が適切に行われる', () => {
     expect(getAttackDamageDisplay(UNIT_TYPES.clubber)).toBe('17');
     expect(getAttackDamageDisplay(UNIT_TYPES.archer)).toBe('22');

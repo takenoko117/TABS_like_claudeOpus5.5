@@ -104,7 +104,8 @@ export function getPlaceableDetail(
             },
             {
               label: '耐久力',
-              value: `${vx('shield')} 破壊不可`,
+              value: `破壊不可`,
+              iconSvg: vx('shield'),
               className: 'stat-pill hp',
               title: '地形ブロックは破壊されません',
             },
@@ -163,7 +164,8 @@ export function getPlaceableDetail(
   if (dmg !== '-') {
     pills.push({
       label: '攻撃',
-      value: `${vx('swords')} ${dmg}`,
+      value: `${dmg}`,
+      iconSvg: vx('swords'),
       className: 'stat-pill damage',
       title: '攻撃力 / 単発ダメージ',
     });
@@ -172,7 +174,8 @@ export function getPlaceableDetail(
   if (ut.range > 0) {
     pills.push({
       label: '射程',
-      value: `${vx('target')} ${ut.range}m`,
+      value: `${ut.range}m`,
+      iconSvg: vx('target'),
       className: 'stat-pill range',
       title: '攻撃射程距離',
     });
@@ -181,7 +184,8 @@ export function getPlaceableDetail(
   if (ut.cooldown > 0) {
     pills.push({
       label: '間隔',
-      value: `${vx('stopwatch')} ${ut.cooldown}s`,
+      value: `${ut.cooldown}s`,
+      iconSvg: vx('stopwatch'),
       className: 'stat-pill cooldown',
       title: '攻撃クールダウン間隔',
     });
@@ -190,7 +194,8 @@ export function getPlaceableDetail(
   if (ut.speed > 0) {
     pills.push({
       label: '速度',
-      value: `${vx('boot')} ${ut.speed}m/s`,
+      value: `${ut.speed}m/s`,
+      iconSvg: vx('boot'),
       className: 'stat-pill speed',
       title: '移動速度',
     });
@@ -199,7 +204,8 @@ export function getPlaceableDetail(
   if (ut.id === 'hongon') {
     pills.push({
       label: '特効',
-      value: `${vx('shield')} 遠距離無効(累計1000)`,
+      value: `遠距離無効(累計1000)`,
+      iconSvg: vx('shield'),
       className: 'stat-pill special',
       title: '特殊効果: 矢・銃弾・爆弾・砲撃・遠距離魔法などあらゆる遠距離攻撃のダメージを累計1000まで無効化',
     });
@@ -208,7 +214,8 @@ export function getPlaceableDetail(
   if (ut.id === 'yamamuron') {
     pills.push({
       label: '特効',
-      value: `${vx('volcano')} HP半分で強化`,
+      value: `HP半分で強化`,
+      iconSvg: vx('volcano'),
       className: 'stat-pill special',
       title: '強化モード: HP半分以下で変身し、移動速度20倍・射程5倍・攻撃頻度2倍・最大3体へ同時噴火・地震による周囲への範囲攻撃',
     });
