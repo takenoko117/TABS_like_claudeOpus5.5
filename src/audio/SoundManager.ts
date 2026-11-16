@@ -4,6 +4,21 @@ import type { CombatEffectEvent } from '../combat/CombatSystem';
  * Web Audio API を用いたプロシージャル効果音（SE）マネージャー。
  * 外部音声ファイルに依存せず、打撃音・斬撃音・弓矢発射音・ボクセル損壊音・UI操作音などをリアルタイム合成する。
  */
+/** 第8弾ユニットの演出 → 代わりに鳴らす既存の効果音 */
+const COSMIC_SOUND_ALIAS: Readonly<Record<string, CombatEffectEvent['kind']>> = {
+  octopus_lash: 'croc_death_roll',
+  deep_sonar: 'poseidon_wave',
+  squid_grab: 'anaconda_bite',
+  cosmic_lob: 'bomb_throw',
+  cosmic_lob_impact: 'bomb_explosion',
+  earth_gravity: 'gravity_pull',
+  tectonic_burst: 'tower_quake',
+  big_bang: 'gravity_blast',
+  gpu_beam: 'yamanote_rush',
+  ufo_beam: 'gravity_pull',
+  sword_parry: 'shield_block',
+};
+
 export class SoundManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -484,6 +499,12 @@ export class SoundManager {
 
   /** 新ユニット固有のスキル・武器・モンスター効果音を再生する */
   playEffect(e: CombatEffectEvent): void {
+    // 第8弾ユニットの演出は、似た既存の効果音を鳴らす
+    const alias = COSMIC_SOUND_ALIAS[e.kind];
+    if (alias) {
+      this.playEffect({ ...e, kind: alias } as CombatEffectEvent);
+      return;
+    }
     const ctx = this.ensureContext();
     if (!ctx || !this.masterGain || !this.noiseBuffer) return;
     const t = ctx.currentTime;
@@ -898,6 +919,81 @@ export class SoundManager {
         g.connect(this.masterGain);
         osc.start(t);
         osc.stop(t + 0.15);
+        break;
+      }
+      case 'poseidon_wave': {
+        if (!this.throttle('poseidon_wave', 140)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(160, t);
+        osc.frequency.exponentialRampToValueAtTime(55, t + 0.35);
+        g.gain.setValueAtTime(0.32, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.4);
+        break;
+      }
+      case 'croc_death_roll': {
+        if (!this.throttle('croc_death_roll', 100)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(240, t);
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.12);
+        g.gain.setValueAtTime(0.24, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.14);
+        break;
+      }
+      case 'sequoia_storm': {
+        if (!this.throttle('sequoia_storm', 180)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(480, t);
+        osc.frequency.exponentialRampToValueAtTime(65, t + 0.32);
+        g.gain.setValueAtTime(0.28, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.35);
+        break;
+      }
+      case 'tower_quake': {
+        if (!this.throttle('tower_quake', 180)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(110, t);
+        osc.frequency.exponentialRampToValueAtTime(38, t + 0.42);
+        g.gain.setValueAtTime(0.36, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.44);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.45);
+        break;
+      }
+      case 'yamanote_rush': {
+        if (!this.throttle('yamanote_rush', 160)) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(520, t);
+        osc.frequency.setValueAtTime(660, t + 0.08);
+        g.gain.setValueAtTime(0.22, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.26);
         break;
       }
       case 'decoy_pop': {

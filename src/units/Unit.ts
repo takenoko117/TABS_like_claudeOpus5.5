@@ -9,6 +9,16 @@ import { HAYATO_HOVER_MUL, hayatoMouthPos } from './HayatoHead';
 import { mountSeatRise } from './Mounting';
 import { J, JOINTS, JOINT_COUNT, PELVIS_HEIGHT, SKELETON_CONSTRAINTS } from './Skeleton';
 import type { Team, UnitType, UnitTypeId } from './UnitTypes';
+import {
+  COSMIC_FLYING_IDS,
+  COSMIC_HEAVY_IDS,
+  SAUCE_SLOW_MUL,
+  applyCosmicPose,
+  castCosmicAttack,
+  cosmicHoverHeight,
+  isCosmicStyle,
+  isOmniDirectionalStyle,
+} from '../combat/CosmicSkills';
 
 export type AttackPhase = 'none' | 'windup' | 'strike' | 'recover';
 
@@ -37,6 +47,7 @@ export const FLYING_UNIT_IDS: ReadonlySet<string> = new Set([
   'angel_zeruel',
   'deoxys',
   'hayato',
+  ...COSMIC_FLYING_IDS,
 ]);
 
 export interface UnitContext {
@@ -259,6 +270,8 @@ export class Unit {
   private burnTickTimer = 0;
   /** 毒残り時間（巨大アナコンダ） */
   poisonTimer = 0;
+  /** UFO の焼きそばでソースまみれ（鈍足）の残り時間 */
+  sauceTimer = 0;
   /** ホンゴンの旋律結界の残量（遠距離ダメージの累計吸収量） */
   rangedBarrier = 0;
   /** ヤマムロンの強化モード（HP半分以下）中か */
@@ -311,6 +324,11 @@ export class Unit {
   /** 大鷲の鷲掴み対象と残り時間 */
   grabbedUnit: Unit | null = null;
   grabTimer = 0;
+  /** ワニのデスロール噛みつき対象・残り時間・連続ダメージタイマー・回転角 */
+  crocGrabTarget: Unit | null = null;
+  crocRollTimer = 0;
+  private crocRollTick = 0;
+  crocRollAngle = 0;
   /** タニモン: 頭をつかもうとしている（つかんでいる）敵と施設 */
   tanimonGrab: Unit | null = null;
   tanimonGrabFacility: Facility | null = null;
@@ -370,8 +388,14 @@ export class Unit {
         ? 0.44
         : type.id === 'giant_tank'
         ? 0.38
-        : type.id === 'anaconda'
+        : type.id === 'anaconda' || type.id === 'super_anaconda'
         ? 0.38
+        : type.id === 'crocodile'
+        ? 0.32
+        : type.id === 'yamanote_line'
+        ? 0.5
+        : type.id === 'elon_musk'
+        ? 0.78
         : type.id === 'warelephant'
         ? 0.72
         : type.id === 'sezain'
@@ -535,6 +559,7 @@ export class Unit {
     if (this.teleportCooldown > 0) this.teleportCooldown = Math.max(0, this.teleportCooldown - dt);
     if (this.teleportEvasionCooldown > 0) this.teleportEvasionCooldown = Math.max(0, this.teleportEvasionCooldown - dt);
     if (this.chargeCooldown > 0) this.chargeCooldown = Math.max(0, this.chargeCooldown - dt);
+    if (this.sauceTimer > 0) this.sauceTimer = Math.max(0, this.sauceTimer - dt);
 
     // 凍結硬直の処理（永久凍土ブリザード）
     if (this.freezeTimer > 0) {
@@ -740,7 +765,7 @@ export class Unit {
     }
 
     // 炎上中はパニックでランダム方向に走る（土台に乗っている間は走らない）
-    if (!this.mountedOn && this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant' && this.type.id !== 'angel_zeruel') {
+    if (!this.mountedOn && this.burnTimer > 0 && this.type.id !== 'dragon' && this.type.id !== 'warelephant' && this.type.id !== 'angel_zeruel' && !COSMIC_HEAVY_IDS.has(this.type.id)) {
       const panicAngle = this.facing + Math.sin(this.walkPhase * 2.5) * 1.2;
       this.desiredFacing = panicAngle;
       this.moveDir.set(Math.sin(panicAngle), 0, Math.cos(panicAngle));
@@ -888,11 +913,21 @@ export class Unit {
     if (this.poisonTimer > 0) {
       this.moveSpeed *= 0.65;
     }
+    if (this.sauceTimer > 0) {
+      this.moveSpeed *= SAUCE_SLOW_MUL;
+    }
     const minAttackMuscle =
       this.type.id === 'giant' ||
       this.type.id === 'warelephant' ||
       this.type.id === 'dragon' ||
       this.type.id === 'anaconda' ||
+      this.type.id === 'super_anaconda' ||
+      this.type.id === 'crocodile' ||
+      this.type.id === 'giant_sequoia' ||
+      this.type.id === 'yamanote_line' ||
+      this.type.id === 'landmark_tower' ||
+      this.type.id === 'elon_musk' ||
+      this.type.id === 'poseidon' ||
       this.type.id === 'buggy' ||
       this.type.id === 'giant_tank' ||
       this.type.id === 'giant_robot' ||
@@ -900,7 +935,8 @@ export class Unit {
       this.type.id === 'sezain' ||
       this.type.id === 'lightspeed_ant' ||
       this.type.id === 'wild_troll' ||
-      this.type.id === 'wild_chief'
+      this.type.id === 'wild_chief' ||
+      COSMIC_HEAVY_IDS.has(this.type.id)
         ? 0.25
         : 0.55;
     const facingErr = Math.abs(wrapAngle(this.desiredFacing - this.facing));
@@ -910,7 +946,7 @@ export class Unit {
       this.cooldown <= 0 &&
       dist <= engage &&
       this.muscle > minAttackMuscle &&
-      facingErr < 0.6
+      (facingErr < 0.6 || isOmniDirectionalStyle(this.type.style))
     ) {
       this.attackPhase = 'windup';
       this.phaseTime = 0;
@@ -999,7 +1035,11 @@ export class Unit {
       st === 'heal' ||
       st === 'necromancy' ||
       st === 'barrier' ||
-      st === 'meteor'
+      st === 'meteor' ||
+      st === 'sea_wave' ||
+      st === 'sequoia_storm' ||
+      st === 'tower_quake' ||
+      isCosmicStyle(st)
     ) {
       return this.attackRange;
     }
@@ -1056,7 +1096,11 @@ export class Unit {
       st === 'heal' ||
       st === 'necromancy' ||
       st === 'barrier' ||
-      st === 'meteor'
+      st === 'meteor' ||
+      st === 'sea_wave' ||
+      st === 'sequoia_storm' ||
+      st === 'tower_quake' ||
+      isCosmicStyle(st)
     ) {
       return this.attackRange;
     }
@@ -1624,6 +1668,28 @@ export class Unit {
       }
       return;
     }
+    if (st === 'sea_wave') {
+      ctx.combat.castPoseidonWave(this, this.pelvis.pos, this.forward, ctx.units, ctx.facilities ?? [], dt);
+      return;
+    }
+    if (st === 'sequoia_storm') {
+      const aim =
+        t && t.alive
+          ? t.pelvis.pos.clone()
+          : fac && fac.alive
+          ? fac.pos.clone()
+          : this.pelvis.pos.clone().addScaledVector(this.forward, 4);
+      ctx.combat.castSequoiaStorm(this, aim, ctx.units, ctx.facilities ?? [], dt);
+      return;
+    }
+    if (isCosmicStyle(st)) {
+      castCosmicAttack(this, st, t && t.alive ? t : null, fac && fac.alive ? fac : null, { combat: ctx.combat, units: ctx.units, facilities: ctx.facilities ?? [] }, dt);
+      return;
+    }
+    if (st === 'tower_quake') {
+      ctx.combat.castTowerQuake(this, this.pelvis.pos, ctx.units, ctx.facilities ?? [], dt);
+      return;
+    }
     if (st === 'rocket') {
       const aim =
         t && t.alive
@@ -1787,15 +1853,18 @@ export class Unit {
       return;
     }
 
-    // 巨大アナコンダの飛びかかり毒牙噛みつき
-    if (this.type.id === 'anaconda') {
-      const lunge = this.forward.clone().multiplyScalar(8.0 * Math.sqrt(this.scale));
+    // 巨大アナコンダ・超巨大アナコンダの飛びかかり毒牙噛みつき
+    if (this.type.id === 'anaconda' || this.type.id === 'super_anaconda') {
+      const isSuper = this.type.id === 'super_anaconda';
+      const lunge = this.forward.clone().multiplyScalar((isSuper ? 9.5 : 8.0) * Math.sqrt(this.scale));
       lunge.y = t && t.alive && t.pelvis.pos.y > 1.5 ? 5.5 : 1.2;
       for (const p of this.joints) p.addVelocity(lunge, dt);
       const bitePos = this.head.pos.clone().addScaledVector(this.forward, 1.1 * this.scale);
       ctx.combat.emitEffect({ kind: 'anaconda_bite', pos: bitePos });
-      const biteR = 1.85 * this.scale;
+      const biteR = (isSuper ? 2.2 : 1.85) * this.scale;
       const biteR2 = biteR * biteR;
+      const dmg = (isSuper ? 160 : 52) * this.damageMul;
+      const poisonDur = isSuper ? 5.0 : 3.5;
       for (const u of ctx.units) {
         if (!u.alive || u.team === this.team) continue;
         const dx = u.pelvis.pos.x - bitePos.x;
@@ -1803,11 +1872,10 @@ export class Unit {
         const dy = Math.max(0, Math.abs(u.pelvis.pos.y - bitePos.y) - 1.5);
         if (dx * dx + dy * dy + dz * dz <= biteR2) {
           this.registerHit(u, 0.6);
-          const push = this.forward.clone().multiplyScalar(6.5);
-          push.y = 2.0;
-          const dmg = 52 * this.damageMul;
+          const push = this.forward.clone().multiplyScalar(isSuper ? 9.0 : 6.5);
+          push.y = isSuper ? 3.2 : 2.0;
           const killed = u.takeDamage(dmg, u.chest, push, dt, this);
-          u.poisonTimer = 3.5;
+          u.poisonTimer = poisonDur;
           u.poisonAttacker = this;
           ctx.combat.onHit?.({
             kind: 'melee',
@@ -1819,6 +1887,109 @@ export class Unit {
             impulse: push,
             killed,
           });
+        }
+      }
+      if (isSuper && fac && fac.alive) {
+        const df = Math.hypot(fac.pos.x - bitePos.x, fac.pos.z - bitePos.z);
+        if (df <= biteR + fac.radius) {
+          const killed = fac.takeDamage(dmg, this);
+          ctx.combat.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+          if (killed) {
+            ctx.combat.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+          }
+        }
+      }
+    }
+
+    // ワニの噛みつき（ヒットしたらデスロールへ移行）
+    if (this.type.id === 'crocodile') {
+      const lunge = this.forward.clone().multiplyScalar(7.5 * Math.sqrt(this.scale));
+      lunge.y = t && t.alive && t.pelvis.pos.y > 1.5 ? 4.5 : 0.8;
+      for (const p of this.joints) p.addVelocity(lunge, dt);
+      const bitePos = this.head.pos.clone().addScaledVector(this.forward, 0.9 * this.scale);
+      ctx.combat.emitEffect({ kind: 'anaconda_bite', pos: bitePos });
+      const biteR = 1.75 * this.scale;
+      const biteR2 = biteR * biteR;
+      for (const u of ctx.units) {
+        if (!u.alive || u.team === this.team) continue;
+        const dx = u.pelvis.pos.x - bitePos.x;
+        const dz = u.pelvis.pos.z - bitePos.z;
+        const dy = Math.max(0, Math.abs(u.pelvis.pos.y - bitePos.y) - 1.4);
+        if (dx * dx + dy * dy + dz * dz <= biteR2) {
+          const dmg = 35 * this.damageMul;
+          const push = this.forward.clone().multiplyScalar(2.0);
+          const killed = u.takeDamage(dmg, u.chest, push, dt, this);
+          ctx.combat.onHit?.({
+            kind: 'melee',
+            point: u.chest.pos.clone(),
+            damage: dmg,
+            attacker: this,
+            victim: u,
+            hitParticle: u.chest,
+            impulse: push,
+            killed,
+          });
+          if (!killed && this.crocRollTimer <= 0) {
+            // 獲物に噛みつき成功 → デスロール開始！
+            this.crocGrabTarget = u;
+            this.crocRollTimer = 1.15;
+            this.crocRollTick = 0.08;
+          }
+          break;
+        }
+      }
+      if (fac && fac.alive) {
+        const df = Math.hypot(fac.pos.x - bitePos.x, fac.pos.z - bitePos.z);
+        if (df <= biteR + fac.radius) {
+          const dmg = 75 * this.damageMul;
+          const killed = fac.takeDamage(dmg, this);
+          ctx.combat.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+          if (killed) {
+            ctx.combat.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+          }
+        }
+      }
+    }
+
+    // 山手線8両編成の高速突進攻撃
+    if (this.type.id === 'yamanote_line') {
+      const rush = this.forward.clone().multiplyScalar(11.0);
+      rush.y = 0.4;
+      for (const p of this.joints) p.addVelocity(rush, dt);
+      const hitPos = this.pelvis.pos.clone().addScaledVector(this.forward, 1.8 * this.scale);
+      ctx.combat.emitEffect({ kind: 'yamanote_rush', pos: hitPos, forward: this.forward.clone() });
+      const hitR = 2.6 * this.scale;
+      const hitR2 = hitR * hitR;
+      const dmg = 115 * this.damageMul;
+      for (const u of ctx.units) {
+        if (!u.alive || u.team === this.team) continue;
+        const dx = u.pelvis.pos.x - hitPos.x;
+        const dz = u.pelvis.pos.z - hitPos.z;
+        if (dx * dx + dz * dz <= hitR2) {
+          const push = this.forward.clone().multiplyScalar(10.5);
+          push.y = 4.8;
+          const killed = u.takeDamage(dmg, u.chest, push, dt, this);
+          u.muscle = Math.min(u.muscle, 0.2);
+          ctx.combat.onHit?.({
+            kind: 'melee',
+            point: u.chest.pos.clone(),
+            damage: dmg,
+            attacker: this,
+            victim: u,
+            hitParticle: u.chest,
+            impulse: push,
+            killed,
+          });
+        }
+      }
+      if (fac && fac.alive) {
+        const df = Math.hypot(fac.pos.x - hitPos.x, fac.pos.z - hitPos.z);
+        if (df <= hitR + fac.radius) {
+          const killed = fac.takeDamage(dmg, this);
+          ctx.combat.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+          if (killed) {
+            ctx.combat.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+          }
         }
       }
     }
@@ -2597,6 +2768,58 @@ export class Unit {
   private updateSpecialMechanics(dt: number, ctx: UnitContext): void {
     const id = this.type.id;
 
+    // 0. ワニのデスロール（噛みついた獲物を高速回転で引き裂く）
+    if (id === 'crocodile') {
+      if (this.crocRollTimer > 0) {
+        this.crocRollTimer -= dt;
+        this.crocRollAngle += dt * 18.0;
+        const target = this.crocGrabTarget;
+        if (target && target.alive && target.pelvis.pos.distanceToSquared(this.head.pos) < (5.5 * this.scale) ** 2) {
+          const jawPos = this.head.pos.clone().addScaledVector(this.forward, 0.85 * this.scale);
+          // 獲物を顎の位置に引き寄せて拘束
+          const pull = new Vector3().subVectors(jawPos, target.chest.pos).multiplyScalar(14);
+          target.chest.addVelocity(pull, dt);
+          target.pelvis.addVelocity(pull.clone().multiplyScalar(0.6), dt);
+          target.muscle = Math.min(target.muscle, 0.05);
+
+          this.crocRollTick -= dt;
+          if (this.crocRollTick <= 0) {
+            this.crocRollTick = 0.2;
+            const dmg = 45 * this.damageMul;
+            const spinSide = new Vector3(-this.forward.z, 0.35, this.forward.x)
+              .multiplyScalar(Math.sin(this.crocRollAngle) * 5.0);
+            const killed = target.takeDamage(dmg, target.chest, spinSide, dt, this);
+            ctx.combat.emitEffect({ kind: 'croc_death_roll', pos: jawPos });
+            ctx.combat.onHit?.({
+              kind: 'melee',
+              point: target.chest.pos.clone(),
+              damage: dmg,
+              attacker: this,
+              victim: target,
+              hitParticle: target.chest,
+              impulse: spinSide,
+              killed,
+            });
+            if (killed || this.crocRollTimer <= 0) {
+              if (!killed) {
+                const fling = this.forward.clone().multiplyScalar(6.5);
+                fling.y = 4.2;
+                target.chest.addVelocity(fling, dt);
+              }
+              this.crocGrabTarget = null;
+              this.crocRollTimer = 0;
+            }
+          }
+        } else {
+          this.crocGrabTarget = null;
+          this.crocRollTimer = 0;
+        }
+      } else {
+        this.crocRollAngle = 0;
+        this.crocGrabTarget = null;
+      }
+    }
+
     // 1. 鎧戦象の蹂躙（トランプル）と足元の土煙
     if (id === 'warelephant' && ctx.aiEnabled) {
       const speedH = Math.hypot(this.velocity.x, this.velocity.z);
@@ -3207,7 +3430,7 @@ export class Unit {
   /** 常時浮遊している兵種か */
   get isFlying(): boolean {
     const id = this.type.id;
-    return id === 'giant_eagle' || id === 'dragon' || id === 'angel_ramiel' || id === 'angel_sahaquiel' || id === 'angel_zeruel' || id === 'deoxys' || id === 'hayato';
+    return FLYING_UNIT_IDS.has(id);
   }
 
   private applyMuscles(dt: number): void {
@@ -3227,7 +3450,11 @@ export class Unit {
     const overChasm = this.context ? this.context.world.isOverChasm(pelvis.pos.x, pelvis.pos.z) : false;
     const slopeH = !overChasm && this.context ? this.context.world.getSlopeHeightAt(pelvis.pos.x, pelvis.pos.z) : 0;
     // 足（またはビークルの各接地粒子）が地面・スロープ付近にあれば「支えられている」とみなす
-    const isVehicle = this.type.id === 'buggy' || this.type.id === 'giant_tank';
+    const isVehicle =
+      this.type.id === 'buggy' ||
+      this.type.id === 'giant_tank' ||
+      this.type.id === 'yamanote_line' ||
+      this.type.id === 'elon_musk';
     let footGap: number;
     if (overChasm) {
       footGap = 999;
@@ -3283,6 +3510,12 @@ export class Unit {
         targetH = PELVIS_HEIGHT * s * 0.44;
       } else if (this.type.id === 'giant_tank') {
         targetH = PELVIS_HEIGHT * s * 0.38;
+      } else if (this.type.id === 'yamanote_line') {
+        targetH = PELVIS_HEIGHT * s * 0.5;
+      } else if (this.type.id === 'elon_musk') {
+        targetH = PELVIS_HEIGHT * s * 0.78;
+      } else if (this.type.id === 'crocodile') {
+        targetH = PELVIS_HEIGHT * s * 0.32;
       } else if (this.type.id === 'warelephant') {
         targetH = PELVIS_HEIGHT * s * 0.72;
       } else if (this.type.id === 'sezain') {
@@ -3291,7 +3524,7 @@ export class Unit {
         targetH = PELVIS_HEIGHT * s * 0.85;
       } else if (this.type.id === 'hongon') {
         targetH = PELVIS_HEIGHT * s * 0.78;
-      } else if (this.type.id === 'anaconda') {
+      } else if (this.type.id === 'anaconda' || this.type.id === 'super_anaconda') {
         targetH = PELVIS_HEIGHT * s * 0.20;
       } else if (this.type.id === 'lightspeed_ant') {
         if (this.target && this.target.alive && this.target.pelvis.pos.y > 1.8) {
@@ -3303,6 +3536,8 @@ export class Unit {
         const psychicLift = this.attackPhase === 'strike' ? 0.35 : 0;
         targetH = PELVIS_HEIGHT * s * 1.35 + psychicLift + Math.sin(this.walkPhase * 1.2) * 0.12;
       }
+      const cosmicH = cosmicHoverHeight(this.type.id, s, this.walkPhase);
+      if (cosmicH !== null) targetH = cosmicH;
       if (!isFlyer) {
         targetH += slopeH;
       }
@@ -3320,7 +3555,11 @@ export class Unit {
       const isCrawlerOrVehicle =
         this.type.id === 'buggy' ||
         this.type.id === 'giant_tank' ||
+        this.type.id === 'yamanote_line' ||
+        this.type.id === 'elon_musk' ||
         this.type.id === 'anaconda' ||
+        this.type.id === 'super_anaconda' ||
+        this.type.id === 'crocodile' ||
         this.type.id === 'sezain' ||
         this.type.id === 'yamamuron' ||
         this.type.id === 'lightspeed_ant';
@@ -3413,13 +3652,15 @@ export class Unit {
       lp[i].set(p[0], p[1], p[2]);
     }
 
-    const isFlyer = this.type.id === 'giant_eagle' || this.type.id === 'dragon' || this.type.id === 'angel_ramiel' || this.type.id === 'angel_sahaquiel' || this.type.id === 'angel_zeruel' || this.type.id === 'deoxys' || this.type.id === 'hayato';
+    const isFlyer = FLYING_UNIT_IDS.has(this.type.id);
     // 歩行・羽ばたきサイクル
     const w = isFlyer ? 1.0 : clamp(speedH / (1.2 * s), 0, 1);
     const phaseRate = isFlyer ? 9.5 : (Math.PI * 2 * speedH) / (1.0 * s);
     this.walkPhase += phaseRate * dt;
 
-    if (this.type.id === 'buggy') {
+    if (applyCosmicPose(this.type.id, lp, this.walkPhase, this.attackPhase === 'strike' || this.attackPhase === 'windup')) {
+      // 第8弾ユニットの専用ポーズ（CosmicSkills.applyCosmicPose）
+    } else if (this.type.id === 'buggy') {
       // 暴走バギーの4輪ビークルポーズ（4隅の接地タイヤ位置に各関節を配置・完全水平）
       lp[J.Chest].set(0, 0.16, 0.0);
       lp[J.Head].set(0, 0.28, 0.0);
@@ -3474,7 +3715,77 @@ export class Unit {
       lp[J.HipR].set(0.26, -0.05, -0.30);
       lp[J.KneeR].set(0.26, -0.28, -0.30 + walkSn * 0.1);
       lp[J.FootR].set(0.26, -0.52, -0.30 + walkSn * 0.18);
-    } else if (this.type.id === 'anaconda') {
+    } else if (this.type.id === 'yamanote_line') {
+      // 山手線: 先頭車両の低重心・水平車体ポーズ（8両編成は描画側で追従連結）
+      lp[J.Chest].set(0, 0.22, 0.2);
+      lp[J.Head].set(0, 0.34, 0.45);
+      lp[J.ShoulderL].set(-0.42, -0.1, 0.4);
+      lp[J.ElbowL].set(-0.42, -0.35, 0.4);
+      lp[J.HandL].set(-0.42, -0.35, 0.1);
+      lp[J.ShoulderR].set(0.42, -0.1, 0.4);
+      lp[J.ElbowR].set(0.42, -0.35, 0.4);
+      lp[J.HandR].set(0.42, -0.35, 0.1);
+      lp[J.HipL].set(-0.42, -0.1, -0.4);
+      lp[J.KneeL].set(-0.42, -0.35, -0.4);
+      lp[J.FootL].set(-0.42, -0.35, -0.15);
+      lp[J.HipR].set(0.42, -0.1, -0.4);
+      lp[J.KneeR].set(0.42, -0.35, -0.4);
+      lp[J.FootR].set(0.42, -0.35, -0.15);
+    } else if (this.type.id === 'elon_musk') {
+      // イーロンマスク: ロケット付きロードスターの上（ルーフ/ボンネット上）に直立して乗るポーズ
+      lp[J.Chest].set(0, 0.56, 0.02);
+      lp[J.Head].set(0, 0.92, 0.04);
+      // ロードスターの上に立つ両腕（ロケット発射の指差し/指揮ポーズ）
+      lp[J.ShoulderL].set(-0.22, 0.64, 0.02);
+      lp[J.ElbowL].set(-0.30, 0.44, 0.08);
+      lp[J.HandL].set(-0.28, 0.34, 0.18);
+      lp[J.ShoulderR].set(0.22, 0.64, 0.02);
+      lp[J.ElbowR].set(0.28, 0.58, 0.28);
+      lp[J.HandR].set(0.24, 0.62, 0.52);
+      // 下の4輪（ロードスターのタイヤ接地）
+      lp[J.HipL].set(-0.40, -0.25, -0.32);
+      lp[J.KneeL].set(-0.40, -0.58, -0.32);
+      lp[J.FootL].set(-0.40, -0.58, 0.30);
+      lp[J.HipR].set(0.40, -0.25, -0.32);
+      lp[J.KneeR].set(0.40, -0.58, -0.32);
+      lp[J.FootR].set(0.40, -0.58, 0.30);
+    } else if (this.type.id === 'crocodile') {
+      // ワニ: 低姿勢の4足爬虫類ポーズ（長い吻と尻尾、デスロール時は前へ飛びかかる）
+      const walkSn = Math.sin(this.walkPhase * 1.8) * w;
+      const headElev = this.attackPhase === 'strike' ? 0.22 : 0.08;
+      const headFwd = this.attackPhase === 'strike' ? 0.85 : 0.65;
+      lp[J.Chest].set(0, 0.06, 0.28);
+      lp[J.Head].set(0, headElev, headFwd);
+      lp[J.ShoulderL].set(-0.26, 0.02, 0.28);
+      lp[J.ElbowL].set(-0.34, -0.14, 0.28 + walkSn * 0.12);
+      lp[J.HandL].set(-0.36, -0.28, 0.28 + walkSn * 0.2);
+      lp[J.ShoulderR].set(0.26, 0.02, 0.28);
+      lp[J.ElbowR].set(0.34, -0.14, 0.28 - walkSn * 0.12);
+      lp[J.HandR].set(0.36, -0.28, 0.28 - walkSn * 0.2);
+      lp[J.HipL].set(-0.26, 0.02, -0.26);
+      lp[J.KneeL].set(-0.34, -0.14, -0.26 - walkSn * 0.12);
+      lp[J.FootL].set(-0.36, -0.28, -0.26 - walkSn * 0.2);
+      lp[J.HipR].set(0.26, 0.02, -0.26);
+      lp[J.KneeR].set(0.34, -0.14, -0.26 + walkSn * 0.12);
+      lp[J.FootR].set(0.36, -0.28, -0.26 + walkSn * 0.2);
+    } else if (this.type.id === 'giant_sequoia' || this.type.id === 'landmark_tower') {
+      // ジャイアントセコイア・ランドマークタワー: どっしり直立した巨体ポーズ
+      const sway = Math.sin(this.walkPhase) * w * 0.05;
+      lp[J.Chest].set(sway, 0.56, 0);
+      lp[J.Head].set(sway, 1.05, 0);
+      lp[J.ShoulderL].set(-0.34, 0.62, 0);
+      lp[J.ElbowL].set(-0.42, 0.42, 0.06);
+      lp[J.HandL].set(-0.46, 0.28, 0.12);
+      lp[J.ShoulderR].set(0.34, 0.62, 0);
+      lp[J.ElbowR].set(0.42, 0.42, 0.06);
+      lp[J.HandR].set(0.46, 0.28, 0.12);
+      lp[J.HipL].set(-0.26, -0.05, 0);
+      lp[J.KneeL].set(-0.28, -0.45, sway * 0.5);
+      lp[J.FootL].set(-0.28, -0.82, sway);
+      lp[J.HipR].set(0.26, -0.05, 0);
+      lp[J.KneeR].set(0.28, -0.45, -sway * 0.5);
+      lp[J.FootR].set(0.28, -0.82, -sway);
+    } else if (this.type.id === 'anaconda' || this.type.id === 'super_anaconda') {
       // 巨大アナコンダのリアルな蛇行推進（波状うねり）ポーズ
       const wave = this.walkPhase * 2.5;
       const amp = 0.22;
@@ -4011,12 +4322,20 @@ export class Unit {
       this.type.id === 'dragon' ||
       this.type.id === 'giant' ||
       this.type.id === 'anaconda' ||
+      this.type.id === 'super_anaconda' ||
+      this.type.id === 'crocodile' ||
+      this.type.id === 'giant_sequoia' ||
+      this.type.id === 'yamanote_line' ||
+      this.type.id === 'landmark_tower' ||
+      this.type.id === 'elon_musk' ||
+      this.type.id === 'poseidon' ||
       this.type.id === 'buggy' ||
       this.type.id === 'yamamuron' ||
       this.type.id === 'sezain' ||
       this.type.id === 'deoxys' ||
       this.type.id === 'wild_troll' ||
       this.type.id === 'wild_chief' ||
+      COSMIC_HEAVY_IDS.has(this.type.id) ||
       this.type.category === 'divine';
     const staggerMul = isSuperHeavy ? 0.7 : 2.2;
     const flatLoss = isSuperHeavy ? 0.012 : 0.05;

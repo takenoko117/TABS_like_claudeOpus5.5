@@ -6,6 +6,12 @@ import type { Contact, ObstacleCylinder } from '../physics/PhysicsWorld';
 import { MOUTH_LASER_HEIGHT_TOLERANCE, MOUTH_LASER_PIERCE, MOUTH_LASER_RADIUS } from '../units/HayatoHead';
 import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
+import {
+  CosmicImpactQueue,
+  GREAT_SWORD_REFLECT_DAMAGE_MUL,
+  rollGreatSwordDeflect,
+  type CosmicEffectEvent,
+} from './CosmicSkills';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
 export type ProjectileKind =
@@ -181,7 +187,13 @@ export type CombatEffectEvent =
   | { kind: 'necromancy_summon'; pos: Vector3; team: Team }
   | { kind: 'barrier_cast'; pos: Vector3; team: Team }
   | { kind: 'barrier_block'; pos: Vector3 }
-  | { kind: 'meteor_impact'; pos: Vector3 };
+  | { kind: 'meteor_impact'; pos: Vector3 }
+  | { kind: 'poseidon_wave'; pos: Vector3; forward: Vector3; radius: number; team: Team }
+  | { kind: 'croc_death_roll'; pos: Vector3 }
+  | { kind: 'sequoia_storm'; pos: Vector3; targetPos: Vector3; radius: number }
+  | { kind: 'tower_quake'; pos: Vector3; radius: number; team: Team }
+  | { kind: 'yamanote_rush'; pos: Vector3; forward: Vector3 }
+  | CosmicEffectEvent;
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -301,6 +313,8 @@ export class CombatSystem {
   currentDamageKind: DamageKind = 'physical';
   onShootArrow: ((owner: Unit) => void) | null = null;
   onEffect: ((e: CombatEffectEvent) => void) | null = null;
+  /** 第8弾ユニットの、遅れて着弾する攻撃（たこ焼き・焼きそば・星） */
+  readonly cosmic = new CosmicImpactQueue();
 
   clear(): void {
     this.arrows.length = 0;
@@ -309,6 +323,7 @@ export class CombatSystem {
     this.fireZones.length = 0;
     this.magicBarriers.length = 0;
     this.delayedSlashes.length = 0;
+    this.cosmic.clear();
     this.projectileDamageMultiplier = 1.0;
     this.delayedSlashes.length = 0;
   }
@@ -517,6 +532,178 @@ export class CombatSystem {
     if (opts?.life !== undefined) a.life = opts.life;
     this.arrows.push(a);
     return a;
+  }
+
+  /** ポセイドンの海割り波状攻撃を発動する */
+  castPoseidonWave(
+    owner: Unit,
+    origin: Vector3,
+    forward: Vector3,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+  ): void {
+    const fwd = forward.clone().setY(0);
+    if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0);
+    fwd.normalize();
+    const right = new Vector3(-fwd.z, 0, fwd.x);
+    const waveLen = 11.5;
+    const waveHalfW = 4.2;
+    const dmg = 220 * owner.damageMul;
+
+    this.emitEffect({ kind: 'poseidon_wave', pos: origin.clone(), forward: fwd.clone(), radius: waveLen, team: owner.team });
+
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const dx = u.pelvis.pos.x - origin.x;
+      const dz = u.pelvis.pos.z - origin.z;
+      const along = dx * fwd.x + dz * fwd.z;
+      const side = dx * right.x + dz * right.z;
+      if (along < -2.5 || along > waveLen || Math.abs(side) > waveHalfW) continue;
+      const sideSign = side >= 0 ? 1 : -1;
+      const push = fwd.clone().multiplyScalar(3.5).addScaledVector(right, sideSign * 5.0);
+      push.y = 2.4;
+      const killed = u.takeDamage(dmg, u.chest, push, dt, owner);
+      u.muscle = Math.min(u.muscle, 0.2);
+      this.onHit?.({
+        kind: 'magic',
+        point: u.chest.pos.clone(),
+        damage: dmg,
+        attacker: owner,
+        victim: u,
+        hitParticle: u.chest,
+        impulse: push,
+        killed,
+      });
+    }
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === owner.team) continue;
+      const dx = fac.pos.x - origin.x;
+      const dz = fac.pos.z - origin.z;
+      const along = dx * fwd.x + dz * fwd.z;
+      const side = dx * right.x + dz * right.z;
+      if (along < -1.0 || along > waveLen + fac.radius || Math.abs(side) > waveHalfW + fac.radius) continue;
+      const killed = fac.takeDamage(dmg, owner);
+      this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+      if (killed) {
+        this.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+      }
+    }
+  }
+
+  /** ジャイアントセコイアの避雷針落雷＆山火事攻撃を発動する */
+  castSequoiaStorm(
+    owner: Unit,
+    targetPos: Vector3,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+  ): void {
+    const crown = owner.head.pos.clone().add(new Vector3(0, 2.2 * owner.scale, 0));
+    const sky = crown.clone().add(new Vector3(0, 14, 0));
+    const impactRadius = 5.0;
+    const lightningDmg = 95 * owner.damageMul;
+    const fireDmg = 60 * owner.damageMul;
+
+    // 1. 天からセコイア自身（避雷針）へ落ち、そこから標的へ連鎖する雷
+    const boltPoints: Vector3[] = [sky, crown, targetPos.clone().setY(1.0)];
+    this.lightningBolts.push({ points: boltPoints, life: 0.36, maxLife: 0.36 });
+    this.emitEffect({ kind: 'lightning', points: boltPoints });
+    this.emitEffect({ kind: 'sequoia_storm', pos: crown.clone(), targetPos: targetPos.clone(), radius: impactRadius });
+
+    // 2. 着弾点とセコイア周囲を炎上させる（山火事）
+    this.spawnFireZone(owner, targetPos.clone().setY(0.1), 2.8, 4.2);
+    this.terrain?.igniteNear(targetPos, impactRadius, 0.85);
+    this.terrain?.igniteNear(owner.pelvis.pos, 4.5, 0.6);
+
+    const r2 = impactRadius * impactRadius;
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const dTarget2 = u.pelvis.pos.distanceToSquared(targetPos);
+      const dSelf2 = u.pelvis.pos.distanceToSquared(owner.pelvis.pos);
+      if (dTarget2 > r2 && dSelf2 > 4.5 * 4.5) continue;
+      const shock = u.absorbRangedDamage(lightningDmg);
+      const totalDmg = shock + fireDmg;
+      const push = new Vector3(u.pelvis.pos.x - targetPos.x, 0, u.pelvis.pos.z - targetPos.z);
+      if (push.lengthSq() < 1e-4) push.set(1, 0, 0);
+      push.normalize().multiplyScalar(5.5);
+      push.y = 3.2;
+      if (shock > 0) u.shockTimer = Math.max(u.shockTimer, 0.8);
+      u.burnTimer = Math.max(u.burnTimer, 4.0);
+      u.burnAttacker = owner;
+      const killed = this.withDamageKind('shock', () =>
+        u.takeDamage(totalDmg, u.chest, push, dt, owner, true),
+      );
+      this.onHit?.({
+        kind: 'magic',
+        point: u.chest.pos.clone(),
+        damage: totalDmg,
+        attacker: owner,
+        victim: u,
+        hitParticle: u.chest,
+        impulse: push,
+        killed,
+      });
+    }
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === owner.team) continue;
+      const rFac = impactRadius + fac.radius;
+      if (fac.pos.distanceToSquared(targetPos) > rFac * rFac && fac.pos.distanceToSquared(owner.pelvis.pos) > (4.5 + fac.radius) ** 2) continue;
+      const dmg = lightningDmg + fireDmg;
+      const killed = fac.takeDamage(dmg, owner);
+      this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+      if (killed) {
+        this.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+      }
+    }
+  }
+
+  /** ランドマークタワーの超高層広範囲衝撃波を発動する */
+  castTowerQuake(
+    owner: Unit,
+    center: Vector3,
+    units: readonly Unit[],
+    facilities: readonly Facility[],
+    dt: number,
+  ): void {
+    const radius = 10.8;
+    const r2 = radius * radius;
+    const dmg = 220 * owner.damageMul;
+    this.emitEffect({ kind: 'tower_quake', pos: center.clone(), radius, team: owner.team });
+
+    for (const u of units) {
+      if (!u.alive || u.team === owner.team) continue;
+      const dx = u.pelvis.pos.x - center.x;
+      const dz = u.pelvis.pos.z - center.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > r2) continue;
+      const d = Math.sqrt(d2) || 1;
+      const falloff = 1 - (d / radius) * 0.35;
+      const dealt = dmg * falloff;
+      const push = new Vector3((dx / d) * 8.0, 4.5, (dz / d) * 8.0);
+      const killed = u.takeDamage(dealt, u.chest, push, dt, owner);
+      u.muscle = Math.min(u.muscle, 0.25);
+      this.onHit?.({
+        kind: 'melee',
+        point: u.chest.pos.clone(),
+        damage: dealt,
+        attacker: owner,
+        victim: u,
+        hitParticle: u.chest,
+        impulse: push,
+        killed,
+      });
+    }
+    for (const fac of facilities) {
+      if (!fac.alive || fac.team === owner.team) continue;
+      const rf = radius + fac.radius;
+      if (fac.pos.distanceToSquared(center) > rf * rf) continue;
+      const killed = fac.takeDamage(dmg, owner);
+      this.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+      if (killed) {
+        this.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+      }
+    }
   }
 
   /** 雷導師のチェインライトニングを発動する */
@@ -987,6 +1174,7 @@ export class CombatSystem {
     obstacles: readonly ObstacleCylinder[] = [],
     facilities: readonly Facility[] = [],
   ): void {
+    this.cosmic.update(this, dt, units, facilities);
     const arrows = this.arrows;
     for (let i = arrows.length - 1; i >= 0; i--) {
       const a = arrows[i];
@@ -1441,6 +1629,25 @@ export class CombatSystem {
 
     a.pos.copy(from).addScaledVector(_seg, bestT);
     a.hitUnitIds.add(bestU.id);
+
+    // 大剣士が確率で飛び道具をはじく（矢・弾・手裏剣ははじき返す）
+    if (bestU.team !== a.team && rollGreatSwordDeflect(bestU, a.projectileKind === 'flame')) {
+      this.emitEffect({ kind: 'sword_parry', pos: a.pos.clone() });
+      const k = a.projectileKind;
+      if (k === 'arrow' || k === 'bullet' || k === 'sniper' || k === 'shuriken') {
+        const back = a.vel.clone().multiplyScalar(-0.8);
+        back.y = Math.abs(back.y) * 0.3 + 0.5;
+        const r = this.fireProjectile(bestU, a.pos.clone().addScaledVector(back.clone().normalize(), 0.4), back, k, {
+          damage: a.damage * GREAT_SWORD_REFLECT_DAMAGE_MUL,
+          gravityScale: a.gravityScale,
+          life: 2.0,
+        });
+        r.hitUnitIds.add(bestU.id);
+      }
+      a.life = 0;
+      a.pierceLeft = 0;
+      return true;
+    }
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
     if (isExplosiveProjectileKind(a.projectileKind)) {

@@ -33,6 +33,8 @@ import {
 import { BATTLE_FIELD_WALLS, type FieldWalls } from '../physics/PhysicsWorld';
 import { boundaryThemeKind, generateBoundaryTerrain, type BoundaryBox } from '../field/BoundaryTerrain';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
+import { isCosmicEffect } from '../combat/CosmicSkills';
+import { spawnCosmicFx } from './CosmicFx';
 import type { Facility } from '../facilities/Facility';
 import { getGateOpeningWidth, isFacilityTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import { DEFAULT_RED_ZONES, type PlacementZone, type StageTerrainConfig, type StageVisualTheme } from '../game/ArcadeStages';
@@ -1527,6 +1529,11 @@ export class SceneView {
 
   /** 新ユニット固有のビジュアルエフェクトを発生させる */
   spawnCombatEffect(e: CombatEffectEvent): void {
+    // 第8弾ユニットの演出は CosmicFx にまとめてある
+    if (isCosmicEffect(e)) {
+      spawnCosmicFx(e, (pos, vel, color, size, life, gravity) => this.pushFxParticle(pos, vel, color, size, life, gravity ?? 0));
+      return;
+    }
     switch (e.kind) {
       case 'lightning': {
         // 連鎖した各着弾点から青白い電気スパークを散らす
@@ -2587,6 +2594,72 @@ export class SceneView {
           const vel = new Vector3((Math.random() - 0.5) * 3, 5 + Math.random() * 7, (Math.random() - 0.5) * 3);
           if (i % 2 === 0) this.pushDroppedVoxel(p, vel, i % 4 === 0 ? 0x5c4631 : 0x8d6e4a, 0.14);
           else this.pushFxParticle(p, vel, 0xb79a7a, 0.3, 0.55 + Math.random() * 0.3, 4.0);
+        }
+        break;
+      }
+      case 'poseidon_wave': {
+        // ポセイドンの海割り波状攻撃: 左右に割れる巨大な水壁と前方に押し寄せる白波
+        const fwd = e.forward.clone().setY(0).normalize();
+        const right = new Vector3(-fwd.z, 0, fwd.x);
+        for (let i = 0; i < 36; i++) {
+          const along = (i / 35) * e.radius;
+          const sideSign = i % 2 === 0 ? 1 : -1;
+          const p = e.pos.clone().addScaledVector(fwd, along * 0.35).addScaledVector(right, sideSign * 0.6);
+          p.y = 0.4 + (i % 3) * 0.35;
+          const vel = fwd.clone().multiplyScalar(11.0).addScaledVector(right, sideSign * 5.5);
+          vel.y = 2.2 + Math.random() * 1.8;
+          const col = i % 3 === 0 ? 0xe0f2fe : i % 2 === 0 ? 0x38bdf8 : 0x0284c7;
+          this.pushFxParticle(p, vel, col, 0.32, 0.65, 6.0);
+        }
+        break;
+      }
+      case 'croc_death_roll': {
+        // ワニのデスロール: 回転する水飛沫と牙の斬撃
+        for (let i = 0; i < 12; i++) {
+          const ang = (i / 12) * Math.PI * 2;
+          const vel = new Vector3(Math.cos(ang) * 4.5, 2.2 + Math.random() * 1.5, Math.sin(ang) * 4.5);
+          const col = i % 3 === 0 ? 0xef4444 : 0xbae6fd;
+          this.pushFxParticle(e.pos.clone(), vel, col, 0.16, 0.35, 8.0);
+        }
+        break;
+      }
+      case 'sequoia_storm': {
+        // ジャイアントセコイアの落雷＋山火事炎上
+        for (let i = 0; i < 24; i++) {
+          const ang = (i / 24) * Math.PI * 2;
+          const spd = 2.5 + Math.random() * 4.5;
+          const vel = new Vector3(Math.cos(ang) * spd, 2.8 + Math.random() * 3.0, Math.sin(ang) * spd);
+          const col = i % 3 === 0 ? 0xffe066 : i % 2 === 0 ? 0xff6b35 : 0xe03131;
+          this.pushFxParticle(e.targetPos.clone().setY(0.3), vel, col, 0.24, 0.55, 3.0);
+        }
+        break;
+      }
+      case 'tower_quake': {
+        // ランドマークタワーの広範囲衝撃波リング
+        const ringN = 40;
+        for (let i = 0; i < ringN; i++) {
+          const ang = (i / ringN) * Math.PI * 2;
+          const dir = new Vector3(Math.cos(ang), 0.08, Math.sin(ang));
+          const p = e.pos.clone().addScaledVector(dir, 0.8);
+          p.y = 0.3;
+          const vel = dir.clone().multiplyScalar(13.5);
+          const col = i % 2 === 0 ? 0x38bdf8 : 0xfbbf24;
+          this.pushFxParticle(p, vel, col, 0.26, 0.6, 1.5);
+        }
+        break;
+      }
+      case 'yamanote_rush': {
+        // 山手線の突進火花とウグイス色の風圧
+        const fwd = e.forward.clone().setY(0).normalize();
+        const right = new Vector3(-fwd.z, 0, fwd.x);
+        for (let i = 0; i < 18; i++) {
+          const side = (Math.random() - 0.5) * 3.5;
+          const p = e.pos.clone().addScaledVector(right, side);
+          p.y = 0.3 + Math.random() * 0.8;
+          const vel = fwd.clone().multiplyScalar(6.0).addScaledVector(right, side * 2.5);
+          vel.y = 1.5 + Math.random() * 2.0;
+          const col = i % 2 === 0 ? 0x82c91e : 0xfef08a;
+          this.pushFxParticle(p, vel, col, 0.2, 0.45, 5.0);
         }
         break;
       }

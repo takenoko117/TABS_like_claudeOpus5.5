@@ -35,6 +35,7 @@ import type { ProjectileKind } from '../combat/CombatSystem';
 import { isGateTypeId, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Particle } from '../physics/Particle';
 import { buildAwakenedJewel, buildAwakenedMountain } from './YamamuronAwakenedModel';
+import { COSMIC_BODY_IDS, buildCosmicModelSet } from './CosmicModels';
 import {
   buildDragonBodyHalves,
   buildDragonForeleg,
@@ -547,9 +548,137 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return specTemplate(buildBuggyCage(team));
   }
 
-  // 5. 巨大アナコンダの頭部（三角形の蛇頭・大口と毒牙・二又舌・鋭い蛇眼）
-  if (type.id === 'anaconda') {
+  // 5. 巨大アナコンダ・超巨大アナコンダの頭部（三角形の蛇頭・大口と毒牙・二又舌・鋭い蛇眼）
+  if (type.id === 'anaconda' || type.id === 'super_anaconda') {
     return specTemplate(buildSnakeHead(team));
+  }
+
+  // ポセイドンの頭部（海の神の黄金冠・白い髭・輝く青い瞳）
+  if (type.id === 'poseidon') {
+    const g = new VoxelGrid(12, 14, 12);
+    g.fillBox(2, 2, 2, 9, 9, 9, look.skin);
+    g.fillBox(1, 2, 1, 10, 8, 3, 0xdee2e6);
+    g.fillBox(1, 4, 3, 2, 8, 7, 0xdee2e6);
+    g.fillBox(9, 4, 3, 10, 8, 7, 0xdee2e6);
+    g.fillBox(2, 0, 8, 9, 4, 10, 0xdee2e6);
+    g.fillBox(3, 1, 10, 8, 3, 10, 0xced4da);
+    // 輝く海神の瞳
+    g.fillBox(3, 5, 9, 4, 6, 10, 0x38bdf8);
+    g.fillBox(7, 5, 9, 8, 6, 10, 0x38bdf8);
+    // 黄金の海神冠（三叉の飾り）
+    g.fillBox(1, 9, 1, 10, 10, 10, 0xffd43b);
+    g.fillBox(2, 11, 9, 3, 13, 10, 0xffd43b);
+    g.fillBox(5, 11, 9, 6, 13, 10, 0xffd43b);
+    g.fillBox(8, 11, 9, 9, 13, 10, 0xffd43b);
+    g.fillBox(5, 10, 10, 6, 10, 10, tc.shirt);
+    return makeTemplate(g, 0.042, [5.5, 2.5, 5.5]);
+  }
+
+  // ワニの頭部（長い吻・噛み合う白い牙・黄色い瞳・背びれ）
+  if (type.id === 'crocodile') {
+    const g = new VoxelGrid(10, 8, 18);
+    // 後頭部〜眼窩
+    g.fillBox(1, 1, 0, 8, 6, 6, 0x3b5227);
+    g.fillBox(2, 6, 1, 7, 7, 5, 0x283618);
+    // 黄色いワニの瞳
+    g.fillBox(1, 5, 4, 2, 6, 5, 0xffd43b);
+    g.fillBox(7, 5, 4, 8, 6, 5, 0xffd43b);
+    g.set(1, 5, 5, 0x181820);
+    g.set(8, 5, 5, 0x181820);
+    // 長い上顎と下顎
+    g.fillBox(2, 3, 6, 7, 5, 16, 0x3b5227);
+    g.fillBox(2, 1, 6, 7, 2, 15, 0x283618);
+    g.fillBox(3, 0, 7, 6, 1, 15, 0xccd5ae);
+    // 噛み合う鋭い白い牙
+    for (let z = 7; z <= 15; z += 2) {
+      g.set(2, 2, z, 0xf8f9fa);
+      g.set(7, 2, z, 0xf8f9fa);
+    }
+    g.set(4, 2, 16, 0xf8f9fa);
+    g.set(5, 2, 16, 0xf8f9fa);
+    // 鼻孔
+    g.set(3, 5, 15, 0x181820);
+    g.set(6, 5, 15, 0x181820);
+    return makeTemplate(g, 0.044, [4.5, 2.5, 2.0]);
+  }
+
+  // ジャイアントセコイアの樹冠（巨大な常緑樹の葉層＋避雷針の黄金芯）
+  if (type.id === 'giant_sequoia') {
+    const g = new VoxelGrid(18, 18, 18);
+    // 下層樹冠
+    g.fillBox(1, 0, 1, 16, 5, 16, 0x2d6a4f);
+    g.fillBox(2, 2, 2, 15, 6, 15, 0x2b6e34);
+    // 中層樹冠
+    g.fillBox(3, 6, 3, 14, 11, 14, 0x1b4332);
+    g.fillBox(4, 8, 4, 13, 12, 13, 0x40916c);
+    // 上層樹冠と避雷針の頂点
+    g.fillBox(5, 12, 5, 12, 15, 12, 0x2b6e34);
+    g.fillBox(7, 15, 7, 10, 17, 10, 0xffe066);
+    // チームカラーのアクセント花・実
+    g.fillBox(2, 3, 2, 3, 4, 3, tc.shirt);
+    g.fillBox(14, 3, 14, 15, 4, 15, tc.shirt);
+    return makeTemplate(g, 0.06, [8.5, 1.0, 8.5]);
+  }
+
+  // 山手線 先頭車両のフロントマスク＆屋根（ステンレス銀＋ウグイス色帯＋黒フロントガラス）
+  if (type.id === 'yamanote_line') {
+    const g = new VoxelGrid(14, 12, 18);
+    // 車体ベース（銀）
+    g.fillBox(1, 0, 0, 12, 9, 16, 0xd0d7de);
+    // 屋根とクーラー
+    g.fillBox(2, 10, 1, 11, 10, 15, 0xadb5bd);
+    g.fillBox(4, 11, 4, 9, 11, 11, 0x868e96);
+    // ウグイス色の山手線ライン（側面・前面）
+    g.fillBox(0, 4, 0, 13, 6, 16, 0x82c91e);
+    g.fillBox(1, 7, 17, 12, 9, 17, 0x82c91e);
+    // 前面ブラックフェイス＆窓
+    g.fillBox(2, 3, 17, 11, 8, 17, 0x1e293b);
+    g.fillBox(3, 5, 17, 10, 7, 17, 0x38bdf8);
+    // ヘッドライト＆行先LED
+    g.fillBox(2, 2, 17, 3, 2, 17, 0xfff3bf);
+    g.fillBox(10, 2, 17, 11, 2, 17, 0xfff3bf);
+    g.fillBox(5, 8, 17, 8, 8, 17, tc.shirt);
+    // 側面窓
+    for (let z = 2; z <= 13; z += 4) {
+      g.fillBox(0, 7, z, 0, 8, z + 2, 0x334155);
+      g.fillBox(13, 7, z, 13, 8, z + 2, 0x334155);
+    }
+    return makeTemplate(g, 0.055, [6.5, 2.0, 8.5]);
+  }
+
+  // ランドマークタワーの上部ステップ・4隅の王冠フレーム・頂上ビーコン
+  if (type.id === 'landmark_tower') {
+    const g = new VoxelGrid(12, 16, 12);
+    // 上層塔体
+    g.fillBox(2, 0, 2, 9, 8, 9, 0xd8dee9);
+    g.fillBox(3, 1, 1, 8, 7, 10, 0x334155);
+    g.fillBox(1, 1, 3, 10, 7, 8, 0x334155);
+    // 特徴的な4隅の開放フレーム王冠
+    g.fillBox(1, 9, 1, 3, 12, 3, 0x94a3b8);
+    g.fillBox(8, 9, 1, 10, 12, 3, 0x94a3b8);
+    g.fillBox(1, 9, 8, 3, 12, 10, 0x94a3b8);
+    g.fillBox(8, 9, 8, 10, 12, 10, 0x94a3b8);
+    g.fillBox(2, 11, 2, 9, 12, 9, tc.shirt);
+    // 頂上アンテナ＆発光ビーコン
+    g.fillBox(5, 13, 5, 6, 15, 6, 0x38bdf8);
+    return makeTemplate(g, 0.055, [5.5, 1.0, 5.5]);
+  }
+
+  // イーロンマスクの頭部（黒い髪・サングラス・精悍な顔）
+  if (type.id === 'elon_musk') {
+    const g = new VoxelGrid(10, 11, 10);
+    g.fillBox(2, 1, 2, 7, 7, 7, look.skin);
+    g.fillBox(2, 7, 2, 7, 9, 7, 0x2b2d42);
+    g.fillBox(1, 6, 2, 2, 8, 6, 0x2b2d42);
+    g.fillBox(7, 6, 2, 8, 8, 6, 0x2b2d42);
+    // クールなサングラス
+    g.fillBox(2, 4, 8, 4, 5, 8, 0x111111);
+    g.fillBox(5, 4, 8, 7, 5, 8, 0x111111);
+    g.set(4, 5, 8, 0x343a40);
+    g.set(5, 5, 8, 0x343a40);
+    // 口元
+    g.fillBox(4, 2, 8, 5, 2, 8, 0x8d5b4c);
+    return makeTemplate(g, 0.036, [4.5, 1.5, 4.5]);
   }
 
   // 6. おとりの頭部（つば広麦わら帽子・麻袋ヘッド・つぎはぎボタン目）
@@ -1552,9 +1681,82 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return specTemplate(buildBuggyChassis(team));
   }
 
-  // 巨大アナコンダの胴体（太い蛇腹と背面のチームカラー鱗模様）
-  if (type.id === 'anaconda') {
+  // 巨大アナコンダ・超巨大アナコンダの胴体（太い蛇腹と背面のチームカラー鱗模様）
+  if (type.id === 'anaconda' || type.id === 'super_anaconda') {
     return specTemplate(buildSnakeTorso(team));
+  }
+
+  // ポセイドンの胴体（海神の青緑＆黄金鎧とマント）
+  if (type.id === 'poseidon') {
+    const g = new VoxelGrid(12, 13, 8);
+    g.fillBox(2, 1, 1, 9, 11, 6, 0x0ca678);
+    g.fillBox(3, 5, 6, 8, 10, 7, 0xffd43b);
+    g.fillBox(2, 2, 6, 9, 4, 7, tc.shirt);
+    g.fillBox(1, 9, 1, 10, 12, 6, 0xffd43b);
+    g.fillBox(1, 2, 0, 10, 11, 1, tc.shirt);
+    return makeTemplate(g, 0.044, [5.5, 1.0, 3.5]);
+  }
+
+  // ワニの胴体（背中のゴツゴツした鱗突起と淡色の腹）
+  if (type.id === 'crocodile') {
+    const g = new VoxelGrid(12, 8, 16);
+    g.fillBox(1, 2, 0, 10, 6, 15, 0x3b5227);
+    g.fillBox(2, 0, 1, 9, 2, 14, 0xccd5ae);
+    // 背中の鱗突起（オステオダーム）
+    for (let z = 1; z <= 14; z += 3) {
+      g.fillBox(3, 7, z, 4, 7, z + 1, 0x283618);
+      g.fillBox(7, 7, z, 8, 7, z + 1, 0x283618);
+    }
+    g.fillBox(4, 6, 2, 7, 7, 4, tc.shirt);
+    return makeTemplate(g, 0.046, [5.5, 2.5, 7.5]);
+  }
+
+  // ジャイアントセコイアの巨幹（赤褐色の縦溝樹皮と張り出した根元）
+  if (type.id === 'giant_sequoia') {
+    const g = new VoxelGrid(14, 18, 14);
+    g.fillBox(2, 0, 2, 11, 17, 11, 0x6f3e22);
+    g.fillBox(1, 0, 1, 12, 4, 12, 0x4a2511);
+    // 縦の樹皮の溝と焦げ跡
+    for (let y = 2; y <= 15; y += 3) {
+      g.fillBox(2, y, 6, 2, y + 1, 7, 0x4a2511);
+      g.fillBox(11, y, 6, 11, y + 1, 7, 0x4a2511);
+    }
+    g.fillBox(5, 6, 11, 8, 12, 12, 0xff922b);
+    return makeTemplate(g, 0.06, [6.5, 1.0, 6.5]);
+  }
+
+  // 山手線の胴体（中間連結部・銀ステンレス＆ウグイス帯）
+  if (type.id === 'yamanote_line') {
+    const g = new VoxelGrid(12, 10, 10);
+    g.fillBox(1, 0, 0, 10, 8, 9, 0xadb5bd);
+    g.fillBox(0, 3, 1, 11, 5, 8, 0x82c91e);
+    g.fillBox(3, 9, 2, 8, 9, 7, 0x495057);
+    return makeTemplate(g, 0.045, [5.5, 1.0, 4.5]);
+  }
+
+  // ランドマークタワーの超高層ビル本体（広がる裾野＋ガラス窓格子）
+  if (type.id === 'landmark_tower') {
+    const g = new VoxelGrid(16, 20, 16);
+    // 下部基壇
+    g.fillBox(0, 0, 0, 15, 5, 15, 0x94a3b8);
+    // 中層テーパー塔体
+    g.fillBox(2, 6, 2, 13, 19, 13, 0xd8dee9);
+    // 縦のガラス窓スリット
+    for (let y = 3; y <= 18; y += 2) {
+      g.fillBox(4, y, 1, 11, y, 14, 0x334155);
+      g.fillBox(1, y, 4, 14, y, 11, 0x334155);
+    }
+    g.fillBox(5, 1, 15, 10, 3, 15, tc.shirt);
+    return makeTemplate(g, 0.062, [7.5, 1.0, 7.5]);
+  }
+
+  // イーロンマスクの胴体（黒いレザージャケット＋白Tシャツ）
+  if (type.id === 'elon_musk') {
+    const g = new VoxelGrid(10, 11, 6);
+    g.fillBox(1, 1, 1, 8, 10, 4, 0x18181b);
+    g.fillBox(4, 2, 5, 5, 9, 5, 0xf8f9fa);
+    g.fillBox(2, 8, 5, 7, 10, 5, tc.shirt);
+    return makeTemplate(g, 0.036, [4.5, 1.0, 2.5]);
   }
 
   // 光速アリの胴体（前方の引き締まった胸部＋くびれた腹柄節＋後方の膨らんだ腹部＆光速発光ストライプ）
@@ -2204,6 +2406,22 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
   const key = `${type.id}:${TEAM_COLORS[team].shirt}`;
   let set = templateCache.get(key);
   if (set) return set;
+  // 第8弾ユニット（大タコ・地球・UFO など）は CosmicModels の彫刻モデルを使う
+  const cosmic = buildCosmicModelSet(type.id, team);
+  if (cosmic) {
+    set = {
+      head: specTemplate(cosmic.head),
+      torso: specTemplate(cosmic.torso),
+      upperArm: specTemplate(cosmic.upperArm),
+      forearm: specTemplate(cosmic.forearm),
+      thigh: specTemplate(cosmic.thigh),
+      shin: specTemplate(cosmic.shin),
+      weapon: null,
+      bow: null,
+    };
+    templateCache.set(key, set);
+    return set;
+  }
   const tc = TEAM_COLORS[team];
   const isWinged = type.id === 'giant_eagle' || type.id === 'dragon';
   // 第三勢力（野生の魔物）は手足を肌の色にする（陣営の服を着ていない）
@@ -2246,12 +2464,36 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     forearm = upperArm;
     thigh = specTemplate(buildBuggyWheel(team, 10, 9));
     shin = thigh;
-  } else if (type.id === 'anaconda') {
-    // 巨大アナコンダの胴の節（腿・脛）と、尾（上腕 = 尾の節、前腕 = 尖った尾先）
+  } else if (type.id === 'anaconda' || type.id === 'super_anaconda') {
+    // 巨大アナコンダ・超巨大アナコンダの胴の節（腿・脛）と、尾（上腕 = 尾の節、前腕 = 尖った尾先）
     upperArm = specTemplate(buildSnakeSegment(team, 4.5, 3.3, 9.5, 5));
     forearm = specTemplate(buildSnakeSegment(team, 3.3, 0.6, 9.5, 1));
     thigh = specTemplate(buildSnakeSegment(team, 5.6, 5.1, 12, 0));
     shin = specTemplate(buildSnakeSegment(team, 5.3, 4.6, 11.5, 3));
+  } else if (type.id === 'crocodile') {
+    // ワニの短い四肢
+    upperArm = buildLimbTemplate(3, 5, 3, 0x3b5227, 0x283618, 0.35);
+    forearm = buildLimbTemplate(3, 5, 3, 0x283618, 0x3b5227, 0.35);
+    thigh = buildLimbTemplate(3, 5, 3, 0x3b5227, 0x283618, 0.35);
+    shin = buildLimbTemplate(3, 5, 3, 0x283618, 0x3b5227, 0.35);
+  } else if (type.id === 'giant_sequoia') {
+    // ジャイアントセコイアの枝と根
+    upperArm = buildLimbTemplate(3, 7, 3, 0x6f3e22, 0x2b6e34, 0.35);
+    forearm = buildLimbTemplate(3, 7, 3, 0x2b6e34, 0x40916c, 0.35);
+    thigh = buildLimbTemplate(4, 8, 4, 0x6f3e22, 0x4a2511, 0.35);
+    shin = buildLimbTemplate(4, 8, 4, 0x4a2511, 0x6f3e22, 0.35);
+  } else if (type.id === 'landmark_tower') {
+    // ランドマークタワーの基壇支柱
+    upperArm = buildLimbTemplate(2, 6, 2, 0x94a3b8, 0x64748b, 0.35);
+    forearm = buildLimbTemplate(2, 6, 2, 0x64748b, 0x94a3b8, 0.35);
+    thigh = buildLimbTemplate(3, 8, 3, 0x94a3b8, 0x475569, 0.35);
+    shin = buildLimbTemplate(3, 8, 3, 0x475569, 0x94a3b8, 0.35);
+  } else if (type.id === 'yamanote_line') {
+    // 山手線の台車（車輪）
+    upperArm = buildLimbTemplate(2, 4, 3, 0x343a40, 0x212529, 0.3);
+    forearm = upperArm;
+    thigh = upperArm;
+    shin = upperArm;
   } else if (type.id === 'warelephant') {
     // 鎧戦象の太い柱のような脚（上: 肩・腿 / 下: 膝当て・足輪・爪のある足）
     upperArm = specTemplate(buildElephantUpperLeg(team));
@@ -2463,6 +2705,8 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     weapon:
       type.id === 'sezain'
         ? buildSubmachineGunGeometry(team)
+        : type.id === 'poseidon'
+        ? buildPoseidonTridentGeometry(team)
         : type.weapon
         ? buildWeaponGeometry(type.weapon.kind, type.weapon.length, team)
         : null,
@@ -2470,6 +2714,24 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
   };
   templateCache.set(key, set);
   return set;
+}
+
+/** ポセイドンの黄金の三叉槍（トライデント）ジオメトリ */
+function buildPoseidonTridentGeometry(team: Team): BufferGeometry {
+  const g = new VoxelGrid(7, 30, 3);
+  const gold = 0xffd43b;
+  const shaft = 0x0ca678;
+  const tc = TEAM_COLORS[team];
+  // 長い柄
+  g.fillBox(3, 0, 1, 3, 21, 1, shaft);
+  g.fillBox(2, 20, 0, 4, 21, 2, gold);
+  // 三叉の横木と3本の穂先
+  g.fillBox(0, 22, 1, 6, 22, 1, gold);
+  g.fillBox(0, 23, 1, 0, 27, 1, gold);
+  g.fillBox(3, 23, 1, 3, 29, 1, gold);
+  g.fillBox(6, 23, 1, 6, 27, 1, gold);
+  g.set(3, 21, 2, tc.shirt);
+  return makeTemplate(g, 0.048, [3, 2, 1]).geometry;
 }
 
 /** 飛翔体（矢・銃弾・徹甲弾・手裏剣・火炎球）のジオメトリキャッシュ */
@@ -2804,7 +3066,7 @@ function placeLimbFacing(mesh: Mesh, a: Vector3, b: Vector3, fwdHint: Vector3): 
 
 const _basisMat = new Matrix4();
 /** 直交基底 [right, up, fwd] からメッシュを配置・回転する（車両・戦車等用） */
-function placeBasisPart(mesh: Mesh, origin: Vector3, right: Vector3, up: Vector3, fwd: Vector3): void {
+function placeBasisPart(mesh: Object3D, origin: Vector3, right: Vector3, up: Vector3, fwd: Vector3): void {
   mesh.position.copy(origin);
   _basisMat.makeBasis(right, up, fwd);
   mesh.quaternion.setFromRotationMatrix(_basisMat);
@@ -3489,6 +3751,12 @@ export class VoxelCharacterVisual {
   private sahaquielBody: Mesh | null = null;
   private sahaquielLobes: Mesh[] = [];
   private sahaquielCore: Mesh | null = null;
+  // 超巨大アナコンダ（5倍長）、ワニの尾、山手線8両編成、イーロンマスクのテスラ・ロードスター
+  private superAnacondaTail: Mesh[] = [];
+  private readonly trailHistory: Vector3[] = [];
+  private crocTail: Mesh[] = [];
+  private yamanoteCars: Mesh[] = [];
+  private roadsterGroup: Group | null = null;
   /** 首の突き出し量（+1: ブレスで前へ突き出す, -1: 溜めで仰け反る） */
   private dragonLunge = 0;
   private dragonLastTime = -1;
@@ -4119,6 +4387,108 @@ export class VoxelCharacterVisual {
       this.group.add(this.sahaquielGroup);
     }
 
+    // 超巨大アナコンダ: 巨大アナコンダの5倍の長さに見せる24節の追加胴体・尾メッシュ
+    if (unit.type.id === 'super_anaconda') {
+      const segCount = 24;
+      for (let i = 0; i < segCount; i++) {
+        const t = i / (segCount - 1);
+        const rStart = 5.0 * (1 - t * 0.72);
+        const rEnd = 5.0 * (1 - Math.min(1, t + 1 / segCount) * 0.75);
+        const spec = buildSnakeSegment(unit.team, rStart, Math.max(0.5, rEnd), 12.0, i);
+        const mesh = makeMesh(specTemplate(spec).geometry, this.material, s);
+        this.group.add(mesh);
+        this.superAnacondaTail.push(mesh);
+      }
+      // 初期の軌跡を後方に伸ばしておく
+      for (let i = 0; i < 60; i++) {
+        this.trailHistory.push(unit.pelvis.pos.clone().addScaledVector(unit.forward, -i * 0.35 * s));
+      }
+    }
+
+    // ワニ: 3節のギザギザの尻尾
+    if (unit.type.id === 'crocodile') {
+      for (let i = 0; i < 3; i++) {
+        const w = 4 - i;
+        const g = new VoxelGrid(w * 2, 4, 8);
+        g.fillBox(0, 0, 0, w * 2 - 1, 2, 7, 0x3b5227);
+        g.fillBox(Math.max(0, w - 1), 3, 1, Math.min(w * 2 - 1, w), 3, 2, 0x283618);
+        g.fillBox(Math.max(0, w - 1), 3, 5, Math.min(w * 2 - 1, w), 3, 6, 0x283618);
+        const tmpl = makeTemplate(g, 0.044, [w - 0.5, 1, 0]);
+        const mesh = makeMesh(tmpl.geometry, this.material, s);
+        this.group.add(mesh);
+        this.crocTail.push(mesh);
+      }
+    }
+
+    // 山手線: 後続7両の客車（先頭と合わせて8両編成）
+    if (unit.type.id === 'yamanote_line') {
+      const carG = new VoxelGrid(14, 12, 18);
+      carG.fillBox(1, 0, 0, 12, 9, 17, 0xd0d7de);
+      carG.fillBox(2, 10, 1, 11, 10, 16, 0xadb5bd);
+      carG.fillBox(4, 11, 4, 9, 11, 13, 0x868e96);
+      carG.fillBox(0, 4, 0, 13, 6, 17, 0x82c91e);
+      for (let z = 2; z <= 14; z += 4) {
+        carG.fillBox(0, 7, z, 0, 8, z + 2, 0x334155);
+        carG.fillBox(13, 7, z, 13, 8, z + 2, 0x334155);
+      }
+      const carTmpl = makeTemplate(carG, 0.055, [6.5, 2.0, 8.5]);
+      for (let i = 0; i < 7; i++) {
+        const car = makeMesh(carTmpl.geometry, this.material, s);
+        this.group.add(car);
+        this.yamanoteCars.push(car);
+      }
+      for (let i = 0; i < 80; i++) {
+        this.trailHistory.push(unit.pelvis.pos.clone().addScaledVector(unit.forward, -i * 0.25 * s));
+      }
+    }
+
+    // イーロンマスク: ロケット付きの赤いテスラ・ロードスター（車の下に配置し、イーロンは上に立つ）
+    if (unit.type.id === 'elon_musk') {
+      const rg = new Group();
+      const bodyG = new VoxelGrid(14, 6, 26);
+      // 真っ赤なスポーツカーのボディ
+      bodyG.fillBox(1, 1, 1, 12, 3, 24, 0xe03131);
+      bodyG.fillBox(2, 4, 4, 11, 4, 21, 0xc92a2a);
+      // ボンネットとコックピット（イーロンが上に立つフラットなデッキ）
+      bodyG.fillBox(3, 5, 11, 10, 5, 16, 0x38bdf8);
+      bodyG.fillBox(3, 4, 6, 10, 4, 11, 0x212529);
+      // ヘッドライト
+      bodyG.fillBox(2, 2, 25, 4, 3, 25, 0xfff3bf);
+      bodyG.fillBox(9, 2, 25, 11, 3, 25, 0xfff3bf);
+      // リアのSpaceXロケットスラスター2基
+      bodyG.fillBox(3, 2, 0, 5, 4, 2, 0x495057);
+      bodyG.fillBox(8, 2, 0, 10, 4, 2, 0x495057);
+      const bodyTmpl = makeTemplate(bodyG, 0.055, [6.5, 0.5, 12.5]);
+      rg.add(makeMesh(bodyTmpl.geometry, this.material, s));
+
+      // 4つのタイヤ
+      const wheelSpec = buildBuggyWheel(unit.team, 6, 4);
+      const wheelTmpl = specTemplate(wheelSpec);
+      const wheelOffsets: Array<[number, number, number]> = [
+        [-0.38 * s, 0.16 * s, 0.45 * s],
+        [0.38 * s, 0.16 * s, 0.45 * s],
+        [-0.38 * s, 0.16 * s, -0.45 * s],
+        [0.38 * s, 0.16 * s, -0.45 * s],
+      ];
+      for (const [wx, wy, wz] of wheelOffsets) {
+        const wMesh = makeMesh(wheelTmpl.geometry, this.material, s);
+        wMesh.position.set(wx, wy, wz);
+        rg.add(wMesh);
+      }
+
+      // ロケット噴射炎コーン（左右2基）
+      const flameGeo = new ConeGeometry(0.11 * s, 0.55 * s, 8);
+      flameGeo.rotateX(-Math.PI / 2);
+      const flameMat = new MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 });
+      for (const fx of [-0.16 * s, 0.16 * s]) {
+        const flame = new Mesh(flameGeo, flameMat);
+        flame.position.set(fx, 0.24 * s, -0.95 * s);
+        rg.add(flame);
+      }
+      this.roadsterGroup = rg;
+      this.group.add(rg);
+    }
+
     this.collectRenderDetailTargets();
     this.sync();
   }
@@ -4196,6 +4566,31 @@ export class VoxelCharacterVisual {
     }
     if (u.type.id === 'anaconda') {
       this.syncAnaconda();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'super_anaconda') {
+      this.syncSuperAnaconda();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'crocodile') {
+      this.syncCrocodile();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'yamanote_line') {
+      this.syncYamanoteLine();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'elon_musk') {
+      this.syncElonMusk();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (COSMIC_BODY_IDS.has(u.type.id)) {
+      this.syncCosmicBody();
       this.updateMaterialStatus();
       return;
     }
@@ -4982,6 +5377,289 @@ export class VoxelCharacterVisual {
     // 右腕の部位は使わない
     this.parts.upperArmR.mesh.visible = false;
     this.parts.forearmR.mesh.visible = false;
+  }
+
+  /** 超巨大アナコンダ: 巨大アナコンダの5倍の長さを24節の追加胴体でうねり表現 */
+  private syncSuperAnaconda(): void {
+    this.syncAnaconda();
+    const u = this.unit;
+    const s = u.scale;
+    const tailAnchor = u.joints[J.FootR].pos;
+    if (this.trailHistory.length === 0 || this.trailHistory[0].distanceToSquared(tailAnchor) > (0.18 * s) ** 2) {
+      this.trailHistory.unshift(tailAnchor.clone());
+      if (this.trailHistory.length > 90) this.trailHistory.pop();
+    }
+    const segLen = 0.42 * s;
+    let prev = tailAnchor;
+    for (let i = 0; i < this.superAnacondaTail.length; i++) {
+      const mesh = this.superAnacondaTail[i];
+      if (!u.alive) {
+        mesh.visible = false;
+        continue;
+      }
+      mesh.visible = true;
+      const targetDist = (i + 1) * segLen;
+      const pt = this.sampleTrail(targetDist, tailAnchor, u.forward);
+      // 静止時でもうねるよう横方向のサイン波を少し加える
+      const sway = Math.sin(u.walkPhase * 2.2 - i * 0.55) * 0.14 * s;
+      _dir.subVectors(pt, prev);
+      if (_dir.lengthSq() < 1e-6) _dir.copy(u.forward).negate();
+      _segHint.crossVectors(_dir, UP);
+      if (_segHint.lengthSq() < 1e-8) _segHint.set(1, 0, 0);
+      _segHint.normalize();
+      _tmpA.copy(pt).addScaledVector(_segHint, sway);
+      _tmpA.y = Math.max(0.12 * s, _tmpA.y);
+      placeDragonSegment(mesh, prev, _tmpA, _segHint, s, 0);
+      prev = _tmpA.clone();
+    }
+  }
+
+  /** 軌跡履歴から指定距離後方にある座標を補間して返す */
+  private sampleTrail(dist: number, origin: Vector3, forward: Vector3): Vector3 {
+    let acc = 0;
+    let prev = origin;
+    for (let i = 0; i < this.trailHistory.length; i++) {
+      const cur = this.trailHistory[i];
+      const d = prev.distanceTo(cur);
+      if (acc + d >= dist && d > 1e-5) {
+        const t = (dist - acc) / d;
+        return new Vector3().lerpVectors(prev, cur, t);
+      }
+      acc += d;
+      prev = cur;
+    }
+    return prev.clone().addScaledVector(forward, -(dist - acc));
+  }
+
+  /** ワニ: 低姿勢4足・長い顎・尻尾・デスロール時の高速横回転 */
+  private syncCrocodile(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+
+    _fwd.subVectors(chest, pelvis);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-5) _fwd.copy(u.forward).setY(0);
+    if (_fwd.lengthSq() < 1e-5) _fwd.set(0, 0, 1);
+    _fwd.normalize();
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+
+    if (u.crocRollAngle !== 0) {
+      rotateFrame(_rR, _rU, _rF, _right, _up, _fwd, 0, 0, u.crocRollAngle);
+      _right.copy(_rR);
+      _up.copy(_rU);
+      _fwd.copy(_rF);
+    }
+
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      const headPos = _voxelWorld.copy(chest).addScaledVector(_fwd, 0.25 * s);
+      placeBasisPart(this.parts.head.mesh, headPos, _right, _up, _fwd);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    placeLimbFacing(this.parts.upperArmL.mesh, P[J.ShoulderL].pos, P[J.ElbowL].pos, _fwd);
+    placeLimbFacing(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos, _fwd);
+    placeLimbFacing(this.parts.upperArmR.mesh, P[J.ShoulderR].pos, P[J.ElbowR].pos, _fwd);
+    placeLimbFacing(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos, _fwd);
+    placeLimbFacing(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos, _fwd);
+    placeLimbFacing(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos, _fwd);
+    placeLimbFacing(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos, _fwd);
+    placeLimbFacing(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos, _fwd);
+
+    for (let i = 0; i < this.crocTail.length; i++) {
+      const tMesh = this.crocTail[i];
+      if (!u.alive) {
+        tMesh.visible = false;
+        continue;
+      }
+      tMesh.visible = true;
+      const wag = Math.sin(u.walkPhase * 1.8 - i * 0.7) * 0.12 * s;
+      const tailPos = _voxelWorld
+        .copy(pelvis)
+        .addScaledVector(_fwd, -(0.45 + i * 0.34) * s)
+        .addScaledVector(_right, wag);
+      placeBasisPart(tMesh, tailPos, _right, _up, _fwd.clone().negate());
+    }
+    if (this.weaponMesh) this.weaponMesh.visible = false;
+    if (this.bowMesh) this.bowMesh.visible = false;
+  }
+
+  /**
+   * 第8弾の水平基準で置く兵種（大タコ・マッコウクジラ＆ダイオウイカ・ザ・アース・ザ・ユニバース・UFO）。
+   * 胴体と頭は正面方向（ヨーだけ）で置き、天体と UFO はゆっくり自転させる。
+   */
+  private syncCosmicBody(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const id = u.type.id;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+
+    _fwd.copy(u.forward).setY(0);
+    if (_fwd.lengthSq() < 1e-5) _fwd.set(0, 0, 1);
+    _fwd.normalize();
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+
+    const spin =
+      id === 'the_earth' ? u.walkPhase * 0.04 : id === 'the_universe' ? u.walkPhase * 0.03 : id === 'ufo' ? u.walkPhase * 0.3 : 0;
+
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      if (id === 'ufo' || id === 'the_universe') {
+        rotateFrame(_rR, _rU, _rF, _right, _up, _fwd, id === 'ufo' ? spin : -spin * 2, 0, 0);
+        placeBasisPart(this.parts.torso.mesh, pelvis, _rR, _rU, _rF);
+      } else {
+        placeBasisPart(this.parts.torso.mesh, pelvis, _right, _up, _fwd);
+      }
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      const headPos = _voxelWorld.copy(pelvis);
+      if (id === 'giant_octopus') headPos.copy(chest);
+      else if (id === 'whale_squid') headPos.addScaledVector(_fwd, 0.7 * s).addScaledVector(_up, 0.4 * s);
+      else if (id === 'ufo') headPos.addScaledVector(_up, 0.08 * s);
+      if (id === 'the_earth' || id === 'the_universe') {
+        // 地軸を少し傾けて自転する
+        rotateFrame(_rR, _rU, _rF, _right, _up, _fwd, spin, 0, id === 'the_earth' ? 0.41 : 0.2);
+        placeBasisPart(this.parts.head.mesh, headPos, _rR, _rU, _rF);
+      } else {
+        placeBasisPart(this.parts.head.mesh, headPos, _right, _up, _fwd);
+      }
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+
+    placeLimbFacing(this.parts.upperArmL.mesh, P[J.ShoulderL].pos, P[J.ElbowL].pos, _fwd);
+    placeLimbFacing(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos, _fwd);
+    placeLimbFacing(this.parts.upperArmR.mesh, P[J.ShoulderR].pos, P[J.ElbowR].pos, _fwd);
+    placeLimbFacing(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos, _fwd);
+    placeLimbFacing(this.parts.thighL.mesh, P[J.HipL].pos, P[J.KneeL].pos, _fwd);
+    placeLimbFacing(this.parts.shinL.mesh, P[J.KneeL].pos, P[J.FootL].pos, _fwd);
+    placeLimbFacing(this.parts.thighR.mesh, P[J.HipR].pos, P[J.KneeR].pos, _fwd);
+    placeLimbFacing(this.parts.shinR.mesh, P[J.KneeR].pos, P[J.FootR].pos, _fwd);
+    if (this.weaponMesh) this.weaponMesh.visible = false;
+    if (this.bowMesh) this.bowMesh.visible = false;
+  }
+
+  /** 山手線: 先頭車両＋7両の後続客車（計8両編成）を軌跡に沿って連結 */
+  private syncYamanoteLine(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const pelvis = u.pelvis.pos;
+    if (this.trailHistory.length === 0 || this.trailHistory[0].distanceToSquared(pelvis) > (0.25 * s) ** 2) {
+      this.trailHistory.unshift(pelvis.clone());
+      if (this.trailHistory.length > 140) this.trailHistory.pop();
+    }
+
+    _fwd.copy(u.forward).setY(0);
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1);
+    _fwd.normalize();
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      placeBasisPart(this.parts.head.mesh, pelvis, _right, _up, _fwd);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+    this.parts.torso.mesh.visible = false;
+    this.parts.upperArmL.mesh.visible = false;
+    this.parts.forearmL.mesh.visible = false;
+    this.parts.upperArmR.mesh.visible = false;
+    this.parts.forearmR.mesh.visible = false;
+    this.parts.thighL.mesh.visible = false;
+    this.parts.shinL.mesh.visible = false;
+    this.parts.thighR.mesh.visible = false;
+    this.parts.shinR.mesh.visible = false;
+    if (this.weaponMesh) this.weaponMesh.visible = false;
+    if (this.bowMesh) this.bowMesh.visible = false;
+
+    const carSpacing = 1.05 * s;
+    let prevPos = pelvis;
+    for (let i = 0; i < this.yamanoteCars.length; i++) {
+      const car = this.yamanoteCars[i];
+      if (!u.alive) {
+        car.visible = false;
+        continue;
+      }
+      car.visible = true;
+      const carPos = this.sampleTrail((i + 1) * carSpacing, pelvis, _fwd);
+      _dir.subVectors(prevPos, carPos).setY(0);
+      if (_dir.lengthSq() < 1e-6) _dir.copy(_fwd);
+      _dir.normalize();
+      _rR.crossVectors(UP, _dir).normalize();
+      placeBasisPart(car, carPos, _rR, UP, _dir);
+      prevPos = carPos;
+    }
+  }
+
+  /** イーロンマスク: ロケット付き赤いテスラ・ロードスターの上に立って操縦する */
+  private syncElonMusk(): void {
+    const u = this.unit;
+    const s = u.scale;
+    const P = u.joints;
+    const pelvis = P[J.Pelvis].pos;
+    const chest = P[J.Chest].pos;
+    const head = P[J.Head].pos;
+
+    _fwd.copy(u.forward).setY(0);
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1);
+    _fwd.normalize();
+    _up.copy(UP);
+    _right.crossVectors(_up, _fwd).normalize();
+
+    if (this.roadsterGroup) {
+      this.roadsterGroup.visible = u.alive;
+      const carPos = new Vector3(pelvis.x, Math.max(0, pelvis.y - 0.68 * s), pelvis.z);
+      placeBasisPart(this.roadsterGroup, carPos, _right, _up, _fwd);
+    }
+
+    // 車の上（高い位置）に立つイーロン本体を同期
+    if (!this.parts.torso.destroyed) {
+      this.parts.torso.mesh.visible = true;
+      _tmpA.subVectors(chest, pelvis).normalize();
+      if (_tmpA.lengthSq() < 1e-6) _tmpA.copy(UP);
+      _rR.crossVectors(_tmpA, _fwd);
+      if (_rR.lengthSq() < 1e-6) _rR.copy(_right);
+      _rR.normalize();
+      _rF.crossVectors(_rR, _tmpA).normalize();
+      placeBasisPart(this.parts.torso.mesh, pelvis.clone().addScaledVector(UP, 0.15 * s), _rR, _tmpA, _rF);
+    } else {
+      this.parts.torso.mesh.visible = false;
+    }
+    if (!this.parts.head.destroyed) {
+      this.parts.head.mesh.visible = true;
+      placeBasisPart(this.parts.head.mesh, head, _right, _up, _fwd);
+    } else {
+      this.parts.head.mesh.visible = false;
+    }
+    placeLimbFacing(this.parts.upperArmL.mesh, P[J.ShoulderL].pos, P[J.ElbowL].pos, _fwd);
+    placeLimbFacing(this.parts.forearmL.mesh, P[J.ElbowL].pos, P[J.HandL].pos, _fwd);
+    placeLimbFacing(this.parts.upperArmR.mesh, P[J.ShoulderR].pos, P[J.ElbowR].pos, _fwd);
+    placeLimbFacing(this.parts.forearmR.mesh, P[J.ElbowR].pos, P[J.HandR].pos, _fwd);
+    this.parts.thighL.mesh.visible = false;
+    this.parts.shinL.mesh.visible = false;
+    this.parts.thighR.mesh.visible = false;
+    this.parts.shinR.mesh.visible = false;
+    if (this.weaponMesh) this.weaponMesh.visible = false;
+    if (this.bowMesh) this.bowMesh.visible = false;
   }
 
   /** 大鷲: 水平に構えた胴体・前を見据える頭・羽ばたく翼・たたんだ鉤爪（攻撃中は前へ突き出す） */

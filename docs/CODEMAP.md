@@ -58,6 +58,7 @@ npm run outline -- src                          # 全ファイルの行数
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
 | `combat/CombatSystem.ts` | 1552 | 当たり判定・ダメージ・投射物・爆発・雷・特殊技（使徒のビームなど） |
+| `combat/CosmicSkills.ts` | 600 | 第8弾ユニット（大タコ・マッコウクジラ＆ダイオウイカ・たこ焼き・ザ・アース・ザ・ユニバース・〇VIDIA・大剣士・UFO）の数値定数と特殊攻撃 `castCosmicAttack`、遅れて着弾する攻撃のキュー `CosmicImpactQueue`（`CombatSystem.cosmic`）、大剣士の飛び道具はじき `rollGreatSwordDeflect`、浮遊の高さ `cosmicHoverHeight`、専用ポーズ `applyCosmicPose`、演出イベント `CosmicEffectEvent` |
 | `physics/PhysicsWorld.ts` | 650 | 自前 Verlet 物理（粒子・拘束・地面・障害物・壁）。軽量化の定数 `PHYSICS_ITERATIONS`・`PHYSICS_COLLISION_INTERVAL`（体どうしの衝突は 1 ステップおき、武器は毎ステップ）・`PHYSICS_LARGE_RADIUS`（大きい粒子は別リストで探索）。**全端末一律にすること**（画質に連動させると対戦がずれる）。止まった死体は `Battle.sleepSettledCorpses` が物理から外す。検証は `tests/performance.test.ts` |
 | `physics/Particle.ts` / `Constraint.ts` / `SpatialHash.ts` | 小 | 物理の部品 |
 | `facilities/FacilityTypes.ts` | 443 | 施設・レリック・ゲートの定義と、レベル別の数値テーブル |
@@ -89,6 +90,8 @@ npm run outline -- src                          # 全ファイルの行数
 | `DragonModel.ts` / `HayatoHeadModel.ts` / `TanimonArmModel.ts` / `YamamuronAwakenedModel.ts` | 200〜640 | 特殊兵種の専用モデル |
 | `BeastModels.ts` | 700 | 鎧戦象・大鷲・巨大アナコンダの彫刻的なボクセルモデル（`buildElephant*` / `buildEagle*` / `buildSnake*`）。表面に目などを描く `castPaint`、大鷲の翼の長さ `EAGLE_RIG` |
 | `MachineModels.ts` | 700 | 超重戦車・暴走バギー・巨大ロボットの彫刻的なボクセルモデル（`buildTank*` / `buildBuggy*` / `buildRobot*`） |
+| `CosmicModels.ts` | 520 | 第8弾ユニットの彫刻的なボクセルモデル一式 `buildCosmicModelSet`（`getUnitTemplateSet` の先頭で使う）。水平基準で置く兵種 `COSMIC_BODY_IDS` は `VoxelCharacterVisual.syncCosmicBody` で同期 |
+| `CosmicFx.ts` | 210 | 第8弾ユニットの演出（粒子）`spawnCosmicFx`。`SceneView.spawnCombatEffect` の先頭から呼ぶ。効果音は `SoundManager` の `COSMIC_SOUND_ALIAS` で既存の音に振り替える |
 | `DroppedChests.ts` / `JackpotChest3D.ts` / `JackpotReels3D.ts` / `JackpotIcons.ts` | 200〜470 | 宝箱とリールの 3D 演出 |
 | `XpOrbs.ts` | 184 | TD の経験値オーブ |
 | `EnergyGateVisual.ts` / `RewardVoxelModels.ts` / `TitleLogo3D.ts` / `FieldMinimap.ts` | 小 | ゲートの膜、報酬モデル、タイトルロゴ、ミニマップ画像 |

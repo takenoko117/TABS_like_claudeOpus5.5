@@ -42,6 +42,19 @@ export function getAttackDamageDisplay(ut: UnitType): string {
   if (ut.id === 'deoxys') return '16-48 (サイコキネシス拘束・吹き飛ばし)';
   if (ut.id === 'hayato') return '12 × 照射 (貫通口レーザー)';
   if (ut.id === 'tanimon') return '150+ × 連鎖 (頭つかみ激突)';
+  if (ut.id === 'super_anaconda') return '160 (超巨大毒牙)';
+  if (ut.id === 'poseidon') return '150 (海割り波状攻撃)';
+  if (ut.id === 'crocodile') return '45 × 連続 (デスロール)';
+  if (ut.id === 'giant_sequoia') return '95+60 (避雷針雷撃＋山火事)';
+  if (ut.id === 'yamanote_line') return '115 (8両編成突進)';
+  if (ut.id === 'landmark_tower') return '130 (超高層広範囲衝撃波)';
+  if (ut.id === 'giant_octopus') return '34 × 8本 (足の一斉攻撃＋吸盤)';
+  if (ut.id === 'whale_squid') return '110+85 (ソナー麻痺＋触腕締め上げ)';
+  if (ut.id === 'takoyaki') return '24 × 3個 (アツアツ・やけど)';
+  if (ut.id === 'the_earth') return '320 (重力引き寄せ＋地殻変動)';
+  if (ut.id === 'the_universe') return '160+130 × 10 (ビッグバン＋流星群)';
+  if (ut.id === 'ovidia') return '32 × 8本 (並列演算・4回に1回3倍)';
+  if (ut.id === 'ufo') return '48 (焼きそば・鈍足) / 70 (吸い上げ)';
   return '-';
 }
 

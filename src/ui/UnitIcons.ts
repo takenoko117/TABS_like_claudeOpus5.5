@@ -1008,6 +1008,147 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <ellipse cx="20.0" cy="10.0" rx="1.1" ry="0.65" fill="#00d2d3"/>
         <circle cx="20.0" cy="10.0" r="0.45" fill="#ffffff"/>
       </svg>`;
+    case 'super_anaconda':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <path d="M3,30 Q10,20 18,28 T33,24" fill="none" stroke="#081c15" stroke-width="8" stroke-linecap="round"/>
+        <path d="M3,30 Q10,20 18,28 T33,24" fill="none" stroke="#2d6a4f" stroke-width="5.5" stroke-linecap="round"/>
+        <polygon points="18,4 31,17 5,17" fill="#1b4332"/>
+        <polygon points="18,12 25,24 11,24" fill="#991b1b"/>
+        <polygon points="12,17 15,17 13.5,23" fill="#f8f9fa"/>
+        <polygon points="21,17 24,17 22.5,23" fill="#f8f9fa"/>
+        <path d="M18,22 L18,28 M18,28 L14,32 M18,28 L22,32" stroke="#e03131" stroke-width="2" fill="none"/>
+        <ellipse cx="11" cy="12" rx="2.4" ry="3.2" fill="#ffd43b"/>
+        <ellipse cx="25" cy="12" rx="2.4" ry="3.2" fill="#ffd43b"/>
+      </svg>`;
+    case 'poseidon':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <path d="M4,32 Q10,25 16,32 M20,32 Q26,25 32,32" stroke="#38bdf8" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <rect x="12" y="18" width="12" height="14" rx="2" fill="#0ca678"/>
+        <circle cx="18" cy="12" r="5" fill="#f0c39c"/>
+        <polygon points="12,9 15,4 18,8 21,4 24,9" fill="#ffd43b"/>
+        <path d="M14,15 Q18,21 22,15" fill="#dee2e6"/>
+        <line x1="29" y1="6" x2="29" y2="33" stroke="#ffd43b" stroke-width="2.2"/>
+        <path d="M25,10 L25,5 M29,9 L29,3 M33,10 L33,5 M25,10 L33,10" stroke="#ffd43b" stroke-width="2" fill="none"/>
+      </svg>`;
+    case 'crocodile':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="6" y="14" width="24" height="10" rx="4" fill="#3b5227"/>
+        <polygon points="6,16 2,19 6,22" fill="#283618"/>
+        <polygon points="10,14 13,11 16,14 19,11 22,14 25,11 28,14" fill="#606c38"/>
+        <rect x="8" y="21" width="20" height="3" fill="#ccd5ae"/>
+        <polygon points="24,18 34,16 34,20" fill="#3b5227"/>
+        <polygon points="24,21 33,22 24,24" fill="#283618"/>
+        <circle cx="24" cy="16" r="2" fill="#ffd43b"/>
+        <rect x="23.5" y="15" width="1" height="2" fill="#181820"/>
+      </svg>`;
+    case 'giant_sequoia':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="13" y="16" width="10" height="18" fill="#6f3e22"/>
+        <polygon points="18,3 30,13 6,13" fill="#2b6e34"/>
+        <polygon points="18,8 32,19 4,19" fill="#2d6a4f"/>
+        <polyline points="21,2 17,11 22,11 16,22" stroke="#ffe066" stroke-width="2" fill="none"/>
+        <path d="M8,31 Q10,25 12,31 M24,31 Q26,24 28,31" stroke="#ff6b35" stroke-width="2.2" fill="none"/>
+      </svg>`;
+    case 'yamanote_line':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="4" y="10" width="28" height="16" rx="2" fill="#d0d7de" stroke="#495057" stroke-width="1.2"/>
+        <rect x="4" y="19" width="28" height="4" fill="#82c91e"/>
+        <rect x="7" y="12" width="10" height="6" fill="#1e293b"/>
+        <rect x="20" y="12" width="9" height="6" fill="#38bdf8" opacity="0.6"/>
+        <circle cx="8" cy="24" r="1.5" fill="#fff3bf"/>
+        <circle cx="28" cy="24" r="1.5" fill="#fff3bf"/>
+        <rect x="8" y="26" width="20" height="3" fill="#343a40"/>
+      </svg>`;
+    case 'landmark_tower':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <polygon points="11,33 14,9 22,9 25,33" fill="#cbd5e1" stroke="#475569" stroke-width="1"/>
+        <rect x="13" y="5" width="10" height="4" fill="#94a3b8"/>
+        <line x1="18" y1="2" x2="18" y2="5" stroke="#e2e8f0" stroke-width="1.5"/>
+        <rect x="15" y="12" width="6" height="18" fill="#334155"/>
+        <circle cx="18" cy="31" r="12" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-dasharray="3,2"/>
+      </svg>`;
+    case 'elon_musk':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="5" y="22" width="26" height="7" rx="3" fill="#e03131"/>
+        <polygon points="2,24 6,23 6,28 2,27" fill="#38bdf8"/>
+        <circle cx="11" cy="29" r="3" fill="#212529"/>
+        <circle cx="25" cy="29" r="3" fill="#212529"/>
+        <rect x="15" y="13" width="6" height="9" fill="#18181b"/>
+        <circle cx="18" cy="9" r="4" fill="#f0c39c"/>
+        <rect x="15" y="5" width="6" height="2.5" fill="#2b2d42"/>
+      </svg>`;
+    case 'giant_octopus':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <path d="M6,30 Q4,22 10,22 M11,32 Q10,24 14,23 M25,32 Q26,24 22,23 M30,30 Q32,22 26,22" stroke="#e8590c" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <ellipse cx="18" cy="13" rx="10" ry="10" fill="#e8590c"/>
+        <ellipse cx="18" cy="21" rx="8" ry="3" fill="#c2410c"/>
+        <circle cx="14" cy="15" r="2.4" fill="#fff"/><circle cx="22" cy="15" r="2.4" fill="#fff"/>
+        <rect x="13.4" y="14" width="1.4" height="2.4" fill="#181820"/><rect x="21.4" y="14" width="1.4" height="2.4" fill="#181820"/>
+        <circle cx="12" cy="8" r="1.2" fill="#ffa94d"/><circle cx="23" cy="7" r="1.4" fill="#ffa94d"/>
+      </svg>`;
+    case 'whale_squid':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="3" y="11" width="22" height="13" fill="#495057"/>
+        <polygon points="25,13 33,9 33,26 25,22" fill="#343a40"/>
+        <rect x="3" y="21" width="16" height="3" fill="#adb5bd"/>
+        <circle cx="8" cy="15" r="1.3" fill="#f8f9fa"/>
+        <path d="M10,10 Q16,4 22,10 M12,25 Q18,32 24,26 M20,11 Q26,18 18,24" stroke="#c92a2a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <ellipse cx="22" cy="17" rx="3" ry="2.2" fill="#e03131"/>
+        <circle cx="22" cy="17" r="1" fill="#ffd43b"/>
+      </svg>`;
+    case 'takoyaki':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <polygon points="3,26 33,26 29,32 7,32" fill="#d9a066"/>
+        <circle cx="11" cy="21" r="6" fill="#c9832e"/><circle cx="25" cy="21" r="6" fill="#c9832e"/>
+        <circle cx="18" cy="15" r="7" fill="#c9832e"/>
+        <path d="M12,13 Q18,9 24,13" stroke="#5c2d0e" stroke-width="3" fill="none"/>
+        <path d="M13,15 L23,12 M14,11 L22,16" stroke="#fff" stroke-width="1" fill="none"/>
+        <rect x="15" y="10" width="2" height="2" fill="#2f9e44"/><rect x="20" y="13" width="2" height="1.5" fill="#f783ac"/>
+        <line x1="26" y1="4" x2="21" y2="14" stroke="#e9c46a" stroke-width="1.4"/>
+      </svg>`;
+    case 'the_earth':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <circle cx="17" cy="19" r="13" fill="#1971c2"/>
+        <path d="M9,12 L15,10 L17,15 L12,19 L10,25 L7,20 Z" fill="#2f9e44"/>
+        <path d="M19,20 L26,17 L28,23 L22,29 Z" fill="#2f9e44"/>
+        <path d="M7,15 Q15,13 24,11 M10,27 Q18,25 27,26" stroke="#f8f9fa" stroke-width="1.6" fill="none" opacity="0.8"/>
+        <circle cx="31" cy="6" r="3" fill="#ced4da"/>
+      </svg>`;
+    case 'the_universe':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <circle cx="18" cy="18" r="15" fill="#1a1033"/>
+        <path d="M18,18 Q24,10 30,16 M18,18 Q12,26 6,20 M18,18 Q26,24 22,31 M18,18 Q10,12 14,5" stroke="#9775fa" stroke-width="2.4" fill="none"/>
+        <circle cx="18" cy="18" r="3" fill="#ffd43b"/>
+        <rect x="8" y="9" width="1.5" height="1.5" fill="#fff"/><rect x="27" y="25" width="1.5" height="1.5" fill="#fff"/>
+        <rect x="26" y="8" width="1.2" height="1.2" fill="#74c0fc"/><rect x="9" y="27" width="1.2" height="1.2" fill="#ffa8a8"/>
+      </svg>`;
+    case 'ovidia':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="2" y="10" width="32" height="16" fill="#212529" stroke="#76b900" stroke-width="1.6"/>
+        <circle cx="11" cy="18" r="5.5" fill="#343a40"/><circle cx="25" cy="18" r="5.5" fill="#343a40"/>
+        <path d="M11,13 L11,23 M6,18 L16,18 M25,13 L25,23 M20,18 L30,18" stroke="#495057" stroke-width="1.4"/>
+        <rect x="4" y="26" width="18" height="3" fill="#e9c46a"/>
+        <circle cx="18" cy="6" r="3" fill="none" stroke="#76b900" stroke-width="1.6"/>
+      </svg>`;
+    case 'great_swordsman':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="10" y="20" width="12" height="13" fill="#495057"/>
+        <rect x="10" y="9" width="12" height="11" fill="#f0c39c"/>
+        <rect x="10" y="7" width="12" height="4" fill="#343a40"/>
+        <rect x="12" y="13" width="2" height="2" fill="#181820"/><rect x="18" y="13" width="2" height="2" fill="#181820"/>
+        <polygon points="28,2 31,2 31,27 29.5,30 28,27" fill="#dee2e6" stroke="#868e96" stroke-width="0.8"/>
+        <rect x="25" y="26" width="9" height="2" fill="#ffd43b"/>
+        <rect x="28.5" y="28" width="2" height="6" fill="#5c3d2e"/>
+      </svg>`;
+    case 'ufo':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <polygon points="12,24 24,24 30,34 6,34" fill="#fff3bf" opacity="0.5"/>
+        <ellipse cx="18" cy="13" rx="7" ry="6" fill="#74c0fc"/>
+        <ellipse cx="18" cy="18" rx="16" ry="5" fill="#868e96"/>
+        <ellipse cx="18" cy="17" rx="16" ry="3" fill="#adb5bd"/>
+        <circle cx="8" cy="19" r="1.3" fill="#ffd43b"/><circle cx="18" cy="21" r="1.3" fill="#ff6b6b"/><circle cx="28" cy="19" r="1.3" fill="#ffd43b"/>
+        <path d="M14,29 Q16,26 18,29 Q20,32 22,29" stroke="#c9832e" stroke-width="1.4" fill="none"/>
+      </svg>`;
   }
 }
 
