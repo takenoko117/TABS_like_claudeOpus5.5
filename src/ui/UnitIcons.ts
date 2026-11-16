@@ -689,11 +689,16 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
     case 'angel_sachiel':
       return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
-        <path d="M24,6 C16,6 13,14 13,24 C13,34 18,42 24,44 C30,42 35,34 35,24 C35,14 32,6 24,6 Z" fill="#141517" stroke="#343a40" stroke-width="2"/>
-        <polygon points="24,10 18,22 24,36 30,22" fill="#f8f9fa"/>
-        <circle cx="21" cy="20" r="2" fill="#141517"/>
-        <circle cx="27" cy="20" r="2" fill="#141517"/>
-        <circle cx="24" cy="28" r="3.2" fill="#ff1744"/>
+        <circle cx="24" cy="18" r="16" stroke="#ffd43b" stroke-width="1.6" stroke-dasharray="4,2" opacity="0.85"/>
+        <path d="M5,14 L15,18 L12,30 L4,26 Z M43,14 L33,18 L36,30 L44,26 Z" fill="#1e2026" stroke="#ff1744" stroke-width="1.2"/>
+        <path d="M24,6 C16,6 13,14 13,24 C13,34 18,42 24,44 C30,42 35,34 35,24 C35,14 32,6 24,6 Z" fill="#0e0f12" stroke="#343a40" stroke-width="2"/>
+        <polygon points="24,8 17,22 24,38 31,22" fill="#f8f9fa"/>
+        <circle cx="24" cy="14" r="1.5" fill="#ff0033" stroke="#ffd43b" stroke-width="0.7"/>
+        <circle cx="20.5" cy="20" r="2.2" fill="#0e0f12"/>
+        <circle cx="27.5" cy="20" r="2.2" fill="#0e0f12"/>
+        <circle cx="20.5" cy="20" r="1" fill="#ff0033"/>
+        <circle cx="27.5" cy="20" r="1" fill="#ff0033"/>
+        <circle cx="24" cy="29" r="3.6" fill="#ff1744" stroke="#ffd43b" stroke-width="1"/>
       </svg>`;
     case 'angel_zeruel':
       return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
@@ -714,12 +719,13 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
       </svg>`;
     case 'angel_sahaquiel':
       return `<svg viewBox="0 0 48 48" class="unit-portrait-svg" fill="none" stroke="currentColor">
-        <ellipse cx="24" cy="24" rx="20" ry="12" fill="#f76707" stroke="#ffd43b" stroke-width="2"/>
-        <circle cx="24" cy="24" r="7.5" fill="#ffffff"/>
-        <circle cx="24" cy="24" r="4.5" fill="#1971c2"/>
-        <circle cx="24" cy="24" r="2" fill="#ff0000"/>
-        <circle cx="10" cy="24" r="3" fill="#ffd43b"/>
-        <circle cx="38" cy="24" r="3" fill="#ffd43b"/>
+        <path d="M14,14 C19,7 28,8 34,13 C41,12 44,20 39,26 C43,33 36,39 28,36 C24,42 15,40 13,33 C6,34 4,24 10,20 C8,15 11,11 14,14 Z" fill="#f76707" stroke="#ffd43b" stroke-width="2"/>
+        <circle cx="11" cy="14" r="3" fill="#ffd43b"/>
+        <circle cx="38" cy="16" r="2.6" fill="#ff922b" stroke="#ffd43b" stroke-width="1"/>
+        <circle cx="35" cy="35" r="2.8" fill="#ffd43b"/>
+        <circle cx="24" cy="24" r="7" fill="#ffffff"/>
+        <circle cx="24" cy="24" r="4.2" fill="#1971c2"/>
+        <circle cx="24" cy="24" r="2" fill="#ff2a2a"/>
       </svg>`;
     case 'giant_robot':
       // 巨大ロボット: V字アンテナ＋発光ツインアイ＋重装甲ショルダー＋ロケットナックル
@@ -972,42 +978,35 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <rect x="9.5" y="21.5" width="3" height="4" fill="#c8372d"/>
       </svg>`;
     case 'deoxys':
-      // デオキシス: 三叉の角状突起・白いフェイスマスク・胸の紫クリスタルコア・DNA二重螺旋腕
+      // デオキシー: 重装甲ショルダー・鋭い三叉角・白いフェイスマスク・胸の巨大紫クリスタルコア・DNA剛腕
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
-        <!-- 背景のサイキックオーラリング -->
-        <circle cx="18" cy="18" r="16" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>
-        <circle cx="18" cy="18" r="14" fill="none" stroke="#00d2d3" stroke-width="0.8" opacity="0.5"/>
-        <!-- DNA二重螺旋の触手腕（左右） -->
-        <path d="M 12,17 C 8,19 6,24 8,28 C 9,30 11,27 10,24 C 9,21 11,19 13,18" fill="none" stroke="#ee5a24" stroke-width="2" stroke-linecap="round"/>
-        <path d="M 11,18 C 9,22 11,25 9,29" fill="none" stroke="#00d2d3" stroke-width="1.6" stroke-linecap="round"/>
-        <path d="M 24,17 C 28,19 30,24 28,28 C 27,30 25,27 26,24 C 27,21 25,19 23,18" fill="none" stroke="#ee5a24" stroke-width="2" stroke-linecap="round"/>
-        <path d="M 25,18 C 27,22 25,25 27,29" fill="none" stroke="#00d2d3" stroke-width="1.6" stroke-linecap="round"/>
-        <!-- 細身の流線型胴体（赤橙） -->
-        <path d="M 15,16 L 21,16 L 19,25 L 17,25 Z" fill="#ee5a24"/>
-        <!-- 胸の中央に輝く紫クリスタルコア -->
-        <polygon points="18,17 20.5,20 18,23 15.5,20" fill="#a855f7" stroke="#ffffff" stroke-width="0.8"/>
-        <circle cx="18" cy="20" r="1" fill="#ffffff"/>
-        <!-- 頭部サイドの三叉突起（左右の大きな角） -->
-        <path d="M 13,8 L 6,4 L 8,11 L 13,11 Z" fill="#ee5a24"/>
-        <polygon points="6,4 4,2 7,6" fill="#00d2d3"/>
-        <path d="M 23,8 L 30,4 L 28,11 L 23,11 Z" fill="#ee5a24"/>
-        <polygon points="30,4 32,2 29,6" fill="#00d2d3"/>
-        <!-- 頭頂部センタークレスト -->
-        <polygon points="17,8 18,2 19,8" fill="#ee5a24"/>
-        <line x1="18" y1="3" x2="18" y2="7" stroke="#00d2d3" stroke-width="1"/>
-        <!-- 頭部中央（赤橙ベース） -->
-        <ellipse cx="18" cy="9.5" rx="5" ry="4.5" fill="#ee5a24"/>
-        <!-- 白いフェイスマスク -->
-        <ellipse cx="18" cy="10" rx="3.2" ry="3.5" fill="#f1f5f9"/>
-        <!-- 顔のセンター縦ライン（シアン） -->
-        <line x1="18" y1="6.8" x2="18" y2="13.2" stroke="#00d2d3" stroke-width="1.4"/>
-        <!-- 額の紫コア -->
-        <circle cx="18" cy="7.5" r="1.1" fill="#9333ea"/>
-        <!-- 鋭い眼光（シアン） -->
-        <ellipse cx="16.2" cy="9.8" rx="1.0" ry="0.6" fill="#00d2d3"/>
-        <circle cx="16.2" cy="9.8" r="0.4" fill="#ffffff"/>
-        <ellipse cx="19.8" cy="9.8" rx="1.0" ry="0.6" fill="#00d2d3"/>
-        <circle cx="19.8" cy="9.8" r="0.4" fill="#ffffff"/>
+        <circle cx="18" cy="18" r="16" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.65"/>
+        <circle cx="18" cy="18" r="14" fill="none" stroke="#00d2d3" stroke-width="0.9" opacity="0.55"/>
+        <polygon points="8,15 13,14 13,20 7,19" fill="#1e293b" stroke="#00d2d3" stroke-width="0.7"/>
+        <polygon points="28,15 23,14 23,20 29,19" fill="#1e293b" stroke="#00d2d3" stroke-width="0.7"/>
+        <path d="M 11,17 C 7,19 5,24 7,29 C 8,31 11,28 10,24 C 9,21 11,19 13,18" fill="none" stroke="#ee5a24" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M 10,18 C 8,22 10,25 8,30" fill="none" stroke="#00d2d3" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M 25,17 C 29,19 31,24 29,29 C 28,31 25,28 26,24 C 27,21 25,19 23,18" fill="none" stroke="#ee5a24" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M 26,18 C 28,22 26,25 28,30" fill="none" stroke="#00d2d3" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M 13,15 L 23,15 L 20,26 L 16,26 Z" fill="#a8201a"/>
+        <polygon points="18,16 21.5,20 18,24 14.5,20" fill="#a855f7" stroke="#ffffff" stroke-width="0.9"/>
+        <circle cx="18" cy="20" r="1.2" fill="#ffffff"/>
+        <path d="M 13,8 L 4,3 L 7,11 L 13,11 Z" fill="#ee5a24"/>
+        <polygon points="4,3 2,1 6,5" fill="#00d2d3"/>
+        <path d="M 23,8 L 32,3 L 29,11 L 23,11 Z" fill="#ee5a24"/>
+        <polygon points="32,3 34,1 30,5" fill="#00d2d3"/>
+        <polygon points="16.5,8 18,1.5 19.5,8" fill="#a8201a"/>
+        <line x1="18" y1="2.5" x2="18" y2="7" stroke="#00d2d3" stroke-width="1.2"/>
+        <ellipse cx="18" cy="9.5" rx="5.2" ry="4.6" fill="#ee5a24"/>
+        <ellipse cx="18" cy="10" rx="3.4" ry="3.5" fill="#f1f5f9"/>
+        <line x1="18" y1="6.8" x2="18" y2="13.2" stroke="#00d2d3" stroke-width="1.5"/>
+        <circle cx="18" cy="7.4" r="1.3" fill="#a855f7"/>
+        <line x1="14.5" y1="8.6" x2="17" y2="9.4" stroke="#1e293b" stroke-width="1.2"/>
+        <line x1="21.5" y1="8.6" x2="19" y2="9.4" stroke="#1e293b" stroke-width="1.2"/>
+        <ellipse cx="16.0" cy="10.0" rx="1.1" ry="0.65" fill="#00d2d3"/>
+        <circle cx="16.0" cy="10.0" r="0.45" fill="#ffffff"/>
+        <ellipse cx="20.0" cy="10.0" rx="1.1" ry="0.65" fill="#00d2d3"/>
+        <circle cx="20.0" cy="10.0" r="0.45" fill="#ffffff"/>
       </svg>`;
   }
 }

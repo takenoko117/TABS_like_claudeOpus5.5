@@ -348,7 +348,7 @@ export const PRESETS: readonly PresetScenario[] = [
   },
   {
     name: '使徒神の降臨（エヴァ使徒ライク）',
-    description: '幾何神ラミエル・使徒神サキエル・拒絶神ゼルエル・天落神サハクィエルが降臨！強大なATフィールドと神話的破壊力に現代・神話連合軍が挑む',
+    description: 'クリスタル・ガイザー・神の遣いオリジン・拒絶神ゼルエル・天空のメテオが降臨！強大なATフィールドと神話的破壊力に現代・神話連合軍が挑む',
     units: [
       { typeId: 'giant_robot', team: 0, x: -9.0, z: 0.0 },
       { typeId: 'giant_tank', team: 0, x: -11.5, z: -3.5 },

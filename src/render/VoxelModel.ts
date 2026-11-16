@@ -638,23 +638,58 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.035, [3, 3, 3]);
   }
 
-  // 12. 使徒神サキエル: 白い嘴状仮面と漆黒の後頭部
+  // 12. 神の遣いオリジン（旧サキエル）: 畏怖を放つ聖なる白骨仮面・三つ目の真紅眼・後方へ反り立つ漆黒の聖角
   if (type.id === 'angel_sachiel') {
-    const g = new VoxelGrid(11, 13, 13);
-    const black = 0x141517;
+    const g = new VoxelGrid(15, 16, 15);
+    const obsidian = 0x0e0f12;
+    const darkArmor = 0x1e2026;
     const mask = 0xf8f9fa;
-    const maskShadow = 0xced4da;
-    g.fillBox(2, 2, 1, 8, 8, 7, black);
-    g.fillBox(2, 2, 7, 8, 8, 8, mask);
-    g.fillBox(3, 1, 8, 7, 7, 10, mask);
-    g.fillBox(4, 0, 10, 6, 5, 12, mask);
-    g.fillBox(4, 0, 9, 6, 1, 10, maskShadow);
-    g.fillBox(3, 5, 8, 4, 6, 9, black);
-    g.fillBox(6, 5, 8, 7, 6, 9, black);
-    g.set(3, 6, 8, 0xd90429);
-    g.set(7, 6, 8, 0xd90429);
-    g.fillBox(4, 8, 2, 6, 10, 5, black);
-    return makeTemplate(g, 0.04, [5, 4, 6]);
+    const maskShade = 0xdce0e5;
+    const maskEdge = 0xadb5bd;
+    const crimson = 0xff0033;
+    const eyeCore = 0xff8787;
+    const gold = 0xffd43b;
+
+    // 漆黒の重厚な後頭部・頭頂部
+    g.fillBox(3, 2, 1, 11, 11, 8, obsidian);
+    g.fillBox(4, 11, 2, 10, 13, 8, darkArmor);
+    // 後頭部の背骨状クレスト＆真紅の聖痕
+    g.fillBox(6, 2, 0, 8, 12, 1, darkArmor);
+    g.fillBox(7, 4, 0, 7, 11, 0, crimson);
+    // 頭頂・側頭から後方へ反り立つ漆黒の聖角（畏怖を与えるシルエット）
+    g.fillBox(2, 8, 2, 3, 13, 5, obsidian);
+    g.fillBox(1, 11, 1, 2, 15, 3, darkArmor);
+    g.set(1, 15, 1, crimson);
+    g.fillBox(11, 8, 2, 12, 13, 5, obsidian);
+    g.fillBox(12, 11, 1, 13, 15, 3, darkArmor);
+    g.set(13, 15, 1, crimson);
+
+    // 荘厳な白い聖仮面（縦長・嘴状の鋭い顎）
+    g.fillBox(3, 3, 8, 11, 11, 10, mask);
+    g.fillBox(4, 2, 10, 10, 10, 11, mask);
+    g.fillBox(5, 1, 11, 9, 8, 12, mask);
+    g.fillBox(6, 0, 12, 8, 5, 13, mask);
+    g.fillBox(6, 0, 11, 8, 1, 12, maskShade);
+    // 頬の彫り・陰影と金の聖紋
+    g.fillBox(3, 3, 9, 3, 7, 10, maskEdge);
+    g.fillBox(11, 3, 9, 11, 7, 10, maskEdge);
+    g.set(4, 4, 11, gold);
+    g.set(10, 4, 11, gold);
+
+    // 深く落ち窪んだ漆黒の眼窩と鋭く光る真紅の双眸
+    g.fillBox(4, 6, 10, 5, 8, 11, obsidian);
+    g.fillBox(9, 6, 10, 10, 8, 11, obsidian);
+    g.set(4, 7, 11, crimson);
+    g.set(5, 7, 11, eyeCore);
+    g.set(9, 7, 11, eyeCore);
+    g.set(10, 7, 11, crimson);
+
+    // 額の第三の聖眼（黄金の縁取り＋深紅の瞳）
+    g.fillBox(6, 9, 10, 8, 11, 11, obsidian);
+    g.set(7, 10, 11, crimson);
+    g.set(7, 11, 11, gold);
+
+    return makeTemplate(g, 0.039, [7, 4, 7]);
   }
 
   // 13. 拒絶神ゼルエル: 死神の髑髏仮面・冷酷な複眼光・神聖金紋・黒曜石ヘルメット
@@ -800,45 +835,62 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.042, [5.5, 3.5, 4.5]);
   }
 
-  // デオキシス: 三叉の角状突起・白いフェイスマスク・額の紫クリスタル・シアン眼光
+  // デオキシー（デオキシ＋オキシ＋プロキシー）: 強大な威圧感を放つ重装甲ヘッド・鋭い角状エネルギー翼・深紅の装甲眉
   if (type.id === 'deoxys') {
-    const g = new VoxelGrid(15, 14, 13);
+    const g = new VoxelGrid(17, 17, 15);
     const redOrange = 0xee5a24;
+    const darkCrimson = 0xa8201a;
+    const darkMetal = 0x1e293b;
     const cyan = 0x00d2d3;
+    const cyanBright = 0x7ef9ff;
     const white = 0xf1f5f9;
     const purple = 0xa855f7;
+    const purpleBright = 0xe879f9;
 
-    // 頭部中央コア（流線型）
-    g.fillBox(4, 2, 3, 10, 9, 9, redOrange);
-    // 中央フェイス（白いマスク状）
-    g.fillBox(5, 3, 8, 9, 8, 10, white);
-    // 顔の中央縦ライン（シアン）
-    g.fillBox(6, 2, 9, 8, 9, 10, cyan);
-    // 額の紫クリスタルコア
-    g.fillBox(6, 8, 9, 8, 10, 10, purple);
-    g.set(7, 9, 10, 0xffffff);
-    // 鋭い眼光
-    g.fillBox(4, 5, 9, 5, 6, 10, cyan);
-    g.set(5, 5, 10, 0xffffff);
-    g.fillBox(9, 5, 9, 10, 6, 10, cyan);
-    g.set(9, 5, 10, 0xffffff);
+    // 重厚な頭部装甲コア
+    g.fillBox(4, 2, 3, 12, 10, 10, redOrange);
+    g.fillBox(5, 1, 4, 11, 3, 9, darkCrimson);
+    g.fillBox(5, 9, 2, 11, 12, 8, darkMetal);
 
-    // 左サイドの三叉突起
-    g.fillBox(1, 4, 4, 3, 7, 7, redOrange);
-    g.fillBox(0, 5, 4, 1, 9, 6, cyan);
-    g.fillBox(0, 9, 4, 1, 12, 5, redOrange);
-    g.fillBox(0, 3, 5, 1, 6, 8, redOrange);
-    // 右サイドの三叉突起
-    g.fillBox(11, 4, 4, 13, 7, 7, redOrange);
-    g.fillBox(13, 5, 4, 14, 9, 6, cyan);
-    g.fillBox(13, 9, 4, 14, 12, 5, redOrange);
-    g.fillBox(13, 3, 5, 14, 6, 8, redOrange);
+    // 威圧的な白いフェイスマスク＆鋭い顎ガード
+    g.fillBox(5, 3, 9, 11, 9, 11, white);
+    g.fillBox(6, 1, 10, 10, 3, 12, darkMetal);
+    g.fillBox(7, 0, 11, 9, 2, 12, cyan);
+    // 顔の中央エネルギーライン
+    g.fillBox(7, 2, 10, 9, 10, 11, cyan);
+    // 額の大型紫クリスタルコア（DNA＋O2＋Proxyの核）
+    g.fillBox(7, 8, 10, 9, 11, 12, purple);
+    g.set(8, 9, 12, purpleBright);
+    g.set(8, 10, 12, 0xffffff);
 
-    // 頭頂部のセンタークレスト
-    g.fillBox(6, 10, 3, 8, 13, 7, redOrange);
-    g.fillBox(7, 10, 4, 7, 13, 6, cyan);
+    // 鋭い怒り眉のダーク装甲バイザーとギラつく眼光
+    g.fillBox(4, 7, 10, 7, 8, 12, darkMetal);
+    g.fillBox(9, 7, 10, 12, 8, 12, darkMetal);
+    g.fillBox(5, 5, 10, 6, 6, 11, cyan);
+    g.set(5, 6, 11, cyanBright);
+    g.set(6, 5, 11, 0xffffff);
+    g.fillBox(10, 5, 10, 11, 6, 11, cyan);
+    g.set(11, 6, 11, cyanBright);
+    g.set(10, 5, 11, 0xffffff);
 
-    return makeTemplate(g, 0.042, [7, 4, 6]);
+    // 左右に大きく張り出した重厚な三叉エネルギーホーン
+    g.fillBox(1, 5, 4, 4, 8, 8, darkCrimson);
+    g.fillBox(0, 6, 3, 2, 11, 6, cyan);
+    g.fillBox(0, 10, 2, 1, 15, 5, redOrange);
+    g.fillBox(0, 4, 5, 2, 7, 10, redOrange);
+    g.set(0, 15, 3, purpleBright);
+
+    g.fillBox(12, 5, 4, 15, 8, 8, darkCrimson);
+    g.fillBox(14, 6, 3, 16, 11, 6, cyan);
+    g.fillBox(15, 10, 2, 16, 15, 5, redOrange);
+    g.fillBox(14, 4, 5, 16, 7, 10, redOrange);
+    g.set(16, 15, 3, purpleBright);
+
+    // 頭頂部の大型バックブレードクレスト
+    g.fillBox(7, 11, 2, 9, 16, 7, darkCrimson);
+    g.fillBox(8, 12, 3, 8, 16, 6, cyan);
+
+    return makeTemplate(g, 0.04, [8, 4, 7]);
   }
 
   const g = new VoxelGrid(11, 12, 11);
@@ -1025,38 +1077,51 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return specTemplate(buildDragonBodyHalves(team).front);
   }
 
-  // デオキシス: V字トルソー・胸中央の光輝く紫「DNAクリスタルコア」・シアンエネルギーライン
+  // デオキシー: 逆三角形の重装甲V字トルソー・巨大肩アーマー・突出した紫DNAクリスタルコア・背面エネルギーフィン
   if (type.id === 'deoxys') {
-    const g = new VoxelGrid(11, 13, 9);
+    const g = new VoxelGrid(15, 15, 11);
     const redOrange = 0xee5a24;
-    const darkRed = 0xc0392b;
+    const darkRed = 0xa8201a;
+    const darkMetal = 0x1e293b;
     const cyan = 0x00d2d3;
     const purple = 0x9333ea;
-    const purpleBright = 0xc084fc;
+    const purpleBright = 0xd946ef;
 
-    // 骨盤・腰部（細身のエイリアンウェスト）
-    g.fillBox(3, 0, 2, 7, 3, 6, redOrange);
-    g.fillBox(4, 1, 2, 6, 2, 6, cyan);
+    // 骨盤・引き締まった重装甲ウェスト
+    g.fillBox(4, 0, 3, 10, 3, 7, darkMetal);
+    g.fillBox(5, 1, 3, 9, 3, 7, redOrange);
+    g.fillBox(6, 1, 7, 8, 2, 8, cyan);
 
-    // 胸部（V字・引き締まったトルソー）
-    g.fillBox(2, 4, 2, 8, 11, 6, redOrange);
-    g.fillBox(1, 8, 2, 9, 11, 6, redOrange);
+    // 逆三角形の屈強な胸部
+    g.fillBox(3, 4, 2, 11, 12, 7, redOrange);
+    g.fillBox(2, 8, 2, 12, 13, 8, darkRed);
+    // 左右に張り出した強そうな肩アーマー（ショルダーポールドロン）
+    g.fillBox(0, 10, 2, 3, 14, 8, darkMetal);
+    g.fillBox(1, 11, 3, 3, 13, 7, redOrange);
+    g.fillBox(11, 10, 2, 14, 14, 8, darkMetal);
+    g.fillBox(11, 11, 3, 13, 13, 7, redOrange);
+    g.fillBox(0, 12, 4, 2, 14, 6, cyan);
+    g.fillBox(12, 12, 4, 14, 14, 6, cyan);
 
-    // 腹部・側面のシアンエネルギーライン
-    g.fillBox(2, 3, 3, 2, 9, 5, cyan);
-    g.fillBox(8, 3, 3, 8, 9, 5, cyan);
-    g.fillBox(4, 4, 6, 6, 6, 6, cyan);
+    // 側面のシアン酸素＆エネルギーダクト
+    g.fillBox(3, 4, 4, 3, 10, 6, cyan);
+    g.fillBox(11, 4, 4, 11, 10, 6, cyan);
+    g.fillBox(5, 4, 7, 9, 6, 8, darkMetal);
+    g.fillBox(6, 4, 8, 8, 5, 8, cyan);
 
-    // 胸の中央に輝く「DNAクリスタルコア」（紫色・発光）
-    g.fillBox(4, 7, 6, 6, 9, 7, purple);
-    g.fillBox(4, 7, 7, 6, 9, 7, purpleBright);
-    g.set(5, 8, 7, 0xffffff);
+    // 胸中央に大きく突出する「DNA・プロキシコア」（多層発光クリスタル）
+    g.fillBox(5, 7, 7, 9, 11, 9, darkMetal);
+    g.fillBox(6, 8, 8, 8, 10, 10, purple);
+    g.fillBox(6, 8, 9, 8, 10, 10, purpleBright);
+    g.set(7, 9, 10, 0xffffff);
 
-    // 背面のシアンリブ構造
-    g.fillBox(4, 5, 1, 6, 10, 1, cyan);
-    g.fillBox(3, 7, 1, 7, 8, 1, darkRed);
+    // 背面の高出力サイコフィン＆脊椎リアクター
+    g.fillBox(6, 5, 1, 8, 13, 2, darkMetal);
+    g.fillBox(7, 6, 0, 7, 14, 1, cyan);
+    g.fillBox(4, 9, 0, 5, 14, 1, darkRed);
+    g.fillBox(9, 9, 0, 10, 14, 1, darkRed);
 
-    return makeTemplate(g, 0.038, [5, 1, 4]);
+    return makeTemplate(g, 0.038, [7, 1.5, 5]);
   }
 
   if (type.id === 'sezain') {
@@ -1591,23 +1656,59 @@ function buildTorsoTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     return makeTemplate(g, 0.05, [cx, cy, cz]);
   }
 
-  // 使徒神サキエル: 漆黒の巨躯と深紅に光る使徒コア
+  // 神の遣いオリジン（旧サキエル）: 畏怖を放つ漆黒の巨躯・翼状聖肩鎧・白骨肋骨・深紅コア・背後の黄金光輪
   if (type.id === 'angel_sachiel') {
-    const g = new VoxelGrid(12, 14, 11);
-    const black = 0x141517;
-    const darkGray = 0x25262b;
+    const g = new VoxelGrid(18, 18, 14);
+    const obsidian = 0x0e0f12;
+    const darkArmor = 0x1e2026;
+    const armorEdge = 0x343a40;
+    const bone = 0xf1f3f5;
+    const boneShade = 0xced4da;
+    const coreDark = 0x9b001c;
     const coreRed = 0xff1744;
-    g.fillBox(2, 0, 2, 9, 12, 8, black);
-    g.fillBox(4, 5, 8, 7, 8, 9, coreRed);
-    g.fillBox(5, 6, 9, 6, 7, 10, 0xff8787);
-    g.fillBox(3, 4, 8, 8, 4, 8, darkGray);
-    g.fillBox(3, 9, 8, 8, 9, 8, darkGray);
-    g.fillBox(5, 2, 0, 6, 13, 1, 0x343a40);
-    g.fillBox(2, 6, 0, 9, 7, 1, darkGray);
-    g.fillBox(2, 10, 0, 9, 11, 1, darkGray);
-    g.fillBox(0, 10, 3, 2, 13, 7, darkGray);
-    g.fillBox(9, 10, 3, 11, 13, 7, darkGray);
-    return makeTemplate(g, 0.045, [5.5, 1.0, 4.5]);
+    const coreBright = 0xff8787;
+    const gold = 0xffd43b;
+
+    // 1. 漆黒の逆三角形モノリス胴体
+    g.fillBox(5, 0, 3, 12, 4, 9, obsidian);
+    g.fillBox(4, 4, 3, 13, 13, 10, obsidian);
+    g.fillBox(5, 5, 4, 12, 12, 9, darkArmor);
+
+    // 2. 露出した白骨の聖肋骨ケージ（畏怖を感じさせる生体装甲）
+    for (let y = 3; y <= 11; y += 2) {
+      g.fillBox(4, y, 9, 7, y, 10, boneShade);
+      g.fillBox(10, y, 9, 13, y, 10, boneShade);
+    }
+    g.fillBox(6, 1, 9, 11, 2, 10, bone);
+
+    // 3. 胸中央の深紅・多層発光コア（黄金の縁取り）
+    g.fillBox(6, 6, 9, 11, 10, 11, coreDark);
+    g.fillBox(7, 7, 10, 10, 9, 12, coreRed);
+    g.fillBox(8, 8, 11, 9, 8, 12, coreBright);
+    g.set(8, 8, 12, 0xffffff);
+    g.set(6, 8, 11, gold);
+    g.set(11, 8, 11, gold);
+
+    // 4. 左右に天を衝くように聳える巨大な翼状肩鎧（ウィング・ポールドロン）
+    g.fillBox(1, 10, 3, 4, 14, 9, obsidian);
+    g.fillBox(0, 12, 4, 3, 16, 8, darkArmor);
+    g.fillBox(0, 15, 4, 2, 17, 7, bone);
+    g.fillBox(1, 11, 8, 3, 15, 9, coreRed);
+
+    g.fillBox(13, 10, 3, 16, 14, 9, obsidian);
+    g.fillBox(14, 12, 4, 17, 16, 8, darkArmor);
+    g.fillBox(15, 15, 4, 17, 17, 7, bone);
+    g.fillBox(14, 11, 8, 16, 15, 9, coreRed);
+
+    // 5. 背面の脊椎スタビライザー＆荘厳な黄金・真紅の光輪（ヘイロー）
+    g.fillBox(8, 2, 1, 9, 15, 2, armorEdge);
+    g.fillBox(6, 14, 0, 11, 16, 1, gold);
+    g.fillBox(4, 12, 0, 5, 15, 1, gold);
+    g.fillBox(12, 12, 0, 13, 15, 1, gold);
+    g.fillBox(3, 9, 0, 4, 12, 1, coreRed);
+    g.fillBox(13, 9, 0, 14, 12, 1, coreRed);
+
+    return makeTemplate(g, 0.043, [8.5, 1.5, 6.0]);
   }
 
   // 拒絶神ゼルエル: 圧倒的な翼状マント肩装甲・白骨肋骨ケージ・くびれた腹筋装甲・脊椎スタビライザー
@@ -2250,49 +2351,90 @@ function getUnitTemplateSet(type: UnitType, team: Team): UnitTemplateSet {
     sh.fillBox(2, 0, 2, 3, 2, 5, 0xdce0e5);
     sh.fillBox(2, 0, 5, 3, 1, 6, 0xff1744);
     shin = makeTemplate(sh, 0.38 / 10, [3, 0, 3]);
-  } else if (type.id === 'deoxys') {
-    // デオキシス: DNA二重螺旋の触手腕（赤橙＆シアン）と流線型の鋭い脚部
-    const redOrange = 0xee5a24;
-    const cyan = 0x00d2d3;
+  } else if (type.id === 'angel_sachiel') {
+    // 神の遣いオリジン: 畏怖を感じさせる漆黒の生体装甲四肢・白骨ガントレット・深紅の聖エネルギー縫合線
+    const obsidian = 0x0e0f12;
+    const darkArmor = 0x1e2026;
+    const bone = 0xf1f3f5;
+    const crimson = 0xff1744;
+    const gold = 0xffd43b;
 
-    // 上腕: 赤橙とシアンの螺旋パターン
-    const ua = new VoxelGrid(4, 7, 4);
+    const ua = new VoxelGrid(5, 7, 5);
+    ua.fillBox(1, 0, 1, 3, 6, 3, obsidian);
+    ua.fillBox(0, 3, 1, 4, 6, 4, darkArmor);
+    ua.fillBox(2, 1, 4, 2, 5, 4, crimson);
+    upperArm = makeTemplate(ua, 0.34 / 7, [2.5, 0, 2.5]);
+
+    const fa = new VoxelGrid(5, 9, 6);
+    fa.fillBox(1, 2, 1, 3, 8, 4, obsidian);
+    fa.fillBox(1, 3, 3, 3, 7, 5, bone);
+    fa.fillBox(2, 0, 2, 2, 3, 5, crimson);
+    fa.set(2, 0, 4, 0xffffff);
+    fa.set(2, 6, 5, gold);
+    forearm = makeTemplate(fa, 0.34 / 9, [2.5, 0, 2.5]);
+
+    const th = new VoxelGrid(5, 8, 5);
+    th.fillBox(1, 0, 1, 3, 7, 3, obsidian);
+    th.fillBox(0, 2, 2, 4, 6, 4, darkArmor);
+    th.fillBox(2, 1, 4, 2, 6, 4, crimson);
+    thigh = makeTemplate(th, 0.42 / 8, [2.5, 0, 2.5]);
+
+    const sh = new VoxelGrid(5, 10, 6);
+    sh.fillBox(1, 1, 1, 3, 9, 4, obsidian);
+    sh.fillBox(1, 7, 3, 3, 9, 5, bone);
+    sh.fillBox(1, 0, 2, 3, 2, 5, darkArmor);
+    sh.set(2, 0, 5, crimson);
+    shin = makeTemplate(sh, 0.42 / 10, [2.5, 0, 2.5]);
+  } else if (type.id === 'deoxys') {
+    // デオキシー: 重装甲DNA二重螺旋の剛腕＆鋭利なエネルギーブレード・強靭な装甲脚部
+    const redOrange = 0xee5a24;
+    const darkMetal = 0x1e293b;
+    const cyan = 0x00d2d3;
+    const purple = 0xa855f7;
+
+    // 上腕: 重厚な装甲＋螺旋エネルギー
+    const ua = new VoxelGrid(5, 7, 5);
     for (let y = 0; y < 7; y++) {
       const shift = Math.floor(y * 0.7) % 4;
-      ua.fillBox(0, y, 0, 3, y, 3, redOrange);
+      ua.fillBox(0, y, 0, 4, y, 4, y >= 4 ? darkMetal : redOrange);
       if (shift === 0) ua.fillBox(0, y, 0, 1, y, 1, cyan);
-      else if (shift === 1) ua.fillBox(2, y, 0, 3, y, 1, cyan);
-      else if (shift === 2) ua.fillBox(2, y, 2, 3, y, 3, cyan);
-      else ua.fillBox(0, y, 2, 1, y, 3, cyan);
+      else if (shift === 1) ua.fillBox(3, y, 0, 4, y, 1, cyan);
+      else if (shift === 2) ua.fillBox(3, y, 3, 4, y, 4, cyan);
+      else ua.fillBox(0, y, 3, 1, y, 4, cyan);
     }
-    upperArm = makeTemplate(ua, 0.32 / 7, [2, 0, 2]);
+    upperArm = makeTemplate(ua, 0.34 / 7, [2.5, 0, 2.5]);
 
-    // 前腕: 触手状に伸びるDNAハンド
-    const fa = new VoxelGrid(4, 7, 4);
-    for (let y = 0; y < 7; y++) {
+    // 前腕: 剛腕DNAガントレット＋先端シアンクロー
+    const fa = new VoxelGrid(5, 8, 5);
+    for (let y = 1; y < 8; y++) {
       const shift = (Math.floor(y * 0.7) + 2) % 4;
-      fa.fillBox(0, y, 0, 3, y, 3, redOrange);
+      fa.fillBox(0, y, 0, 4, y, 4, redOrange);
       if (shift === 0) fa.fillBox(0, y, 0, 1, y, 1, cyan);
-      else if (shift === 1) fa.fillBox(2, y, 0, 3, y, 1, cyan);
-      else if (shift === 2) fa.fillBox(2, y, 2, 3, y, 3, cyan);
-      else fa.fillBox(0, y, 2, 1, y, 3, cyan);
+      else if (shift === 1) fa.fillBox(3, y, 0, 4, y, 1, cyan);
+      else if (shift === 2) fa.fillBox(3, y, 3, 4, y, 4, cyan);
+      else fa.fillBox(0, y, 3, 1, y, 4, cyan);
     }
-    fa.set(1, 0, 1, cyan);
-    fa.set(2, 0, 2, cyan);
-    forearm = makeTemplate(fa, 0.30 / 7, [2, 0, 2]);
+    fa.fillBox(1, 0, 1, 3, 1, 3, darkMetal);
+    fa.set(1, 0, 4, cyan);
+    fa.set(3, 0, 4, cyan);
+    fa.set(2, 4, 4, purple);
+    forearm = makeTemplate(fa, 0.33 / 8, [2.5, 0, 2.5]);
 
-    // 大腿: 細身の赤橙＋シアンサイドライン
-    const th = new VoxelGrid(4, 8, 4);
-    th.fillBox(0, 0, 0, 3, 7, 3, redOrange);
-    th.fillBox(1, 2, 3, 2, 6, 3, cyan);
-    thigh = makeTemplate(th, 0.40 / 8, [2, 0, 2]);
+    // 大腿: 重装甲サイキックレッグ
+    const th = new VoxelGrid(5, 8, 5);
+    th.fillBox(0, 0, 0, 4, 7, 4, redOrange);
+    th.fillBox(1, 4, 0, 3, 7, 4, darkMetal);
+    th.fillBox(1, 1, 4, 3, 6, 4, cyan);
+    thigh = makeTemplate(th, 0.41 / 8, [2.5, 0, 2.5]);
 
-    // 脛・尖った足先
-    const sh = new VoxelGrid(4, 9, 4);
-    sh.fillBox(0, 1, 0, 3, 8, 3, redOrange);
-    sh.fillBox(1, 3, 3, 2, 7, 3, cyan);
-    sh.fillBox(1, 0, 1, 2, 1, 2, cyan);
-    shin = makeTemplate(sh, 0.42 / 9, [2, 0, 2]);
+    // 脛: 鋭い膝当て＆装甲ブーツ
+    const sh = new VoxelGrid(5, 9, 5);
+    sh.fillBox(0, 1, 0, 4, 8, 4, redOrange);
+    sh.fillBox(1, 6, 3, 3, 8, 4, darkMetal);
+    sh.fillBox(1, 2, 4, 3, 6, 4, cyan);
+    sh.fillBox(1, 0, 1, 3, 1, 4, darkMetal);
+    sh.set(2, 0, 4, purple);
+    shin = makeTemplate(sh, 0.42 / 9, [2.5, 0, 2.5]);
   } else {
     upperArm = isWinged
       ? buildWingTemplate(type.look.skin, type.look.armor ?? tc.shirt, 0.34)
@@ -3169,6 +3311,100 @@ function createRamielPrismWingGeometry(s: number): BufferGeometry {
   return geom;
 }
 
+interface SahaquielAmoebaTemplates {
+  body: BufferGeometry;
+  lobe: BufferGeometry;
+}
+let sahaquielAmoebaCache: SahaquielAmoebaTemplates | null = null;
+
+/** 天空のメテオ（旧サハクィエル）専用: 人型ではない不定形アメーバ状の天体メテオボクセルモデル */
+function getSahaquielAmoebaTemplates(): SahaquielAmoebaTemplates {
+  if (sahaquielAmoebaCache) return sahaquielAmoebaCache;
+
+  // 1. 本体: 複数の有機的メタボール＋仮足（アメーバ突起）が融合した不定形メテオボディ
+  const g = new VoxelGrid(25, 16, 25);
+  const cx = 12;
+  const cy = 7.5;
+  const cz = 12;
+  const metaballs: ReadonlyArray<readonly [number, number, number, number]> = [
+    [0, 0, 0, 6.2],
+    [4.8, 0.5, 1.8, 4.0],
+    [-4.6, -0.4, 2.4, 3.8],
+    [1.6, 0.7, -4.8, 4.1],
+    [-2.4, -0.6, -4.2, 3.6],
+    [0.5, 2.5, 0.8, 3.5],
+    [-1.2, 0.2, 5.2, 3.7],
+  ];
+
+  const orange = 0xf76707;
+  const deepOrange = 0xd9480f;
+  const yellow = 0xffd43b;
+  const brightYellow = 0xfff3bf;
+  const crust = 0x2b1d14;
+  const darkEye = 0x141517;
+
+  for (let z = 0; z < 25; z++) {
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 25; x++) {
+        let field = 0;
+        for (const [ox, oy, oz, r] of metaballs) {
+          const dx = x - (cx + ox);
+          const dy = (y - (cy + oy)) * 1.45; // 扁平で有機的なアメーバ状
+          const dz = z - (cz + oz);
+          const d2 = dx * dx + dy * dy + dz * dz;
+          field += (r * r) / Math.max(0.5, d2);
+        }
+        if (field >= 1.15) {
+          const wave = Math.sin(x * 0.55 + z * 0.45) + Math.cos(y * 0.8 - x * 0.35);
+          if (field > 2.35) {
+            // 内部の高エネルギー黄金プラズマ核
+            g.set(x, y, z, wave > 0.3 ? brightYellow : yellow);
+          } else if (wave > 0.95) {
+            // 表面を走る発光プラズマ脈
+            g.set(x, y, z, yellow);
+          } else if (wave < -1.15 && (x + y + z) % 3 === 0) {
+            // 隕石質の外殻斑点
+            g.set(x, y, z, crust);
+          } else {
+            g.set(x, y, z, (x + y + z) % 2 === 0 ? orange : deepOrange);
+          }
+        }
+      }
+    }
+  }
+
+  // 下部（地上を狙う側）に大きな天体の瞳・メテオ投下核を配置
+  g.fillBox(10, 1, 10, 14, 2, 14, 0xffffff);
+  g.fillBox(11, 0, 11, 13, 1, 13, 0x1971c2);
+  g.set(12, 0, 12, 0xff2a2a);
+  // 前方にも小さな観測眼
+  g.fillBox(11, 6, 17, 13, 8, 18, 0xffffff);
+  g.set(12, 7, 18, darkEye);
+  g.set(12, 7, 17, 0xff2a2a);
+
+  const body = makeTemplate(g, 0.044, [cx, cy, cz]).geometry;
+
+  // 2. 周囲をうねりながら漂うアメーバ仮足・衛星メテオ塊
+  const lg = new VoxelGrid(9, 7, 9);
+  for (let z = 0; z < 9; z++) {
+    for (let y = 0; y < 7; y++) {
+      for (let x = 0; x < 9; x++) {
+        const dx = x - 4;
+        const dy = (y - 3) * 1.3;
+        const dz = z - 4;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist <= 3.3) {
+          lg.set(x, y, z, dist < 1.8 ? yellow : (x + y + z) % 2 === 0 ? orange : deepOrange);
+        }
+      }
+    }
+  }
+  const lobe = makeTemplate(lg, 0.04, [4, 3, 4]).geometry;
+
+  sahaquielAmoebaCache = { body, lobe };
+  return sahaquielAmoebaCache;
+}
+
 /**
  * 物理ラグドールの各関節位置に合わせてボクセルパーツを毎フレーム追従させ、
  * 被弾時にはボクセルの欠損・部位破壊を適用するクラス。
@@ -3248,6 +3484,11 @@ export class VoxelCharacterVisual {
   private readonly yamamuronAura: Mesh[] = [];
   /** 胴体と頭が強化形態のモデルに差し替わっているか */
   private yamamuronAwakened = false;
+  /** 天空のメテオ（旧サハクィエル）専用: アメーバ状の浮遊ボディ・仮足・発光コア */
+  private sahaquielGroup: Group | null = null;
+  private sahaquielBody: Mesh | null = null;
+  private sahaquielLobes: Mesh[] = [];
+  private sahaquielCore: Mesh | null = null;
   /** 首の突き出し量（+1: ブレスで前へ突き出す, -1: 溜めで仰け反る） */
   private dragonLunge = 0;
   private dragonLastTime = -1;
@@ -3858,6 +4099,26 @@ export class VoxelCharacterVisual {
       this.ramielAtFieldInner = makeRamielAtLayer(0.55 * s, 0x38bdf8, 0xffffff);
     }
 
+    // 天空のメテオ（旧サハクィエル）専用: 人型ではないアメーバ状浮遊ボディの初期化
+    if (unit.type.id === 'angel_sahaquiel') {
+      const amoeba = getSahaquielAmoebaTemplates();
+      this.sahaquielGroup = new Group();
+      this.sahaquielBody = makeMesh(amoeba.body, this.material, s);
+      this.sahaquielGroup.add(this.sahaquielBody);
+      for (let i = 0; i < 5; i++) {
+        const lobe = makeMesh(amoeba.lobe, this.material, s);
+        this.sahaquielGroup.add(lobe);
+        this.sahaquielLobes.push(lobe);
+      }
+      this.sahaquielCore = new Mesh(
+        new SphereGeometry(0.16 * s, 16, 16),
+        new MeshBasicMaterial({ color: 0xffd43b, transparent: true, opacity: 0.85 }),
+      );
+      this.sahaquielCore.position.set(0, -0.22 * s, 0);
+      this.sahaquielGroup.add(this.sahaquielCore);
+      this.group.add(this.sahaquielGroup);
+    }
+
     this.collectRenderDetailTargets();
     this.sync();
   }
@@ -3945,6 +4206,11 @@ export class VoxelCharacterVisual {
     }
     if (u.type.id === 'angel_ramiel') {
       this.syncRamiel();
+      this.updateMaterialStatus();
+      return;
+    }
+    if (u.type.id === 'angel_sahaquiel') {
+      this.syncSahaquiel();
       this.updateMaterialStatus();
       return;
     }
@@ -5239,6 +5505,61 @@ export class VoxelCharacterVisual {
     }
   }
 
+  private syncSahaquiel(): void {
+    const grp = this.sahaquielGroup;
+    if (!grp) return;
+    const u = this.unit;
+    const s = u.scale;
+    const pelvis = u.pelvis.pos;
+    const time = performance.now() * 0.001;
+
+    _fwd.copy(u.forward).normalize();
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(1, 0, 0);
+    _right.crossVectors(UP, _fwd).normalize();
+    if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+    _up.crossVectors(_fwd, _right).normalize();
+
+    // 人型パーツは完全に非表示にし、被弾破片の発生源だけ本体中心へ合わせる
+    for (const part of Object.values(this.parts)) {
+      placeBasisPart(part.mesh, pelvis, _right, _up, _fwd);
+      part.mesh.visible = false;
+    }
+
+    grp.position.copy(pelvis);
+    _basisMat.makeBasis(_right, _up, _fwd);
+    grp.quaternion.setFromRotationMatrix(_basisMat);
+
+    // アメーバ状の有機的な伸縮・脈動
+    const attackBoost = u.attackPhase === 'windup' ? 1.15 : u.attackPhase === 'strike' ? 1.25 : 1.0;
+    const sx = (1 + Math.sin(time * 2.3) * 0.13) * attackBoost;
+    const sy = (1 + Math.cos(time * 2.8) * 0.11) / Math.sqrt(attackBoost);
+    const sz = (1 - Math.sin(time * 2.3) * 0.11) * attackBoost;
+    if (this.sahaquielBody) {
+      this.sahaquielBody.scale.set(s * sx, s * sy, s * sz);
+      this.sahaquielBody.rotation.y = Math.sin(time * 0.7) * 0.18;
+    }
+
+    // 周囲をうねる5つのアメーバ仮足（偽足）
+    for (let i = 0; i < this.sahaquielLobes.length; i++) {
+      const lobe = this.sahaquielLobes[i];
+      const angle = (i / this.sahaquielLobes.length) * Math.PI * 2 + time * 0.65;
+      const dist = (0.42 + Math.sin(time * 2.6 + i * 1.4) * 0.12) * s;
+      const yOff = Math.sin(time * 3.1 + i * 2.1) * 0.14 * s;
+      lobe.position.set(Math.cos(angle) * dist, yOff, Math.sin(angle) * dist);
+      const ls = (0.75 + Math.sin(time * 3.4 + i) * 0.22) * s;
+      lobe.scale.set(ls * 1.15, ls * 0.85, ls);
+      lobe.rotation.set(time * 0.8 + i, angle, Math.sin(time + i) * 0.4);
+    }
+
+    if (this.sahaquielCore) {
+      const pulse = u.attackPhase === 'strike' ? 1.55 : u.attackPhase === 'windup' ? 1.3 + Math.sin(time * 18) * 0.25 : 1.0 + Math.sin(time * 4) * 0.1;
+      this.sahaquielCore.scale.setScalar(pulse);
+      (this.sahaquielCore.material as MeshBasicMaterial).color.setHex(
+        u.attackPhase === 'strike' ? 0xff4500 : 0xffd43b,
+      );
+    }
+  }
+
   private syncRamiel(): void {
     const u = this.unit;
     const s = u.scale;
@@ -6136,6 +6457,10 @@ export class VoxelCharacterVisual {
         (shield.material as MeshBasicMaterial).dispose();
       }
     }
+    if (this.sahaquielCore) {
+      this.sahaquielCore.geometry.dispose();
+      (this.sahaquielCore.material as MeshBasicMaterial).dispose();
+    }
   }
 }
 
@@ -6172,6 +6497,25 @@ export function createPreviewGhost(type: UnitType, team: Team): Group {
     upper.position.set(0, 2.7, 0);
     lower.position.set(0, 2.7, 0);
     g.add(upper, lower);
+    g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
+    return g;
+  }
+  if (type.id === 'angel_sahaquiel') {
+    const amoeba = getSahaquielAmoebaTemplates();
+    const ghostMat = new MeshLambertMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.72,
+    });
+    const body = makeMesh(amoeba.body, ghostMat, s);
+    body.position.set(0, 3.6, 0);
+    g.add(body);
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2;
+      const lobe = makeMesh(amoeba.lobe, ghostMat, s * 0.8);
+      lobe.position.set(Math.cos(angle) * 0.45 * s, 3.6, Math.sin(angle) * 0.45 * s);
+      g.add(lobe);
+    }
     g.rotation.y = team === 0 ? Math.PI / 2 : -Math.PI / 2;
     return g;
   }

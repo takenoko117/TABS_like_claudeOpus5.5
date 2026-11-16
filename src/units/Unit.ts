@@ -1507,8 +1507,8 @@ export class Unit {
           : fac && fac.alive
           ? fac.pos.clone().setY(fac.height * 0.4)
           : this.pelvis.pos.clone().addScaledVector(this.forward, 6.0).setY(0.1);
-      const from = this.pelvis.pos.clone().addScaledVector(this.forward, 0.5);
-      from.y -= 0.3;
+      const from = this.pelvis.pos.clone();
+      from.y -= 0.45;
 
       const spec = this.type.projectile;
       const speed = spec?.speed ?? 26;
@@ -3276,7 +3276,7 @@ export class Unit {
       } else if (this.type.id === 'angel_zeruel') {
         targetH = PELVIS_HEIGHT * s * 1.05 + Math.sin(this.walkPhase * 0.9) * 0.22;
       } else if (this.type.id === 'angel_sahaquiel') {
-        targetH = 3.2 + Math.sin(this.walkPhase * 1.2) * 0.15;
+        targetH = 3.6 + Math.sin(this.walkPhase * 1.2) * 0.22;
       } else if (this.type.id === 'samurai' && this.attackPhase === 'windup') {
         targetH = PELVIS_HEIGHT * s * 0.82;
       } else if (this.type.id === 'buggy') {
