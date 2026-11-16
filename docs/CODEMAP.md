@@ -87,6 +87,8 @@ npm run outline -- src                          # 全ファイルの行数
 | `RenderDetail.ts` | 55 | 描画の簡略化の判定 `unitRenderDetail`（ユニット数・距離・画質でアウトラインと影を落とす部位を減らす）。`SceneView.updateUnitRenderDetail` → `VoxelCharacterVisual.setRenderDetail`。端末ごとに変えてよい |
 | `UnitPreviews.ts` | 405 | カード上で動くユニットのミニプレビュー |
 | `DragonModel.ts` / `HayatoHeadModel.ts` / `TanimonArmModel.ts` / `YamamuronAwakenedModel.ts` | 200〜640 | 特殊兵種の専用モデル |
+| `BeastModels.ts` | 700 | 鎧戦象・大鷲・巨大アナコンダの彫刻的なボクセルモデル（`buildElephant*` / `buildEagle*` / `buildSnake*`）。表面に目などを描く `castPaint`、大鷲の翼の長さ `EAGLE_RIG` |
+| `MachineModels.ts` | 700 | 超重戦車・暴走バギー・巨大ロボットの彫刻的なボクセルモデル（`buildTank*` / `buildBuggy*` / `buildRobot*`） |
 | `DroppedChests.ts` / `JackpotChest3D.ts` / `JackpotReels3D.ts` / `JackpotIcons.ts` | 200〜470 | 宝箱とリールの 3D 演出 |
 | `XpOrbs.ts` | 184 | TD の経験値オーブ |
 | `EnergyGateVisual.ts` / `RewardVoxelModels.ts` / `TitleLogo3D.ts` / `FieldMinimap.ts` | 小 | ゲートの膜、報酬モデル、タイトルロゴ、ミニマップ画像 |
@@ -211,9 +213,9 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 
 | 領域 | 主な関数 |
 | --- | --- |
-| 兵種モデル生成 | `buildHeadTemplate`（約 700 行）, `buildTorsoTemplate`（約 900 行）, `buildWeaponGeometry`, `buildOffhandGeometry`, `getUnitTemplateSet`。中は `type.id` ごとの分岐なので兵種 ID で grep する |
+| 兵種モデル生成 | `buildHeadTemplate`（約 700 行）, `buildTorsoTemplate`（約 900 行）, `buildWeaponGeometry`, `buildOffhandGeometry`, `getUnitTemplateSet`。中は `type.id` ごとの分岐なので兵種 ID で grep する。彫刻的なモデルは `DragonModel.ts` の `Sculpt`（`ellipsoid` / `tube` / `region` / `box` / `carve`）で作り、`BeastModels.ts` などに置く |
 | 投射物 | `getProjectileGeometry` |
-| `class VoxelCharacterVisual` | `sync`（毎フレーム）, 兵種別 `syncDragon` / `syncTank` / `syncRamiel` / `syncHayato` など, 部位破壊 `applyHitDamage` / `shatterPart` |
+| `class VoxelCharacterVisual` | `sync`（毎フレーム）, 兵種別 `syncDragon` / `syncEagle` / `syncAnaconda` / `syncTank` / `syncRamiel` / `syncHayato` など, 部位破壊 `applyHitDamage` / `shatterPart`。四肢を正面へねじって置く `placeLimbFacing` |
 | 施設・ハート | `buildFacilityVoxelGrid`, `createFacilityMesh`, `buildHeartVoxelGrid` |
 
 ## やりたいこと → 見る場所

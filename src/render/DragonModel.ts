@@ -47,21 +47,21 @@ export const DRAGON_RIG = {
 // 色ユーティリティ
 // ---------------------------------------------------------------
 
-function shade(c: number, f: number): number {
+export function shade(c: number, f: number): number {
   const r = Math.min(255, Math.round(((c >> 16) & 255) * f));
   const g = Math.min(255, Math.round(((c >> 8) & 255) * f));
   const b = Math.min(255, Math.round((c & 255) * f));
   return (r << 16) | (g << 8) | b;
 }
 
-function mix(a: number, b: number, t: number): number {
+export function mix(a: number, b: number, t: number): number {
   const r = Math.round(((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t);
   const g = Math.round(((a >> 8) & 255) * (1 - t) + ((b >> 8) & 255) * t);
   const bl = Math.round((a & 255) * (1 - t) + (b & 255) * t);
   return (r << 16) | (g << 8) | bl;
 }
 
-function hash3(x: number, y: number, z: number): number {
+export function hash3(x: number, y: number, z: number): number {
   let h = Math.imul(Math.floor(x) | 0, 374761393) ^ Math.imul(Math.floor(y) | 0, 668265263) ^ Math.imul(Math.floor(z) | 0, 1440662683);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
@@ -129,11 +129,11 @@ function hornColor(p: DragonPalette) {
 // ボクセル彫刻ヘルパー
 // ---------------------------------------------------------------
 
-type V3 = readonly [number, number, number];
+export type V3 = readonly [number, number, number];
 type TubeColor = number | ((t: number, px: number, py: number, pz: number) => number);
-type FieldColor = (px: number, py: number, pz: number) => number;
+export type FieldColor = (px: number, py: number, pz: number) => number;
 
-class Sculpt {
+export class Sculpt {
   readonly grid: VoxelGrid;
 
   constructor(
@@ -190,6 +190,28 @@ class Sculpt {
     });
   }
 
+  /** 範囲内だけを走査して塗る（fill の高速版）。関数が 0 を返したボクセルは変更しない */
+  region(min: V3, max: V3, fn: FieldColor): void {
+    this.scan(min, max, (px, py, pz, x, y, z) => {
+      if (px < min[0] || py < min[1] || pz < min[2] || px > max[0] || py > max[1] || pz > max[2]) return;
+      const c = fn(px, py, pz);
+      if (c !== 0) this.grid.set(x, y, z, c);
+    });
+  }
+
+  /** ボクセル中心が [min, max] に入る直方体を塗る */
+  box(min: V3, max: V3, color: number | FieldColor): void {
+    this.region(min, max, typeof color === 'number' ? () => color : color);
+  }
+
+  /** 範囲内で条件を満たすボクセルを空にする（溝・穴を彫る） */
+  carve(min: V3, max: V3, test: (px: number, py: number, pz: number) => boolean): void {
+    this.scan(min, max, (px, py, pz, x, y, z) => {
+      if (px < min[0] || py < min[1] || pz < min[2] || px > max[0] || py > max[1] || pz > max[2]) return;
+      if (test(px, py, pz)) this.grid.set(x, y, z, 0);
+    });
+  }
+
   ellipsoid(c: V3, r: V3, color: number | ((nx: number, ny: number, nz: number, px: number, py: number, pz: number) => number)): void {
     this.scan([c[0] - r[0], c[1] - r[1], c[2] - r[2]], [c[0] + r[0], c[1] + r[1], c[2] + r[2]], (px, py, pz, x, y, z) => {
       const nx = (px - c[0]) / r[0];
@@ -239,7 +261,7 @@ class Sculpt {
 }
 
 /** 2D 多角形の内外判定（XZ 平面） */
-function insidePolygon(x: number, z: number, poly: ReadonlyArray<readonly [number, number]>): boolean {
+export function insidePolygon(x: number, z: number, poly: ReadonlyArray<readonly [number, number]>): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [xi, zi] = poly[i];
@@ -249,7 +271,7 @@ function insidePolygon(x: number, z: number, poly: ReadonlyArray<readonly [numbe
   return inside;
 }
 
-const mirror = (v: V3, sx: number): V3 => [v[0] * sx, v[1], v[2]];
+export const mirror = (v: V3, sx: number): V3 => [v[0] * sx, v[1], v[2]];
 
 // ---------------------------------------------------------------
 // 頭部: 長い鼻面・開いた顎と牙・灼熱の喉・後方へ反り返る大角・頬角・顎のフリル
