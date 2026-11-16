@@ -8,7 +8,40 @@ import { FLAME_DRAG, Unit } from '../units/Unit';
 import type { Team } from '../units/UnitTypes';
 
 export type HitKind = 'melee' | 'arrow' | 'magic' | 'explosion' | 'slash';
-export type ProjectileKind = 'arrow' | 'bullet' | 'sniper' | 'shuriken' | 'flame' | 'bomb' | 'rocket' | 'tank_shell' | 'rocket_punch' | 'angel_bomb' | 'volcano_rock';
+export type ProjectileKind =
+  | 'arrow'
+  | 'bullet'
+  | 'sniper'
+  | 'shuriken'
+  | 'flame'
+  | 'bomb'
+  | 'rocket'
+  | 'tank_shell'
+  | 'rocket_punch'
+  | 'angel_bomb'
+  | 'volcano_rock'
+  | 'frost_bolt'
+  | 'fireball'
+  | 'meteor'
+  | 'curse_bolt'
+  | 'holy_bolt';
+
+/** 着弾・接地時に爆発または範囲魔法を発動する飛翔体か */
+function isExplosiveProjectileKind(k: ProjectileKind): boolean {
+  return (
+    k === 'bomb' ||
+    k === 'rocket' ||
+    k === 'tank_shell' ||
+    k === 'rocket_punch' ||
+    k === 'angel_bomb' ||
+    k === 'volcano_rock' ||
+    k === 'frost_bolt' ||
+    k === 'fireball' ||
+    k === 'meteor' ||
+    k === 'curse_bolt' ||
+    k === 'holy_bolt'
+  );
+}
 
 export interface HitEvent {
   kind: HitKind;
@@ -141,7 +174,14 @@ export type CombatEffectEvent =
   | { kind: 'stage_blood_surge'; pos: Vector3 }
   | { kind: 'stage_time_slip'; pos: Vector3; isFast: boolean }
   | { kind: 'stage_flare_blind'; pos: Vector3 }
-  | { kind: 'stage_meteor_impact'; pos: Vector3 };
+  | { kind: 'stage_meteor_impact'; pos: Vector3 }
+  | { kind: 'frost_burst'; pos: Vector3 }
+  | { kind: 'fireball_blast'; pos: Vector3 }
+  | { kind: 'heal_pulse'; from: Vector3; to: Vector3 }
+  | { kind: 'necromancy_summon'; pos: Vector3; team: Team }
+  | { kind: 'barrier_cast'; pos: Vector3; team: Team }
+  | { kind: 'barrier_block'; pos: Vector3 }
+  | { kind: 'meteor_impact'; pos: Vector3 };
 
 export type ArrowState = 'flying' | 'stuck' | 'ground';
 
@@ -213,6 +253,19 @@ export interface FireZone {
   tickTimer: number;
 }
 
+/** 結界術師が展開する魔法障壁 */
+export interface MagicBarrier {
+  owner: Unit;
+  team: Team;
+  pos: Vector3;
+  dir: Vector3;
+  radius: number;
+  life: number;
+  maxLife: number;
+  pushTickTimer: number;
+  blocksLeft: number;
+}
+
 const GRAVITY = 9.81;
 const _dir = new Vector3();
 const _from = new Vector3();
@@ -234,6 +287,7 @@ export class CombatSystem {
   readonly gravityOrbs: GravityOrb[] = [];
   readonly lightningBolts: LightningBolt[] = [];
   readonly fireZones: FireZone[] = [];
+  readonly magicBarriers: MagicBarrier[] = [];
   private readonly delayedSlashes: DelayedSlash[] = [];
   /** 飛び道具・魔法・爆風の威力補正（虚無領域ステージ等で半減） */
   projectileDamageMultiplier = 1.0;
@@ -253,6 +307,7 @@ export class CombatSystem {
     this.gravityOrbs.length = 0;
     this.lightningBolts.length = 0;
     this.fireZones.length = 0;
+    this.magicBarriers.length = 0;
     this.delayedSlashes.length = 0;
     this.projectileDamageMultiplier = 1.0;
     this.delayedSlashes.length = 0;
@@ -667,8 +722,104 @@ export class CombatSystem {
     } else if (a.projectileKind === 'volcano_rock') {
       this.applyRadialBlast(a.owner, pos, 4.8, a.damage, 14.0, 0.9, units, dt, 'explosion', facilities, a.team);
       this.emitEffect({ kind: 'eruption_explosion', pos: pos.clone() });
+    } else if (a.projectileKind === 'frost_bolt') {
+      const r = 2.8;
+      this.applyRadialBlast(a.owner, pos, r, a.damage, 4.0, 0.25, units, dt, 'magic', facilities, a.team);
+      for (const u of units) {
+        if (!u.alive || u.team === a.team) continue;
+        if (u.chest.pos.distanceToSquared(pos) <= r * r) {
+          u.freezeTimer = Math.max(u.freezeTimer, 2.2);
+        }
+      }
+      this.emitEffect({ kind: 'frost_burst', pos: pos.clone() });
+    } else if (a.projectileKind === 'fireball') {
+      const r = 2.6;
+      this.withDamageKind('fire', () =>
+        this.applyRadialBlast(a.owner, pos, r, a.damage, 6.0, 0.45, units, dt, 'explosion', facilities, a.team),
+      );
+      for (const u of units) {
+        if (!u.alive || u.team === a.team) continue;
+        if (u.chest.pos.distanceToSquared(pos) <= r * r) {
+          u.burnTimer = Math.max(u.burnTimer, 3.0);
+          u.burnAttacker = a.owner;
+        }
+      }
+      this.spawnFireZone(a.owner, new Vector3(pos.x, 0.02, pos.z), 2.2, 3.5);
+      this.emitEffect({ kind: 'fireball_blast', pos: pos.clone() });
+    } else if (a.projectileKind === 'meteor') {
+      const r = 5.5;
+      this.withDamageKind('fire', () =>
+        this.applyRadialBlast(a.owner, pos, r, a.damage, 18.0, 0.95, units, dt, 'explosion', facilities, a.team),
+      );
+      for (const u of units) {
+        if (!u.alive || u.team === a.team) continue;
+        if (u.chest.pos.distanceToSquared(pos) <= 4.5 * 4.5) {
+          u.burnTimer = Math.max(u.burnTimer, 3.5);
+          u.burnAttacker = a.owner;
+        }
+      }
+      this.spawnFireZone(a.owner, new Vector3(pos.x, 0.02, pos.z), 3.6, 4.5);
+      this.emitEffect({ kind: 'meteor_impact', pos: pos.clone() });
+    } else if (a.projectileKind === 'curse_bolt') {
+      const r = 1.8;
+      this.applyRadialBlast(a.owner, pos, r, a.damage, 3.5, 0.2, units, dt, 'magic', facilities, a.team);
+      for (const u of units) {
+        if (!u.alive || u.team === a.team) continue;
+        if (u.chest.pos.distanceToSquared(pos) <= r * r) {
+          u.vulnerabilityMul = Math.max(u.vulnerabilityMul, 1.25);
+        }
+      }
+    } else if (a.projectileKind === 'holy_bolt') {
+      this.applyRadialBlast(a.owner, pos, 1.6, a.damage, 3.5, 0.2, units, dt, 'magic', facilities, a.team);
     }
     a.life = 0;
+  }
+
+  /** 癒やしの賢者の回復波動を発動する */
+  castHealWave(owner: Unit, target: Unit, units: readonly Unit[]): void {
+    const primaryHeal = 38 * owner.damageMul;
+    const aoeHeal = 20 * owner.damageMul;
+    const healPos = target.chest.pos.clone();
+    target.hp = Math.min(target.maxHp, target.hp + primaryHeal);
+    target.burnTimer = 0;
+    target.freezeTimer = 0;
+
+    const r2 = 3.0 * 3.0;
+    for (const u of units) {
+      if (!u.alive || u === target || u.team !== owner.team) continue;
+      if (u.chest.pos.distanceToSquared(healPos) <= r2) {
+        u.hp = Math.min(u.maxHp, u.hp + aoeHeal);
+      }
+    }
+    this.emitEffect({ kind: 'heal_pulse', from: owner.chest.pos.clone(), to: healPos });
+  }
+
+  /** 結界術師の魔法障壁を展開・更新する */
+  spawnMagicBarrier(owner: Unit, pos: Vector3, dir: Vector3): void {
+    // 同じ術者の既存障壁があれば位置と寿命を更新
+    for (const b of this.magicBarriers) {
+      if (b.owner === owner) {
+        b.pos.copy(pos);
+        b.dir.copy(dir).normalize();
+        b.life = 4.0;
+        b.maxLife = 4.0;
+        b.blocksLeft = 8;
+        this.emitEffect({ kind: 'barrier_cast', pos: pos.clone(), team: owner.team });
+        return;
+      }
+    }
+    this.magicBarriers.push({
+      owner,
+      team: owner.team,
+      pos: pos.clone(),
+      dir: dir.clone().normalize(),
+      radius: 2.4,
+      life: 4.0,
+      maxLife: 4.0,
+      pushTickTimer: 0.15,
+      blocksLeft: 8,
+    });
+    this.emitEffect({ kind: 'barrier_cast', pos: pos.clone(), team: owner.team });
   }
 
   /** 衛星攻撃兵士の軌道レーザー照射 */
@@ -877,11 +1028,28 @@ export class CombatSystem {
           continue;
         }
 
+        // 結界術師の魔法障壁との衝突判定（メテオ等の大質量弾や聖光弾は防がない）
+        const k = a.projectileKind;
+        const bypassBarrier =
+          k === 'meteor' ||
+          k === 'angel_bomb' ||
+          k === 'volcano_rock' ||
+          k === 'rocket_punch' ||
+          k === 'tank_shell' ||
+          k === 'holy_bolt';
+        if (this.magicBarriers.length > 0 && !bypassBarrier && this.checkBarrierHit(a, _from, _to)) {
+          if (a.life <= 0) {
+            arrows[i] = arrows[arrows.length - 1];
+            arrows.pop();
+          }
+          continue;
+        }
+
         const stopped = this.sweepHit(a, _from, _to, units, dt);
         if (!stopped) {
           a.pos.copy(_to);
           if (a.pos.y <= 0) {
-            if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
+            if (isExplosiveProjectileKind(a.projectileKind)) {
               // 地面に着弾して爆発
               a.pos.y = 0.05;
               this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
@@ -913,6 +1081,7 @@ export class CombatSystem {
     this.updateLightningBolts(dt);
     this.updateDelayedSlashes(dt);
     this.updateFireZones(dt, units);
+    this.updateMagicBarriers(dt, units);
   }
 
   /** 飛翔体が敵施設に当たったか判定する */
@@ -1017,7 +1186,7 @@ export class CombatSystem {
     if (!hit) return false;
     a.pos.lerpVectors(from, to, hit.t);
     const k = a.projectileKind;
-    if (k === 'bomb' || k === 'rocket' || k === 'tank_shell' || k === 'rocket_punch' || k === 'angel_bomb' || k === 'volcano_rock') {
+    if (isExplosiveProjectileKind(k)) {
       // 爆発で地形にもダメージが入る
       this.triggerExplosiveProjectileHit(a, a.pos, units, facilities, dt);
       return true;
@@ -1032,12 +1201,13 @@ export class CombatSystem {
     return true;
   }
 
-  private spawnFireZone(owner: Unit, pos: Vector3): void {
-    this.terrain?.igniteNear(pos, 1.6, 0.5);
+  private spawnFireZone(owner: Unit, pos: Vector3, radius: number = 1.15, life: number = 2.8): void {
+    this.terrain?.igniteNear(pos, Math.max(1.6, radius), 0.5);
     // 既存の延焼ゾーンがすぐ近くにあれば寿命を延長するだけにする
     for (const z of this.fireZones) {
       if (z.pos.distanceToSquared(pos) < 1.2 * 1.2) {
-        z.life = Math.max(z.life, 2.8);
+        z.life = Math.max(z.life, life);
+        z.radius = Math.max(z.radius, radius);
         return;
       }
     }
@@ -1046,10 +1216,62 @@ export class CombatSystem {
       owner,
       team: owner.team,
       pos,
-      radius: 1.15,
-      life: 2.8,
+      radius,
+      life,
       tickTimer: 0.25,
     });
+  }
+
+  /** 魔法障壁が敵の飛翔体を遮断するか判定する */
+  private checkBarrierHit(a: Arrow, from: Vector3, to: Vector3): boolean {
+    _seg.subVectors(to, from);
+    const segLen2 = _seg.lengthSq();
+    if (segLen2 < 1e-8) return false;
+    for (let i = 0; i < this.magicBarriers.length; i++) {
+      const b = this.magicBarriers[i];
+      if (b.team === a.team || b.blocksLeft <= 0) continue;
+      _tmp.subVectors(b.pos, from);
+      const t = clamp(_tmp.dot(_seg) / segLen2, 0, 1);
+      const cx = from.x + _seg.x * t - b.pos.x;
+      const cy = from.y + _seg.y * t - b.pos.y;
+      const cz = from.z + _seg.z * t - b.pos.z;
+      if (cx * cx + cy * cy + cz * cz <= b.radius * b.radius) {
+        a.pos.lerpVectors(from, to, t);
+        a.life = 0;
+        b.blocksLeft--;
+        if (b.blocksLeft <= 0) this.magicBarriers.splice(i, 1);
+        this.emitEffect({ kind: 'barrier_block', pos: a.pos.clone() });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 魔法障壁の寿命更新と接近する敵への押し返し */
+  private updateMagicBarriers(dt: number, units: readonly Unit[]): void {
+    for (let i = this.magicBarriers.length - 1; i >= 0; i--) {
+      const b = this.magicBarriers[i];
+      b.life -= dt;
+      if (b.life <= 0 || !b.owner.alive) {
+        this.magicBarriers.splice(i, 1);
+        continue;
+      }
+      b.pushTickTimer -= dt;
+      if (b.pushTickTimer <= 0) {
+        b.pushTickTimer = 0.35;
+        const r2 = b.radius * b.radius;
+        for (const u of units) {
+          if (!u.alive || u.team === b.team) continue;
+          if (u.chest.pos.distanceToSquared(b.pos) <= r2) {
+            _dir.subVectors(u.chest.pos, b.pos);
+            _dir.y = 0.25;
+            if (_dir.lengthSq() < 1e-6) _dir.copy(b.dir);
+            _dir.normalize().multiplyScalar(5.5 / Math.pow(u.massScale, 0.55));
+            u.takeDamage(6 * b.owner.damageMul, u.chest, _dir, dt, b.owner);
+          }
+        }
+      }
+    }
   }
 
   private updateGravityOrbs(dt: number, units: readonly Unit[]): void {
@@ -1221,7 +1443,7 @@ export class CombatSystem {
     a.hitUnitIds.add(bestU.id);
 
     // 爆発系飛翔体の直撃時は直撃ダメージを与えて爆発終了
-    if (a.projectileKind === 'bomb' || a.projectileKind === 'rocket' || a.projectileKind === 'tank_shell' || a.projectileKind === 'rocket_punch' || a.projectileKind === 'angel_bomb' || a.projectileKind === 'volcano_rock') {
+    if (isExplosiveProjectileKind(a.projectileKind)) {
       const dmg = a.damage * (a.owner ? a.owner.damageMul : 1.0) * this.projectileDamageMultiplier;
       if (bestU.alive && bestU.team !== a.team) {
         bestU.takeDamage(dmg, bestP, a.dir.clone().multiplyScalar(4), dt, a.owner ?? undefined, true);

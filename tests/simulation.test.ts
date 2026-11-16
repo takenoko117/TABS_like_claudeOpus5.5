@@ -230,6 +230,96 @@ describe('新ユニット10体の固有ギミック検証', () => {
     expect(e1.hp).toBeLessThan(e1.maxHp);
   });
 
+  it('氷結術師 (frost_mage) が氷晶弾を放ち、敵を凍結させる', () => {
+    const battle = new Battle();
+    battle.spawnUnit('frost_mage', 0, -6, 0);
+    const e1 = battle.spawnUnit('giant', 1, 4, 0);
+    let bursts = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'frost_burst') bursts++;
+    };
+    battle.aiEnabled = true;
+    let maxFreeze = 0;
+    simulate(battle, 4, () => {
+      if (e1.freezeTimer > maxFreeze) maxFreeze = e1.freezeTimer;
+      return false;
+    });
+    expect(bursts).toBeGreaterThan(0);
+    expect(e1.hp).toBeLessThan(e1.maxHp);
+    expect(maxFreeze).toBeGreaterThan(0);
+  });
+
+  it('火炎術師 (pyromancer) が火球を放ち、敵を炎上させ延焼ゾーンを残す', () => {
+    const battle = new Battle();
+    battle.spawnUnit('pyromancer', 0, -6, 0);
+    const e1 = battle.spawnUnit('giant', 1, 4, 0);
+    let blasts = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'fireball_blast') blasts++;
+    };
+    battle.aiEnabled = true;
+    simulate(battle, 4);
+    expect(blasts).toBeGreaterThan(0);
+    expect(e1.hp).toBeLessThan(e1.maxHp);
+    expect(battle.combat.fireZones.length).toBeGreaterThan(0);
+  });
+
+  it('癒やしの賢者 (cleric) が負傷した味方を回復する', () => {
+    const battle = new Battle();
+    battle.spawnUnit('cleric', 0, -6, 0);
+    const ally = battle.spawnUnit('giant', 0, -2, 0);
+    ally.hp = ally.maxHp * 0.4;
+    const beforeHp = ally.hp;
+    battle.spawnUnit('clubber', 1, 12, 0);
+    let heals = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'heal_pulse') heals++;
+    };
+    battle.aiEnabled = true;
+    simulate(battle, 2.5);
+    expect(heals).toBeGreaterThan(0);
+    expect(ally.hp).toBeGreaterThan(beforeHp);
+  });
+
+  it('死霊術師 (necromancer) が骸骨兵を召喚する', () => {
+    const battle = new Battle();
+    battle.spawnUnit('necromancer', 0, -8, 0);
+    battle.spawnUnit('giant', 1, 5, 0);
+    battle.aiEnabled = true;
+    simulate(battle, 3.0);
+    const skeletons = battle.units.filter((u) => u.type.id === 'skeleton_minion');
+    expect(skeletons.length).toBeGreaterThan(0);
+  });
+
+  it('結界術師 (barrier_mage) が魔法障壁を展開し敵の矢を防ぐ', () => {
+    const battle = new Battle();
+    battle.spawnUnit('barrier_mage', 0, -4, 0);
+    battle.spawnUnit('archer', 1, 6, 0);
+    let blocked = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'barrier_block') blocked++;
+    };
+    battle.aiEnabled = true;
+    simulate(battle, 3.5);
+    expect(battle.combat.magicBarriers.length).toBeGreaterThan(0);
+    expect(blocked).toBeGreaterThan(0);
+  });
+
+  it('星辰の大賢者 (meteor_wizard) が隕石を落とし大ダメージと延焼を与える', () => {
+    const battle = new Battle();
+    battle.spawnUnit('meteor_wizard', 0, -10, 0);
+    const e1 = battle.spawnUnit('giant', 1, 6, 0);
+    let impacts = 0;
+    battle.combat.onEffect = (ev) => {
+      if (ev.kind === 'meteor_impact') impacts++;
+    };
+    battle.aiEnabled = true;
+    simulate(battle, 5.0);
+    expect(impacts).toBeGreaterThan(0);
+    expect(e1.hp).toBeLessThan(e1.maxHp - 100);
+    expect(battle.combat.fireZones.length).toBeGreaterThan(0);
+  });
+
   it('対物スナイパー (sniper) がレーザー照準を行い、複数の敵を直線貫通する', () => {
     const battle = new Battle();
     const sniper = battle.spawnUnit('sniper', 0, -14, 0);

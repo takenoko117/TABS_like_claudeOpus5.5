@@ -8,7 +8,7 @@ import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { HAYATO_HOVER_MUL, hayatoMouthPos } from './HayatoHead';
 import { mountSeatRise } from './Mounting';
 import { J, JOINTS, JOINT_COUNT, PELVIS_HEIGHT, SKELETON_CONSTRAINTS } from './Skeleton';
-import type { Team, UnitType } from './UnitTypes';
+import type { Team, UnitType, UnitTypeId } from './UnitTypes';
 
 export type AttackPhase = 'none' | 'windup' | 'strike' | 'recover';
 
@@ -50,6 +50,7 @@ export interface UnitContext {
   readonly combat: CombatSystem;
   fireArrow(owner: Unit, from: Vector3, velocity: Vector3): void;
   spawnSplitSlime(parent: Unit, x: number, z: number, splitGen: number): Unit;
+  spawnSummon?(parent: Unit, typeId: UnitTypeId, x: number, z: number): Unit;
   /** ユニットが死亡したとき（レリックの転生・復活・爆発などに使う） */
   onUnitDied?(unit: Unit): void;
   /** 敵の施設のほうが敵兵より近ければ施設を狙う（タワーディフェンスの基地攻め） */
@@ -283,6 +284,10 @@ export class Unit {
   concealed = false;
   /** 変わり身の術クールダウン（からくり忍者） */
   kawariCooldown = 0;
+  /** 召喚主のユニットID（骸骨兵など） */
+  summonedBy: number | null = null;
+  private healTarget: Unit | null = null;
+  private summonCooldown = 0;
   /** デオキシスの距離取りテレポートクールダウン */
   teleportCooldown = 0;
   /** デオキシスの被弾回避テレポートクールダウン */
@@ -661,6 +666,31 @@ export class Unit {
       this.targetFacility = siege;
     }
     if (!this.leash) this.retargetTimer -= dt;
+    if (this.summonCooldown > 0) this.summonCooldown = Math.max(0, this.summonCooldown - dt);
+
+    // 癒やしの賢者: 負傷した味方がいれば回復を優先する
+    if (this.type.style === 'heal' && this.burnTimer <= 0) {
+      const injured = this.findMostInjuredAlly(ctx.units);
+      if (injured) {
+        const dx = injured.pelvis.pos.x - this.pelvis.pos.x;
+        const dz = injured.pelvis.pos.z - this.pelvis.pos.z;
+        const dist = Math.hypot(dx, dz);
+        this.desiredFacing = Math.atan2(dx, dz);
+        if (dist <= this.attackRange) {
+          this.moveSpeed = 0;
+          if (this.attackPhase === 'none' && this.cooldown <= 0 && this.muscle > 0.6) {
+            this.healTarget = injured;
+            this.attackPhase = 'windup';
+            this.phaseTime = 0;
+          }
+        } else {
+          this.moveDir.set(dx / dist, 0, dz / dist);
+          this.moveSpeed = this.type.speed * this.speedMul;
+        }
+        return;
+      }
+      this.healTarget = null;
+    }
     const targetAlive = this.target && this.target.alive;
     const facAlive = this.targetFacility && this.targetFacility.alive;
     if (!this.leash && !sieging && ((!targetAlive && !facAlive) || this.retargetTimer <= 0)) {
@@ -963,7 +993,13 @@ export class Unit {
       st === 'psychic' ||
       st === 'mouth_laser' ||
       st === 'grab_chain' ||
-      st === 'zeruel_cutter'
+      st === 'zeruel_cutter' ||
+      st === 'frost' ||
+      st === 'pyro' ||
+      st === 'heal' ||
+      st === 'necromancy' ||
+      st === 'barrier' ||
+      st === 'meteor'
     ) {
       return this.attackRange;
     }
@@ -1014,11 +1050,31 @@ export class Unit {
       st === 'psychic' ||
       st === 'mouth_laser' ||
       st === 'grab_chain' ||
-      st === 'zeruel_cutter'
+      st === 'zeruel_cutter' ||
+      st === 'frost' ||
+      st === 'pyro' ||
+      st === 'heal' ||
+      st === 'necromancy' ||
+      st === 'barrier' ||
+      st === 'meteor'
     ) {
       return this.attackRange;
     }
     return this.type.range * this.scale + t.bodyRadius;
+  }
+
+  private findMostInjuredAlly(units: readonly Unit[]): Unit | null {
+    let best: Unit | null = null;
+    let lowestRatio = 0.98;
+    for (const u of units) {
+      if (!u.alive || u === this || u.team !== this.team) continue;
+      const ratio = u.hp / u.maxHp;
+      if (ratio < lowestRatio) {
+        lowestRatio = ratio;
+        best = u;
+      }
+    }
+    return best;
   }
 
   private findNearestEnemy(units: readonly Unit[]): Unit | null {
@@ -1305,6 +1361,73 @@ export class Unit {
         from.y += 0.25 * this.scale;
         ctx.combat.spawnGravityOrb(this, from, aim);
       }
+      return;
+    }
+    if (st === 'frost' || st === 'pyro' || st === 'necromancy' || st === 'heal' || st === 'barrier' || st === 'meteor') {
+      if (st === 'heal' && this.healTarget && this.healTarget.alive && this.healTarget.hp < this.healTarget.maxHp) {
+        ctx.combat.castHealWave(this, this.healTarget, ctx.units);
+        this.healTarget = null;
+        return;
+      }
+      const aim = t && t.alive ? t.chest.pos : fac && fac.alive ? fac.pos.clone().setY(fac.height * 0.5) : null;
+      const from =
+        this.weaponParticles.length === 2
+          ? this.weaponParticles[1].pos.clone()
+          : this.chest.pos.clone().addScaledVector(this.forward, 0.55 * this.scale);
+
+      if (st === 'barrier') {
+        const bPos = this.chest.pos.clone().addScaledVector(this.forward, 1.8 * this.scale);
+        bPos.y = Math.max(0.9, bPos.y);
+        ctx.combat.spawnMagicBarrier(this, bPos, this.forward);
+      }
+
+      if (st === 'necromancy' && this.summonCooldown <= 0 && ctx.spawnSummon) {
+        let activeSummons = 0;
+        for (const u of ctx.units) {
+          if (u.alive && u.summonedBy === this.id) activeSummons++;
+        }
+        if (activeSummons < 4) {
+          const sx = this.pelvis.pos.x + this.forward.x * 1.4 + (Math.random() - 0.5) * 0.6;
+          const sz = this.pelvis.pos.z + this.forward.z * 1.4 + (Math.random() - 0.5) * 0.6;
+          ctx.spawnSummon(this, 'skeleton_minion', sx, sz);
+          ctx.combat.emitEffect({ kind: 'necromancy_summon', pos: new Vector3(sx, 0.4, sz), team: this.team });
+          this.summonCooldown = 4.5;
+        }
+      }
+
+      if (!aim) return;
+
+      if (st === 'meteor') {
+        const dropPos = new Vector3(aim.x, aim.y + 18, aim.z);
+        ctx.combat.fireProjectile(this, dropPos, new Vector3(0, -18, 0), 'meteor', {
+          damage: (this.type.projectile?.damage ?? 150) * this.damageMul,
+          gravityScale: 1.5,
+          life: 3.0,
+        });
+        return;
+      }
+
+      const kind =
+        st === 'frost'
+          ? 'frost_bolt'
+          : st === 'pyro'
+            ? 'fireball'
+            : st === 'necromancy'
+              ? 'curse_bolt'
+              : 'holy_bolt';
+      const gravScale = st === 'pyro' ? 0.65 : st === 'frost' ? 0.2 : st === 'necromancy' ? 0.15 : 0.1;
+      const speed = this.type.projectile?.speed ?? 14;
+      const dx = aim.x - from.x;
+      const dz = aim.z - from.z;
+      const horiz = Math.max(0.1, Math.hypot(dx, dz));
+      const flight = horiz / speed;
+      const vy = (aim.y - from.y) / flight + 0.5 * GRAVITY * gravScale * flight;
+      const vel = new Vector3((dx / horiz) * speed, vy, (dz / horiz) * speed);
+      ctx.combat.fireProjectile(this, from, vel, kind, {
+        damage: (this.type.projectile?.damage ?? 24) * this.damageMul,
+        gravityScale: gravScale,
+        life: 3.5,
+      });
       return;
     }
     if (st === 'sniper') {
@@ -3523,7 +3646,16 @@ export class Unit {
         lp[J.ElbowR].set(0.25, 0.32, 0.3);
         twist = -0.3;
       }
-    } else if (style === 'swing' || style === 'charge' || style === 'lightning') {
+    } else if (
+      style === 'swing' ||
+      style === 'charge' ||
+      style === 'lightning' ||
+      style === 'frost' ||
+      style === 'pyro' ||
+      style === 'heal' ||
+      style === 'necromancy' ||
+      style === 'meteor'
+    ) {
       if (phase === 'windup') {
         lp[J.HandR].set(0.22, 0.78, -0.15);
         lp[J.ElbowR].set(0.36, 0.52, -0.08);
@@ -3560,7 +3692,7 @@ export class Unit {
       lp[J.ElbowL].set(-0.28, 0.22, 0.18);
       lp[J.HandR].set(0.16, 0.1, 0.28);
       lp[J.ElbowR].set(0.32, 0.2, 0.05);
-    } else if (style === 'gravity') {
+    } else if (style === 'gravity' || style === 'barrier') {
       if (phase === 'windup') {
         lp[J.HandL].set(-0.18, 0.55, 0.35);
         lp[J.HandR].set(0.18, 0.55, 0.35);

@@ -1575,6 +1575,55 @@ export class SceneView {
         }
         break;
       }
+      case 'frost_burst': {
+        for (let i = 0; i < 24; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.7, Math.random() - 0.5).normalize();
+          const speed = 2.5 + Math.random() * 4.5;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(speed), i % 2 === 0 ? 0x66f0ff : 0xe7f5ff, 0.14, 0.45, 2);
+        }
+        break;
+      }
+      case 'fireball_blast': {
+        for (let i = 0; i < 28; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 0.9, Math.random() - 0.5).normalize();
+          const speed = 3 + Math.random() * 6;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(speed), i % 2 === 0 ? 0xff5900 : 0xffd43b, 0.16, 0.45, 5);
+        }
+        break;
+      }
+      case 'heal_pulse': {
+        for (let i = 0; i < 16; i++) {
+          const p = new Vector3().lerpVectors(e.from, e.to, i / 15);
+          p.y += 0.25;
+          this.pushFxParticle(p, new Vector3((Math.random() - 0.5) * 1.2, 1.8 + Math.random(), (Math.random() - 0.5) * 1.2), i % 2 === 0 ? 0xffec99 : 0x69db7c, 0.13, 0.5, -1);
+        }
+        break;
+      }
+      case 'necromancy_summon': {
+        for (let i = 0; i < 20; i++) {
+          const ang = (i / 20) * Math.PI * 2;
+          const p = e.pos.clone().add(new Vector3(Math.cos(ang) * 0.8, 0.1, Math.sin(ang) * 0.8));
+          this.pushFxParticle(p, new Vector3(0, 2.2 + Math.random(), 0), i % 2 === 0 ? 0x9c36b5 : 0xe599f7, 0.12, 0.55, 0);
+        }
+        break;
+      }
+      case 'barrier_cast':
+      case 'barrier_block': {
+        const count = e.kind === 'barrier_cast' ? 14 : 8;
+        for (let i = 0; i < count; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() - 0.2, Math.random() - 0.5).normalize();
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(2.5), i % 2 === 0 ? 0x38d9a9 : 0x96f2d7, 0.11, 0.35, 0);
+        }
+        break;
+      }
+      case 'meteor_impact': {
+        for (let i = 0; i < 48; i++) {
+          const dir = new Vector3(Math.random() - 0.5, Math.random() * 1.1, Math.random() - 0.5).normalize();
+          const speed = 5 + Math.random() * 12;
+          this.pushFxParticle(e.pos.clone(), dir.multiplyScalar(speed), i % 3 === 0 ? 0xff3b00 : i % 3 === 1 ? 0xffd43b : 0x2b2d42, 0.22, 0.65, 6);
+        }
+        break;
+      }
       case 'sniper_shot': {
         // 銃口のマズルフラッシュと弾道上の白いヴェイパートレイル（飛行機雲状の煙）
         for (let i = 0; i < 10; i++) {
@@ -3219,6 +3268,25 @@ export class SceneView {
           this.writeBeamSegment(write++, prev, next, 0.085, s % 2 === 0 ? colCyan : colWhite);
           prev = next;
         }
+      }
+    }
+
+    // 4b. 結界術師の魔法障壁（エメラルド色のエネルギーリング）
+    const colBarrier = new Color(0x38d9a9);
+    for (const barrier of battle.combat.magicBarriers) {
+      const nodes = 12;
+      for (let i = 0; i < nodes && write < this.maxFxInstances; i++) {
+        const ang = (i / nodes) * Math.PI * 2 + battle.time * 1.8;
+        const bx = barrier.pos.x + Math.cos(ang) * barrier.radius * 0.65;
+        const by = barrier.pos.y + Math.sin(ang * 2) * 0.35;
+        const bz = barrier.pos.z + Math.sin(ang) * barrier.radius * 0.65;
+        _mid.set(bx, by, bz);
+        _quat.identity();
+        _scale.setScalar(0.16);
+        _mat4.compose(_mid, _quat, _scale);
+        this.fxMesh.setMatrixAt(write, _mat4);
+        this.fxMesh.setColorAt(write, colBarrier);
+        write++;
       }
     }
 

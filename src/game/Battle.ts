@@ -168,6 +168,25 @@ export class Battle implements UnitContext, FacilityBattleContext {
     return unit;
   }
 
+  /** 死霊術師などが味方ユニットを戦場に召喚する */
+  spawnSummon(parent: Unit, typeId: UnitTypeId, x: number, z: number): Unit {
+    const groundY = this.world.getSlopeHeightAt(x, z);
+    const unit = new Unit(
+      this.world,
+      UNIT_TYPES[typeId],
+      parent.team,
+      new Vector3(x, groundY, z),
+      parent.facing,
+    );
+    unit.context = this;
+    unit.summonedBy = parent.id;
+    copyDerivedState(parent, unit);
+    this.units.push(unit);
+    this.onUnitAdded?.(unit);
+    this.rules?.onUnitDerived?.(this, unit, parent);
+    return unit;
+  }
+
   /** スライム死亡時の分裂子スライムを生成する */
   spawnSplitSlime(parent: Unit, x: number, z: number, splitGen: number): Unit {
     const scaleOverride = splitGen === 1 ? 0.9 : 0.55;

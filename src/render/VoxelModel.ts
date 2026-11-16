@@ -974,6 +974,48 @@ function buildHeadTemplate(type: UnitType, team: Team): VoxelPartTemplate {
     g.fillBox(3, 4, 9, 4, 5, 9, 0xc066ff);
     g.fillBox(6, 4, 9, 7, 5, 9, 0xc066ff);
     g.fillBox(2, 8, 2, 8, 9, 8, 0xd4af37);
+  } else if (type.id === 'frost_mage') {
+    // 氷結術師: 氷晶の冠と輝く水色の目
+    g.fillBox(3, 4, 9, 4, 5, 9, 0x66f0ff);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0x66f0ff);
+    g.fillBox(2, 8, 2, 8, 9, 8, 0x74c0fc);
+    g.fillBox(4, 10, 4, 6, 11, 6, 0xe7f5ff);
+  } else if (type.id === 'pyromancer') {
+    // 火炎術師: 炎の角飾り＋燃えるオレンジの目
+    g.fillBox(3, 4, 9, 4, 5, 9, 0xff922b);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0xff922b);
+    g.fillBox(1, 8, 3, 2, 11, 5, 0xff5900);
+    g.fillBox(8, 8, 3, 9, 11, 5, 0xff5900);
+  } else if (type.id === 'cleric') {
+    // 癒やしの賢者: 黄金の聖冠＋頭上の光輪
+    g.fillBox(2, 8, 2, 8, 9, 8, 0xffd43b);
+    g.fillBox(3, 11, 3, 7, 11, 7, 0xfff3bf);
+  } else if (type.id === 'necromancer') {
+    // 死霊術師: 髑髏の額当てと紫紅の瞳
+    g.fillBox(3, 4, 9, 4, 5, 9, 0xe599f7);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0xe599f7);
+    g.fillBox(3, 7, 8, 7, 9, 9, 0xe9ecef);
+    g.set(4, 8, 9, 0x1a1423);
+    g.set(6, 8, 9, 0x1a1423);
+  } else if (type.id === 'barrier_mage') {
+    // 結界術師: エメラルドの魔導サークレット
+    g.fillBox(3, 4, 9, 4, 5, 9, 0x38d9a9);
+    g.fillBox(6, 4, 9, 7, 5, 9, 0x38d9a9);
+    g.fillBox(2, 7, 8, 8, 8, 9, 0x20c997);
+    g.set(5, 8, 9, 0xffffff);
+  } else if (type.id === 'meteor_wizard') {
+    // 星辰の大賢者: 星空模様のとんがり大帽
+    g.fillBox(0, 6, 0, 10, 6, 10, 0x1b2559);
+    g.fillBox(2, 7, 2, 8, 9, 8, 0x1b2559);
+    g.fillBox(3, 10, 3, 7, 12, 7, 0x12183b);
+    g.set(3, 8, 8, 0xffd43b);
+    g.set(7, 9, 8, 0xffd43b);
+    g.set(5, 11, 7, 0xffd43b);
+  } else if (type.id === 'skeleton_minion') {
+    // 骸骨兵: 黒い眼窩と歯のスリット
+    g.fillBox(2, 4, 9, 4, 5, 9, 0x1e2029);
+    g.fillBox(6, 4, 9, 8, 5, 9, 0x1e2029);
+    g.fillBox(3, 1, 9, 7, 2, 9, 0x868e96);
   } else if (type.id === 'sniper') {
     // 暗視スコープゴーグルとギリーフード
     g.fillBox(2, 4, 8, 8, 5, 9, 0x1a2026);
@@ -2650,6 +2692,40 @@ export function getProjectileGeometry(kind: ProjectileKind = 'arrow'): BufferGeo
     g.set(4, 4, 7, 0xff3b00);
     g.set(2, 5, 6, 0xffd43b);
     geom = g.toGeometry(0.075, [4, 4, 4]);
+  } else if (kind === 'frost_bolt') {
+    const g = new VoxelGrid(5, 5, 5);
+    g.fillBox(1, 1, 1, 3, 3, 3, 0x3bc9db);
+    g.fillBox(2, 0, 2, 2, 4, 2, 0xe7f5ff);
+    g.fillBox(0, 2, 2, 4, 2, 2, 0xe7f5ff);
+    g.fillBox(2, 2, 0, 2, 2, 4, 0xe7f5ff);
+    geom = g.toGeometry(0.055, [2.5, 2.5, 2.5]);
+  } else if (kind === 'fireball') {
+    const g = new VoxelGrid(6, 6, 6);
+    g.fillBox(1, 1, 1, 4, 4, 4, 0xff5900);
+    g.fillBox(2, 0, 2, 3, 5, 3, 0xffd43b);
+    g.fillBox(0, 2, 2, 5, 3, 3, 0xff922b);
+    g.fillBox(2, 2, 0, 3, 3, 5, 0xff922b);
+    geom = g.toGeometry(0.06, [3, 3, 3]);
+  } else if (kind === 'meteor') {
+    const g = new VoxelGrid(10, 10, 10);
+    g.fillBox(1, 1, 1, 8, 8, 8, 0x2b2d42);
+    g.fillBox(2, 0, 2, 7, 9, 7, 0x1a1a24);
+    g.fillBox(0, 2, 2, 9, 7, 7, 0x1a1a24);
+    g.fillBox(2, 2, 0, 7, 7, 9, 0x1a1a24);
+    g.fillBox(3, 3, 8, 6, 6, 9, 0xff5900);
+    g.fillBox(3, 0, 3, 6, 1, 6, 0xff922b);
+    g.set(4, 1, 4, 0xffd43b);
+    geom = g.toGeometry(0.11, [5, 5, 5]);
+  } else if (kind === 'curse_bolt') {
+    const g = new VoxelGrid(5, 5, 5);
+    g.fillBox(1, 1, 1, 3, 3, 3, 0x5f3dc4);
+    g.fillBox(2, 2, 2, 2, 2, 2, 0xe599f7);
+    geom = g.toGeometry(0.05, [2.5, 2.5, 2.5]);
+  } else if (kind === 'holy_bolt') {
+    const g = new VoxelGrid(5, 5, 5);
+    g.fillBox(1, 1, 1, 3, 3, 3, 0xffd43b);
+    g.fillBox(2, 2, 2, 2, 2, 2, 0xffffff);
+    geom = g.toGeometry(0.048, [2.5, 2.5, 2.5]);
   } else {
     const sy = 16;
     const g = new VoxelGrid(3, sy, 3);

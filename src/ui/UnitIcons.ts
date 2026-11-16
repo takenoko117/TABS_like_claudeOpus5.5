@@ -251,6 +251,81 @@ export function getUnitIconSvg(typeId: UnitTypeId): string {
         <circle cx="27.5" cy="16" r="1.8" fill="#ffffff"/>
       </svg>`;
 
+    case 'frost_mage':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="7" y="22" width="14" height="11" fill="#1864ab"/>
+        <polygon points="14,3 4,13 7,23 21,23 24,13" fill="#1c7ed6"/>
+        <rect x="9.5" y="11" width="9" height="10" fill="#e6f4ff"/>
+        <rect x="11" y="14" width="2.2" height="2.2" fill="#3bc9db"/>
+        <rect x="15" y="14" width="2.2" height="2.2" fill="#3bc9db"/>
+        <line x1="27" y1="10" x2="27" y2="33" stroke="#74c0fc" stroke-width="2.5"/>
+        <polygon points="27,4 31,9 27,14 23,9" fill="#e7f5ff" stroke="#3bc9db" stroke-width="1.2"/>
+      </svg>`;
+
+    case 'pyromancer':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="7" y="22" width="14" height="11" fill="#3b1812"/>
+        <polygon points="14,3 4,13 7,23 21,23 24,13" fill="#c92a2a"/>
+        <rect x="9.5" y="11" width="9" height="10" fill="#f0c39c"/>
+        <rect x="11" y="14" width="2.2" height="2.2" fill="#ff922b"/>
+        <rect x="15" y="14" width="2.2" height="2.2" fill="#ff922b"/>
+        <circle cx="27.5" cy="14" r="5" fill="#ff5900"/>
+        <circle cx="27.5" cy="14" r="2.5" fill="#ffd43b"/>
+      </svg>`;
+
+    case 'cleric':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="7" y="22" width="14" height="11" fill="#dee2e6"/>
+        <rect x="7" y="8" width="14" height="14" rx="2" fill="#f1f3f5"/>
+        <ellipse cx="14" cy="5" rx="6" ry="2" fill="none" stroke="#ffd43b" stroke-width="2"/>
+        <rect x="9.5" y="11" width="9" height="10" fill="#f0c39c"/>
+        <line x1="27" y1="12" x2="27" y2="33" stroke="#fcc419" stroke-width="2.5"/>
+        <rect x="23" y="9" width="8" height="2.5" fill="#ffd43b"/>
+        <rect x="25.8" y="6" width="2.5" height="8" fill="#ffd43b"/>
+      </svg>`;
+
+    case 'necromancer':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="7" y="22" width="14" height="11" fill="#1a1423"/>
+        <polygon points="14,3 4,13 7,23 21,23 24,13" fill="#2b1d3d"/>
+        <rect x="9.5" y="11" width="9" height="10" fill="#c5c9d3"/>
+        <rect x="11" y="14" width="2.2" height="2.2" fill="#e599f7"/>
+        <rect x="15" y="14" width="2.2" height="2.2" fill="#e599f7"/>
+        <circle cx="27" cy="11" r="4" fill="#e9ecef"/>
+        <rect x="25" y="10" width="1.5" height="1.5" fill="#1a1423"/>
+        <rect x="27.5" y="10" width="1.5" height="1.5" fill="#1a1423"/>
+        <line x1="27" y1="15" x2="27" y2="33" stroke="#5f3dc4" stroke-width="2.5"/>
+      </svg>`;
+
+    case 'barrier_mage':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="7" y="22" width="14" height="11" fill="#087f5b"/>
+        <rect x="7" y="8" width="14" height="14" rx="2" fill="#0ca678"/>
+        <rect x="9.5" y="11" width="9" height="10" fill="#f0c39c"/>
+        <rect x="11" y="14" width="2.2" height="2.2" fill="#38d9a9"/>
+        <rect x="15" y="14" width="2.2" height="2.2" fill="#38d9a9"/>
+        <polygon points="27,7 32,12 32,24 27,29 22,24 22,12" fill="rgba(56,217,169,0.35)" stroke="#63e6be" stroke-width="2"/>
+      </svg>`;
+
+    case 'meteor_wizard':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="7" y="22" width="14" height="11" fill="#12183b"/>
+        <polygon points="14,2 4,13 7,23 21,23 24,13" fill="#1b2559"/>
+        <circle cx="14" cy="8" r="1.2" fill="#ffd43b"/>
+        <rect x="9.5" y="11" width="9" height="10" fill="#f0c39c"/>
+        <polygon points="9,17 19,17 14,27" fill="#f8f9fa"/>
+        <circle cx="28" cy="11" r="5" fill="#2b2d42" stroke="#ff5900" stroke-width="2"/>
+        <circle cx="28" cy="11" r="2" fill="#ffd43b"/>
+      </svg>`;
+
+    case 'skeleton_minion':
+      return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">
+        <rect x="10" y="9" width="14" height="13" rx="2" fill="#e9ecef"/>
+        <rect x="12" y="13" width="3" height="3" fill="#1e2029"/>
+        <rect x="18" y="13" width="3" height="3" fill="#1e2029"/>
+        <rect x="12" y="23" width="10" height="9" fill="#dee2e6"/>
+      </svg>`;
+
     case 'sniper':
       // 対物スナイパー: ギリーフード＋赤いレーザー照準スコープ銃
       return `<svg viewBox="0 0 36 36" class="unit-portrait-svg" aria-hidden="true">

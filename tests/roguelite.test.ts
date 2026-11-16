@@ -589,6 +589,8 @@ describe('ローグライト v3: カードと部隊', () => {
       ['deoxys', 3, 2], ['hayato', 3, 2], ['giant', 3, 2], ['tanimon', 3, 1], ['warelephant', 3, 1], ['dragon', 3, 1], ['angel_sachiel', 3, 1],
       ['giant_tank', 4, 1], ['giant_robot', 4, 1], ['angel_ramiel', 4, 1], ['yamamuron', 4, 1],
       ['angel_sahaquiel', 4, 1], ['angel_zeruel', 4, 1],
+      ['pyromancer', 2, 4], ['frost_mage', 2, 4], ['cleric', 2, 3],
+      ['barrier_mage', 2, 3], ['necromancer', 2, 2], ['meteor_wizard', 3, 2],
     ];
     expect(table.length).toBe(UNIT_TYPE_LIST.length);
     for (const [id, slot, size] of table) {
