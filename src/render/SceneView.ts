@@ -25,6 +25,8 @@ import {
   Raycaster,
   RepeatWrapping,
   Scene,
+  Sprite,
+  SpriteMaterial,
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -33,6 +35,7 @@ import {
 import { BATTLE_FIELD_WALLS, type FieldWalls } from '../physics/PhysicsWorld';
 import { boundaryThemeKind, generateBoundaryTerrain, type BoundaryBox } from '../field/BoundaryTerrain';
 import type { Arrow, CombatEffectEvent, HitEvent } from '../combat/CombatSystem';
+import { YAMANOTE_STATIONS, YAMANOTE_STATION_INTERVAL } from '../units/UnitTypes';
 import { isCosmicEffect } from '../combat/CosmicSkills';
 import { spawnCosmicFx } from './CosmicFx';
 import type { Facility } from '../facilities/Facility';
@@ -156,6 +159,9 @@ export class SceneView {
   // スキル・魔法・炎・レーザー・残像などの発光風ボクセルエフェクト（InstancedMesh）
   private readonly fxParticles: FxParticle[] = [];
   private readonly fxMesh: InstancedMesh;
+  private readonly yamanoteStationGroup = new Group();
+  private readonly yamanoteStationSprites: Sprite[] = [];
+  private readonly yamanoteStationMatCache = new Map<string, SpriteMaterial>();
   private readonly maxFxInstances = 2400;
 
   // 忍者の変わり身の丸太リスト
@@ -297,6 +303,7 @@ export class SceneView {
     this.fxMesh.count = 0;
     this.fxMesh.frustumCulled = false;
     this.scene.add(this.fxMesh);
+    this.scene.add(this.yamanoteStationGroup);
 
     const barGeo = new PlaneGeometry(1, 1);
     this.hpBarBack = new InstancedMesh(
@@ -3394,6 +3401,71 @@ export class SceneView {
       }
     }
 
+    // 山手線の線路（敷設中・走行中・余韻）
+    const colRail = new Color(0xe2e8f0);
+    const colRailCenter = new Color(0x82c91e);
+    const colTie = new Color(0x475569);
+    const colTip = new Color(0xfef08a);
+    for (const u of battle.units) {
+      if (!u.alive || u.type.id !== 'yamanote_line' || !u.yamanoteRailActive) continue;
+      const visibleLen = u.yamanoteRailLength * u.yamanoteRailLayProgress;
+      if (visibleLen < 0.25) continue;
+      const fwd = u.yamanoteRailDir;
+      const right = new Vector3(-fwd.z, 0, fwd.x);
+      const halfW = 0.72;
+      const startY = battle.world.getSlopeHeightAt(u.yamanoteRailStart.x, u.yamanoteRailStart.z) + 0.08;
+      const endX = u.yamanoteRailStart.x + fwd.x * visibleLen;
+      const endZ = u.yamanoteRailStart.z + fwd.z * visibleLen;
+      const endY = battle.world.getSlopeHeightAt(endX, endZ) + 0.08;
+      const sPt = new Vector3(u.yamanoteRailStart.x, startY, u.yamanoteRailStart.z);
+      const ePt = new Vector3(endX, endY, endZ);
+
+      if (write + 3 < this.maxFxInstances) {
+        this.writeBeamSegment(
+          write++,
+          sPt.clone().addScaledVector(right, -halfW),
+          ePt.clone().addScaledVector(right, -halfW),
+          0.12,
+          colRail,
+        );
+        this.writeBeamSegment(
+          write++,
+          sPt.clone().addScaledVector(right, halfW),
+          ePt.clone().addScaledVector(right, halfW),
+          0.12,
+          colRail,
+        );
+        this.writeBeamSegment(write++, sPt, ePt, 0.16, colRailCenter);
+      }
+
+      // 枕木を 1.1m ごとに配置
+      const tieStep = 1.1;
+      for (let d = 0.5; d < visibleLen && write < this.maxFxInstances - 2; d += tieStep) {
+        const tx = u.yamanoteRailStart.x + fwd.x * d;
+        const tz = u.yamanoteRailStart.z + fwd.z * d;
+        const ty = battle.world.getSlopeHeightAt(tx, tz) + 0.05;
+        const center = new Vector3(tx, ty, tz);
+        this.writeBeamSegment(
+          write++,
+          center.clone().addScaledVector(right, -0.95),
+          center.clone().addScaledVector(right, 0.95),
+          0.14,
+          colTie,
+        );
+      }
+
+      // 敷設先端の光
+      if (u.yamanoteRailPhase === 'laying' && write < this.maxFxInstances) {
+        _quat.identity();
+        _scale.setScalar(0.45 + Math.sin(battle.time * 24) * 0.12);
+        _mat4.compose(ePt.clone().setY(endY + 0.2), _quat, _scale);
+        this.fxMesh.setMatrixAt(write, _mat4);
+        this.fxMesh.setColorAt(write, colTip);
+        write++;
+      }
+    }
+    this.syncYamanoteStationSigns(battle);
+
     this.fxMesh.count = write;
     this.fxMesh.instanceMatrix.needsUpdate = true;
     if (this.fxMesh.instanceColor) {
@@ -3413,6 +3485,94 @@ export class SceneView {
     _mat4.compose(_mid, _quat, _scale);
     this.fxMesh.setMatrixAt(idx, _mat4);
     this.fxMesh.setColorAt(idx, color);
+  }
+
+  /** 山手線の線路上に一定距離ごとに出現する駅名標を更新する */
+  private syncYamanoteStationSigns(battle: Battle): void {
+    let used = 0;
+    for (const u of battle.units) {
+      if (!u.alive || u.type.id !== 'yamanote_line' || !u.yamanoteRailActive) continue;
+      const visibleLen = u.yamanoteRailLength * u.yamanoteRailLayProgress;
+      const fwd = u.yamanoteRailDir;
+      const rightX = -fwd.z;
+      const rightZ = fwd.x;
+
+      for (let k = 1; ; k++) {
+        const dist = k * YAMANOTE_STATION_INTERVAL;
+        if (dist > visibleLen) break;
+        const stationName = YAMANOTE_STATIONS[(k - 1) % YAMANOTE_STATIONS.length];
+        const passed = u.yamanoteStationsPassed >= k;
+        const mat = this.getYamanoteStationMaterial(stationName, passed);
+        if (!mat) continue;
+
+        let sprite = this.yamanoteStationSprites[used];
+        if (!sprite) {
+          sprite = new Sprite(mat);
+          sprite.renderOrder = 25;
+          this.yamanoteStationGroup.add(sprite);
+          this.yamanoteStationSprites.push(sprite);
+        } else {
+          sprite.material = mat;
+        }
+        sprite.visible = true;
+
+        const sx = u.yamanoteRailStart.x + fwd.x * dist + rightX * 1.9;
+        const sz = u.yamanoteRailStart.z + fwd.z * dist + rightZ * 1.9;
+        const groundY = battle.world.getSlopeHeightAt(sx, sz);
+        const bounce = passed ? 0.45 : 0;
+        sprite.position.set(sx, groundY + 2.4 + bounce, sz);
+        const sc = passed ? 1.15 : 1.0;
+        sprite.scale.set(3.4 * sc, 1.5 * sc, 1);
+        used++;
+      }
+    }
+    for (let i = used; i < this.yamanoteStationSprites.length; i++) {
+      this.yamanoteStationSprites[i].visible = false;
+    }
+  }
+
+  private getYamanoteStationMaterial(stationName: string, passed: boolean): SpriteMaterial | null {
+    const key = `${stationName}_${passed ? 1 : 0}`;
+    const cached = this.yamanoteStationMatCache.get(key);
+    if (cached) return cached;
+    if (typeof document === 'undefined') return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 112;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // 駅名標プレート背景
+    ctx.fillStyle = passed ? '#fef9c3' : '#f8fafc';
+    ctx.strokeStyle = passed ? '#eab308' : '#1e293b';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.roundRect(6, 6, 244, 100, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    // ウグイス色の山手線帯
+    ctx.fillStyle = '#82c91e';
+    ctx.fillRect(10, 74, 236, 24);
+
+    // 駅名テキスト
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 38px "DotGothic16", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif';
+    ctx.fillText(stationName, 128, 42, 224);
+
+    // 帯内のサブ表記
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(passed ? 'PASSED ★' : 'YAMANOTE LINE', 128, 86);
+
+    const tex = new CanvasTexture(canvas);
+    tex.colorSpace = SRGBColorSpace;
+    const mat = new SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    this.yamanoteStationMatCache.set(key, mat);
+    return mat;
   }
 
   private panCameraByOffsets(rightOffset: number, forwardOffset: number): void {

@@ -62,17 +62,36 @@ describe('新規ユニット7体', () => {
     expect(enemy.burnTimer).toBeGreaterThan(0);
   });
 
-  it('山手線: 8両編成の車体メッシュを持ち、突進攻撃で敵を吹き飛ばす', () => {
+  it('山手線: 8両編成の車体メッシュを持ち、線路敷設のタメから通過し、駅を通過するほど大ダメージを与える', () => {
     const battle = new Battle();
-    const train = battle.spawnUnit('yamanote_line', 0, -5, 0);
-    const enemy = battle.spawnUnit('giant', 1, 2, 0);
+    battle.configureStage();
+    const train = battle.spawnUnit('yamanote_line', 0, -10, 0);
+    // 近距離の敵と遠距離の敵を一直線上に配置
+    const nearEnemy = battle.spawnUnit('giant', 1, -2, 0);
+    const farEnemy = battle.spawnUnit('giant', 1, 14, 0);
+    const nearInitialHp = nearEnemy.hp;
+    const farInitialHp = farEnemy.hp;
+
     const vis = new VoxelCharacterVisual(train);
     // 先頭車 + 後続7両 = 8両編成
     expect((vis as unknown as { yamanoteCars: unknown[] }).yamanoteCars.length).toBe(7);
 
     battle.aiEnabled = true;
-    stepBattle(battle, 4);
-    expect(enemy.hp).toBeLessThan(enemy.maxHp);
+    // タメ中（線路が目の前から画面端へ伸びていく）
+    stepBattle(battle, 0.5);
+    expect(train.yamanoteRailActive).toBe(true);
+    expect(train.yamanoteRailPhase).toBe('laying');
+    expect(train.yamanoteRailLayProgress).toBeGreaterThan(0);
+    expect(train.yamanoteRailLayProgress).toBeLessThan(1);
+    expect(train.yamanoteRailEnd.x).toBeGreaterThan(15);
+
+    // 線路生成完了 → 通過して画面端まで走りきる
+    stepBattle(battle, 2.5);
+    const nearDmg = nearInitialHp - nearEnemy.hp;
+    const farDmg = farInitialHp - farEnemy.hp;
+    expect(nearDmg).toBeGreaterThan(0);
+    // 遠距離の敵ほど多くの駅を通過しているため大ダメージを受ける
+    expect(farDmg).toBeGreaterThan(nearDmg);
   });
 
   it('ランドマークタワー: 全方位の範囲衝撃波で周囲の敵を一掃する', () => {

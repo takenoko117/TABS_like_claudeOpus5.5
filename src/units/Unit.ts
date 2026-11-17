@@ -4,11 +4,11 @@ import type { Facility } from '../facilities/Facility';
 import { MELEE_CLEAVE_DAMAGE, MELEE_CLEAVE_RADIUS_PER_RANGE } from '../facilities/FacilityTypes';
 import { DistanceConstraint } from '../physics/Constraint';
 import { PF_NO_COLLIDE, PF_RECORD_CONTACT, Particle } from '../physics/Particle';
-import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import { BATTLE_FIELD_WALLS, type PhysicsWorld } from '../physics/PhysicsWorld';
 import { HAYATO_HOVER_MUL, hayatoMouthPos } from './HayatoHead';
 import { mountSeatRise } from './Mounting';
 import { J, JOINTS, JOINT_COUNT, PELVIS_HEIGHT, SKELETON_CONSTRAINTS } from './Skeleton';
-import type { Team, UnitType, UnitTypeId } from './UnitTypes';
+import { YAMANOTE_STATION_INTERVAL, type Team, type UnitType, type UnitTypeId } from './UnitTypes';
 import {
   COSMIC_FLYING_IDS,
   COSMIC_HEAVY_IDS,
@@ -309,6 +309,22 @@ export class Unit {
   private psychicFinished = false;
   /** 突撃兵の跳躍チャージクールダウン */
   chargeCooldown = 0;
+
+  // 山手線の線路敷設・通過攻撃用状態
+  yamanoteRailActive = false;
+  yamanoteRailPhase: 'laying' | 'running' | 'fading' = 'laying';
+  readonly yamanoteRailStart = new Vector3();
+  readonly yamanoteRailEnd = new Vector3();
+  readonly yamanoteRailDir = new Vector3(0, 0, 1);
+  yamanoteRailLength = 0;
+  /** 線路敷設の進行度 (0..1) */
+  yamanoteRailLayProgress = 0;
+  /** 線路上の現在走行距離 (0..yamanoteRailLength) */
+  yamanoteRailRunDist = 0;
+  /** 現在までに通過した駅数 */
+  yamanoteStationsPassed = 0;
+  private readonly yamanoteHitUnitIds = new Set<number>();
+  private readonly yamanoteHitFacilityIds = new Set<number>();
   /** スライムの伸縮アニメーション係数（1=通常, <1=潰れ, >1=伸び） */
   squash = 1.0;
   private slamPending = false;
@@ -900,9 +916,13 @@ export class Unit {
       }
 
       this.moveDir.set(mx, 0, mz);
-      this.moveSpeed = this.yamamuronEnraged
-        ? this.type.speed * this.speedMul * YAMAMURON_RAGE_SPEED_MUL
-        : this.type.speed * this.speedMul * (this.attackPhase === 'none' ? 1 : 0.4);
+      if (this.type.id === 'yamanote_line' && this.attackPhase !== 'none') {
+        this.moveSpeed = 0;
+      } else {
+        this.moveSpeed = this.yamamuronEnraged
+          ? this.type.speed * this.speedMul * YAMAMURON_RAGE_SPEED_MUL
+          : this.type.speed * this.speedMul * (this.attackPhase === 'none' ? 1 : 0.4);
+      }
     } else if (!this.mountedOn && this.type.id === 'spearman' && dist < engage * 0.65 && dist > 1e-3) {
       // 槍兵は懐に潜り込まれたら少しずつ後退して槍の間合いを維持する
       this.moveDir.set(-dx / dist, 0, -dz / dist);
@@ -1179,6 +1199,8 @@ export class Unit {
       this.psychicFinished = false;
     } else if (id === 'hayato') {
       ctx.combat.emitEffect({ kind: 'mouth_laser_charge', pos: this.head.pos.clone() });
+    } else if (id === 'yamanote_line') {
+      this.startYamanoteRailSetup();
     } else if (id === 'tanimon') {
       this.mountedOn = null;
       this.tanimonGrab = this.target && this.target.alive ? this.target : null;
@@ -1209,6 +1231,7 @@ export class Unit {
           this.type.id === 'warelephant' ||
           this.type.id === 'dragon' ||
           this.type.id === 'anaconda' ||
+          this.type.id === 'yamanote_line' ||
           this.type.id === 'buggy' ||
           this.type.id === 'giant_tank' ||
           this.type.id === 'giant_robot' ||
@@ -1226,6 +1249,7 @@ export class Unit {
     if (this.muscle < minMuscle) {
       this.attackPhase = 'none';
       this.laserActive = false;
+      this.yamanoteRailActive = false;
       this.cooldown = 0.3;
       return;
     }
@@ -1294,6 +1318,18 @@ export class Unit {
       });
     }
 
+    if (ty.id === 'yamanote_line' && this.attackPhase === 'windup') {
+      this.yamanoteRailLayProgress = clamp(this.phaseTime / Math.max(0.1, ty.windup), 0, 1);
+      this.desiredFacing = Math.atan2(this.yamanoteRailDir.x, this.yamanoteRailDir.z);
+      if (Math.random() < 0.35) {
+        const tipPos = this.yamanoteRailStart
+          .clone()
+          .addScaledVector(this.yamanoteRailDir, this.yamanoteRailLength * this.yamanoteRailLayProgress);
+        tipPos.y = (this.context ? this.context.world.getSlopeHeightAt(tipPos.x, tipPos.z) : 0) + 0.15;
+        ctx.combat.emitEffect({ kind: 'yamanote_rush', pos: tipPos, forward: this.yamanoteRailDir.clone() });
+      }
+    }
+
     if (this.attackPhase === 'windup' && this.phaseTime >= ty.windup) {
       this.attackPhase = 'strike';
       this.phaseTime = 0;
@@ -1315,6 +1351,7 @@ export class Unit {
     } else if (this.attackPhase === 'recover' && this.phaseTime >= ty.recover) {
       this.attackPhase = 'none';
       this.phaseTime = 0;
+      this.yamanoteRailActive = false;
       this.cooldown = ty.cooldown * (0.8 + Math.random() * 0.4);
     }
   }
@@ -1951,47 +1988,20 @@ export class Unit {
       }
     }
 
-    // 山手線8両編成の高速突進攻撃
+    // 山手線8両編成: 敷設した線路の上を通過開始
     if (this.type.id === 'yamanote_line') {
-      const rush = this.forward.clone().multiplyScalar(11.0);
-      rush.y = 0.4;
-      for (const p of this.joints) p.addVelocity(rush, dt);
-      const hitPos = this.pelvis.pos.clone().addScaledVector(this.forward, 1.8 * this.scale);
-      ctx.combat.emitEffect({ kind: 'yamanote_rush', pos: hitPos, forward: this.forward.clone() });
-      const hitR = 2.6 * this.scale;
-      const hitR2 = hitR * hitR;
-      const dmg = 115 * this.damageMul;
-      for (const u of ctx.units) {
-        if (!u.alive || u.team === this.team) continue;
-        const dx = u.pelvis.pos.x - hitPos.x;
-        const dz = u.pelvis.pos.z - hitPos.z;
-        if (dx * dx + dz * dz <= hitR2) {
-          const push = this.forward.clone().multiplyScalar(10.5);
-          push.y = 4.8;
-          const killed = u.takeDamage(dmg, u.chest, push, dt, this);
-          u.muscle = Math.min(u.muscle, 0.2);
-          ctx.combat.onHit?.({
-            kind: 'melee',
-            point: u.chest.pos.clone(),
-            damage: dmg,
-            attacker: this,
-            victim: u,
-            hitParticle: u.chest,
-            impulse: push,
-            killed,
-          });
-        }
-      }
-      if (fac && fac.alive) {
-        const df = Math.hypot(fac.pos.x - hitPos.x, fac.pos.z - hitPos.z);
-        if (df <= hitR + fac.radius) {
-          const killed = fac.takeDamage(dmg, this);
-          ctx.combat.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
-          if (killed) {
-            ctx.combat.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
-          }
-        }
-      }
+      this.yamanoteRailPhase = 'running';
+      this.yamanoteRailLayProgress = 1;
+      this.yamanoteRailRunDist = 0;
+      this.yamanoteStationsPassed = 0;
+      this.yamanoteHitUnitIds.clear();
+      this.yamanoteHitFacilityIds.clear();
+      ctx.combat.emitEffect({
+        kind: 'yamanote_rush',
+        pos: this.pelvis.pos.clone().addScaledVector(this.yamanoteRailDir, 1.4 * this.scale),
+        forward: this.yamanoteRailDir.clone(),
+      });
+      return;
     }
     if (
       st === 'minigun' ||
@@ -2459,8 +2469,152 @@ export class Unit {
     }
   }
 
+  /** 山手線: タメ開始時に目の前から画面端（戦場端）までの線路ルートを計算する */
+  private startYamanoteRailSetup(): void {
+    const dir = _tmp.copy(this.forward).setY(0);
+    if (this.target && this.target.alive) {
+      dir.subVectors(this.target.pelvis.pos, this.pelvis.pos).setY(0);
+    } else if (this.targetFacility && this.targetFacility.alive) {
+      dir.subVectors(this.targetFacility.pos, this.pelvis.pos).setY(0);
+    }
+    if (dir.lengthSq() < 1e-6) {
+      dir.set(Math.sin(this.facing), 0, Math.cos(this.facing));
+    }
+    dir.normalize();
+    this.yamanoteRailDir.copy(dir);
+    this.desiredFacing = Math.atan2(dir.x, dir.z);
+    this.facing = this.desiredFacing;
+
+    // 目の前（先頭車両の鼻先付近）を線路の開始点にする
+    const startOffset = 1.1 * this.scale;
+    const sx = this.pelvis.pos.x + dir.x * startOffset;
+    const sz = this.pelvis.pos.z + dir.z * startOffset;
+    const sy = this.context ? this.context.world.getSlopeHeightAt(sx, sz) : 0;
+    this.yamanoteRailStart.set(sx, sy, sz);
+
+    // 戦場の端までの距離をレイキャストで求める
+    const bounds = this.context?.world.fieldWalls ?? this.context?.world.arenaBounds ?? BATTLE_FIELD_WALLS;
+    const boundX = Math.max(2, bounds.maxX - 1.0);
+    const boundZ = Math.max(2, bounds.maxZ - 1.0);
+    const tx =
+      dir.x > 1e-5 ? (boundX - sx) / dir.x : dir.x < -1e-5 ? (-boundX - sx) / dir.x : Infinity;
+    const tz =
+      dir.z > 1e-5 ? (boundZ - sz) / dir.z : dir.z < -1e-5 ? (-boundZ - sz) / dir.z : Infinity;
+    const rayDist = clamp(Math.min(tx, tz), 6.0, 90.0);
+
+    const ex = sx + dir.x * rayDist;
+    const ez = sz + dir.z * rayDist;
+    const ey = this.context ? this.context.world.getSlopeHeightAt(ex, ez) : 0;
+    this.yamanoteRailEnd.set(ex, ey, ez);
+    this.yamanoteRailLength = rayDist;
+    this.yamanoteRailLayProgress = 0;
+    this.yamanoteRailRunDist = 0;
+    this.yamanoteStationsPassed = 0;
+    this.yamanoteRailPhase = 'laying';
+    this.yamanoteRailActive = true;
+  }
+
+  /** 山手線: 線路の上を高速通過し、駅を通過するほどダメージを上昇させて攻撃する */
+  private updateYamanoteRailRun(dt: number, ctx: UnitContext): void {
+    const railSpeed = 34.0;
+    this.yamanoteRailRunDist = Math.min(this.yamanoteRailLength, this.yamanoteRailRunDist + railSpeed * dt);
+
+    const targetX = this.yamanoteRailStart.x + this.yamanoteRailDir.x * this.yamanoteRailRunDist;
+    const targetZ = this.yamanoteRailStart.z + this.yamanoteRailDir.z * this.yamanoteRailRunDist;
+    const slopeH = this.context ? this.context.world.getSlopeHeightAt(targetX, targetZ) : 0;
+    const targetY = slopeH + PELVIS_HEIGHT * this.scale * 0.5;
+
+    const dx = targetX - this.pelvis.pos.x;
+    const dy = targetY - this.pelvis.pos.y;
+    const dz = targetZ - this.pelvis.pos.z;
+    for (const p of this.joints) {
+      p.pos.x += dx;
+      p.pos.y += dy;
+      p.pos.z += dz;
+      p.prev.x += dx;
+      p.prev.y += dy;
+      p.prev.z += dz;
+    }
+    this.desiredFacing = Math.atan2(this.yamanoteRailDir.x, this.yamanoteRailDir.z);
+    this.facing = this.desiredFacing;
+
+    // 駅通過判定（一定距離ごとに駅を通過しダメージ倍率上昇）
+    const newStations = Math.floor(this.yamanoteRailRunDist / YAMANOTE_STATION_INTERVAL);
+    if (newStations > this.yamanoteStationsPassed) {
+      this.yamanoteStationsPassed = newStations;
+      ctx.combat.emitEffect({
+        kind: 'yamanote_rush',
+        pos: this.pelvis.pos.clone().addScaledVector(this.yamanoteRailDir, 1.0 * this.scale),
+        forward: this.yamanoteRailDir.clone(),
+      });
+    } else if (Math.random() < 0.45) {
+      ctx.combat.emitEffect({
+        kind: 'yamanote_rush',
+        pos: this.pelvis.pos.clone(),
+        forward: this.yamanoteRailDir.clone(),
+      });
+    }
+
+    // 通過中の攻撃判定（駅を通過するほど大ダメージ）
+    const hitPos = _tmp.copy(this.pelvis.pos).addScaledVector(this.yamanoteRailDir, 1.2 * this.scale);
+    const hitR = 2.6 * this.scale;
+    const hitR2 = hitR * hitR;
+    const baseDmg = 220 * this.damageMul;
+    const dmg = baseDmg * (1 + this.yamanoteStationsPassed * 0.55);
+    const knockMul = 1 + this.yamanoteStationsPassed * 0.12;
+
+    for (const u of ctx.units) {
+      if (!u.alive || u.team === this.team || this.yamanoteHitUnitIds.has(u.id)) continue;
+      const ux = u.pelvis.pos.x - hitPos.x;
+      const uz = u.pelvis.pos.z - hitPos.z;
+      if (ux * ux + uz * uz <= hitR2) {
+        this.yamanoteHitUnitIds.add(u.id);
+        const push = this.yamanoteRailDir.clone().multiplyScalar(10.5 * knockMul);
+        push.y = 4.8 * knockMul;
+        const killed = u.takeDamage(dmg, u.chest, push, dt, this);
+        u.muscle = Math.min(u.muscle, 0.2);
+        ctx.combat.onHit?.({
+          kind: 'melee',
+          point: u.chest.pos.clone(),
+          damage: dmg,
+          attacker: this,
+          victim: u,
+          hitParticle: u.chest,
+          impulse: push,
+          killed,
+        });
+      }
+    }
+
+    if (ctx.facilities) {
+      for (const fac of ctx.facilities) {
+        if (!fac.alive || fac.team === this.team || this.yamanoteHitFacilityIds.has(fac.id)) continue;
+        const df = Math.hypot(fac.pos.x - hitPos.x, fac.pos.z - hitPos.z);
+        if (df <= hitR + fac.radius) {
+          this.yamanoteHitFacilityIds.add(fac.id);
+          const killed = fac.takeDamage(dmg, this);
+          ctx.combat.emitEffect({ kind: 'facility_hit', pos: fac.pos.clone(), damage: dmg });
+          if (killed) {
+            ctx.combat.emitEffect({ kind: 'facility_destroy', pos: fac.pos.clone(), team: fac.team, radius: fac.radius });
+          }
+        }
+      }
+    }
+
+    // 線路の終端（画面端）まで通過したら終了
+    if (this.yamanoteRailRunDist >= this.yamanoteRailLength - 1e-4) {
+      this.attackPhase = 'recover';
+      this.phaseTime = 0;
+      this.yamanoteRailPhase = 'fading';
+    }
+  }
+
   /** strike フェーズ中に連続処理される攻撃（ガトリング・火炎ブレス・大鷲急降下・スライム着地） */
   private updateStrikeContinuous(dt: number, ctx: UnitContext): void {
+    if (this.type.id === 'yamanote_line') {
+      this.updateYamanoteRailRun(dt, ctx);
+      return;
+    }
     const st = this.type.style;
     const t = this.target;
 
@@ -4369,6 +4523,7 @@ export class Unit {
     this.attackPhase = 'none';
     this.target = null;
     this.laserActive = false;
+    this.yamanoteRailActive = false;
     this.grabbedUnit = null;
     this.tanimonGrab = null;
     this.tanimonGrabFacility = null;

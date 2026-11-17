@@ -46,7 +46,7 @@ export function getAttackDamageDisplay(ut: UnitType): string {
   if (ut.id === 'poseidon') return '150 (海割り波状攻撃)';
   if (ut.id === 'crocodile') return '45 × 連続 (デスロール)';
   if (ut.id === 'giant_sequoia') return '95+60 (避雷針雷撃＋山火事)';
-  if (ut.id === 'yamanote_line') return '115 (8両編成突進)';
+  if (ut.id === 'yamanote_line') return '220〜 (駅通過で+55%強化)';
   if (ut.id === 'landmark_tower') return '130 (超高層広範囲衝撃波)';
   if (ut.id === 'giant_octopus') return '34 × 8本 (足の一斉攻撃＋吸盤)';
   if (ut.id === 'whale_squid') return '110+85 (ソナー麻痺＋触腕締め上げ)';
