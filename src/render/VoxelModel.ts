@@ -6011,11 +6011,14 @@ export class VoxelCharacterVisual {
       const width = baseWidth * (1.0 - frac * 0.42);
 
       if (phase === 'strike') {
-        // 攻撃モーション: 前方へ超高速・長大に伸長し、左右の刃がX字に交差しながら敵陣を薙ぎ払う！
+        // 攻撃モーション: 前方へ超高速・長大に伸長し、左右の刃がX字に交差しながら敵陣を薙ぎ払った後、約1秒間伸ばした状態を維持する
         const maxReach = (isSub ? 2.6 : 3.8) * s;
-        const ext = Math.sin(Math.min(1.0, strikeProgress * 1.45) * Math.PI * 0.5);
-        const whipWave = Math.sin(frac * Math.PI * 2.5 - strikeProgress * 12.0) * 0.18 * s * (1.0 - strikeProgress * 0.5);
-        const crossSweep = sideSign * (Math.cos(strikeProgress * Math.PI) * 0.45 * frac + Math.sin(frac * Math.PI) * 0.22) * s;
+        const shootFrac = Math.min(1.0, u.phaseTime / 0.22);
+        const sweepFrac = Math.min(1.0, u.phaseTime / 0.34);
+        const ext = Math.sin(shootFrac * Math.PI * 0.5);
+        const whipWave = Math.sin(frac * Math.PI * 2.5 - u.phaseTime * 22.0) * 0.16 * s * (1.0 - strikeProgress * 0.35);
+        const holdWave = Math.sin(time * 9.0 + frac * 2.5) * 0.08 * frac * s;
+        const crossSweep = sideSign * (Math.cos(sweepFrac * Math.PI) * 0.45 * frac + Math.sin(frac * Math.PI) * 0.22) * s + holdWave;
 
         z = frac * maxReach * Math.max(0.18, ext);
         x = crossSweep + whipWave;

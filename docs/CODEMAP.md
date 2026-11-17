@@ -91,6 +91,7 @@ npm run outline -- src                          # 全ファイルの行数
 | `BeastModels.ts` | 700 | 鎧戦象・大鷲・巨大アナコンダの彫刻的なボクセルモデル（`buildElephant*` / `buildEagle*` / `buildSnake*`）。表面に目などを描く `castPaint`、大鷲の翼の長さ `EAGLE_RIG` |
 | `MachineModels.ts` | 700 | 超重戦車・暴走バギー・巨大ロボットの彫刻的なボクセルモデル（`buildTank*` / `buildBuggy*` / `buildRobot*`） |
 | `CosmicModels.ts` | 520 | 第8弾ユニットの彫刻的なボクセルモデル一式 `buildCosmicModelSet`（`getUnitTemplateSet` の先頭で使う）。水平基準で置く兵種 `COSMIC_BODY_IDS` は `VoxelCharacterVisual.syncCosmicBody` で同期 |
+| `VoxelScaleRules.ts` | 30 | ボクセルの粒度のデザインルールの下限値 `VOXEL_SIZE_MIN` / `WORLD_VOXEL_SIZE_MIN`。全兵種の検査は `tests/voxelScale.test.ts` |
 | `CosmicFx.ts` | 210 | 第8弾ユニットの演出（粒子）`spawnCosmicFx`。`SceneView.spawnCombatEffect` の先頭から呼ぶ。効果音は `SoundManager` の `COSMIC_SOUND_ALIAS` で既存の音に振り替える |
 | `DroppedChests.ts` / `JackpotChest3D.ts` / `JackpotReels3D.ts` / `JackpotIcons.ts` | 200〜470 | 宝箱とリールの 3D 演出 |
 | `XpOrbs.ts` | 184 | TD の経験値オーブ |

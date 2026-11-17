@@ -1090,7 +1090,7 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
   },
   angel_zeruel: {
     id: 'angel_zeruel',
-    name: '拒絶神ゼルエル',
+    name: '拒絶神',
     category: 'divine',
     description: '最強の拒絶タイプと呼ばれる超巨大使徒。神話級の極厚多重ATフィールドと黒曜石の重装甲を誇り、常に妖しく波打つ滑らかな超高速リボンカッターで前方の敵軍を一瞬にして両断・消滅させる。',
     cost: 1800,
@@ -1103,9 +1103,9 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = {
     projectile: null,
     range: 14.5,
     windup: 0.55,
-    strike: 0.34,
+    strike: 1.34,
     recover: 0.42,
-    cooldown: 3.61, // 攻撃サイクル 2.46s → 4.92s（攻撃頻度を半分に下方修正）
+    cooldown: 2.61, // 攻撃サイクル 4.92s維持（腕を伸ばす動作を1秒延長して視認性向上）
     strikeImpulse: 0,
     look: { skin: 0x16171a, hair: null, helmet: 0xf8f9fa, hood: null, armor: 0x1f2024, beard: null },
   },
@@ -1571,7 +1571,8 @@ giant_robot: {
     id: 'yamanote_line',
     name: '山手線',
     category: 'modern',
-    description: 'ウグイス色の帯を纏った8両編成の通勤電車。長大な車体を連結させて猛スピードで突進する。',
+    description:
+      'ウグイス色の帯を纏った8両編成の通勤電車。目の前から戦場の端まで線路を敷設し、駅を通過するほど威力を増しながら猛スピードで駆け抜ける。',
     cost: 1400,
     scale: 1.8,
     massMul: 2.5,
@@ -1580,11 +1581,11 @@ giant_robot: {
     style: 'charge',
     weapon: null,
     projectile: null,
-    range: 3.5,
-    windup: 0.25,
-    strike: 0.4,
-    recover: 0.3,
-    cooldown: 0.9,
+    range: 14.0,
+    windup: 0.85,
+    strike: 4.0,
+    recover: 0.35,
+    cooldown: 1.0,
     strikeImpulse: 10.0,
     look: { skin: 0xd0d7de, hair: null, helmet: 0x82c91e, hood: null, armor: 0xadb5bd, beard: null },
   },
@@ -1873,3 +1874,41 @@ export const UNIT_TYPE_LIST: readonly UnitType[] = [
   UNIT_TYPES.great_swordsman,
   UNIT_TYPES.ufo,
 ];
+
+/** 山手線の駅名一覧（東京スタート・外回り順） */
+export const YAMANOTE_STATIONS: readonly string[] = [
+  '東京',
+  '神田',
+  '秋葉原',
+  '御徒町',
+  '上野',
+  '鶯谷',
+  '日暮里',
+  '西日暮里',
+  '田端',
+  '駒込',
+  '巣鴨',
+  '大塚',
+  '池袋',
+  '目白',
+  '高田馬場',
+  '新大久保',
+  '新宿',
+  '代々木',
+  '原宿',
+  '渋谷',
+  '恵比寿',
+  '目黒',
+  '五反田',
+  '大崎',
+  '品川',
+  '高輪ゲートウェイ',
+  '田町',
+  '浜松町',
+  '新橋',
+  '有楽町',
+];
+
+/** 山手線の線路で駅が出現する間隔 (m) */
+export const YAMANOTE_STATION_INTERVAL = 4.5;
+
