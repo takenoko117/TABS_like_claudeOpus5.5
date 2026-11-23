@@ -321,10 +321,96 @@ body.in-openworld #title-screen {
   --key-edge: var(--cta-deep);
 }
 
+
+/* ---- 町の陣営（ミニマップの下） ---- */
+.ow-factions {
+  position: absolute;
+  right: 12px;
+  top: 206px;
+  width: 180px;
+  padding: 6px 8px;
+  display: grid;
+  gap: 3px;
+  pointer-events: none;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+}
+
+.ow-faction {
+  display: grid;
+  grid-template-columns: 14px auto 18px 1fr;
+  align-items: center;
+  gap: 5px;
+}
+
+.ow-faction .ow-swatch {
+  width: 12px;
+  height: 12px;
+}
+
+.ow-faction b {
+  font-weight: 400;
+}
+
+.ow-faction-n {
+  color: var(--gold);
+  text-align: right;
+}
+
+.ow-faction-st {
+  color: var(--sub);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ow-faction.angry .ow-faction-st {
+  color: var(--danger);
+}
+
+/* ---- 町の知らせ（上の真ん中） ---- */
+.ow-news {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  pointer-events: none;
+}
+
+.ow-news-item {
+  padding: 4px 12px;
+  background: var(--hud-glass);
+  border: 2px solid var(--panel-edge);
+  box-shadow: var(--drop-sm);
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ow-news-item.war {
+  border-color: var(--danger);
+  color: var(--gold);
+}
+
+.ow-news-item.skirmish {
+  border-color: var(--cta);
+}
+
+.ow-news-item.end {
+  border-color: var(--ok);
+}
+
 @media (max-width: 720px) {
   .ow-minimap {
     width: 110px;
     height: 110px;
+  }
+
+  .ow-factions {
+    top: 130px;
+    width: 150px;
   }
 
   .ow-slot {

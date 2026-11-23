@@ -88,6 +88,8 @@ npm run outline -- src                          # 全ファイルの行数
 | `WorldGen.ts` | 500 | 世界の生成 `generateOpenWorld`（地形 `naturalHeight`、街の道路の格子 `ROAD_ORIGINS`・車線 `laneCoord`・歩道 `SIDEWALK_LINES`、区画ごとの建物 `building`/家/公園/駐車場/鉄塔、外へ延びる道路と橋、基地）、乱数 `makeRng` |
 | `Destruction.ts` | 420 | 破壊 `DestructionSystem`（`breakBlock`・`damageBlock`・`explode`、支えの検査 `checkSupport` → 浮いた塊を `FallingChunk` にして落とし、着地で砕く `land`、破片 `Debris`、統計 `stats`） |
 | `OpenWorldSim.ts` | 1460 | 1 ステップの更新 `OpenWorldSim.step`（入力 `OWInput`、プレイヤーの歩き・飛行・吹き飛び、道具 `useTool`、乗り物の運転と壁の突き破り `moveVehicle`、街の車 `driveTraffic`、歩行者 `updatePed`、弾 `updateProjectiles`、爆風 `applyBlast`、車の連鎖爆発）、箱の移動 `moveBox`、3 人称カメラ `computeCamera` |
+| `TownWar.ts` | 950 | 町に住む本編の兵（4 陣営）`TownWar`。暮らし（歩道の交点をたどる `walkNodes`・立ち話・素振り）、敵を見つける `lookAround` → 小競り合い・加勢 `rally`、戦い `fight`/`attack`（遠距離の弾 `TownShot`・爆発する攻撃は町も壊す）、緊張 `tension` と戦争 `declareWar`/`updateWars`、プレイヤーへの恨み `grudge`、死体が砕ける `burst`・補充 `updateRespawn`。兵種の町での強さ `townCombatStats`、出やすさ `TOWN_ROSTER`、街区 `factionHome`・拠点 `factionBase`。数値は `OpenWorldConfig.ts` の `OW_TOWN_*` |
+| `TownActors.ts` | 270 | 町の兵の見た目。本編の `Unit` を兵ごとの `PhysicsWorld` で歩かせ（`UnitPreviews` と同じランニングマシン方式）、`VoxelCharacterVisual` を町の位置に置く。被弾で `applyHitDamage` のボクセルを破片にする、弾の演出 |
 | `ChunkMesher.ts` | 230 | ボクセル → 面（頂点色・角の影つき）。世界のチャンク `meshWorldRegion`（不透明と半透明を分ける）、模型 `meshVoxelModel`、落ちる塊 `meshBlockList`。Three.js 非依存 |
 | `OpenWorldModels.ts` | 220 | 人・車・戦車・弾のボクセル模型と人のポーズ `posePerson` |
 | `OpenWorldRenderer.ts` | 730 | 描画。チャンクのメッシュの作り直し `updateChunks`、昼夜 `updateSky`、落ちる塊・破片・炎と煙の粒 `syncFx`、乗り物・歩行者・弾、出来事から演出 `handleEvents` |
@@ -257,7 +259,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
 | 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
 | 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |
-| オープンワールド | 数値とブロック `openworld/OpenWorldConfig.ts`、街並み `WorldGen.ts`、破壊と崩落 `Destruction.ts`、操作・車・歩行者 `OpenWorldSim.ts`、画面 `OpenWorldApp.ts` |
+| オープンワールド | 数値とブロック `openworld/OpenWorldConfig.ts`、街並み `WorldGen.ts`、破壊と崩落 `Destruction.ts`、操作・車・歩行者 `OpenWorldSim.ts`、町の兵と戦争 `TownWar.ts`（見た目 `TownActors.ts`）、画面 `OpenWorldApp.ts` |
 | UI の絵・アイコンを足す | `ui/VoxelIcons.ts` の `SPRITES` に行を足す → `vx('名前')`。見た目は `icons.html` で確認。色・枠・影は `theme.css` のトークン |
 | 毎フレーム書き換える HUD の文字 | `fx/ui/dom.ts` の `setHtml`（中身が変わったときだけ innerHTML を書き換える） |
 

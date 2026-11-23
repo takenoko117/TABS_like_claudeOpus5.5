@@ -43,9 +43,12 @@ export interface FallingChunk {
   center: V3;
 }
 
+/** 爆発を起こしたもの（プレイヤーの攻撃なら、巻き込まれた陣営がプレイヤーを恨む） */
+export type ExplosionSource = 'player' | 'town' | 'world';
+
 /** 破壊で起きた出来事（描画・音・統計に渡す） */
 export type DestructionEvent =
-  | { kind: 'explosion'; pos: V3; radius: number }
+  | { kind: 'explosion'; pos: V3; radius: number; source: ExplosionSource }
   | { kind: 'collapse_start'; chunk: FallingChunk }
   | { kind: 'collapse_land'; chunkId: number; pos: V3; blocks: number; height: number }
   | { kind: 'block_break'; pos: V3; block: number };
@@ -126,10 +129,10 @@ export class DestructionSystem {
    * 爆発。半径内のブロックを硬さに応じて壊し、破片を飛ばし、崩落を調べる。
    * 壊したブロック数を返す。
    */
-  explode(center: V3, radius: number): number {
+  explode(center: V3, radius: number, source: ExplosionSource = 'world'): number {
     const w = this.world;
     this.stats.explosions++;
-    this.events.push({ kind: 'explosion', pos: { ...center }, radius });
+    this.events.push({ kind: 'explosion', pos: { ...center }, radius, source });
     const removed: [number, number, number][] = [];
     const r = Math.ceil(radius + 1);
     const cx = Math.floor(center.x);

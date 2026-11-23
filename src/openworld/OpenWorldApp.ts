@@ -1,7 +1,8 @@
 import type { SoundManager } from '../audio/SoundManager';
 import type { CombatEffectEvent } from '../combat/CombatSystem';
 import { vx, type VoxelIconName } from '../ui/VoxelIcons';
-import { BLOCK_DEFS, OW_BUILD_PALETTE, OW_TOOLS, B } from './OpenWorldConfig';
+import { BLOCK_DEFS, OW_BUILD_PALETTE, OW_TOOLS, B, OW_TOWN_FACTIONS } from './OpenWorldConfig';
+import { TEAM_COLORS, TEAM_NAMES, type Team } from '../units/UnitTypes';
 import { OpenWorldRenderer } from './OpenWorldRenderer';
 import { OpenWorldSim, emptyInput, type OWInput, type SimEvent } from './OpenWorldSim';
 
@@ -50,6 +51,8 @@ export class OpenWorldApp {
   private seed = 1;
   private hudTimer = 0;
   private bannerTimer = 0;
+  /** 町の知らせ（新しい順、残り秒つき） */
+  private readonly newsItems: { text: string; level: string; life: number }[] = [];
   private readonly el: Record<string, HTMLElement> = {};
   private minimapBase: HTMLCanvasElement | null = null;
   private readonly cleanup: (() => void)[] = [];
@@ -90,6 +93,8 @@ export class OpenWorldApp {
       <div class="ow-crosshair" data-ow="crosshair"></div>
       <div class="ow-stats vx-panel" data-ow="stats"></div>
       <canvas class="ow-minimap" data-ow="minimap" width="256" height="256"></canvas>
+      <div class="ow-factions vx-panel" data-ow="factions"></div>
+      <div class="ow-news" data-ow="news"></div>
       <div class="ow-banner" data-ow="banner"></div>
       <div class="ow-hint" data-ow="hint"></div>
       <div class="ow-toolbar" data-ow="toolbar"></div>
@@ -98,6 +103,7 @@ export class OpenWorldApp {
         <div class="ow-pause-box vx-panel">
           <h2>${vx('compass', 'vx-lg')} オープンワールド</h2>
           <p class="ow-pause-lead">ボクセルの街を自由に走り回り、壊して、建てる。目的はありません。</p>
+          <p class="ow-pause-lead">町には本編の兵たちが 4 つの陣営に分かれて暮らしています。陣営どうしの緊張が高まると小競り合いが起き、やがて戦争になります。兵を攻撃すると、その陣営に狙われます。</p>
           <div class="ow-keys">${keys.map(([k, d]) => `<div><kbd>${k}</kbd><span>${d}</span></div>`).join('')}</div>
           <p class="ow-touch-note">キーボードとマウスで遊ぶモードです。</p>
           <div class="ow-pause-buttons">
@@ -345,6 +351,20 @@ export class OpenWorldApp {
         case 'horn':
           fx('buggy_smoke');
           break;
+        case 'unit_hit':
+          s.playHit(e.damage > 40, false, e.killed);
+          break;
+        case 'unit_shot':
+          if (!near(e.from, 70)) break;
+          if (e.style === 'bow') s.playBowShoot();
+          else if (e.style === 'sniper') fx('sniper_shot');
+          else if (e.style === 'minigun' || e.style === 'dual_minigun' || e.style === 'gpu_parallel') fx('minigun_shot');
+          else if (e.style === 'lightning') fx('lightning');
+          else if (e.style === 'shuriken') fx('shuriken_throw');
+          else if (e.style === 'bomb' || e.style === 'takoyaki_toss' || e.style === 'yakisoba_toss') fx('bomb_throw');
+          else if (e.style === 'rocket' || e.style === 'tank_cannon' || e.style === 'rocket_punch') fx('cannon_fire');
+          else if (e.style === 'breath' || e.style === 'pyro') fx('dragon_breath');
+          break;
         default:
           break;
       }
@@ -377,6 +397,15 @@ export class OpenWorldApp {
       <div><span>被害額</span><b>${formatYen(st.damageYen)}</b></div>
       <div><span>崩落</span><b>${st.collapses}</b><span>爆発</span><b>${st.explosions}</b></div>
       <div><span>大破</span><b>${this.sim.stats.wrecks}</b><small>台</small><span>時刻</span><b>${formatClock(this.sim.timeOfDay)}</b></div>`;
+    const town = this.sim.town;
+    let rows = '';
+    for (let t = 0; t < OW_TOWN_FACTIONS; t++) {
+      const sum = town.factionSummary(t as Team);
+      const css = TEAM_COLORS[t].css;
+      const angry = town.grudge[t] > 0 ? ' angry' : '';
+      rows += `<div class="ow-faction${angry}"><span class="ow-swatch" style="--sw:${css}"></span><b>${TEAM_NAMES[t]}</b><span class="ow-faction-n">${sum.alive}</span><span class="ow-faction-st">${town.grudge[t] > 0 ? 'あなたを狙う' : sum.status}</span></div>`;
+    }
+    this.el.factions.innerHTML = rows;
     let hint = '';
     const v = p.vehicle;
     if (v) {
@@ -397,11 +426,30 @@ export class OpenWorldApp {
     for (const e of events) {
       if (e.kind === 'collapse_land' && e.blocks >= 400) this.showBanner(e.blocks >= 2000 ? '大崩落！' : '崩落！');
       else if (e.kind === 'wreck') this.showBanner('大破！');
+      else if (e.kind === 'town_news') {
+        if (e.level === 'war') this.showBanner('戦争勃発！');
+        this.newsItems.unshift({ text: e.text, level: e.level, life: e.level === 'war' ? 9 : 6 });
+        this.newsItems.length = Math.min(this.newsItems.length, 4);
+        this.renderNews();
+      }
+    }
+    let expired = false;
+    for (const n of this.newsItems) {
+      n.life -= dt;
+      if (n.life <= 0) expired = true;
+    }
+    if (expired) {
+      for (let i = this.newsItems.length - 1; i >= 0; i--) if (this.newsItems[i].life <= 0) this.newsItems.splice(i, 1);
+      this.renderNews();
     }
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0) this.el.banner.classList.remove('show');
     }
+  }
+
+  private renderNews(): void {
+    this.el.news.innerHTML = this.newsItems.map((n) => `<div class="ow-news-item ${n.level}">${n.text}</div>`).join('');
   }
 
   private showBanner(text: string): void {
@@ -475,8 +523,16 @@ export class OpenWorldApp {
       ctx.fillStyle = v.wrecked ? '#222' : v.kind === 'tank' ? '#9cc25a' : '#ffffff';
       ctx.fillRect(v.pos.x * sx - 2, v.pos.z * sz - 2, 4, 4);
     }
-    ctx.fillStyle = '#ffd43b';
+    ctx.fillStyle = '#ffffff';
     for (const ped of this.sim.peds) ctx.fillRect(ped.pos.x * sx - 1, ped.pos.z * sz - 1, 2, 2);
+    for (const u of this.sim.town.units) {
+      if (u.state === 'dead') continue;
+      const r = Math.max(2, Math.min(5, u.scale * 2));
+      ctx.fillStyle = '#0c0f17';
+      ctx.fillRect(u.pos.x * sx - r / 2 - 1, u.pos.z * sz - r / 2 - 1, r + 2, r + 2);
+      ctx.fillStyle = TEAM_COLORS[u.team].css;
+      ctx.fillRect(u.pos.x * sx - r / 2, u.pos.z * sz - r / 2, r, r);
+    }
     // 自分（向きの矢印）
     const p = this.sim.player.vehicle?.pos ?? this.sim.player.pos;
     ctx.save();

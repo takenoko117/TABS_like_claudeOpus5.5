@@ -42,6 +42,7 @@ import {
   type PersonModel,
 } from './OpenWorldModels';
 import type { V3 } from './VoxelWorld';
+import { TownActors } from './TownActors';
 
 /** 描画だけの演出の粒（炎・煙・土ぼこり） */
 interface FxCube {
@@ -115,6 +116,8 @@ export class OpenWorldRenderer {
   private shakeTime = 0;
   private readonly projGeo: Record<string, BufferGeometry>;
   private readonly carGeoCache = new Map<number, BufferGeometry>();
+  /** 町に住む本編のユニット */
+  private readonly townActors: TownActors;
 
   constructor(
     private readonly container: HTMLElement,
@@ -189,6 +192,7 @@ export class OpenWorldRenderer {
     this.ghost.visible = false;
     this.scene.add(this.ghost);
 
+    this.townActors = new TownActors(this.scene, sim, (x, y, z, vx, vy, vz, type, life, size) => this.addFx(x, y, z, vx, vy, vz, type, life, size));
     this.buildAllChunks();
     this.resize();
   }
@@ -297,6 +301,7 @@ export class OpenWorldRenderer {
 
   /** 爆発・射撃などの出来事から演出を出す */
   handleEvents(events: readonly SimEvent[]): void {
+    this.townActors.handleEvents(events);
     const cam = this.camera.position;
     for (const e of events) {
       switch (e.kind) {
@@ -399,6 +404,7 @@ export class OpenWorldRenderer {
     this.syncPlayer(opts.tool);
     this.syncVehicles();
     this.syncPeds();
+    this.townActors.sync(dt, this.camera.position);
     this.syncProjectiles(dt);
     this.syncHighlight(opts.tool, opts.blockIndex);
     for (let i = this.tracers.length - 1; i >= 0; i--) {
@@ -710,6 +716,7 @@ export class OpenWorldRenderer {
   }
 
   dispose(): void {
+    this.townActors.dispose();
     this.scene.traverse((o) => {
       const m = o as Mesh;
       if (m.geometry) m.geometry.dispose();

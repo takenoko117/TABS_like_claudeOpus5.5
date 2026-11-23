@@ -227,3 +227,58 @@ export const OW_BUILD_PALETTE: readonly BlockId[] = [
 export function isSolid(id: number): boolean {
   return BLOCK_DEFS[id]?.solid ?? false;
 }
+
+// ---- 町に住む本編のユニット（TownWar.ts） ----
+/** 陣営の数（赤・青・黄・緑）。陣営は町の四隅の街区に住む */
+export const OW_TOWN_FACTIONS = 4;
+/** 1 陣営の人数の目安（倒されると拠点で補充される） */
+export const OW_TOWN_POP = 8;
+/** 倒されてから補充されるまでの秒数 */
+export const OW_TOWN_RESPAWN = 14;
+/** 倒れた体が砕けて消えるまでの秒数 */
+export const OW_TOWN_CORPSE_TIME = 3.5;
+/** 敵に気づく距離 */
+export const OW_TOWN_SIGHT = 14;
+/** 戦いに加勢しに来る距離 */
+export const OW_TOWN_RALLY = 18;
+/** 陣営どうしの緊張が 1 秒に高まる量（ペアごとに 0.5〜1.5 倍のゆらぎ）。1 に達すると戦争 */
+export const OW_TOWN_TENSION_RATE = 0.006;
+/** 相手の陣営の兵を倒したときに高まる緊張 */
+export const OW_TOWN_TENSION_KILL = 0.08;
+/** ふだん敵と出会ったとき、1 秒あたりに小競り合いになる確率（基本値と、緊張 1 あたりの上乗せ） */
+export const OW_TOWN_SKIRMISH_BASE = 0.03;
+export const OW_TOWN_SKIRMISH_PER_TENSION = 0.25;
+/** 戦争で攻め込む部隊の最大人数と、戦争の長さの上限（秒） */
+export const OW_TOWN_SQUAD = 8;
+export const OW_TOWN_WAR_TIME = 110;
+/** 同時に起きる戦争の上限 */
+export const OW_TOWN_MAX_WARS = 2;
+/** プレイヤーが攻撃した陣営が敵対し続ける秒数 */
+export const OW_TOWN_PLAYER_GRUDGE = 40;
+/** 遠距離攻撃の届く距離の上限（町の中では短めにする） */
+export const OW_TOWN_MAX_RANGE = 26;
+/** この大きさ（scale）以上の兵は、戦いの最中に建物を押し壊して進む */
+export const OW_TOWN_CRUSH_SCALE = 1.8;
+/** 爆発する攻撃の半径（攻撃の種類ごと）。ここに無い種類は爆発しない */
+export const OW_TOWN_BLAST: Readonly<Record<string, number>> = {
+  bomb: 2.2,
+  rocket: 2.6,
+  tank_cannon: 3.4,
+  meteor: 3.8,
+  satellite_strike: 3.4,
+  sahaquiel_drop: 4,
+  eruption: 3.6,
+  rocket_punch: 3,
+  big_bang: 5,
+  takoyaki_toss: 1.8,
+  yakisoba_toss: 1.8,
+  mouth_laser: 2,
+  ramiel_beam: 3,
+  breath: 1.6,
+  pyro: 1.4,
+  sequoia_storm: 2.4,
+  tower_quake: 3,
+  earth_gravity: 3,
+};
+/** 弾がほぼ一瞬で届く攻撃（銃・雷・光線） */
+export const OW_TOWN_HITSCAN: readonly string[] = ['sniper', 'minigun', 'dual_minigun', 'lightning', 'gpu_parallel', 'psychic', 'mouth_laser', 'ramiel_beam', 'frost'];

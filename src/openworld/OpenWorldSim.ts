@@ -36,6 +36,7 @@ import {
   type VehicleSpec,
 } from './OpenWorldConfig';
 import { DestructionSystem, type DestructionEvent } from './Destruction';
+import { TownWar, type TownEvent } from './TownWar';
 import { ROAD_ORIGINS, SIDEWALK_LINES, generateOpenWorld, laneCoord, makeRng, type OpenWorldLayout } from './WorldGen';
 import type { V3, VoxelWorld } from './VoxelWorld';
 
@@ -188,6 +189,7 @@ interface PendingExplosion {
 
 export type SimEvent =
   | DestructionEvent
+  | TownEvent
   | { kind: 'shot'; from: V3; to: V3 }
   | { kind: 'fire'; tool: ToolId | 'shell'; pos: V3 }
   | { kind: 'punch'; pos: V3; hit: boolean }
@@ -316,6 +318,8 @@ export class OpenWorldSim {
   readonly projectiles: Projectile[] = [];
   readonly events: SimEvent[] = [];
   readonly stats: OWStats = { wrecks: 0, pedsKnocked: 0, distance: 0 };
+  /** 町に住む本編のユニット（4 つの陣営） */
+  readonly town: TownWar;
   /** 1 日の中の時刻（0〜1。0.5 が正午） */
   timeOfDay = 0.38;
   /** 道具を使える残り時間 */
@@ -327,7 +331,7 @@ export class OpenWorldSim {
   aimPoint: V3 | null = null;
   aimBlock: { x: number; y: number; z: number; nx: number; ny: number; nz: number } | null = null;
 
-  constructor(seed = 1) {
+  constructor(seed = 1, opts: { town?: boolean } = {}) {
     this.rng = makeRng(seed * 7 + 3);
     this.layout = generateOpenWorld(seed);
     this.world = this.layout.world;
@@ -349,6 +353,19 @@ export class OpenWorldSim {
     for (const p of this.layout.parked) this.addVehicle(p.kind, p.x, p.z, p.yaw, null);
     for (let k = 0; k < OW_TRAFFIC_COUNT; k++) this.spawnTraffic();
     for (let k = 0; k < OW_PEDESTRIAN_COUNT; k++) this.spawnPed();
+    this.town = new TownWar(this, this.rng, opts.town ?? true);
+  }
+
+  /** 町の兵の移動（段差は上る） */
+  moveTownBox(pos: V3, vel: V3, half: number, height: number, dt: number, wasOnGround: boolean): boolean {
+    return moveBox(this.world, pos, vel, half, height, dt, true, wasOnGround);
+  }
+
+  /** 町の兵の攻撃がプレイヤーに当たった */
+  hurtPlayer(dir: V3, damage: number): void {
+    const p = this.player;
+    if (p.vehicle) this.damageVehicle(p.vehicle, damage * 0.4);
+    else this.knockPlayer(dir.x * (4 + damage * 0.08), 3 + Math.min(6, damage * 0.03), dir.z * (4 + damage * 0.08));
   }
 
   // ---- 生成 ----
@@ -467,6 +484,7 @@ export class OpenWorldSim {
     for (const v of this.vehicles) if (v !== this.player.vehicle) this.updateVehicle(v, dt);
     this.collideVehicles();
     for (const ped of this.peds) this.updatePed(ped, dt);
+    this.town.step(dt);
     this.updateProjectiles(dt);
     this.updatePending(dt);
     this.destruction.step(dt);
@@ -475,7 +493,7 @@ export class OpenWorldSim {
     // 破壊の出来事をこちらの出来事の列に移す
     for (const e of this.destruction.events) {
       this.events.push(e);
-      if (e.kind === 'explosion') this.applyBlast(e.pos, e.radius);
+      if (e.kind === 'explosion') this.applyBlast(e.pos, e.radius, e.source === 'player');
     }
     this.destruction.events.length = 0;
   }
@@ -707,6 +725,14 @@ export class OpenWorldSim {
     const p = this.player;
     const f = fwdOf(p.yaw);
     const reach = { x: p.pos.x + f.x * 1.1, y: p.pos.y + 1, z: p.pos.z + f.z * 1.1 };
+    for (const u of this.town.units) {
+      if (u.state === 'dead') continue;
+      if (Math.hypot(u.pos.x - reach.x, u.pos.z - reach.z) < u.half + 0.9 && reach.y > u.pos.y - 0.5 && reach.y < u.pos.y + u.height + 0.5) {
+        this.town.damage(u, 30, { x: f.x, y: 0, z: f.z }, null);
+        this.events.push({ kind: 'punch', pos: reach, hit: true });
+        return;
+      }
+    }
     for (const ped of this.peds) {
       if (dist3({ ...ped.pos, y: ped.pos.y + 1 }, reach) < 1.2) {
         this.knockPed(ped, { x: f.x * 14, y: 7, z: f.z * 14 });
@@ -782,8 +808,19 @@ export class OpenWorldSim {
         hitPed = null;
       }
     }
+    const unitHit = this.town.raycastUnits(from, dir, bestT);
+    if (unitHit) {
+      bestT = unitHit.t;
+      hitPed = null;
+      hitVeh = null;
+    }
     const end = { x: from.x + dir.x * bestT, y: from.y + dir.y * bestT, z: from.z + dir.z * bestT };
     this.events.push({ kind: 'shot', from, to: end });
+    if (unitHit) {
+      this.events.push({ kind: 'fire', tool: 'rifle', pos: from });
+      this.town.damage(unitHit.unit, 14, dir, null);
+      return;
+    }
     this.events.push({ kind: 'fire', tool: 'rifle', pos: from });
     if (hitPed) {
       this.knockPed(hitPed, { x: dir.x * 9, y: 5, z: dir.z * 9 });
@@ -993,6 +1030,23 @@ export class OpenWorldSim {
           this.knockPed(ped, { x: f.x * sp + (this.rng() - 0.5) * 3, y: 4 + Math.abs(sp) * 0.3, z: f.z * sp + (this.rng() - 0.5) * 3 });
           v.speed *= 0.93;
         }
+      }
+      for (const u of this.town.units) {
+        if (u.state === 'dead' || u.stun > 0.3) continue;
+        if (!this.pointInVehicle(v, { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z }, u.half)) continue;
+        const sp = Math.abs(v.speed);
+        if (u.scale >= 1.8 && v.kind === 'car') {
+          // 大きな兵には跳ね返される
+          this.damageVehicle(v, sp * 1.2);
+          v.speed = -v.speed * 0.3;
+          this.town.damage(u, sp * 2, { x: f.x, y: 0, z: f.z }, v === this.player.vehicle ? null : 'blast');
+          break;
+        }
+        this.town.damage(u, sp * (v.kind === 'tank' ? 8 : 4), { x: f.x * Math.sign(v.speed), y: 0, z: f.z * Math.sign(v.speed) }, v === this.player.vehicle ? null : 'blast');
+        u.vel.y = Math.max(u.vel.y, 3 + sp * 0.3);
+        u.stun = Math.max(u.stun, 0.8);
+        u.onGround = false;
+        v.speed *= 0.9;
       }
       const p = this.player;
       if (v !== p.vehicle && !p.vehicle && p.knock <= 0 && this.pointInVehicle(v, { x: p.pos.x, y: p.pos.y + 0.5, z: p.pos.z }, 0.35)) {
@@ -1391,7 +1445,7 @@ export class OpenWorldSim {
         }
       }
       if (explodeAt) {
-        this.destruction.explode(explodeAt, pr.radius);
+        this.destruction.explode(explodeAt, pr.radius, 'player');
         this.projectiles.splice(i, 1);
       }
     }
@@ -1408,8 +1462,9 @@ export class OpenWorldSim {
   }
 
   /** 爆風: 人と車を吹き飛ばし、車を傷める */
-  private applyBlast(pos: V3, radius: number): void {
+  private applyBlast(pos: V3, radius: number, byPlayer = false): void {
     const reach = radius * 2;
+    this.town.applyBlast(pos, radius, byPlayer);
     for (const ped of this.peds) {
       const d = dist3({ ...ped.pos, y: ped.pos.y + 0.8 }, pos);
       if (d > reach) continue;
@@ -1450,6 +1505,9 @@ export class OpenWorldSim {
         if (Math.hypot(ped.pos.x - e.pos.x, ped.pos.z - e.pos.z) < r) this.knockPed(ped, { x: (this.rng() - 0.5) * 10, y: 6, z: (this.rng() - 0.5) * 10 });
       }
       for (const v of this.vehicles) if (Math.hypot(v.pos.x - e.pos.x, v.pos.z - e.pos.z) < r) this.damageVehicle(v, e.height * 6);
+      for (const u of this.town.units) {
+        if (u.state !== 'dead' && Math.hypot(u.pos.x - e.pos.x, u.pos.z - e.pos.z) < r) this.town.damage(u, e.height * 12, { x: 0, y: 0, z: 0 }, 'blast');
+      }
       this.scarePeds(e.pos, r * 4);
     }
   }
