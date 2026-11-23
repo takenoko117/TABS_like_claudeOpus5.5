@@ -1,3 +1,4 @@
+import { OpenWorldApp } from '../openworld/OpenWorldApp';
 import { vx, vxStars, type VoxelIconName } from '../ui/VoxelIcons';
 import { setHtml } from '../fx/ui/dom';
 import { Vector3 } from 'three';
@@ -500,6 +501,8 @@ export class GameApp {
   /** 生成済みのフィールド（同じ進路カードを何度も作り直さない） */
   private readonly fieldLayoutCache = new Map<string, FieldLayout>();
   readonly sound = new SoundManager();
+  /** オープンワールドを開いている間だけある */
+  private openWorld: OpenWorldApp | null = null;
   readonly music = new MusicPlayer();
   private settings: GameSettings = loadSettings();
   private readonly adaptiveQuality = new AdaptiveQuality();
@@ -1386,6 +1389,11 @@ export class GameApp {
           this.showFriendChooser(true);
           return;
         }
+        // オープンワールドは自前の画面と描画を持つので、GameApp の更新を止めて開く
+        if (button.dataset.mode === 'openworld') {
+          this.enterOpenWorld();
+          return;
+        }
         this.leaveTitleScreen(button.dataset.mode as PlayStyle);
       });
     });
@@ -1399,6 +1407,27 @@ export class GameApp {
         else if (kind === 'online') this.leaveTitleScreen('td', true);
       });
     });
+  }
+
+  /** オープンワールドを開く（開いている間は tick を OpenWorldApp に任せる） */
+  private enterOpenWorld(): void {
+    this.sound.playPlace();
+    this.onTitleScreen = false;
+    document.body.classList.remove('on-title');
+    document.body.classList.add('in-openworld');
+    document.getElementById('title-screen')?.classList.add('hidden');
+    this.music.setTrack(null);
+    this.openWorld = new OpenWorldApp({
+      sound: this.sound,
+      onExit: () => this.leaveOpenWorld(),
+    });
+  }
+
+  private leaveOpenWorld(): void {
+    this.openWorld?.dispose();
+    this.openWorld = null;
+    document.body.classList.remove('in-openworld');
+    this.showTitleScreen();
   }
 
   /** タイトル画面で、友人対戦の選択（ローカル／オンライン）を出す・閉じる */
@@ -5459,6 +5488,10 @@ export class GameApp {
 
   /** 毎フレームの更新ループ */
   tick(realDt: number): void {
+    if (this.openWorld) {
+      this.openWorld.tick(realDt);
+      return;
+    }
     const frameStart = this.frameProbe ? performance.now() : 0;
     this.tickInner(realDt);
     if (this.frameProbe) this.recordFrameProbe(performance.now() - frameStart);

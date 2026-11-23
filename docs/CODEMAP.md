@@ -77,6 +77,22 @@ npm run outline -- src                          # 全ファイルの行数
 | `FieldRng.ts` | 59 | 乱数・ノイズ |
 | `BoundaryTerrain.ts` | 823 | 戦場の外周（壁の外）の背景地形。4 方向にランダムなバイオーム（山岳・海・森・荒野・湿地・草原・氷河・火山・遺跡）を割り当ててボクセル化 `generateBoundaryTerrain`。描画は SceneView の `buildFieldBoundary` |
 
+### src/openworld — オープンワールドモード（独立した画面と描画）
+
+タイトルの「オープンワールド」から `GameApp.enterOpenWorld` が `OpenWorldApp` を作る。開いている間は `GameApp.tick` が `OpenWorldApp.tick` だけを呼ぶ（戦場の更新・描画は止まる）。シミュレーションは Three.js 非依存で `tests/openWorld.test.ts` から検証する。
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `OpenWorldConfig.ts` | 230 | 数値 `OW_*`（世界の大きさ・街の区画・物理・乗り物 `OW_VEHICLES`・道具 `OW_TOOLS`・崩落と破片）とブロックの定義 `B` / `BLOCK_DEFS`（色・硬さ・被害額）、建築で置ける `OW_BUILD_PALETTE` |
+| `VoxelWorld.ts` | 200 | ブロックの格子 `VoxelWorld`（`get`/`set`、書き換えたチャンク `dirtyChunks` とミニマップの列 `dirtyColumns` の記録、光線 `raycast`、ライフルの傷 `damage`） |
+| `WorldGen.ts` | 500 | 世界の生成 `generateOpenWorld`（地形 `naturalHeight`、街の道路の格子 `ROAD_ORIGINS`・車線 `laneCoord`・歩道 `SIDEWALK_LINES`、区画ごとの建物 `building`/家/公園/駐車場/鉄塔、外へ延びる道路と橋、基地）、乱数 `makeRng` |
+| `Destruction.ts` | 420 | 破壊 `DestructionSystem`（`breakBlock`・`damageBlock`・`explode`、支えの検査 `checkSupport` → 浮いた塊を `FallingChunk` にして落とし、着地で砕く `land`、破片 `Debris`、統計 `stats`） |
+| `OpenWorldSim.ts` | 1460 | 1 ステップの更新 `OpenWorldSim.step`（入力 `OWInput`、プレイヤーの歩き・飛行・吹き飛び、道具 `useTool`、乗り物の運転と壁の突き破り `moveVehicle`、街の車 `driveTraffic`、歩行者 `updatePed`、弾 `updateProjectiles`、爆風 `applyBlast`、車の連鎖爆発）、箱の移動 `moveBox`、3 人称カメラ `computeCamera` |
+| `ChunkMesher.ts` | 230 | ボクセル → 面（頂点色・角の影つき）。世界のチャンク `meshWorldRegion`（不透明と半透明を分ける）、模型 `meshVoxelModel`、落ちる塊 `meshBlockList`。Three.js 非依存 |
+| `OpenWorldModels.ts` | 220 | 人・車・戦車・弾のボクセル模型と人のポーズ `posePerson` |
+| `OpenWorldRenderer.ts` | 730 | 描画。チャンクのメッシュの作り直し `updateChunks`、昼夜 `updateSky`、落ちる塊・破片・炎と煙の粒 `syncFx`、乗り物・歩行者・弾、出来事から演出 `handleEvents` |
+| `OpenWorldApp.ts` | 510 | 画面（DOM の HUD・道具の列・ミニマップ・ポーズ）、キーボードとマウス（ポインターロック）、固定ステップの進行、効果音の割り当て `playSounds`。見た目は `openworld.css` |
+
 ### src/render — 描画（Three.js）
 
 | ファイル | 行 | 役割 |
@@ -166,6 +182,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | 兵種バー・詳細 | `renderUnitCards`, `selectPlaceable`, `updateUnitDetailOverlay` |
 | アーケード | `loadArcadeStage`, `renderArcadeStageButtons`, `renderStageBriefing`, `renderEnemyChips` |
 | サンドボックス | `loadPreset`, `PRESETS`（ファイル冒頭の定数） |
+| オープンワールド | `enterOpenWorld` / `leaveOpenWorld`（中身は `src/openworld/`） |
 | TD モード | `enterTDMode`, `startTDRun`, `beginTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
 | TD オンライン対戦 | `enterTDVersusMode`（友人対戦→オンライン対戦の入口）, `tdVersus`（セッションとイベント）, `syncTDDraftTimer`（ドラフトの制限時間）, `showTDVersusLobby`, `refreshTDVersusRooms`/`startTDVersusRoomPolling`（募集中の部屋の一覧）, `joinTDVersusRoom`, `startTDVersusRun`（`TDDuel` と `TDLockstep` を作る）, `startTDVersusWatch`（観戦）, `syncTDDuelChests`/`openNextTDDuelChest`（対戦の宝箱）, `handleTDVersusEnd`, `showTDVersusResult`, `disposeTDDuel`, `isTDVersusLive`（対戦中は `tick` で `tdLockstep.advance`） |
 | チャレンジ | `enterChallengeMode`, `loadChallengeRound`, `handleChallengeBattleEnd`, `renderChallengePanel` |
@@ -240,6 +257,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | 宝箱・リール報酬 | `RogueJackpot.ts`（中身）、`JackpotRoulette.ts`（進行）、`render/Jackpot*`（3D） |
 | 地形生成 | `field/FieldGenerator.ts`、戦闘中の地形の挙動は `field/FieldRuntime.ts` |
 | 物理の挙動 | `physics/PhysicsWorld.ts`、体の動きは `Unit.ts` `applyMuscles` |
+| オープンワールド | 数値とブロック `openworld/OpenWorldConfig.ts`、街並み `WorldGen.ts`、破壊と崩落 `Destruction.ts`、操作・車・歩行者 `OpenWorldSim.ts`、画面 `OpenWorldApp.ts` |
 | UI の絵・アイコンを足す | `ui/VoxelIcons.ts` の `SPRITES` に行を足す → `vx('名前')`。見た目は `icons.html` で確認。色・枠・影は `theme.css` のトークン |
 | 毎フレーム書き換える HUD の文字 | `fx/ui/dom.ts` の `setHtml`（中身が変わったときだけ innerHTML を書き換える） |
 
