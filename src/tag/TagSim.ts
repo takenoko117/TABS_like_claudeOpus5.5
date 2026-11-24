@@ -1,9 +1,10 @@
 import { moveBox, viewDir, type CameraPose } from '../openworld/OpenWorldSim';
 import { B } from '../openworld/OpenWorldConfig';
+import { blastTerrain } from './TagBlast';
 import type { V3 } from '../openworld/VoxelWorld';
 import { makeRng } from '../openworld/WorldGen';
 import type { TagSnapshot } from '../net/tagProtocol';
-import { floorBelow, generateGifuTown, type GifuTown } from './GifuTown';
+import { floorBelow, generateGifuTown, groundAt, resetGifuTown, type GifuTown } from './GifuTown';
 import {
   TAG_CHASE_KEEP,
   TAG_GRAVITY,
@@ -31,6 +32,24 @@ import {
   TAG_MAX_HP,
   TAG_PLAYER_HALF,
   TAG_PLAYER_HEIGHT,
+  TAG_PUNCH_COOLDOWN,
+  TAG_PUNCH_HEIGHT,
+  TAG_PUNCH_KNOCK,
+  TAG_PUNCH_RANGE,
+  TAG_PUNCH_STUN,
+  TAG_ROCKET_BLAST,
+  TAG_ROCKET_COOLDOWN,
+  TAG_ROCKET_HAYATO_STUN,
+  TAG_ROCKET_HIT_RADIUS,
+  TAG_ROCKET_KNOCK,
+  TAG_ROCKET_MAX,
+  TAG_ROCKET_PICK_RADIUS,
+  TAG_ROCKET_PICKUPS,
+  TAG_ROCKET_RANGE,
+  TAG_ROCKET_RESPAWN,
+  TAG_ROCKET_SPEED,
+  TAG_ROCKET_STUN,
+  TAG_ROCKET_STUN_RADIUS,
   TAG_SEARCH_TIME,
   TAG_SENSE_RANGE,
   TAG_SIGHT_COS,
@@ -91,10 +110,17 @@ export interface TagPlayer {
   net: { x: number; y: number; z: number; yaw: number } | null;
   /** 回線が切れて抜けた */
   left: boolean;
+  /** 動けない残り秒（パンチ・爆風） */
+  stun: number;
+  /** 持っているロケットの数 */
+  rockets: number;
+  /** パンチ・ロケットを次に使えるまで（秒） */
+  punchCooldown: number;
+  rocketCooldown: number;
 }
 
-export type HayatoState = 'wander' | 'chase' | 'aim' | 'search';
-const HAYATO_STATES: readonly HayatoState[] = ['wander', 'chase', 'aim', 'search'];
+export type HayatoState = 'wander' | 'chase' | 'aim' | 'search' | 'stun';
+const HAYATO_STATES: readonly HayatoState[] = ['wander', 'chase', 'aim', 'search', 'stun'];
 
 export interface Hayato {
   id: number;
@@ -117,6 +143,8 @@ export interface Hayato {
   climb: number;
   /** 届いた位置（権限のない端末） */
   net: { x: number; y: number; z: number; yaw: number } | null;
+  /** 爆風で止まっている残り秒 */
+  stun: number;
 }
 
 export interface Bolt {
@@ -127,6 +155,25 @@ export interface Bolt {
   traveled: number;
 }
 
+/** 飛んでいるロケット */
+export interface Rocket {
+  id: number;
+  owner: number;
+  pos: V3;
+  dir: V3;
+  traveled: number;
+}
+
+/** 町に落ちているロケット（拾う物） */
+export interface RocketPickup {
+  id: number;
+  pos: V3;
+  /** 拾える状態か */
+  active: boolean;
+  /** 拾われてから戻るまでの残り秒 */
+  respawn: number;
+}
+
 export type TagEvent =
   | { kind: 'spawn'; hayato: number; pos: V3 }
   | { kind: 'spot'; hayato: number; target: number }
@@ -134,7 +181,13 @@ export type TagEvent =
   | { kind: 'bolt_end'; bolt: number; pos: V3 }
   | { kind: 'hit'; player: number; hp: number; bolt: number; dir: V3 }
   | { kind: 'out'; player: number; time: number }
-  | { kind: 'over'; winner: number };
+  | { kind: 'over'; winner: number }
+  | { kind: 'punch'; attacker: number; victim: number }
+  | { kind: 'stun'; player: number; time: number; by: 'punch' | 'blast' }
+  | { kind: 'rocket_fire'; rocket: number; owner: number; from: V3; dir: V3 }
+  | { kind: 'explode'; rocket: number; pos: V3; broken: number }
+  | { kind: 'pickup'; pickup: number; player: number }
+  | { kind: 'pickup_back'; pickup: number };
 
 export type { TagSnapshot };
 
@@ -148,6 +201,9 @@ export class TagSim {
   readonly players: TagPlayer[] = [];
   readonly hayatos: Hayato[] = [];
   readonly bolts: Bolt[] = [];
+  readonly rockets: Rocket[] = [];
+  readonly pickups: RocketPickup[] = [];
+  private nextRocketId = 1;
   readonly events: TagEvent[] = [];
   time = 0;
   /** 次にハヤトが増える時刻 */
@@ -172,6 +228,8 @@ export class TagSim {
     town?: GifuTown,
   ) {
     this.town = town ?? generateGifuTown(1);
+    // 前の鬼ごっこでロケットに壊された町を元に戻す
+    resetGifuTown(this.town);
     this.rng = makeRng(seed);
     this.solo = roster.length <= 1;
     roster.forEach((r, k) => {
@@ -192,8 +250,21 @@ export class TagSim {
         moving: false,
         net: null,
         left: false,
+        stun: 0,
+        rockets: 0,
+        punchCooldown: 0,
+        rocketCooldown: 0,
       });
     });
+    // 落ちているロケット（全員が同じ場所になるよう、種から決める）
+    const prng = makeRng(seed ^ 0x5bd1e995);
+    const nav = this.town.navPoints;
+    for (let k = 0; k < TAG_ROCKET_PICKUPS && nav.length > 0; k++) {
+      const n = nav[Math.floor(prng() * nav.length)];
+      const y = groundAt(this.town.world, n.x, n.z);
+      if (y < 0) continue;
+      this.pickups.push({ id: this.pickups.length, pos: { x: n.x, y, z: n.z }, active: true, respawn: 0 });
+    }
     if (authority) for (let k = 0; k < TAG_HAYATO_START; k++) this.spawnHayato();
   }
 
@@ -225,7 +296,8 @@ export class TagSim {
     for (const p of this.players) {
       if (p.alive) p.survived = this.time;
       if (p.id === this.localId) {
-        if (p.alive && input && this.phase === 'playing') this.movePlayer(p, input, dt);
+        // パンチや爆風で動けない間は操作を受け付けない
+        if (p.alive && input && this.phase === 'playing' && p.stun <= 0) this.movePlayer(p, input, dt);
         else this.movePlayer(p, emptyTagInput(), dt);
       } else if (p.net) {
         // 届いた位置へなめらかに寄せる
@@ -239,6 +311,9 @@ export class TagSim {
         p.yaw = lerpAngle(p.yaw, p.net.yaw, k);
       }
       p.invuln = Math.max(0, p.invuln - dt);
+      p.stun = Math.max(0, p.stun - dt);
+      p.punchCooldown = Math.max(0, p.punchCooldown - dt);
+      p.rocketCooldown = Math.max(0, p.rocketCooldown - dt);
     }
     if (this.authority) {
       if (this.phase === 'playing') {
@@ -246,6 +321,8 @@ export class TagSim {
         for (const h of this.hayatos) this.updateHayato(h, dt);
       }
       this.updateBolts(dt, true);
+      this.updateRockets(dt, true);
+      if (this.phase === 'playing') this.updatePickups(dt);
       if (this.phase === 'playing') this.checkOver();
     } else {
       for (const h of this.hayatos) {
@@ -258,6 +335,7 @@ export class TagSim {
         if (h.state === 'aim') h.charge += dt;
       }
       this.updateBolts(dt, false);
+      this.updateRockets(dt, false);
     }
   }
 
@@ -362,6 +440,7 @@ export class TagSim {
       stuck: 0,
       climb: 0,
       net: null,
+      stun: 0,
     };
     this.hayatos.push(h);
     this.events.push({ kind: 'spawn', hayato: h.id, pos: { ...h.pos } });
@@ -402,6 +481,15 @@ export class TagSim {
 
   private updateHayato(h: Hayato, dt: number): void {
     h.cooldown = Math.max(0, h.cooldown - dt);
+    // 爆風でくらくらしている間は、その場でゆっくり沈むだけ
+    if (h.stun > 0) {
+      h.stun -= dt;
+      h.state = h.stun > 0 ? 'stun' : 'search';
+      h.charge = 0;
+      h.yaw += dt * 6;
+      if (h.stun <= 0) h.searchTimer = TAG_SEARCH_TIME;
+      return;
+    }
     const mul = this.speedMul();
     // いちばん近い、見えているプレイヤー
     let seen: TagPlayer | null = null;
@@ -651,7 +739,7 @@ export class TagSim {
       time: r2(this.time),
       next: r2(this.nextSpawn),
       hy: this.hayatos.map((h) => [h.id, r2(h.pos.x), r2(h.pos.y), r2(h.pos.z), r2(h.yaw), HAYATO_STATES.indexOf(h.state), h.target, r2(h.charge)]),
-      pl: this.players.map((p) => [p.id, p.hp, p.alive ? 1 : 0, r2(p.survived)]),
+      pl: this.players.map((p) => [p.id, p.hp, p.alive ? 1 : 0, r2(p.survived), p.rockets, r2(p.stun)]),
       ev: this.outbox.splice(0),
     };
     return snap;
@@ -682,6 +770,7 @@ export class TagSim {
           stuck: 0,
           climb: 0,
           net: null,
+          stun: 0,
         };
         this.hayatos.push(h);
         this.nextHayatoId = Math.max(this.nextHayatoId, id + 1);
@@ -694,9 +783,12 @@ export class TagSim {
     }
     for (let i = this.hayatos.length - 1; i >= 0; i--) if (!seen.has(this.hayatos[i].id)) this.hayatos.splice(i, 1);
     for (const ev of s.ev) this.applyEvent(ev);
-    for (const [id, hp, alive, survived] of s.pl) {
+    for (const [id, hp, alive, survived, rockets, stun] of s.pl) {
       const p = this.player(id);
       if (!p) continue;
+      p.rockets = rockets ?? p.rockets;
+      // 自分の「動けない」は出来事で受け取る（ずれて止まり続けないよう、ほかの人だけ写す）
+      if (p.id !== this.localId) p.stun = stun ?? 0;
       if (p.alive && !alive && hp > 0) {
         // 抜けた人
         p.alive = false;
@@ -724,6 +816,40 @@ export class TagSim {
       case 's':
         this.events.push({ kind: 'spot', hayato: n(1), target: n(2) });
         break;
+      case 'P':
+        this.applyStun(n(1), n(2), TAG_PUNCH_STUN, { x: n(3), y: 0, z: n(4) }, TAG_PUNCH_KNOCK, 'punch');
+        break;
+      case 'B':
+        this.applyStun(-1, n(1), n(2), { x: n(3), y: 0, z: n(4) }, TAG_ROCKET_KNOCK, 'blast');
+        break;
+      case 'R': {
+        const r: Rocket = { id: n(1), owner: n(2), pos: { x: n(3), y: n(4), z: n(5) }, dir: { x: n(6), y: n(7), z: n(8) }, traveled: 0 };
+        this.rockets.push(r);
+        this.events.push({ kind: 'rocket_fire', rocket: r.id, owner: r.owner, from: { ...r.pos }, dir: { ...r.dir } });
+        break;
+      }
+      case 'X': {
+        const k = this.rockets.findIndex((r) => r.id === n(1));
+        if (k >= 0) this.rockets.splice(k, 1);
+        this.explodeAt(n(1), { x: n(2), y: n(3), z: n(4) });
+        break;
+      }
+      case 'k': {
+        const pk = this.pickups[n(1)];
+        if (pk) {
+          pk.active = false;
+          this.events.push({ kind: 'pickup', pickup: pk.id, player: n(2) });
+        }
+        break;
+      }
+      case 'K': {
+        const pk = this.pickups[n(1)];
+        if (pk) {
+          pk.active = true;
+          this.events.push({ kind: 'pickup_back', pickup: pk.id });
+        }
+        break;
+      }
       case 'o':
         this.phase = 'over';
         this.winner = n(1);
@@ -747,8 +873,174 @@ export class TagSim {
       }
       h.net = null;
       if (h.state === 'aim') h.state = 'chase';
+      if (h.state === 'stun') h.stun = 1;
       h.charge = 0;
       h.cooldown = 1;
+    }
+    // 見た目だけ飛ばしていたロケットは、ここから当たりを判定する
+  }
+
+  // ---- お邪魔の道具 ----
+
+  /** パンチの届く所にいる、いちばん近いほかのプレイヤー（いなければ undefined） */
+  punchTarget(id: number): TagPlayer | undefined {
+    const me = this.player(id);
+    if (!me || !me.alive) return undefined;
+    let best: TagPlayer | undefined;
+    let bestD = TAG_PUNCH_RANGE;
+    for (const p of this.players) {
+      if (p.id === id || !p.alive) continue;
+      const d = Math.hypot(p.pos.x - me.pos.x, p.pos.z - me.pos.z);
+      if (d <= bestD && Math.abs(p.pos.y - me.pos.y) <= TAG_PUNCH_HEIGHT) {
+        best = p;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /** パンチ（権限のある端末で決める）。当たったら true */
+  requestPunch(id: number): boolean {
+    if (!this.authority || this.phase !== 'playing') return false;
+    const me = this.player(id);
+    if (!me || !me.alive || me.punchCooldown > 0 || me.stun > 0) return false;
+    const target = this.punchTarget(id);
+    if (!target) return false;
+    me.punchCooldown = TAG_PUNCH_COOLDOWN;
+    const dx = target.pos.x - me.pos.x;
+    const dz = target.pos.z - me.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const dir = { x: r2(dx / d), y: 0, z: r2(dz / d) };
+    me.yaw = Math.atan2(dx, dz);
+    this.applyStun(id, target.id, TAG_PUNCH_STUN, dir, TAG_PUNCH_KNOCK, 'punch');
+    this.send(['P', id, target.id, dir.x, dir.z]);
+    return true;
+  }
+
+  /** パンチ・爆風で動けなくする（attacker = -1 は爆風） */
+  private applyStun(attacker: number, victim: number, time: number, dir: V3, knock: number, by: 'punch' | 'blast'): void {
+    const p = this.player(victim);
+    if (!p || !p.alive) return;
+    p.stun = Math.max(p.stun, time);
+    if (p.id === this.localId) {
+      p.vel.x = dir.x * knock;
+      p.vel.z = dir.z * knock;
+      p.vel.y = by === 'blast' ? 6 : 3;
+      p.onGround = false;
+    }
+    if (by === 'punch') {
+      const a = this.player(attacker);
+      if (a && a.id !== this.localId) a.yaw = Math.atan2(-dir.x, -dir.z) + Math.PI;
+      this.events.push({ kind: 'punch', attacker, victim });
+    }
+    this.events.push({ kind: 'stun', player: victim, time, by });
+  }
+
+  /** ロケットを撃つ（権限のある端末で決める）。dir は狙う向き */
+  requestRocket(id: number, dir: V3): boolean {
+    if (!this.authority || this.phase !== 'playing') return false;
+    const me = this.player(id);
+    if (!me || !me.alive || me.rockets <= 0 || me.rocketCooldown > 0 || me.stun > 0) return false;
+    const len = Math.hypot(dir.x, dir.y, dir.z);
+    if (!(len > 0.01)) return false;
+    const d = { x: r2(dir.x / len), y: r2(dir.y / len), z: r2(dir.z / len) };
+    me.rockets--;
+    me.rocketCooldown = TAG_ROCKET_COOLDOWN;
+    const from = { x: r2(me.pos.x + d.x * 0.7), y: r2(me.pos.y + 0.9 + d.y * 0.7), z: r2(me.pos.z + d.z * 0.7) };
+    const r: Rocket = { id: this.nextRocketId++, owner: id, pos: { ...from }, dir: d, traveled: 0 };
+    this.rockets.push(r);
+    this.events.push({ kind: 'rocket_fire', rocket: r.id, owner: id, from, dir: { ...d } });
+    this.send(['R', r.id, id, from.x, from.y, from.z, d.x, d.y, d.z]);
+    return true;
+  }
+
+  private updateRockets(dt: number, judge: boolean): void {
+    for (let i = this.rockets.length - 1; i >= 0; i--) {
+      const r = this.rockets[i];
+      let remaining = TAG_ROCKET_SPEED * dt;
+      let boom = false;
+      while (remaining > 0 && !boom) {
+        const stepLen = Math.min(0.5, remaining);
+        remaining -= stepLen;
+        r.pos.x += r.dir.x * stepLen;
+        r.pos.y += r.dir.y * stepLen;
+        r.pos.z += r.dir.z * stepLen;
+        r.traveled += stepLen;
+        if (this.world.solidAtPoint(r.pos.x, r.pos.y, r.pos.z) || r.traveled >= TAG_ROCKET_RANGE || r.pos.y < 1) {
+          boom = true;
+          break;
+        }
+        if (!judge) continue;
+        for (const p of this.players) {
+          if (p.id === r.owner || !p.alive) continue;
+          if (Math.hypot(r.pos.x - p.pos.x, r.pos.y - (p.pos.y + PLAYER_CENTER), r.pos.z - p.pos.z) < TAG_ROCKET_HIT_RADIUS + 0.4) boom = true;
+        }
+        for (const h of this.hayatos) {
+          if (Math.hypot(r.pos.x - h.pos.x, r.pos.y - h.pos.y, r.pos.z - h.pos.z) < TAG_ROCKET_HIT_RADIUS + TAG_HAYATO_RADIUS) boom = true;
+        }
+      }
+      if (!boom) continue;
+      if (!judge) {
+        // ゲストはホストの知らせ（X）で爆発させる。壁に着いたら止めて待つ
+        r.traveled = TAG_ROCKET_RANGE;
+        r.dir = { x: 0, y: 0, z: 0 };
+        continue;
+      }
+      this.rockets.splice(i, 1);
+      const at = { x: r2(r.pos.x - r.dir.x * 0.3), y: r2(r.pos.y - r.dir.y * 0.3), z: r2(r.pos.z - r.dir.z * 0.3) };
+      this.send(['X', r.id, at.x, at.y, at.z]);
+      this.explodeAt(r.id, at);
+      // 爆風: プレイヤーとハヤトをひるませる（撃った本人は平気）
+      for (const p of this.players) {
+        if (!p.alive || p.id === r.owner) continue;
+        const dx = p.pos.x - at.x;
+        const dz = p.pos.z - at.z;
+        const d = Math.hypot(dx, p.pos.y + PLAYER_CENTER - at.y, dz);
+        if (d > TAG_ROCKET_STUN_RADIUS) continue;
+        const hd = Math.hypot(dx, dz) || 1;
+        const dir = { x: r2(dx / hd), y: 0, z: r2(dz / hd) };
+        this.applyStun(-1, p.id, TAG_ROCKET_STUN, dir, TAG_ROCKET_KNOCK, 'blast');
+        this.send(['B', p.id, TAG_ROCKET_STUN, dir.x, dir.z]);
+      }
+      for (const h of this.hayatos) {
+        const d = Math.hypot(h.pos.x - at.x, h.pos.y - at.y, h.pos.z - at.z);
+        if (d > TAG_ROCKET_STUN_RADIUS) continue;
+        h.stun = TAG_ROCKET_HAYATO_STUN;
+        h.state = 'stun';
+        h.charge = 0;
+      }
+    }
+  }
+
+  /** 爆発（地形を壊す）。ホストもゲストも同じ座標で呼ぶので、同じ壊れ方になる */
+  private explodeAt(rocket: number, pos: V3): void {
+    const broken = blastTerrain(this.world, pos, TAG_ROCKET_BLAST);
+    this.events.push({ kind: 'explode', rocket, pos: { ...pos }, broken });
+  }
+
+  private updatePickups(dt: number): void {
+    for (const pk of this.pickups) {
+      if (!pk.active) {
+        pk.respawn -= dt;
+        if (pk.respawn <= 0) {
+          pk.active = true;
+          // 地形が壊れていたら、その下の床に置き直す
+          pk.pos.y = floorBelow(this.world, pk.pos.x, pk.pos.y + 0.5, pk.pos.z);
+          this.events.push({ kind: 'pickup_back', pickup: pk.id });
+          this.send(['K', pk.id]);
+        }
+        continue;
+      }
+      for (const p of this.players) {
+        if (!p.alive || p.rockets >= TAG_ROCKET_MAX) continue;
+        if (Math.hypot(p.pos.x - pk.pos.x, p.pos.z - pk.pos.z) > TAG_ROCKET_PICK_RADIUS || Math.abs(p.pos.y - pk.pos.y) > 1.5) continue;
+        pk.active = false;
+        pk.respawn = TAG_ROCKET_RESPAWN;
+        p.rockets++;
+        this.events.push({ kind: 'pickup', pickup: pk.id, player: p.id });
+        this.send(['k', pk.id, p.id]);
+        break;
+      }
     }
   }
 

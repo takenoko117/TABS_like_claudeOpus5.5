@@ -112,6 +112,11 @@ export class TagRoom {
       case 'snap':
         if (!isHost || this.phase !== 'playing') return [];
         return [{ to: 'all', except: slot, msg: { t: 'snap', s: msg.s } }];
+      case 'act': {
+        // お邪魔の道具はホストが判定するので、ホストにだけ届ける（ホスト自身は送らない）
+        if (this.phase !== 'playing' || isHost) return [];
+        return [{ to: this.host, msg: { t: 'act', s: slot, k: msg.k, d: msg.d } }];
+      }
       case 'end':
         if (!isHost || this.phase !== 'playing') return [];
         this.phase = 'lobby';

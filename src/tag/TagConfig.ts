@@ -16,7 +16,7 @@ export const TAG_GROUND = 6;
 
 // ---- プレイヤー（かぶくん） ----
 /** 体の半幅（当たり判定の箱） */
-export const TAG_PLAYER_HALF = 0.42;
+export const TAG_PLAYER_HALF = 0.5;
 /** 体の高さ */
 export const TAG_PLAYER_HEIGHT = 1.3;
 /** 歩く速さ（m/s） */
@@ -42,7 +42,7 @@ export const TAG_KNOCKBACK = 7;
 
 // ---- 鬼（ハヤト） ----
 /** 始まったときのハヤトの数 */
-export const TAG_HAYATO_START = 1;
+export const TAG_HAYATO_START = 4;
 /** この秒数ごとにハヤトが 1 人増える */
 export const TAG_HAYATO_SPAWN_INTERVAL = 20;
 /** ハヤトの最大数 */
@@ -100,3 +100,41 @@ export const TAG_PLAYER_COLORS: readonly number[] = [0x3fa7ff, 0xff5a4e, 0xffd23
 
 /** ソロのベスト記録を保存するキー */
 export const TAG_BEST_KEY = 'exblocks-tag-best';
+
+// ---- お邪魔の道具（パンチ・ロケット） ----
+/** パンチが届く距離（横方向） */
+export const TAG_PUNCH_RANGE = 2.2;
+/** パンチの高さの許容差 */
+export const TAG_PUNCH_HEIGHT = 1.6;
+/** パンチを打ったあと、次に打てるまで（秒） */
+export const TAG_PUNCH_COOLDOWN = 2.5;
+/** パンチで相手が動けなくなる時間（秒） */
+export const TAG_PUNCH_STUN = 3;
+/** パンチで相手を押す速さ */
+export const TAG_PUNCH_KNOCK = 5;
+/** 町に落ちているロケットの数 */
+export const TAG_ROCKET_PICKUPS = 14;
+/** 拾われたロケットが同じ場所にまた出るまで（秒） */
+export const TAG_ROCKET_RESPAWN = 25;
+/** ロケットを持てる最大の数 */
+export const TAG_ROCKET_MAX = 3;
+/** 拾える距離 */
+export const TAG_ROCKET_PICK_RADIUS = 1.4;
+/** ロケットの速さ（m/s） */
+export const TAG_ROCKET_SPEED = 30;
+/** ロケットが飛ぶ距離 */
+export const TAG_ROCKET_RANGE = 70;
+/** 撃ったあと次を撃てるまで（秒） */
+export const TAG_ROCKET_COOLDOWN = 0.7;
+/** ロケットが直接当たる半径（人・ハヤト） */
+export const TAG_ROCKET_HIT_RADIUS = 0.9;
+/** 爆発で地形を壊す半径（ブロック） */
+export const TAG_ROCKET_BLAST = 2.8;
+/** 爆発で人やハヤトをひるませる半径 */
+export const TAG_ROCKET_STUN_RADIUS = 4;
+/** 爆風でプレイヤーが動けなくなる時間（秒） */
+export const TAG_ROCKET_STUN = 1.5;
+/** 爆風でハヤトが止まる時間（秒） */
+export const TAG_ROCKET_HAYATO_STUN = 2.5;
+/** 爆風で飛ばされる速さ */
+export const TAG_ROCKET_KNOCK = 9;

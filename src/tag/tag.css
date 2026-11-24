@@ -437,3 +437,260 @@ body.in-tag #title-screen {
   font-weight: 400;
   color: var(--gold);
 }
+
+/* ---- スマホのタッチ操作 ---- */
+.tag-touch {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+}
+
+.tag-stick-base {
+  position: absolute;
+  width: 128px;
+  height: 128px;
+  transform: translate(-50%, -50%);
+  background: rgba(16, 22, 38, 0.45);
+  border: 2px solid var(--panel-edge);
+  box-shadow: var(--bevel);
+  pointer-events: none;
+}
+
+.tag-stick-base.sprint {
+  border-color: var(--gold);
+}
+
+.tag-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  transform: translate(-50%, -50%);
+  background: var(--panel-raised);
+  border: 2px solid var(--ink);
+  box-shadow: var(--bevel-strong);
+}
+
+.tag-stick-base.sprint .tag-stick-knob {
+  background: var(--cta);
+  border-color: var(--cta-deep);
+}
+
+.tag-touch-btn {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  touch-action: none;
+}
+
+.tag-touch-jump {
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: 86px;
+  height: 86px;
+  font-size: 12px;
+  --key-bg: var(--select);
+  --key-edge: var(--select-deep);
+}
+
+.tag-touch-menu {
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  width: 46px;
+  height: 40px;
+}
+
+.tag-touch-menu:active:not(:disabled) {
+  transform: translate(calc(-50% + 2px), 2px);
+}
+
+.tag-touch-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: space-around;
+  font-size: 11px;
+  color: var(--sub);
+  text-shadow: var(--text-shadow-block);
+  pointer-events: none;
+}
+
+.tag-touch-help {
+  display: none;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.tag-root.touch .tag-touch-help {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-root.touch .tag-keys {
+  display: none;
+}
+
+/* 狭い画面では HUD を小さくする */
+@media (max-width: 760px), (max-height: 520px) {
+  .tag-stats {
+    min-width: 0;
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .tag-time b {
+    font-size: 18px;
+  }
+
+  .tag-oni small {
+    display: none;
+  }
+
+  .tag-minimap {
+    width: 120px;
+    height: 131px;
+  }
+
+  .tag-alive {
+    top: 150px;
+    width: 140px;
+    font-size: 10px;
+  }
+
+  .tag-warn {
+    top: 58px;
+    font-size: 14px;
+  }
+
+  .tag-center {
+    font-size: 24px;
+  }
+
+  .tag-center.count {
+    font-size: 64px;
+  }
+
+  .tag-box {
+    padding: 14px;
+  }
+
+  .tag-box h2 {
+    font-size: 20px;
+  }
+
+  .tag-online {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ---- お邪魔の道具（パンチ・ロケット） ---- */
+.tag-gadget {
+  position: absolute;
+  left: 12px;
+  top: 150px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-family: var(--font-pixel);
+}
+
+.tag-gadget b {
+  font-weight: 400;
+  font-size: 20px;
+  color: var(--gold);
+}
+
+.tag-gadget small {
+  color: var(--sub);
+}
+
+.tag-gadget.empty {
+  opacity: 0.5;
+}
+
+.tag-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.tag-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--font-pixel);
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--gold);
+  border: 2px solid var(--gold-deep);
+  box-shadow: var(--bevel);
+  white-space: nowrap;
+}
+
+.tag-stun {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translateX(-50%);
+  font-family: var(--font-pixel);
+  font-size: 26px;
+  color: var(--gold);
+  text-shadow: var(--text-shadow-block);
+  animation: tag-blink 0.4s steps(2) infinite;
+}
+
+.tag-touch-act {
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(max(22px, env(safe-area-inset-bottom)) + 100px);
+  width: 86px;
+  height: 86px;
+  font-size: 12px;
+  --key-bg: var(--cta);
+  --key-edge: var(--cta-deep);
+}
+
+@media (max-width: 760px), (max-height: 520px) {
+  .tag-gadget {
+    top: 112px;
+    padding: 4px 8px;
+  }
+
+  .tag-gadget b {
+    font-size: 16px;
+  }
+
+  .tag-prompt {
+    font-size: 13px;
+    bottom: 40px;
+  }
+
+  .tag-stun {
+    font-size: 20px;
+  }
+
+  .tag-touch-act {
+    bottom: calc(max(22px, env(safe-area-inset-bottom)) + 96px);
+  }
+}

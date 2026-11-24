@@ -29,6 +29,8 @@ export interface GifuTown {
   playerSpawns: V3[];
   /** ミニマップに名前を出す場所 */
   landmarks: GifuLandmark[];
+  /** 作りたての町のブロック（ロケットで壊れた町を元に戻すため） */
+  pristine: Uint8Array;
 }
 
 /** 地面の表面のブロックの高さ（この上に立つ） */
@@ -218,7 +220,7 @@ export function generateGifuTown(seed = 1): GifuTown {
   ];
   world.dirtyChunks.clear();
   world.dirtyColumns.clear();
-  return { world, navPoints: nav, playerSpawns, landmarks };
+  return { world, navPoints: nav, playerSpawns, landmarks, pristine: world.data.slice() };
 }
 
 /** 道路で囲まれた長方形の区画を探す（市街地・山の南の住宅地） */
@@ -612,4 +614,23 @@ export function floorBelow(world: VoxelWorld, x: number, y: number, z: number): 
     if (world.solidAt(ix, yy, iz)) return yy + 1;
   }
   return 1;
+}
+
+/** ロケットで壊れた町を作りたてに戻す（毎回の鬼ごっこの始まりに呼ぶ） */
+export function resetGifuTown(town: GifuTown): void {
+  const w = town.world;
+  w.data.set(town.pristine);
+  w.dirtyChunks.clear();
+  w.dirtyColumns.clear();
+  w.damage.clear();
+}
+
+/** 列のいちばん下の、立てる地面の高さ（木の葉や橋の上ではなく地面。無ければ -1） */
+export function groundAt(world: VoxelWorld, x: number, z: number): number {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  for (let y = 1; y < world.sizeY - 2; y++) {
+    if (world.solidAt(ix, y - 1, iz) && !world.solidAt(ix, y, iz) && !world.solidAt(ix, y + 1, iz)) return y;
+  }
+  return -1;
 }

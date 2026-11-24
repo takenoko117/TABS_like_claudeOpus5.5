@@ -1,0 +1,175 @@
+/**
+ * かぶくんの「ぷにぷに」と「よちよち歩き」と表情の動き（Three.js 非依存。tests/tag.test.ts から検証する）。
+ * 描画側（KabukunGltf）は毎フレーム update を呼び、出てきた値を体の伸び縮み・傾き・アニメの速さ・モーフに当てるだけ。
+ */
+
+/** ばねの硬さ（大きいほど速く戻る） */
+export const PUNI_STIFFNESS = 210;
+/** ばねの減衰（小さいほどぷるぷる揺れが残る） */
+export const PUNI_DAMPING = 9;
+/** 伸び縮みの上限 */
+export const PUNI_MAX = 0.35;
+/** よちよち歩きの左右の傾き（ラジアン） */
+export const WADDLE_ROLL = 0.16;
+/** 一歩ごとのつぶれ */
+export const STEP_SQUASH = 0.07;
+
+export interface KabukunMotionInput {
+  /** 横方向の速さ（m/s） */
+  speed: number;
+  /** 宙にいるか */
+  air: boolean;
+  /** 縦の速さ（着地の強さに使う） */
+  vy: number;
+  alive: boolean;
+  /** ハヤトに狙われている */
+  alarmed: boolean;
+  /** 勝った（よろこぶ） */
+  won: boolean;
+  /** パンチ・爆風で動けない（くらくら） */
+  stunned?: boolean;
+}
+
+/** 当てる値 */
+export interface KabukunPose {
+  /** 縦の伸び（+ で伸びる、- でつぶれる）。横は体積を保つように縮む */
+  stretch: number;
+  /** 左右の傾き */
+  roll: number;
+  /** 前のめり */
+  lean: number;
+  /** 弾む高さ */
+  bob: number;
+  /** 歩きのアニメの重み（0〜1）と速さ */
+  walkWeight: number;
+  walkSpeed: number;
+  /** 目のモーフ（名前 → 0〜1） */
+  eyes: Record<string, number>;
+  /** 口のモーフ */
+  mouth: Record<string, number>;
+}
+
+export class KabukunMotion {
+  /** ばねの位置と速さ */
+  private s = 0;
+  private v = 0;
+  private wasAir = false;
+  private lastVy = 0;
+  /** 歩きの位相（ラジアン。2π で 2 歩） */
+  phase = 0;
+  private lastStep = 0;
+  private walkW = 0;
+  private blinkTimer = 2;
+  private blink = 0;
+  /** 当たったときの顔の残り秒 */
+  private ouch = 0;
+  /** パンチで前へ突き出す残り秒 */
+  private lunge = 0;
+  private dizzy = 0;
+  private readonly pose: KabukunPose = { stretch: 0, roll: 0, lean: 0, bob: 0, walkWeight: 0, walkSpeed: 1, eyes: {}, mouth: {} };
+
+  constructor(private readonly random: () => number = Math.random) {}
+
+  /** 外から力を加える（+ で伸びる、- でつぶれる） */
+  poke(amount: number): void {
+    this.v += amount * 14;
+  }
+
+  /** 当たった */
+  hit(): void {
+    this.poke(-0.35);
+    this.ouch = 0.9;
+  }
+
+  /** パンチを打つ（体ごと前へ突き出す） */
+  punch(): void {
+    this.lunge = 0.25;
+    this.poke(0.18);
+  }
+
+  update(dt: number, inp: KabukunMotionInput): KabukunPose {
+    // 跳んだ・着地した
+    if (inp.air && !this.wasAir) this.poke(0.22);
+    if (!inp.air && this.wasAir) this.poke(-Math.min(0.4, 0.1 + Math.abs(this.lastVy) * 0.03));
+    this.wasAir = inp.air;
+    this.lastVy = inp.vy;
+
+    // 歩き: 速さに合わせて位相を進め、一歩ごとに少しつぶれる
+    const moving = inp.alive && !inp.air && inp.speed > 0.4;
+    this.walkW += ((moving ? 1 : 0) - this.walkW) * Math.min(1, dt * 10);
+    if (moving) {
+      this.phase += dt * (5 + inp.speed * 1.5);
+      const step = Math.floor(this.phase / Math.PI);
+      if (step !== this.lastStep) {
+        this.lastStep = step;
+        this.poke(-STEP_SQUASH);
+      }
+    }
+
+    // ばね（ぷにぷに）
+    const a = -PUNI_STIFFNESS * this.s - PUNI_DAMPING * this.v;
+    this.v += a * dt;
+    this.s += this.v * dt;
+    if (this.s > PUNI_MAX) {
+      this.s = PUNI_MAX;
+      this.v = Math.min(0, this.v);
+    } else if (this.s < -PUNI_MAX) {
+      this.s = -PUNI_MAX;
+      this.v = Math.max(0, this.v);
+    }
+
+    const p = this.pose;
+    p.stretch = this.s;
+    // よちよち: 一歩ごとに左右へ体を傾ける
+    p.roll = Math.sin(this.phase) * WADDLE_ROLL * this.walkW;
+    p.lean = Math.min(0.25, inp.speed * 0.025) * this.walkW;
+    // パンチの突き出し
+    this.lunge = Math.max(0, this.lunge - dt);
+    if (this.lunge > 0) p.lean += Math.sin((this.lunge / 0.25) * Math.PI) * 0.55;
+    // くらくら: 体がぐるぐる揺れる
+    if (inp.stunned && inp.alive) {
+      this.dizzy += dt * 7;
+      p.roll += Math.sin(this.dizzy) * 0.22;
+      p.lean += Math.cos(this.dizzy) * 0.12;
+    }
+    p.bob = Math.abs(Math.sin(this.phase)) * 0.05 * this.walkW;
+    p.walkWeight = this.walkW;
+    p.walkSpeed = 0.7 + inp.speed * 0.22;
+
+    // 表情
+    this.ouch = Math.max(0, this.ouch - dt);
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0) {
+      this.blink = 0.14;
+      this.blinkTimer = 1.8 + this.random() * 3;
+    }
+    this.blink = Math.max(0, this.blink - dt);
+    const eyes: Record<string, number> = {};
+    const mouth: Record<string, number> = {};
+    if (!inp.alive) {
+      eyes.sad = 1;
+      eyes.half = 0.6;
+      mouth.frown = 1;
+    } else if (inp.won) {
+      eyes.happy = 1;
+      mouth.smile_open = 1;
+    } else if (inp.stunned) {
+      eyes.half = 1;
+      eyes[Math.sin(this.dizzy) > 0 ? 'look_left' : 'look_right'] = 1;
+      mouth.wide = 0.6;
+    } else if (this.ouch > 0) {
+      eyes.surprised = 1;
+      mouth.wide = 1;
+    } else if (inp.alarmed) {
+      eyes.surprised = 1;
+      mouth.small = 1;
+    } else {
+      if (this.blink > 0) eyes.blink = 1;
+      // 走るとはふはふ口が開く
+      if (inp.speed > 6.5) mouth.open = 0.5 + 0.5 * Math.abs(Math.sin(this.phase * 2));
+    }
+    p.eyes = eyes;
+    p.mouth = mouth;
+    return p;
+  }
+}

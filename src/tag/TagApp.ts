@@ -8,6 +8,7 @@ import { generateGifuTown, type GifuTown } from './GifuTown';
 import {
   TAG_BEST_KEY,
   TAG_HAYATO_SPAWN_INTERVAL,
+  TAG_HAYATO_START,
   TAG_MAX_HP,
   TAG_PLAYER_COLORS,
   TAG_POS_INTERVAL,
@@ -15,9 +16,15 @@ import {
   TAG_SIZE_Z,
   TAG_SNAP_INTERVAL,
   TAG_STAMINA_MAX,
+  TAG_PUNCH_COOLDOWN,
+  TAG_PUNCH_STUN,
+  TAG_ROCKET_COOLDOWN,
+  TAG_ROCKET_MAX,
 } from './TagConfig';
+import { viewDir } from '../openworld/OpenWorldSim';
 import { TagRenderer } from './TagRenderer';
 import { TagSim, emptyTagInput, type TagEvent } from './TagSim';
+import { TagTouchControls, prefersTouch } from './TagTouch';
 
 /** 鬼ごっこを開いた側（GameApp）から受け取るもの */
 export interface TagHost {
@@ -82,6 +89,9 @@ export class TagApp {
   private hostSlot = -1;
   private roster: TagRosterEntry[] = [];
   private online = false;
+  // スマホのタッチ操作
+  private touch: TagTouchControls | null = null;
+  private touchMode = false;
 
   constructor(private readonly host: TagHost) {
     document.getElementById(ROOT_ID)?.remove();
@@ -95,7 +105,27 @@ export class TagApp {
     (this.el.name as HTMLInputElement).value = localStorage.getItem(NAME_KEY) ?? 'かぶくん';
     (this.el.room as HTMLInputElement).value = localStorage.getItem(ROOM_KEY) ?? 'gifu';
     this.bindInput();
+    if (prefersTouch()) this.enableTouch();
     this.showScreen('menu');
+  }
+
+  /** タッチ操作（アナログスティック）を使う。指で触られた時点でも切り替える */
+  private enableTouch(): void {
+    if (this.touch) return;
+    this.touchMode = true;
+    this.root.classList.add('touch');
+    this.touch = new TagTouchControls(
+      this.root,
+      () => this.setPaused(true),
+      () => {
+        const sim = this.sim;
+        if (sim && sim.local && !sim.local.alive) this.cycleWatch();
+        else this.useGadget();
+      },
+    );
+    // HUD とメニューより下、3D の画面より上に置く
+    this.root.insertBefore(this.touch.el, this.el.flash);
+    this.touch.setVisible(this.screen === 'game');
   }
 
   private template(): string {
@@ -105,6 +135,7 @@ export class TagApp {
       ['Shift', 'ダッシュ（息が切れるまで）'],
       ['Space', 'ジャンプ'],
       ['Q / E', '視点を回す'],
+      ['左クリック', 'パンチ / ロケット'],
       ['Esc', 'メニュー'],
     ];
     const best = Number(localStorage.getItem(TAG_BEST_KEY) ?? 0);
@@ -120,6 +151,10 @@ export class TagApp {
         </div>
         <canvas class="tag-minimap" data-tag="minimap" width="220" height="240"></canvas>
         <div class="tag-alive vx-panel hidden" data-tag="alive"></div>
+        <div class="tag-gadget vx-panel" data-tag="gadget"></div>
+        <div class="tag-crosshair hidden" data-tag="crosshair"></div>
+        <div class="tag-prompt hidden" data-tag="prompt"></div>
+        <div class="tag-stun hidden" data-tag="stun"></div>
         <div class="tag-warn hidden" data-tag="warn">${vx('warn')} ハヤトに見つかった！</div>
         <div class="tag-center" data-tag="center"></div>
         <div class="tag-hint" data-tag="hint"></div>
@@ -132,9 +167,11 @@ export class TagApp {
           <ul class="tag-rules">
             <li>${vx('eye')} ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</li>
             <li>${vx('heart')} レーザーに ${TAG_MAX_HP} 回当たるとアウト。</li>
-            <li>${vx('hourglass')} ${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとにハヤトが 1 人ずつ増える。</li>
+            <li>${vx('hourglass')} ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに 1 人ずつ増える。地図にはハヤトが映らないので、曲がり角に注意！</li>
             <li>${vx('stopwatch')} ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</li>
             <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。</li>
+            <li>${vx('hand')} お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック）すると、相手を ${TAG_PUNCH_STUN} 秒動けなくする。</li>
+            <li>${vx('boom')} ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック）で発射。建物を壊し、爆風で人もハヤトもひるむ。</li>
           </ul>
           <label class="tag-field"><span>名前</span><input data-tag="name" maxlength="10" /></label>
           <div class="tag-buttons">
@@ -146,6 +183,7 @@ export class TagApp {
           </div>
           <p class="tag-note">同じ部屋名を入れた人どうしで遊べます。最初に入った人がホストです。</p>
           <p class="tag-error hidden" data-tag="error"></p>
+          <p class="tag-touch-help">${vx('hand')} スマホ: 画面の左をなぞるとスティックが出て歩けます（端まで倒すとダッシュ）。右をなぞると視点、右下のボタンでジャンプ。</p>
           <div class="tag-keys">${keys.map(([k, d]) => `<div><kbd>${k}</kbd><span>${d}</span></div>`).join('')}</div>
           <div class="tag-buttons">
             <button type="button" class="vx-key tag-btn" data-tag="exit">${vx('undo')} タイトルへ</button>
@@ -197,6 +235,7 @@ export class TagApp {
     for (const k of ['menu', 'connecting', 'lobby', 'result'] as const) this.el[k].classList.toggle('hidden', k !== s);
     this.el.hud.classList.toggle('hidden', s !== 'game' && s !== 'result');
     if (s !== 'game') this.setPaused(false);
+    this.touch?.setVisible(s === 'game');
     if (s !== 'game' && document.pointerLockElement === this.viewport) document.exitPointerLock();
   }
 
@@ -266,12 +305,21 @@ export class TagApp {
     });
     this.listen(window, 'keyup', (e) => this.keys.delete(e.code));
     this.listen(window, 'blur', () => this.keys.clear());
+    this.listen(this.root, 'pointerdown', (e) => {
+      if (e.pointerType === 'touch') this.enableTouch();
+    });
     this.listen(this.viewport, 'click', () => {
-      if (this.screen !== 'game' || this.paused) return;
+      if (this.screen !== 'game' || this.paused || this.touchMode) return;
       if (document.pointerLockElement !== this.viewport) this.lockPointer();
       // 観戦中はクリックで見る人を替える
       const sim = this.sim;
       if (sim && sim.local && !sim.local.alive) this.cycleWatch();
+    });
+    this.listen(document, 'mousedown', (e) => {
+      // マウスが固定されているときの左クリックで道具を使う（固定する前のクリックは固定だけ）
+      if (e.button !== 0 || document.pointerLockElement !== this.viewport || this.paused || this.screen !== 'game') return;
+      const sim = this.sim;
+      if (sim && sim.local && sim.local.alive) this.useGadget();
     });
     this.listen(document, 'mousemove', (e) => {
       if (document.pointerLockElement !== this.viewport) return;
@@ -282,6 +330,7 @@ export class TagApp {
   }
 
   private lockPointer(): void {
+    if (this.touchMode) return;
     const req = this.viewport.requestPointerLock?.bind(this.viewport) as (() => Promise<void> | void) | undefined;
     try {
       const r = req?.();
@@ -296,6 +345,7 @@ export class TagApp {
     this.el.pause.classList.toggle('hidden', !p);
     this.el.pausenote.textContent = this.online ? 'オンラインでは止まりません。' : '';
     this.keys.clear();
+    this.touch?.reset();
     if (p && document.pointerLockElement === this.viewport) document.exitPointerLock();
   }
 
@@ -378,6 +428,13 @@ export class TagApp {
       case 'left':
         this.sim?.removePlayer(m.s);
         break;
+      case 'act':
+        // ゲストのお邪魔の道具（ホストが判定する）
+        if (this.sim?.authority) {
+          if (m.k === 0) this.sim.requestPunch(m.s);
+          else this.sim.requestRocket(m.s, { x: m.d[0], y: m.d[1], z: m.d[2] });
+        }
+        break;
       case 'error':
         if (m.code === 'not_host') this.showError('ホストだけが始められます');
         break;
@@ -408,7 +465,8 @@ export class TagApp {
     const roster = players.map((p) => ({ id: p.slot, name: p.name }));
     const authority = !this.online || mySlot === hostSlot;
     this.sim = new TagSim(seed, roster, roster.some((r) => r.id === mySlot) ? mySlot : null, authority, getTown());
-    this.renderer = new TagRenderer(this.viewport, this.sim, Math.min(window.devicePixelRatio || 1, 1.25));
+    // スマホは重くならないよう解像度を抑える
+    this.renderer = new TagRenderer(this.viewport, this.sim, this.touchMode ? 1 : Math.min(window.devicePixelRatio || 1, 1.25));
     this.yaw = Math.PI;
     this.pitch = -0.2;
     this.countdown = COUNTDOWN;
@@ -431,6 +489,35 @@ export class TagApp {
     this.keys.clear();
   }
 
+  /** 今使える道具（近くに人がいればパンチ、いなければロケット） */
+  private availableGadget(): 'punch' | 'rocket' | null {
+    const sim = this.sim;
+    const me = sim?.local;
+    if (!sim || !me || !me.alive || me.stun > 0 || this.countdown > 0 || sim.phase !== 'playing') return null;
+    if (me.punchCooldown <= 0 && sim.punchTarget(me.id)) return 'punch';
+    if (me.rockets > 0 && me.rocketCooldown <= 0) return 'rocket';
+    return null;
+  }
+
+  /** タップ・クリックで道具を使う。ホスト（ソロ）はその場で判定し、ゲストはホストへ送る */
+  private useGadget(): void {
+    const sim = this.sim;
+    const me = sim?.local;
+    const kind = this.availableGadget();
+    if (!sim || !me || !kind) return;
+    const dir = viewDir(this.yaw, this.pitch + 0.08);
+    if (sim.authority) {
+      if (kind === 'punch') sim.requestPunch(me.id);
+      else sim.requestRocket(me.id, dir);
+      return;
+    }
+    // ゲスト: 連打で何度も送らないよう、こちらでも待ち時間を数える
+    const r = (v: number) => Math.round(v * 100) / 100;
+    this.client?.send({ t: 'act', k: kind === 'punch' ? 0 : 1, d: [r(dir.x), r(dir.y), r(dir.z)] });
+    if (kind === 'punch') me.punchCooldown = TAG_PUNCH_COOLDOWN;
+    else me.rocketCooldown = TAG_ROCKET_COOLDOWN;
+  }
+
   private gatherInput() {
     const k = this.keys;
     const inp = emptyTagInput();
@@ -438,6 +525,13 @@ export class TagApp {
     inp.moveX = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
     inp.jump = k.has('Space');
     inp.sprint = k.has('ShiftLeft') || k.has('ShiftRight');
+    const t = this.touch;
+    if (t && (t.moveX !== 0 || t.moveZ !== 0)) {
+      inp.moveX = t.moveX;
+      inp.moveZ = t.moveZ;
+    }
+    if (t?.jump) inp.jump = true;
+    if (t?.sprint) inp.sprint = true;
     inp.yaw = this.yaw;
     return inp;
   }
@@ -449,6 +543,11 @@ export class TagApp {
     const dt = Math.min(realDt, 0.1);
     // Q / E で視点を回す
     if (!this.paused) this.yaw += ((this.keys.has('KeyQ') ? 1 : 0) - (this.keys.has('KeyE') ? 1 : 0)) * dt * 2.4;
+    if (this.touch) {
+      const look = this.touch.takeLook();
+      this.yaw += look.yaw;
+      this.pitch = Math.max(-1.2, Math.min(0.9, this.pitch + look.pitch));
+    }
 
     const running = !(this.paused && !this.online) && this.screen !== 'result';
     if (this.countdown > 0) {
@@ -539,12 +638,13 @@ export class TagApp {
           if (e.player === sim.localId) {
             s.playHit(true, false, false);
             this.flash();
+            if (this.touchMode) navigator.vibrate?.(150);
           }
           break;
         case 'out':
           if (e.player === sim.localId) {
             s.playDefeat();
-            if (!sim.solo && sim.phase === 'playing') this.showCenter('アウト！ 観戦中（クリックで切り替え）', 3);
+            if (!sim.solo && sim.phase === 'playing') this.showCenter(`アウト！ 観戦中（${this.touchMode ? 'タップ' : 'クリック'}で切り替え）`, 3);
           } else if (!sim.solo) {
             this.showCenter(`${sim.player(e.player)?.name ?? '?'} がアウト`, 2);
           }
@@ -554,6 +654,24 @@ export class TagApp {
           break;
         case 'over':
           this.onOver();
+          break;
+        case 'punch':
+          if (e.attacker === sim.localId || e.victim === sim.localId) s.playHit(true, false, true);
+          break;
+        case 'stun':
+          if (e.player === sim.localId) {
+            this.flash();
+            if (this.touchMode) navigator.vibrate?.(e.by === 'punch' ? [60, 40, 60] : 200);
+          }
+          break;
+        case 'rocket_fire':
+          if (near(e.from, 60)) fx('cannon_fire');
+          break;
+        case 'explode':
+          if (near(e.pos, 90)) fx('bomb_explosion');
+          break;
+        case 'pickup':
+          if (e.player === sim.localId) s.playPurchase();
           break;
         default:
           break;
@@ -637,6 +755,19 @@ export class TagApp {
     const bar = this.el.stamina;
     bar.style.width = `${Math.round(st * 100)}%`;
     bar.classList.toggle('tired', !!me?.exhausted);
+    // お邪魔の道具
+    const rockets = me?.rockets ?? 0;
+    this.el.gadget.innerHTML = `<span>${vx('boom')}</span><b>${rockets}</b><small>/ ${TAG_ROCKET_MAX}</small>`;
+    this.el.gadget.classList.toggle('empty', rockets === 0);
+    const gadget = this.availableGadget();
+    const verb = this.touchMode ? 'タップ' : 'クリック';
+    this.el.prompt.classList.toggle('hidden', !gadget);
+    this.el.prompt.innerHTML = gadget === 'punch' ? `${vx('hand')} ${verb}でパンチ！` : gadget === 'rocket' ? `${vx('boom')} ${verb}でロケット発射` : '';
+    this.el.crosshair.classList.toggle('hidden', !(me && me.alive && rockets > 0));
+    this.touch?.setAction(gadget === 'punch' ? `${vx('hand', 'vx-lg')}<span>パンチ</span>` : gadget === 'rocket' ? `${vx('boom', 'vx-lg')}<span>ロケット</span>` : null);
+    const stunned = !!me && me.alive && me.stun > 0;
+    this.el.stun.classList.toggle('hidden', !stunned);
+    if (stunned) this.el.stun.textContent = `うごけない！ ${me!.stun.toFixed(1)}`;
     // 自分を狙ってためているハヤトがいるか
     const aimed = !!me && me.alive && sim.hayatos.some((h) => h.target === me.id && (h.state === 'aim' || h.state === 'chase'));
     this.el.warn.classList.toggle('hidden', !aimed);
@@ -660,7 +791,7 @@ export class TagApp {
     this.centerTimer -= 0.1;
     if (this.countdown <= 0 && this.centerTimer <= 0) this.el.center.classList.remove('on');
     const locked = document.pointerLockElement === this.viewport;
-    this.el.hint.textContent = this.screen === 'game' && !locked && !this.paused ? '画面をクリックするとマウスで視点を動かせます' : '';
+    this.el.hint.textContent = this.screen === 'game' && !locked && !this.paused && !this.touchMode ? '画面をクリックするとマウスで視点を動かせます' : '';
   }
 
   // ---- ミニマップ ----
@@ -707,10 +838,7 @@ export class TagApp {
       ctx.fillStyle = '#fff';
       ctx.fillText(l.name, l.x * sx, l.z * sz);
     }
-    for (const h of sim.hayatos) {
-      ctx.fillStyle = h.state === 'aim' || h.state === 'chase' ? '#ff3040' : '#ff9a8a';
-      ctx.fillRect(h.pos.x * sx - 3, h.pos.z * sz - 3, 6, 6);
-    }
+    // ハヤトの位置は出さない（物陰で突然出くわすドキドキのため）
     for (const p of sim.players) {
       if (!p.alive) continue;
       ctx.fillStyle = `#${TAG_PLAYER_COLORS[p.id % TAG_PLAYER_COLORS.length].toString(16).padStart(6, '0')}`;
@@ -745,6 +873,8 @@ export class TagApp {
     for (const fn of this.cleanup) fn();
     this.cleanup.length = 0;
     this.endGame();
+    this.touch?.dispose();
+    this.touch = null;
     this.root.remove();
   }
 }

@@ -2,6 +2,7 @@ import {
   AdditiveBlending,
   AmbientLight,
   BoxGeometry,
+  type BufferGeometry,
   CanvasTexture,
   Color,
   CylinderGeometry,
@@ -26,10 +27,11 @@ import {
 } from 'three';
 import { meshWorldRegion } from '../openworld/ChunkMesher';
 import { OW_CHUNK } from '../openworld/OpenWorldConfig';
-import { toGeometry, voxelMaterial } from '../openworld/OpenWorldModels';
+import { buildBlock, toGeometry, voxelMaterial } from '../openworld/OpenWorldModels';
 import type { CameraPose } from '../openworld/OpenWorldSim';
 import { getHayatoHeadGeometry } from '../render/HayatoHeadModel';
 import { buildKabukun, poseKabukun, type KabukunModel } from './KabukunModel';
+import { KABUKUN_GLB_HEIGHT, KabukunActor, loadKabukun } from './KabukunGltf';
 import { TAG_HAYATO_SIZE, TAG_LASER_CHARGE, TAG_PLAYER_COLORS } from './TagConfig';
 import type { TagEvent, TagSim } from './TagSim';
 
@@ -52,9 +54,15 @@ interface FxCube {
 }
 
 interface PlayerView {
+  /** 読み込み前・読み込めなかったときのボクセルの代役 */
   model: KabukunModel;
+  /** kabukun.glb のかぶくん（読み込めたら差し替える） */
+  actor: KabukunActor | null;
   label: Sprite | null;
   phase: number;
+  /** 前のフレームの高さ（ほかの人の縦の速さを求める） */
+  lastY: number;
+  vy: number;
 }
 
 interface HayatoView {
@@ -95,8 +103,24 @@ export class TagRenderer {
   private readonly up = new Vector3(0, 1, 0);
   private shake = 0;
   private time = 0;
+  private disposed = false;
   /** 片付けるときに捨てる形 */
   private readonly owned: { dispose(): void }[] = [];
+  private readonly chunks = new Map<number, { opaque: Mesh | null; trans: Mesh | null }>();
+  /** 落ちているロケット（拾う物） */
+  private readonly pickupViews = new Map<number, Group>();
+  /** 飛んでいるロケット */
+  private readonly rocketViews = new Map<number, Group>();
+  /** くらくらの星（人ごと） */
+  private readonly stars = new Map<number, Group>();
+  private readonly rocketGeo = {
+    body: buildBlock(2, 2, 6, 0xd9d4c8, 0.09),
+    nose: buildBlock(2, 2, 2, 0xd8402e, 0.09),
+    fin: buildBlock(4, 1, 2, 0xd8402e, 0.09),
+    flame: buildBlock(1, 1, 2, 0xffb347, 0.11),
+    star: buildBlock(1, 1, 1, 0xffd43b, 0.12),
+  };
+  private trailTimer = 0;
 
   constructor(
     private readonly container: HTMLElement,
@@ -130,7 +154,7 @@ export class TagRenderer {
     this.scene.add(this.sun, this.sun.target);
 
     this.fxMesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ fog: true }), FX_MAX);
-    this.owned.push(this.fxMesh.geometry, this.boltGeo);
+    this.owned.push(this.fxMesh.geometry, this.boltGeo, ...Object.values(this.rocketGeo));
     this.fxMesh.instanceMatrix.setUsage(DynamicDrawUsage);
     this.fxMesh.frustumCulled = false;
     this.fxMesh.count = 0;
@@ -139,6 +163,13 @@ export class TagRenderer {
 
     this.buildTown();
     for (const p of sim.players) this.addPlayer(p.id, p.name);
+    this.loadActors();
+    for (const pk of sim.pickups) {
+      const g = this.buildRocketModel(true);
+      g.position.set(pk.pos.x, pk.pos.y + 0.6, pk.pos.z);
+      this.scene.add(g);
+      this.pickupViews.set(pk.id, g);
+    }
     this.resize();
   }
 
@@ -153,30 +184,57 @@ export class TagRenderer {
   }
 
   /** 町のチャンクを全部作る（鬼ごっこでは町は壊れない） */
+  /** 町のチャンクを全部作る */
   private buildTown(): void {
     const w = this.sim.world;
     for (let cy = 0; cy < w.chunksY; cy++) {
       for (let cz = 0; cz < w.chunksZ; cz++) {
-        for (let cx = 0; cx < w.chunksX; cx++) {
-          const res = meshWorldRegion((x, y, z) => w.get(x, y, z), cx * OW_CHUNK, cy * OW_CHUNK, cz * OW_CHUNK, OW_CHUNK, OW_CHUNK, OW_CHUNK);
-          if (res.opaque.indices.length > 0) {
-            const m = new Mesh(toGeometry(res.opaque), this.opaqueMat);
-            this.owned.push(m.geometry);
-            m.castShadow = true;
-            m.receiveShadow = true;
-            m.matrixAutoUpdate = false;
-            this.scene.add(m);
-          }
-          if (res.translucent.indices.length > 0) {
-            const m = new Mesh(toGeometry(res.translucent), this.transMat);
-            this.owned.push(m.geometry);
-            m.receiveShadow = true;
-            m.renderOrder = 1;
-            m.matrixAutoUpdate = false;
-            this.scene.add(m);
-          }
-        }
+        for (let cx = 0; cx < w.chunksX; cx++) this.rebuildChunk(w.chunkIndex(cx, cy, cz));
       }
+    }
+    w.dirtyChunks.clear();
+  }
+
+  /** 1 チャンクを作り直す（ロケットで壊れたとき） */
+  private rebuildChunk(index: number): void {
+    const w = this.sim.world;
+    const old = this.chunks.get(index);
+    if (old) {
+      for (const m of [old.opaque, old.trans]) {
+        if (!m) continue;
+        this.scene.remove(m);
+        m.geometry.dispose();
+      }
+    }
+    const [cx, cy, cz] = w.chunkCoords(index);
+    const res = meshWorldRegion((x, y, z) => w.get(x, y, z), cx * OW_CHUNK, cy * OW_CHUNK, cz * OW_CHUNK, OW_CHUNK, OW_CHUNK, OW_CHUNK);
+    let opaque: Mesh | null = null;
+    let trans: Mesh | null = null;
+    if (res.opaque.indices.length > 0) {
+      opaque = new Mesh(toGeometry(res.opaque), this.opaqueMat);
+      opaque.castShadow = true;
+      opaque.receiveShadow = true;
+      opaque.matrixAutoUpdate = false;
+      this.scene.add(opaque);
+    }
+    if (res.translucent.indices.length > 0) {
+      trans = new Mesh(toGeometry(res.translucent), this.transMat);
+      trans.receiveShadow = true;
+      trans.renderOrder = 1;
+      trans.matrixAutoUpdate = false;
+      this.scene.add(trans);
+    }
+    this.chunks.set(index, { opaque, trans });
+  }
+
+  /** 壊れたチャンクを作り直す（1 フレームの上限つき） */
+  private updateChunks(): void {
+    const w = this.sim.world;
+    let n = 0;
+    for (const index of w.dirtyChunks) {
+      this.rebuildChunk(index);
+      w.dirtyChunks.delete(index);
+      if (++n >= 12) break;
     }
   }
 
@@ -186,7 +244,29 @@ export class TagRenderer {
     // ほかの人には名前の札を出す（席の色）
     const label = id === this.sim.localId || this.sim.solo ? null : makeLabel(name, TAG_PLAYER_COLORS[id % TAG_PLAYER_COLORS.length]);
     if (label) model.root.add(label);
-    this.players.set(id, { model, label, phase: 0 });
+    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0 });
+  }
+
+  /** kabukun.glb を読み込み、読めたらボクセルの代役と差し替える */
+  private loadActors(): void {
+    loadKabukun()
+      .then((gltf) => {
+        if (this.disposed) return;
+        for (const v of this.players.values()) {
+          const actor = new KabukunActor(gltf);
+          this.scene.add(actor.root);
+          v.actor = actor;
+          v.model.root.visible = false;
+          if (v.label) {
+            v.model.root.remove(v.label);
+            v.label.position.y = KABUKUN_GLB_HEIGHT + 0.45;
+            actor.root.add(v.label);
+          }
+        }
+      })
+      .catch(() => {
+        // 読み込めなければボクセルのかぶくんのまま遊ぶ
+      });
   }
 
   private addHayato(id: number): HayatoView {
@@ -225,12 +305,37 @@ export class TagRenderer {
         case 'hit': {
           const p = this.sim.player(e.player);
           if (p) this.burst(p.pos.x, p.pos.y + 0.7, p.pos.z, 0xffffff, 20, 6);
+          this.players.get(e.player)?.actor?.hit();
           if (e.player === this.sim.localId) this.shake = Math.max(this.shake, 0.9);
           break;
         }
         case 'out': {
           const p = this.sim.player(e.player);
           if (p) this.burst(p.pos.x, p.pos.y + 0.7, p.pos.z, 0x7fdca0, 30, 7);
+          break;
+        }
+        case 'punch': {
+          this.players.get(e.attacker)?.actor?.punch();
+          const v = this.sim.player(e.victim);
+          if (v) this.burst(v.pos.x, v.pos.y + 0.8, v.pos.z, 0xffffff, 16, 5);
+          if (e.victim === this.sim.localId) this.shake = Math.max(this.shake, 0.6);
+          break;
+        }
+        case 'stun':
+          this.players.get(e.player)?.actor?.hit();
+          break;
+        case 'explode': {
+          const { x, y, z } = e.pos;
+          this.burst(x, y, z, 0xffa040, 40, 10);
+          this.burst(x, y, z, 0xfff1a8, 16, 6);
+          this.burst(x, y, z, 0x6b6e75, 30, 8);
+          const d = Math.hypot(x - this.camera.position.x, y - this.camera.position.y, z - this.camera.position.z);
+          if (d < 40) this.shake = Math.max(this.shake, 1 - d / 40);
+          break;
+        }
+        case 'pickup': {
+          const pk = this.sim.pickups[e.pickup];
+          if (pk) this.burst(pk.pos.x, pk.pos.y + 0.6, pk.pos.z, 0xffd43b, 14, 4);
           break;
         }
         default:
@@ -257,6 +362,8 @@ export class TagRenderer {
     this.syncPlayers(dt);
     this.syncHayatos(dt);
     this.syncBolts();
+    this.syncGadgets(dt);
+    this.updateChunks();
     this.syncFx(dt);
 
     // 影は見ている所のまわりだけ
@@ -276,15 +383,107 @@ export class TagRenderer {
     for (const p of this.sim.players) {
       const v = this.players.get(p.id);
       if (!v) continue;
-      const m = v.model;
-      if (p.moving) v.phase += dt * 13;
-      m.root.position.set(p.pos.x, p.pos.y, p.pos.z);
-      m.root.rotation.y = p.yaw;
-      const air = p.id === this.sim.localId ? !p.onGround : false;
-      poseKabukun(m, v.phase, p.moving, air, !p.alive);
       // 当たった直後は点滅
-      m.root.visible = !p.left && !(p.invuln > 0 && p.alive && Math.floor(this.time * 14) % 2 === 0);
+      const visible = !p.left && !(p.invuln > 0 && p.alive && Math.floor(this.time * 14) % 2 === 0);
+      if (dt > 0) v.vy = (p.pos.y - v.lastY) / dt;
+      v.lastY = p.pos.y;
+      const air = p.id === this.sim.localId ? !p.onGround : Math.abs(v.vy) > 1.2;
+      if (v.actor) {
+        const a = v.actor;
+        a.root.position.set(p.pos.x, p.pos.y, p.pos.z);
+        a.root.rotation.y = p.yaw;
+        const speed = p.id === this.sim.localId ? Math.hypot(p.vel.x, p.vel.z) : p.moving ? 5 : 0;
+        const alarmed = p.alive && this.sim.hayatos.some((h) => h.target === p.id && h.state === 'aim');
+        const won = this.sim.phase === 'over' && this.sim.winner === p.id;
+        a.update(dt, { speed, air, vy: p.id === this.sim.localId ? p.vel.y : v.vy, alive: p.alive, alarmed, won, stunned: p.stun > 0 });
+        a.root.visible = visible;
+      } else {
+        const m = v.model;
+        if (p.moving) v.phase += dt * 13;
+        m.root.position.set(p.pos.x, p.pos.y, p.pos.z);
+        m.root.rotation.y = p.yaw;
+        poseKabukun(m, v.phase, p.moving, air, !p.alive);
+        m.root.visible = visible;
+      }
       if (v.label) v.label.visible = p.alive;
+    }
+  }
+
+  /** ロケットの模型（拾う物は少し大きく、ゆっくり回す） */
+  private buildRocketModel(pickup: boolean): Group {
+    const g = new Group();
+    const add = (geo: BufferGeometry, x: number, y: number, z: number, ry = 0): void => {
+      const m = new Mesh(geo, this.entityMat);
+      m.position.set(x, y, z);
+      m.rotation.y = ry;
+      m.castShadow = true;
+      g.add(m);
+    };
+    const v = 0.09;
+    add(this.rocketGeo.body, 0, 0, 0);
+    add(this.rocketGeo.nose, 0, 0, v * 4);
+    add(this.rocketGeo.fin, 0, 0, -v * 2.5);
+    add(this.rocketGeo.fin, 0, 0, -v * 2.5, Math.PI / 2);
+    if (!pickup) add(this.rocketGeo.flame, 0, 0, -v * 4.5);
+    g.scale.setScalar(pickup ? 1.4 : 1);
+    return g;
+  }
+
+  /** 落ちているロケット・飛んでいるロケット・くらくらの星 */
+  private syncGadgets(dt: number): void {
+    for (const pk of this.sim.pickups) {
+      const g = this.pickupViews.get(pk.id);
+      if (!g) continue;
+      g.visible = pk.active;
+      if (!pk.active) continue;
+      g.position.set(pk.pos.x, pk.pos.y + 0.7 + Math.sin(this.time * 2.5 + pk.id) * 0.15, pk.pos.z);
+      g.rotation.set(-0.5, this.time * 1.6 + pk.id, 0);
+    }
+    const seen = new Set<number>();
+    this.trailTimer -= dt;
+    const trail = this.trailTimer <= 0;
+    if (trail) this.trailTimer = 0.03;
+    for (const r of this.sim.rockets) {
+      seen.add(r.id);
+      let g = this.rocketViews.get(r.id);
+      if (!g) {
+        g = this.buildRocketModel(false);
+        this.scene.add(g);
+        this.rocketViews.set(r.id, g);
+      }
+      g.position.set(r.pos.x, r.pos.y, r.pos.z);
+      if (r.dir.x !== 0 || r.dir.y !== 0 || r.dir.z !== 0) {
+        g.lookAt(r.pos.x + r.dir.x, r.pos.y + r.dir.y, r.pos.z + r.dir.z);
+        if (trail) {
+          this.fx.push({ x: r.pos.x - r.dir.x * 0.6, y: r.pos.y - r.dir.y * 0.6, z: r.pos.z - r.dir.z * 0.6, vx: 0, vy: 0.6, vz: 0, life: 0.5, max: 0.5, size: 0.28, color: 0xb9b6ae });
+        }
+      }
+    }
+    for (const [id, g] of this.rocketViews) {
+      if (seen.has(id)) continue;
+      this.scene.remove(g);
+      this.rocketViews.delete(id);
+    }
+    // くらくらの星（頭の上をぐるぐる回る）
+    for (const p of this.sim.players) {
+      let g = this.stars.get(p.id);
+      const show = p.alive && p.stun > 0;
+      if (!g) {
+        if (!show) continue;
+        g = new Group();
+        for (let k = 0; k < 3; k++) {
+          const m = new Mesh(this.rocketGeo.star, this.entityMat);
+          const a = (k / 3) * Math.PI * 2;
+          m.position.set(Math.cos(a) * 0.45, 0, Math.sin(a) * 0.45);
+          g.add(m);
+        }
+        this.scene.add(g);
+        this.stars.set(p.id, g);
+      }
+      g.visible = show;
+      if (!show) continue;
+      g.position.set(p.pos.x, p.pos.y + 1.15, p.pos.z);
+      g.rotation.y = this.time * 6;
     }
   }
 
@@ -387,8 +586,14 @@ export class TagRenderer {
   }
 
   dispose(): void {
+    this.disposed = true;
+    for (const v of this.players.values()) v.actor?.dispose();
     // かぶくんとハヤトの形は使い回すので捨てない（町・弾・粒・名札はここで作ったもの）
     for (const d of this.owned) d.dispose();
+    for (const c of this.chunks.values()) {
+      c.opaque?.geometry.dispose();
+      c.trans?.geometry.dispose();
+    }
     for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.boltCore, this.boltGlow, this.aimMat]) mat.dispose();
     for (const v of this.players.values()) {
       if (!v.label) continue;

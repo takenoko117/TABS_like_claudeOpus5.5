@@ -37,6 +37,18 @@ describe('鬼ごっこの部屋', () => {
     expect(room.message(0, { t: 'snap', s: snap }, 1)).toHaveLength(1);
   });
 
+  it('パンチ・ロケットの操作はホストにだけ届く', () => {
+    const room = new TagRoom('gifu', 0);
+    room.join(0);
+    room.join(0);
+    room.join(0);
+    expect(room.message(2, { t: 'act', k: 1, d: [0, 0, 1] }, 0)).toEqual([]);
+    room.message(0, { t: 'start' }, 0);
+    expect(room.message(2, { t: 'act', k: 1, d: [0, 0, 1] }, 1)).toEqual([{ to: 0, msg: { t: 'act', s: 2, k: 1, d: [0, 0, 1] } }]);
+    expect(room.message(0, { t: 'act', k: 0, d: [0, 0, 0] }, 1)).toEqual([]);
+    expect(parseTagClientMessage('{"t":"act","k":2,"d":[0,0,1]}')).toBeNull();
+  });
+
   it('ホストが抜けたら次の席がホストになる', () => {
     const room = new TagRoom('gifu', 0);
     room.join(0);
