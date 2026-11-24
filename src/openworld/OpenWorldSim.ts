@@ -223,7 +223,7 @@ const HAIR_COLORS = [0x2b1d14, 0x5a3a1e, 0xd9b45a, 0x1a1a1a, 0x8a8a8a, 0xb5482d]
 // 箱の移動（プレイヤーと歩行者）
 // ---------------------------------------------------------------------------
 
-function boxCollides(world: VoxelWorld, x: number, y: number, z: number, half: number, height: number): boolean {
+export function boxCollides(world: VoxelWorld, x: number, y: number, z: number, half: number, height: number): boolean {
   const x0 = Math.floor(x - half);
   const x1 = Math.floor(x + half);
   const y0 = Math.floor(y);

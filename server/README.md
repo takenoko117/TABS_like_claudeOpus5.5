@@ -21,6 +21,7 @@ Cloudflare Workers + Durable Objects で動く WebSocket の中継サーバー�
 - 部屋のルールは `src/tagRoomLogic.ts`（`tests/tagRoom.test.ts` でテスト）、通信の形は `../src/net/tagProtocol.ts` です。
 
 > 鬼ごっこの部屋を追加したため、`wrangler.toml` に移行 `v3` があります。すでにデプロイ済みのサーバーも `npm run deploy` をやり直してください。
+> 青鬼ハヤトを追加したとき、ホストが送る様子（ハヤトの列）の形が変わりました。古いサーバーは新しい様子を通さないので、更新後は `npm run deploy` をやり直してください。
 
 ## ローカルで動かす
 

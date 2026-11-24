@@ -97,19 +97,19 @@ npm run outline -- src                          # 全ファイルの行数
 
 ### src/tag — 鬼ごっこモード（かぶくん vs ハヤト。独立した画面と描画）
 
-タイトルの「鬼ごっこ」から `GameApp.enterTagMode` が `TagApp` を作る。開いている間は `GameApp.tick` が `TagApp.tick` だけを呼ぶ。町のブロックの格子・面の生成・箱の移動 `moveBox` はオープンワールドのもの（`VoxelWorld`・`ChunkMesher`・`OpenWorldSim`）を使う。シミュレーションは Three.js 非依存で `tests/tag.test.ts` から検証する。
+タイトルの「鬼ごっこ」から `GameApp.enterTagMode` が `TagApp` を作る。開いている間は `GameApp.tick` が `TagApp.tick` だけを呼ぶ。町のブロックの格子・面の生成・箱の移動 `moveBox` はオープンワールドのもの（`VoxelWorld`・`ChunkMesher`・`OpenWorldSim`）を使う。シミュレーションは Three.js 非依存で `tests/tag.test.ts`・`tests/tagBlue.test.ts`（青鬼・ふっとび・立ちモーション）から検証する。
 
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
-| `TagConfig.ts` | 110 | 数値 `TAG_*`（町の大きさ・かぶくんの速さと息・HP・ハヤトの増え方 `TAG_HAYATO_SPAWN_INTERVAL`・視野 `TAG_SIGHT_*`・レーザー `TAG_LASER_*`・通信の間隔・席の色） |
+| `TagConfig.ts` | 110 | 数値 `TAG_*`（町の大きさ・かぶくんの速さと息・HP・ハヤトの増え方 `TAG_HAYATO_SPAWN_INTERVAL`・視野 `TAG_SIGHT_*`・レーザー `TAG_LASER_*`・青鬼 `TAG_BLUE_*`・ふっとび `TAG_KNOCKBACK*`/`TAG_FLING_*`・通信の間隔・席の色） |
 | `GifuTown.ts` | 590 | 岐阜の町（お昼）のボクセル版 `generateGifuTown`（長良川と金華橋・長良橋 `buildBridge`、区画のビル `findLots`/`buildLot`/`buildBuilding`、柳ケ瀬 `buildArcade`、金華山と岐阜城 `buildMountain`、駅前広場・信長像・タワー43・スカイウイング37・JR 岐阜駅・高架 `buildStationArea`）、ハヤトの目的地 `navPoints`、山の高さ `mountainHeight`、足もとの床 `floorBelow`、列の地面 `groundAt`、壊れた町を戻す `resetGifuTown`（`pristine`）。映像用の `gifu_stage.blend` の配置をもとにしたもの |
-| `TagSim.ts` | 640 | 1 ステップの更新 `TagSim.step`。かぶくんの移動 `movePlayer`（息・水）、ハヤトの思考 `updateHayato`（うろつく→見つける `canSee`→ため→撃つ `fire`→見失ったら探す）と飛行 `flyToward`、弾 `updateBolts`、当たり `applyHit`、増える `updateSpawns`、決着 `checkOver`・順位 `ranking`。オンラインはホストが権限（`authority`）を持ち、`snapshot` → ゲストの `applySnapshot`、ほかの人の位置 `setRemotePlayer`、抜けた人 `removePlayer`、ホストの引き継ぎ `becomeAuthority`。お邪魔の道具: パンチ `punchTarget`/`requestPunch`、動けなくする `applyStun`、ロケット `requestRocket`/`updateRockets`/`explodeAt`、落ちているロケット `pickups`/`updatePickups`。3 人称カメラ `camera` |
+| `TagSim.ts` | 640 | 1 ステップの更新 `TagSim.step`。かぶくんの移動 `movePlayer`（息・水）、当たったときの物理のふっとび `fling`/`flingPlayer`（跳ね返り・弾み）、ハヤトの思考 `updateHayato`（うろつく→見つける `canSee`→ため→撃つ `fire`→見失ったら探す）と飛行 `flyToward`、青鬼ハヤト（`kind: 'blue'`）の追跡 `updateBlue`（見つける `blueSees`→どこまでも追う→壁を回り込む `freerSide`→近づけなければあきらめる・近い人へ狙いを移す `blueRetarget`）と地面を歩く `walkBlue`、食べる `blueTouches`/`eatPlayer`/`applyEaten`、大きさ `hayatoSize`/`hayatoRadius`、弾 `updateBolts`、当たり `applyHit`、増える `updateSpawns`、決着 `checkOver`・順位 `ranking`。オンラインはホストが権限（`authority`）を持ち、`snapshot` → ゲストの `applySnapshot`、ほかの人の位置 `setRemotePlayer`、抜けた人 `removePlayer`、ホストの引き継ぎ `becomeAuthority`。お邪魔の道具: パンチ `punchTarget`/`requestPunch`、動けなくする `applyStun`、ロケット `requestRocket`/`updateRockets`/`explodeAt`、落ちているロケット `pickups`/`updatePickups`。3 人称カメラ `camera` |
 | `TagBlast.ts` | 30 | ロケットの爆発で地形を壊す `blastTerrain`（同じ座標なら全員が同じ穴になる） |
 | `KabukunGltf.ts` | 140 | かぶくんの 3D モデル（`public/models/kabukun.glb` をそのまま。リグ・アニメ・目と口のモーフ入り）の読み込み `loadKabukun` と 1 体ぶんの動き `KabukunActor`（待機/歩き/ジャンプのアニメに、ぷにぷにの伸び縮みとよちよちの傾きを重ね、表情のモーフを当てる）。元のモデルは `01_movie_create/work/kabukun/3d/` |
-| `KabukunMotion.ts` | 170 | かぶくんのぷにぷに（ばね `PUNI_*`）・よちよち歩き（`WADDLE_ROLL`）・表情（まばたき・びっくり・悲しい）の計算 `KabukunMotion`。Three.js 非依存 |
+| `KabukunMotion.ts` | 170 | かぶくんのぷにぷに（ばね `PUNI_*`）・よちよち歩き（`WADDLE_ROLL`）・立っているときの呼吸（`BREATH_*`）・ふっとびの前転（`TUMBLE_SPEED`）・表情（まばたき・びっくり・悲しい）の計算 `KabukunMotion`。Three.js 非依存 |
 | `KabukunModel.ts` | 170 | かぶくんのボクセルの代役 `buildKabukun` / `poseKabukun`（GLB の読み込み前・読み込めなかったときだけ使う） |
 | `TagTouch.ts` | 220 | スマホのタッチ操作 `TagTouchControls`（左半分に出るアナログスティック・右半分のドラッグで視点・ジャンプとメニューのボタン）、指のずれ → 移動の入力 `stickVector`、端末の判定 `prefersTouch` |
-| `TagRenderer.ts` | 420 | 描画。町のチャンクを最初に全部作る `buildTown`、かぶくん（GLB を読めたら `loadActors` で差し替え。ほかの人は名札）、ハヤト（`HayatoHeadModel` の顔。ため中は口が開き、狙う相手へ赤い照準の線）、レーザーの弾、落ちている・飛んでいるロケットとくらくらの星 `syncGadgets`、壊れたチャンクの作り直し `updateChunks`、粒 `burst` |
+| `TagRenderer.ts` | 420 | 描画。町のチャンクを最初に全部作る `buildTown`、かぶくん（GLB を読めたら `loadActors` で差し替え。ほかの人は名札）、ハヤト（`HayatoHeadModel` の顔。ため中は口が開き、狙う相手へ赤い照準の線。青鬼は同じ顔を大きく青くし、追う相手が近いほど口を開ける）、食べられる演出 `swallow`、レーザーの弾、落ちている・飛んでいるロケットとくらくらの星 `syncGadgets`、壊れたチャンクの作り直し `updateChunks`、粒 `burst` |
 | `TagApp.ts` | 790 | 画面（メニュー・ロビー・HUD・ミニマップ〈ハヤトは映さない〉・結果）、タッチ操作への切り替え `enableTouch`、タップ・クリックで道具を使う `useGadget`（ゲストは `act` でホストへ送る）、キーボードとマウス、固定ステップの進行と数え、オンラインの接続（`TagClient`）と位置・様子の送信 `sendNet`、効果音。見た目は `tag.css` |
 
 ### src/render — 描画（Three.js）

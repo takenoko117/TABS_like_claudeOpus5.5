@@ -27,6 +27,8 @@ export class KabukunActor {
   readonly root = new Group();
   /** 伸び縮み・傾きをかける内側 */
   private readonly inner = new Group();
+  /** ふっとびの回転をかける（体の真ん中を軸にする） */
+  private readonly spinner = new Group();
   private readonly mixer: AnimationMixer;
   private readonly idle: AnimationAction | null;
   private readonly walk: AnimationAction | null;
@@ -50,7 +52,11 @@ export class KabukunActor {
       if (name.includes('Eyes')) this.eyes.push(m);
       else if (name.includes('Mouth')) this.mouths.push(m);
     });
-    this.inner.add(model);
+    // 体の真ん中で回るよう、回転の軸を真ん中の高さに置いて、模型を半分下げる
+    this.spinner.position.y = KABUKUN_GLB_HEIGHT / 2;
+    model.position.y = -KABUKUN_GLB_HEIGHT / 2;
+    this.spinner.add(model);
+    this.inner.add(this.spinner);
     this.root.add(this.inner);
     this.mixer = new AnimationMixer(model);
     const action = (name: string): AnimationAction | null => {
@@ -101,6 +107,7 @@ export class KabukunActor {
     this.inner.scale.set(sxz, sy, sxz);
     this.inner.rotation.set(pose.lean, 0, pose.roll);
     this.inner.position.y = pose.bob;
+    this.spinner.rotation.x = pose.spin;
     // アウトになったら仰向けに倒れる
     this.root.rotation.x = inp.alive ? 0 : -Math.PI / 2;
 

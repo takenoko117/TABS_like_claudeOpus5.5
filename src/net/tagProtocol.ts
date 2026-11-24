@@ -22,12 +22,12 @@ export const TAG_VS_MAX_MESSAGE = 24000;
 export interface TagSnapshot {
   time: number;
   next: number;
-  /** ハヤト [id, x, y, z, yaw, 状態, 狙い, ため] */
+  /** ハヤト [id, x, y, z, yaw, 状態, 狙い, ため, 青鬼か 0/1] */
   hy: number[][];
   /** プレイヤー [id, hp, 生きているか 0/1, 逃げ切った秒, ロケットの数, 動けない残り秒] */
   pl: number[][];
   /**
-   * 出来事。['f', 弾, 鬼, x, y, z, dx, dy, dz] / ['h', 人, hp, 弾, dx, dz] / ['s', 鬼, 人] / ['o', 勝者] /
+   * 出来事。['f', 弾, 鬼, x, y, z, dx, dy, dz] / ['h', 人, hp, 弾, dx, dz] / ['s', 鬼, 人] / ['o', 勝者] / ['E', 青鬼, 食べられた人] /
    * ['P', 殴った人, 殴られた人, dx, dz] / ['B', 爆風を受けた人, 秒, dx, dz] / ['R', ロケット, 撃った人, x, y, z, dx, dy, dz] /
    * ['X', ロケット, x, y, z]（爆発・地形を壊す） / ['k', 拾う物, 人] / ['K', 拾う物]（戻った）
    */
@@ -83,7 +83,7 @@ export function parseSnapshot(raw: unknown): TagSnapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Partial<TagSnapshot>;
   if (!isNum(s.time) || !isNum(s.next)) return null;
-  if (!isNumRows(s.hy, 64, 8) || !isNumRows(s.pl, TAG_VS_CAPACITY, 6)) return null;
+  if (!isNumRows(s.hy, 64, 9) || !isNumRows(s.pl, TAG_VS_CAPACITY, 6)) return null;
   if (!Array.isArray(s.ev) || s.ev.length > 200) return null;
   for (const e of s.ev) {
     if (!Array.isArray(e) || e.length < 2 || e.length > 9 || typeof e[0] !== 'string') return null;

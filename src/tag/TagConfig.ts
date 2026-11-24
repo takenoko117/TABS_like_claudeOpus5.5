@@ -37,8 +37,23 @@ export const TAG_GRAVITY = 22;
 export const TAG_MAX_HP = 3;
 /** 当たったあと、次に当たらない時間（秒） */
 export const TAG_INVULN_TIME = 2;
-/** 当たったときに飛ばされる速さ */
-export const TAG_KNOCKBACK = 7;
+/** 当たったときに横へふっとぶ速さ（大きくふっとんで、敵から離れられる） */
+export const TAG_KNOCKBACK = 17;
+/** 当たったときに上へふっとぶ速さ */
+export const TAG_KNOCKBACK_UP = 9.5;
+/** ふっとんでいる間の空気抵抗（1 秒あたりに横の速さが減る割合） */
+export const TAG_FLING_DRAG = 0.6;
+/** ふっとんで壁に当たったときに跳ね返る割合 */
+export const TAG_FLING_BOUNCE = 0.55;
+/** ふっとんで着地したときに弾む割合（この速さより速く落ちたときだけ弾む） */
+export const TAG_FLING_LAND_BOUNCE = 0.42;
+export const TAG_FLING_BOUNCE_MIN = 5;
+/** 地面を転がるときの摩擦（1 秒あたりに減る速さ m/s） */
+export const TAG_FLING_FRICTION = 14;
+/** ふっとびが終わる横の速さ（これより遅くなって着地していれば操作が戻る） */
+export const TAG_FLING_END_SPEED = 2.5;
+/** ふっとびの最長時間（秒） */
+export const TAG_FLING_MAX = 2.2;
 
 // ---- 鬼（ハヤト） ----
 /** 始まったときのハヤトの数 */
@@ -74,6 +89,40 @@ export const TAG_SENSE_RANGE = 5;
 export const TAG_SEARCH_TIME = 6;
 /** 追いかけるとき、プレイヤーとこの距離を保とうとする */
 export const TAG_CHASE_KEEP = 9;
+
+// ---- 青鬼ハヤト（でかくて青い。ダッシュと同じ速さでどこまでも追う。触れられたら食べられてアウト） ----
+/** 最初の青鬼が出る時刻（秒） */
+export const TAG_BLUE_FIRST = 60;
+/** そのあと、この秒数ごとに増える */
+export const TAG_BLUE_INTERVAL = 90;
+/** 青鬼の最大数 */
+export const TAG_BLUE_MAX = 2;
+/** 顔の大きさ（高さ m）。ふつうのハヤトの 2 倍 */
+export const TAG_BLUE_SIZE = 3.4;
+/** 壁との当たり判定の半径。幅 2.6 m なので、幅 2 ブロックの路地には入れない */
+export const TAG_BLUE_RADIUS = 1.3;
+/** 地面から浮く高さ（顔の下の端） */
+export const TAG_BLUE_HOVER = 0.15;
+/** 段差を乗り越えられる高さ（ふつうのハヤトのように建物は越えない） */
+export const TAG_BLUE_MAX_RISE = 1.6;
+/** 追う速さ。プレイヤーのダッシュと同じ（息が切れたら追いつかれる） */
+export const TAG_BLUE_SPEED = TAG_SPRINT_SPEED;
+/** うろつく速さ */
+export const TAG_BLUE_WANDER_SPEED = 3;
+/** 見つける距離（見つけたら見えなくなっても居場所を知って追い続ける） */
+export const TAG_BLUE_SIGHT_RANGE = 36;
+/** 触れたら食べられる距離の余裕（体の半径の和に足す） */
+export const TAG_BLUE_TOUCH = 0.2;
+/** 食べている時間（秒）。この間は止まる */
+export const TAG_BLUE_EAT_TIME = 2.4;
+/** 狙いを近くのほかの人に移す差（いまの相手よりこれだけ近い人がいたら移る） */
+export const TAG_BLUE_SWITCH = 4;
+/** 相手に近づけないまま（路地の奥など）この秒数がたつと、あきらめる */
+export const TAG_BLUE_GIVEUP = 5;
+/** あきらめた相手を、また狙うまでの時間（秒） */
+export const TAG_BLUE_IGNORE = 12;
+/** 壁につかえたとき、横へ回り込む時間（秒） */
+export const TAG_BLUE_DETOUR = 1.4;
 
 // ---- レーザー ----
 /** 見つけてから撃つまでのため（秒）。この間、口が開いて照準の線が見える */

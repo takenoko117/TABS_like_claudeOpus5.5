@@ -7,6 +7,7 @@ import { vx } from '../ui/VoxelIcons';
 import { generateGifuTown, type GifuTown } from './GifuTown';
 import {
   TAG_BEST_KEY,
+  TAG_BLUE_FIRST,
   TAG_HAYATO_SPAWN_INTERVAL,
   TAG_HAYATO_START,
   TAG_MAX_HP,
@@ -76,6 +77,9 @@ export class TagApp {
   private acc = 0;
   private countdown = 0;
   private hudTimer = 0;
+  /** 最後に青鬼に食べられた人（結果の見出しに使う） */
+  private lastEaten = -1;
+  private heartTimer = 0;
   private posTimer = 0;
   private snapTimer = 0;
   private resultTimer = -1;
@@ -156,6 +160,7 @@ export class TagApp {
         <div class="tag-prompt hidden" data-tag="prompt"></div>
         <div class="tag-stun hidden" data-tag="stun"></div>
         <div class="tag-warn hidden" data-tag="warn">${vx('warn')} ハヤトに見つかった！</div>
+        <div class="tag-warn tag-warn-blue hidden" data-tag="bluewarn">${vx('warn')} 青鬼に追われている！ 狭い路地へ逃げろ</div>
         <div class="tag-center" data-tag="center"></div>
         <div class="tag-hint" data-tag="hint"></div>
       </div>
@@ -166,7 +171,8 @@ export class TagApp {
           <p class="tag-sub">かぶくん vs ハヤト ─ 岐阜の町（お昼）</p>
           <ul class="tag-rules">
             <li>${vx('eye')} ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</li>
-            <li>${vx('heart')} レーザーに ${TAG_MAX_HP} 回当たるとアウト。</li>
+            <li>${vx('heart')} レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たると大きくふっとぶので、その勢いで逃げよう。</li>
+            <li>${vx('oni')} ${TAG_BLUE_FIRST} 秒たつと、でかい<b>青鬼ハヤト</b>が現れる。ダッシュと同じ速さでどこまでも追ってきて、触れられたら食べられてアウト。体が大きいので狭い路地には入れない。ほかの人に近づけば、そちらへ狙いが移る。</li>
             <li>${vx('hourglass')} ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに 1 人ずつ増える。地図にはハヤトが映らないので、曲がり角に注意！</li>
             <li>${vx('stopwatch')} ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</li>
             <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。</li>
@@ -650,7 +656,22 @@ export class TagApp {
           }
           break;
         case 'spawn':
-          if (sim.time > 1) this.showCenter('ハヤトが増えた！', 1.6);
+          if (e.blue) {
+            this.showCenter('青鬼ハヤトが現れた！ 狭い路地へ逃げろ', 2.6);
+            fx('dragon_roar');
+          } else if (sim.time > 1) {
+            this.showCenter('ハヤトが増えた！', 1.6);
+          }
+          break;
+        case 'eaten':
+          this.lastEaten = e.player;
+          if (e.player === sim.localId) {
+            this.flash();
+            if (this.touchMode) navigator.vibrate?.([120, 60, 300]);
+          } else if (!sim.solo) {
+            this.showCenter(`${sim.player(e.player)?.name ?? '?'} が青鬼に食べられた`, 2);
+          }
+          fx('anaconda_bite');
           break;
         case 'over':
           this.onOver();
@@ -705,7 +726,8 @@ export class TagApp {
       const best = Number(localStorage.getItem(TAG_BEST_KEY) ?? 0);
       const mine = me?.survived ?? 0;
       const record = mine >= best && mine > 0;
-      this.el.resulttitle.innerHTML = `${vx('stopwatch', 'vx-lg')} つかまった！`;
+      const eaten = this.lastEaten === me?.id;
+      this.el.resulttitle.innerHTML = `${vx('stopwatch', 'vx-lg')} ${eaten ? '青鬼に食べられた！' : 'つかまった！'}`;
       this.el.resultbody.innerHTML = `
         <p class="tag-big">${formatSurvival(mine)}</p>
         <p class="tag-sub">逃げ切った時間${record ? ' ─ <b class="tag-record">ベスト記録！</b>' : `（ベスト ${formatSurvival(best)}）`}</p>
@@ -769,8 +791,19 @@ export class TagApp {
     this.el.stun.classList.toggle('hidden', !stunned);
     if (stunned) this.el.stun.textContent = `うごけない！ ${me!.stun.toFixed(1)}`;
     // 自分を狙ってためているハヤトがいるか
-    const aimed = !!me && me.alive && sim.hayatos.some((h) => h.target === me.id && (h.state === 'aim' || h.state === 'chase'));
-    this.el.warn.classList.toggle('hidden', !aimed);
+    const chasedByBlue = !!me && me.alive && sim.hayatos.some((h) => h.kind === 'blue' && h.target === me.id && h.state === 'chase');
+    const aimed = !!me && me.alive && sim.hayatos.some((h) => h.kind === 'red' && h.target === me.id && (h.state === 'aim' || h.state === 'chase'));
+    this.el.warn.classList.toggle('hidden', !aimed || chasedByBlue);
+    this.el.bluewarn.classList.toggle('hidden', !chasedByBlue);
+    // 青鬼が近いほど速い心臓の音
+    this.heartTimer -= 0.1;
+    if (chasedByBlue && me) {
+      const d = Math.min(...sim.hayatos.filter((h) => h.kind === 'blue' && h.target === me.id).map((h) => Math.hypot(h.pos.x - me.pos.x, h.pos.z - me.pos.z)));
+      if (d < 30 && this.heartTimer <= 0) {
+        this.heartTimer = 0.35 + (d / 30) * 0.6;
+        this.host.sound.playEffect({ kind: 'heartbeat' } as unknown as CombatEffectEvent);
+      }
+    }
     if (!sim.solo) {
       this.el.alive.innerHTML = sim.players
         .map((p) => {

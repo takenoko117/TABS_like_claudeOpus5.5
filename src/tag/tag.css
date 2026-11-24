@@ -694,3 +694,11 @@ body.in-tag #title-screen {
     bottom: calc(max(22px, env(safe-area-inset-bottom)) + 96px);
   }
 }
+
+/* 青鬼に追われている（ふつうの警告より目立つ青） */
+.tag-warn-blue {
+  top: 108px;
+  background: #2f5fd8;
+  border-color: #1b3a8f;
+  animation-duration: 0.3s;
+}

@@ -1,4 +1,4 @@
-import { moveBox, viewDir, type CameraPose } from '../openworld/OpenWorldSim';
+import { boxCollides, moveBox, viewDir, type CameraPose } from '../openworld/OpenWorldSim';
 import { B } from '../openworld/OpenWorldConfig';
 import { blastTerrain } from './TagBlast';
 import type { V3 } from '../openworld/VoxelWorld';
@@ -6,7 +6,30 @@ import { makeRng } from '../openworld/WorldGen';
 import type { TagSnapshot } from '../net/tagProtocol';
 import { floorBelow, generateGifuTown, groundAt, resetGifuTown, type GifuTown } from './GifuTown';
 import {
+  TAG_BLUE_DETOUR,
+  TAG_BLUE_EAT_TIME,
+  TAG_BLUE_FIRST,
+  TAG_BLUE_GIVEUP,
+  TAG_BLUE_HOVER,
+  TAG_BLUE_IGNORE,
+  TAG_BLUE_INTERVAL,
+  TAG_BLUE_MAX,
+  TAG_BLUE_MAX_RISE,
+  TAG_BLUE_RADIUS,
+  TAG_BLUE_SIGHT_RANGE,
+  TAG_BLUE_SIZE,
+  TAG_BLUE_SPEED,
+  TAG_BLUE_SWITCH,
+  TAG_BLUE_TOUCH,
+  TAG_BLUE_WANDER_SPEED,
   TAG_CHASE_KEEP,
+  TAG_FLING_BOUNCE,
+  TAG_FLING_BOUNCE_MIN,
+  TAG_FLING_DRAG,
+  TAG_FLING_END_SPEED,
+  TAG_FLING_FRICTION,
+  TAG_FLING_LAND_BOUNCE,
+  TAG_FLING_MAX,
   TAG_GRAVITY,
   TAG_HAYATO_CHASE_SPEED,
   TAG_HAYATO_HOVER,
@@ -23,6 +46,7 @@ import {
   TAG_INVULN_TIME,
   TAG_JUMP_SPEED,
   TAG_KNOCKBACK,
+  TAG_KNOCKBACK_UP,
   TAG_LASER_CHARGE,
   TAG_LASER_COOLDOWN,
   TAG_LASER_LEAD,
@@ -117,13 +141,20 @@ export interface TagPlayer {
   /** パンチ・ロケットを次に使えるまで（秒） */
   punchCooldown: number;
   rocketCooldown: number;
+  /** ふっとんでいる残り秒（0 なら操作できる。物理で飛び、壁で跳ね返る） */
+  fling: number;
 }
 
-export type HayatoState = 'wander' | 'chase' | 'aim' | 'search' | 'stun';
-const HAYATO_STATES: readonly HayatoState[] = ['wander', 'chase', 'aim', 'search', 'stun'];
+/** eat は青鬼が食べている間 */
+export type HayatoState = 'wander' | 'chase' | 'aim' | 'search' | 'stun' | 'eat';
+const HAYATO_STATES: readonly HayatoState[] = ['wander', 'chase', 'aim', 'search', 'stun', 'eat'];
+
+/** red = ふつうのハヤト（レーザー）、blue = 青鬼（でかい・触れたら食べる） */
+export type HayatoKind = 'red' | 'blue';
 
 export interface Hayato {
   id: number;
+  kind: HayatoKind;
   /** 顔の中心 */
   pos: V3;
   yaw: number;
@@ -145,6 +176,55 @@ export interface Hayato {
   net: { x: number; y: number; z: number; yaw: number } | null;
   /** 爆風で止まっている残り秒 */
   stun: number;
+  /** 青鬼: 食べている残り秒 */
+  eat: number;
+  /** 青鬼: 相手に近づけていない時間（長いとあきらめる）と、いちばん近づいた距離 */
+  giveup: number;
+  best: number;
+  /** 青鬼: 壁を回り込んでいる残り秒と向き（+1 左 / -1 右） */
+  detour: number;
+  detourSign: number;
+  /** 青鬼: あきらめた相手と、また狙うまでの残り秒 */
+  ignore: number;
+  ignoreTimer: number;
+}
+
+/** ハヤトの作りたての値（種類と位置だけ決める） */
+function newHayato(id: number, kind: HayatoKind, pos: V3, yaw: number): Hayato {
+  return {
+    id,
+    kind,
+    pos,
+    yaw,
+    state: 'wander',
+    target: -1,
+    charge: 0,
+    cooldown: 1.5,
+    lastSeen: null,
+    searchTimer: 0,
+    goal: null,
+    stuck: 0,
+    climb: 0,
+    net: null,
+    stun: 0,
+    eat: 0,
+    giveup: 0,
+    best: Infinity,
+    detour: 0,
+    detourSign: 1,
+    ignore: -1,
+    ignoreTimer: 0,
+  };
+}
+
+/** ハヤトの顔の大きさ（高さ） */
+export function hayatoSize(h: Hayato): number {
+  return h.kind === 'blue' ? TAG_BLUE_SIZE : TAG_HAYATO_SIZE;
+}
+
+/** ハヤトの壁との当たり判定の半径 */
+export function hayatoRadius(h: Hayato): number {
+  return h.kind === 'blue' ? TAG_BLUE_RADIUS : TAG_HAYATO_RADIUS;
 }
 
 export interface Bolt {
@@ -175,7 +255,9 @@ export interface RocketPickup {
 }
 
 export type TagEvent =
-  | { kind: 'spawn'; hayato: number; pos: V3 }
+  | { kind: 'spawn'; hayato: number; pos: V3; blue: boolean }
+  /** 青鬼に食べられた（アウト） */
+  | { kind: 'eaten'; hayato: number; player: number }
   | { kind: 'spot'; hayato: number; target: number }
   | { kind: 'fire'; bolt: number; hayato: number; from: V3; dir: V3 }
   | { kind: 'bolt_end'; bolt: number; pos: V3 }
@@ -208,6 +290,8 @@ export class TagSim {
   time = 0;
   /** 次にハヤトが増える時刻 */
   nextSpawn = TAG_HAYATO_SPAWN_INTERVAL;
+  /** 次に青鬼が出る時刻 */
+  nextBlue = TAG_BLUE_FIRST;
   phase: TagPhase = 'playing';
   /** 勝者（オンライン）。ソロ・全員同時アウトで決まらないときは -1 */
   winner = -1;
@@ -254,6 +338,7 @@ export class TagSim {
         rockets: 0,
         punchCooldown: 0,
         rocketCooldown: 0,
+        fling: 0,
       });
     });
     // 落ちているロケット（全員が同じ場所になるよう、種から決める）
@@ -312,13 +397,18 @@ export class TagSim {
       }
       p.invuln = Math.max(0, p.invuln - dt);
       p.stun = Math.max(0, p.stun - dt);
+      // ほかの端末の人のふっとびは見た目だけ（回転の演出）なので時間で終える
+      if (p.id !== this.localId) p.fling = Math.max(0, p.fling - dt * 2);
       p.punchCooldown = Math.max(0, p.punchCooldown - dt);
       p.rocketCooldown = Math.max(0, p.rocketCooldown - dt);
     }
     if (this.authority) {
       if (this.phase === 'playing') {
         this.updateSpawns();
-        for (const h of this.hayatos) this.updateHayato(h, dt);
+        for (const h of this.hayatos) {
+          if (h.kind === 'blue') this.updateBlue(h, dt);
+          else this.updateHayato(h, dt);
+        }
       }
       this.updateBolts(dt, true);
       this.updateRockets(dt, true);
@@ -333,6 +423,7 @@ export class TagSim {
         h.pos.z += (h.net.z - h.pos.z) * k;
         h.yaw = lerpAngle(h.yaw, h.net.yaw, k);
         if (h.state === 'aim') h.charge += dt;
+        if (h.state === 'eat') h.eat = Math.max(0, h.eat - dt);
       }
       this.updateBolts(dt, false);
       this.updateRockets(dt, false);
@@ -342,6 +433,10 @@ export class TagSim {
   // ---- かぶくん ----
 
   private movePlayer(p: TagPlayer, input: TagInput, dt: number): void {
+    if (p.fling > 0) {
+      this.flingPlayer(p, dt);
+      return;
+    }
     const fx = Math.sin(input.yaw);
     const fz = Math.cos(input.yaw);
     // 右 = 前 × 上
@@ -380,6 +475,52 @@ export class TagSim {
     p.moving = moving && Math.hypot(p.vel.x, p.vel.z) > 0.5;
   }
 
+  /**
+   * ふっとんでいる間の動き（操作は効かない）。重力・空気抵抗・地面の摩擦で減速し、
+   * 壁に当たると跳ね返り、強く落ちると地面で弾む。遅くなって着地したら終わる。
+   */
+  private flingPlayer(p: TagPlayer, dt: number): void {
+    p.fling = Math.max(0, p.fling - dt);
+    const drag = Math.max(0, 1 - TAG_FLING_DRAG * dt);
+    p.vel.x *= drag;
+    p.vel.z *= drag;
+    if (p.onGround) {
+      const hs = Math.hypot(p.vel.x, p.vel.z);
+      if (hs > 0) {
+        const k = Math.max(0, hs - TAG_FLING_FRICTION * dt) / hs;
+        p.vel.x *= k;
+        p.vel.z *= k;
+      }
+    }
+    const inWater = this.world.get(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.3), Math.floor(p.pos.z)) === B.WATER;
+    p.vel.y -= TAG_GRAVITY * (inWater ? 0.5 : 1) * dt;
+    const before = { x: p.vel.x, y: p.vel.y, z: p.vel.z };
+    p.onGround = moveBox(this.world, p.pos, p.vel, TAG_PLAYER_HALF, TAG_PLAYER_HEIGHT, dt, false, false);
+    // 壁に当たった向きは跳ね返す
+    if (before.x !== 0 && p.vel.x === 0) p.vel.x = -before.x * TAG_FLING_BOUNCE;
+    if (before.z !== 0 && p.vel.z === 0) p.vel.z = -before.z * TAG_FLING_BOUNCE;
+    // 強く落ちたら弾む
+    if (p.onGround && before.y < -TAG_FLING_BOUNCE_MIN) {
+      p.vel.y = -before.y * TAG_FLING_LAND_BOUNCE;
+      p.onGround = false;
+    }
+    p.moving = false;
+    if (p.fling <= 0 || (p.onGround && Math.hypot(p.vel.x, p.vel.z) < TAG_FLING_END_SPEED)) p.fling = 0;
+  }
+
+  /** ふっとばす（この端末で動かす人だけ速さを与える。ほかの人は見た目の回転だけ） */
+  private fling(p: TagPlayer, dir: V3, speed: number, up: number): void {
+    if (p.id === this.localId) {
+      p.vel.x = dir.x * speed;
+      p.vel.z = dir.z * speed;
+      p.vel.y = up;
+      p.onGround = false;
+      p.fling = TAG_FLING_MAX;
+    } else {
+      p.fling = 1.2;
+    }
+  }
+
   /** ほかの端末から届いたプレイヤーの位置 */
   setRemotePlayer(id: number, x: number, y: number, z: number, yaw: number): void {
     const p = this.player(id);
@@ -407,13 +548,18 @@ export class TagSim {
 
   // ---- ハヤト ----
 
-  private spawnHayato(): void {
+  private spawnHayato(kind: HayatoKind = 'red'): void {
     const alive = this.players.filter((p) => p.alive);
     const nav = this.town.navPoints;
     let best = nav[0];
     let bestD = -1;
-    for (let k = 0; k < 40; k++) {
+    for (let k = 0; k < (kind === 'blue' ? 80 : 40); k++) {
       const c = nav[Math.floor(this.rng() * nav.length)];
+      // 青鬼は体が入りきる広い所にだけ出す
+      if (kind === 'blue') {
+        const f = floorBelow(this.world, c.x, this.world.sizeY - 1, c.z);
+        if (boxCollides(this.world, c.x, f + TAG_BLUE_HOVER, c.z, TAG_BLUE_RADIUS, TAG_BLUE_SIZE)) continue;
+      }
       const d = alive.length ? Math.min(...alive.map((p) => Math.hypot(p.pos.x - c.x, p.pos.z - c.z))) : 999;
       if (d >= TAG_HAYATO_SPAWN_MIN_DIST) {
         best = c;
@@ -426,30 +572,27 @@ export class TagSim {
       }
     }
     const floor = floorBelow(this.world, best.x, this.world.sizeY - 1, best.z);
-    const h: Hayato = {
-      id: this.nextHayatoId++,
-      pos: { x: best.x, y: floor + TAG_HAYATO_HOVER, z: best.z },
-      yaw: this.rng() * Math.PI * 2,
-      state: 'wander',
-      target: -1,
-      charge: 0,
-      cooldown: 1.5,
-      lastSeen: null,
-      searchTimer: 0,
-      goal: null,
-      stuck: 0,
-      climb: 0,
-      net: null,
-      stun: 0,
-    };
+    const y = kind === 'blue' ? floor + TAG_BLUE_HOVER + TAG_BLUE_SIZE / 2 : floor + TAG_HAYATO_HOVER;
+    const h = newHayato(this.nextHayatoId++, kind, { x: best.x, y, z: best.z }, this.rng() * Math.PI * 2);
     this.hayatos.push(h);
-    this.events.push({ kind: 'spawn', hayato: h.id, pos: { ...h.pos } });
+    this.events.push({ kind: 'spawn', hayato: h.id, pos: { ...h.pos }, blue: kind === 'blue' });
+  }
+
+  /** 増やしたい青鬼を今すぐ出す（テスト・演出用） */
+  spawnBlue(): Hayato | undefined {
+    if (!this.authority) return undefined;
+    this.spawnHayato('blue');
+    return this.hayatos[this.hayatos.length - 1];
   }
 
   private updateSpawns(): void {
     while (this.time >= this.nextSpawn) {
       this.nextSpawn += TAG_HAYATO_SPAWN_INTERVAL;
-      if (this.hayatos.length < TAG_HAYATO_MAX) this.spawnHayato();
+      if (this.hayatos.filter((h) => h.kind === 'red').length < TAG_HAYATO_MAX) this.spawnHayato();
+    }
+    while (this.time >= this.nextBlue) {
+      this.nextBlue += TAG_BLUE_INTERVAL;
+      if (this.hayatos.filter((h) => h.kind === 'blue').length < TAG_BLUE_MAX) this.spawnHayato('blue');
     }
   }
 
@@ -562,6 +705,233 @@ export class TagSim {
     if (arrived) h.goal = null;
   }
 
+  // ---- 青鬼ハヤト ----
+
+  /** 青鬼が気づけるか（まわり全部が見える。建物の陰は見えない） */
+  blueSees(h: Hayato, p: TagPlayer): boolean {
+    if (!p.alive) return false;
+    const c = { x: p.pos.x, y: p.pos.y + PLAYER_CENTER, z: p.pos.z };
+    if (Math.hypot(c.x - h.pos.x, c.y - h.pos.y, c.z - h.pos.z) > TAG_BLUE_SIGHT_RANGE) return false;
+    return this.lineClear(h.pos, c);
+  }
+
+  /** 青鬼の体にふれているか */
+  blueTouches(h: Hayato, p: TagPlayer): boolean {
+    if (!p.alive) return false;
+    const d = Math.hypot(p.pos.x - h.pos.x, p.pos.z - h.pos.z);
+    if (d > TAG_BLUE_RADIUS + TAG_PLAYER_HALF + TAG_BLUE_TOUCH) return false;
+    const half = TAG_BLUE_SIZE / 2;
+    return p.pos.y + TAG_PLAYER_HEIGHT > h.pos.y - half - 0.3 && p.pos.y < h.pos.y + half;
+  }
+
+  /**
+   * 青鬼: 一度見つけたら、見えなくなっても居場所を知って、ダッシュと同じ速さで追い続ける。
+   * 建物は越えられず、幅 2 ブロックの路地には体が入らない。近づけないまま時間がたつとあきらめる。
+   * もっと近いほかのプレイヤーがいれば、そちらへ狙いを移す。
+   */
+  private updateBlue(h: Hayato, dt: number): void {
+    h.charge = 0;
+    // 爆風でくらくらしている間は止まる
+    if (h.stun > 0) {
+      h.stun -= dt;
+      h.state = h.stun > 0 ? 'stun' : 'chase';
+      h.eat = 0;
+      this.walkBlue(h, 0, 0, 0, dt);
+      return;
+    }
+    if (h.eat > 0) {
+      h.eat -= dt;
+      h.state = 'eat';
+      if (h.eat <= 0) {
+        h.state = 'wander';
+        h.target = -1;
+        h.best = Infinity;
+        h.giveup = 0;
+      }
+      return;
+    }
+    h.ignoreTimer = Math.max(0, h.ignoreTimer - dt);
+    if (h.ignoreTimer <= 0) h.ignore = -1;
+    // ふれた人を食べる
+    for (const p of this.players) {
+      if (this.blueTouches(h, p)) {
+        this.eatPlayer(h, p);
+        return;
+      }
+    }
+    const candidates = this.players.filter((p) => p.alive && p.id !== h.ignore);
+    const dist = (p: TagPlayer): number => Math.hypot(p.pos.x - h.pos.x, p.pos.z - h.pos.z);
+    let target = candidates.find((p) => p.id === h.target);
+    if (!target) {
+      // まだ誰も追っていない: 気づいた中でいちばん近い人
+      let bestD = Infinity;
+      for (const p of candidates) {
+        const d = dist(p);
+        if (d < bestD && this.blueSees(h, p)) {
+          target = p;
+          bestD = d;
+        }
+      }
+      if (target) this.blueRetarget(h, target);
+    } else {
+      // もっと近い人がいれば、そちらへ移る（ほかの人に押しつけられる）
+      const dt0 = dist(target);
+      for (const p of candidates) {
+        if (p.id !== target.id && dist(p) < dt0 - TAG_BLUE_SWITCH && this.blueSees(h, p)) {
+          target = p;
+          this.blueRetarget(h, p);
+          break;
+        }
+      }
+    }
+
+    if (!target) {
+      h.state = 'wander';
+      h.target = -1;
+      const nav = this.town.navPoints;
+      if (!h.goal || h.stuck > 3) {
+        h.goal = nav[Math.floor(this.rng() * nav.length)];
+        h.stuck = 0;
+      }
+      const dx = h.goal.x - h.pos.x;
+      const dz = h.goal.z - h.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 2) {
+        h.goal = null;
+        this.walkBlue(h, 0, 0, 0, dt);
+        return;
+      }
+      this.walkBlue(h, dx / d, dz / d, TAG_BLUE_WANDER_SPEED, dt);
+      return;
+    }
+
+    h.state = 'chase';
+    h.target = target.id;
+    h.lastSeen = { x: target.pos.x, y: target.pos.y, z: target.pos.z };
+    const dx = target.pos.x - h.pos.x;
+    const dz = target.pos.z - h.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    // 近づけているか（路地の奥にいる相手には近づけない）
+    if (d < h.best - 0.5) {
+      h.best = d;
+      h.giveup = 0;
+    } else {
+      h.giveup += dt;
+    }
+    if (h.giveup >= TAG_BLUE_GIVEUP) {
+      // あきらめる: しばらくこの相手は狙わない
+      h.ignore = target.id;
+      h.ignoreTimer = TAG_BLUE_IGNORE;
+      h.target = -1;
+      h.state = 'wander';
+      h.goal = null;
+      h.best = Infinity;
+      h.giveup = 0;
+      return;
+    }
+    let mx = dx / d;
+    let mz = dz / d;
+    if (h.detour > 0) {
+      // 壁を回り込む: 進みたい向きを横へ 80° ずらす
+      h.detour -= dt;
+      const a = h.detourSign * 1.4;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      const rx = mx * c - mz * sn;
+      const rz = mx * sn + mz * c;
+      mx = rx;
+      mz = rz;
+    }
+    const blocked = this.walkBlue(h, mx, mz, TAG_BLUE_SPEED, dt);
+    if (blocked) {
+      h.stuck += dt;
+      if (h.stuck > 0.25 && h.detour <= 0) {
+        h.detour = TAG_BLUE_DETOUR;
+        h.detourSign = this.freerSide(h, dx / d, dz / d);
+        h.stuck = 0;
+      }
+    } else {
+      h.stuck = Math.max(0, h.stuck - dt);
+    }
+  }
+
+  /** 狙いを決めた・移した */
+  private blueRetarget(h: Hayato, p: TagPlayer): void {
+    h.target = p.id;
+    h.best = Math.hypot(p.pos.x - h.pos.x, p.pos.z - h.pos.z);
+    h.giveup = 0;
+    h.detour = 0;
+    this.events.push({ kind: 'spot', hayato: h.id, target: p.id });
+    this.send(['s', h.id, p.id]);
+  }
+
+  /** 壁につかえたとき、左右どちらへ回り込むか（空いている方。両方空いていれば交互） */
+  private freerSide(h: Hayato, fx: number, fz: number): number {
+    const bottom = h.pos.y - TAG_BLUE_SIZE / 2;
+    const free = (sign: number): boolean => {
+      const a = sign * 1.4;
+      const x = h.pos.x + (fx * Math.cos(a) - fz * Math.sin(a)) * 1.5;
+      const z = h.pos.z + (fx * Math.sin(a) + fz * Math.cos(a)) * 1.5;
+      return !boxCollides(this.world, x, bottom + 0.5, z, TAG_BLUE_RADIUS, TAG_BLUE_SIZE - 0.5);
+    };
+    const l = free(1);
+    const r = free(-1);
+    if (l && !r) return 1;
+    if (r && !l) return -1;
+    return -h.detourSign;
+  }
+
+  /** 青鬼を地面に沿って歩かせる（段差は少しだけ乗り越える）。進めなかったら true */
+  private walkBlue(h: Hayato, mx: number, mz: number, speed: number, dt: number): boolean {
+    const half = TAG_BLUE_SIZE / 2;
+    const floor = floorBelow(this.world, h.pos.x, h.pos.y - half + 0.2, h.pos.z);
+    const vx = mx * speed;
+    const vz = mz * speed;
+    if (speed > 0) h.yaw = lerpAngle(h.yaw, Math.atan2(mx, mz), Math.min(1, dt * 8));
+    const wantY = floor + TAG_BLUE_HOVER + half + h.climb;
+    const vel = { x: vx, y: clampAbs((wantY - h.pos.y) * 4, 8), z: vz };
+    const bottom = { x: h.pos.x, y: h.pos.y - half, z: h.pos.z };
+    const before = { x: bottom.x, z: bottom.z };
+    moveBox(this.world, bottom, vel, TAG_BLUE_RADIUS, TAG_BLUE_SIZE, dt, false, false);
+    const moved = Math.hypot(bottom.x - before.x, bottom.z - before.z);
+    const intended = Math.hypot(vx, vz) * dt;
+    const blocked = intended > 0 && moved < intended * 0.35;
+    if (blocked) h.climb = Math.min(TAG_BLUE_MAX_RISE, h.climb + dt * 5);
+    else h.climb = Math.max(0, h.climb - dt * 2);
+    h.pos.x = bottom.x;
+    h.pos.y = bottom.y + half;
+    h.pos.z = bottom.z;
+    return blocked;
+  }
+
+  /** 青鬼が食べる（権限のある端末で決める） */
+  private eatPlayer(h: Hayato, p: TagPlayer): void {
+    h.eat = TAG_BLUE_EAT_TIME;
+    h.state = 'eat';
+    h.target = p.id;
+    h.yaw = Math.atan2(p.pos.x - h.pos.x, p.pos.z - h.pos.z);
+    this.applyEaten(h.id, p.id);
+    this.send(['E', h.id, p.id]);
+  }
+
+  /** 食べられた（ゲストはホストの知らせをそのまま写す） */
+  applyEaten(hayato: number, id: number): void {
+    const p = this.player(id);
+    if (!p || !p.alive) return;
+    p.hp = 0;
+    p.alive = false;
+    p.fling = 0;
+    p.survived = this.time;
+    const h = this.hayatos.find((e) => e.id === hayato);
+    if (h) {
+      h.state = 'eat';
+      h.target = id;
+      h.eat = Math.max(h.eat, TAG_BLUE_EAT_TIME);
+    }
+    this.events.push({ kind: 'eaten', hayato, player: id });
+    this.events.push({ kind: 'out', player: id, time: this.time });
+  }
+
   /** 目的地へ飛ぶ。keep より近ければ止まる。着いていれば true */
   private flyToward(h: Hayato, gx: number, gz: number, speed: number, dt: number, keep: number, turn = false): boolean {
     const dx = gx - h.pos.x;
@@ -618,7 +988,7 @@ export class TagSim {
 
   /** 口の位置（顔の中心から前へ・少し下） */
   mouthPos(h: Hayato): V3 {
-    const s = TAG_HAYATO_SIZE;
+    const s = hayatoSize(h);
     return { x: h.pos.x + Math.sin(h.yaw) * 0.42 * s, y: h.pos.y - 0.29 * s, z: h.pos.z + Math.cos(h.yaw) * 0.42 * s };
   }
 
@@ -671,12 +1041,8 @@ export class TagSim {
     if (!p || !p.alive) return;
     p.hp = Math.max(0, hp);
     p.invuln = TAG_INVULN_TIME;
-    if (p.id === this.localId) {
-      p.vel.x = dir.x * TAG_KNOCKBACK;
-      p.vel.z = dir.z * TAG_KNOCKBACK;
-      p.vel.y = 4.5;
-      p.onGround = false;
-    }
+    // 大きくふっとぶ（ハヤトから離れられる）
+    this.fling(p, dir, TAG_KNOCKBACK, TAG_KNOCKBACK_UP);
     this.events.push({ kind: 'hit', player: id, hp: p.hp, bolt, dir });
     // 当たった弾は消す（ゲストの見た目の弾も）
     const k = this.bolts.findIndex((x) => x.id === bolt);
@@ -738,7 +1104,7 @@ export class TagSim {
     const snap: TagSnapshot = {
       time: r2(this.time),
       next: r2(this.nextSpawn),
-      hy: this.hayatos.map((h) => [h.id, r2(h.pos.x), r2(h.pos.y), r2(h.pos.z), r2(h.yaw), HAYATO_STATES.indexOf(h.state), h.target, r2(h.charge)]),
+      hy: this.hayatos.map((h) => [h.id, r2(h.pos.x), r2(h.pos.y), r2(h.pos.z), r2(h.yaw), HAYATO_STATES.indexOf(h.state), h.target, r2(h.charge), h.kind === 'blue' ? 1 : 0]),
       pl: this.players.map((p) => [p.id, p.hp, p.alive ? 1 : 0, r2(p.survived), p.rockets, r2(p.stun)]),
       ev: this.outbox.splice(0),
     };
@@ -752,29 +1118,15 @@ export class TagSim {
     this.nextSpawn = s.next;
     const seen = new Set<number>();
     for (const row of s.hy) {
-      const [id, x, y, z, yaw, st, target, charge] = row;
+      const [id, x, y, z, yaw, st, target, charge, blue] = row;
       seen.add(id);
       let h = this.hayatos.find((e) => e.id === id);
       if (!h) {
-        h = {
-          id,
-          pos: { x, y, z },
-          yaw,
-          state: 'wander',
-          target: -1,
-          charge: 0,
-          cooldown: 0,
-          lastSeen: null,
-          searchTimer: 0,
-          goal: null,
-          stuck: 0,
-          climb: 0,
-          net: null,
-          stun: 0,
-        };
+        h = newHayato(id, blue === 1 ? 'blue' : 'red', { x, y, z }, yaw);
+        h.cooldown = 0;
         this.hayatos.push(h);
         this.nextHayatoId = Math.max(this.nextHayatoId, id + 1);
-        this.events.push({ kind: 'spawn', hayato: id, pos: { x, y, z } });
+        this.events.push({ kind: 'spawn', hayato: id, pos: { x, y, z }, blue: h.kind === 'blue' });
       }
       h.net = { x, y, z, yaw };
       h.state = HAYATO_STATES[st] ?? 'wander';
@@ -815,6 +1167,9 @@ export class TagSim {
         break;
       case 's':
         this.events.push({ kind: 'spot', hayato: n(1), target: n(2) });
+        break;
+      case 'E':
+        this.applyEaten(n(1), n(2));
         break;
       case 'P':
         this.applyStun(n(1), n(2), TAG_PUNCH_STUN, { x: n(3), y: 0, z: n(4) }, TAG_PUNCH_KNOCK, 'punch');
@@ -874,6 +1229,8 @@ export class TagSim {
       h.net = null;
       if (h.state === 'aim') h.state = 'chase';
       if (h.state === 'stun') h.stun = 1;
+      h.best = Infinity;
+      h.giveup = 0;
       h.charge = 0;
       h.cooldown = 1;
     }
@@ -922,10 +1279,13 @@ export class TagSim {
     const p = this.player(victim);
     if (!p || !p.alive) return;
     p.stun = Math.max(p.stun, time);
-    if (p.id === this.localId) {
+    if (by === 'blast') {
+      // 爆風は物理でふっとぶ
+      this.fling(p, dir, knock, 7);
+    } else if (p.id === this.localId) {
       p.vel.x = dir.x * knock;
       p.vel.z = dir.z * knock;
-      p.vel.y = by === 'blast' ? 6 : 3;
+      p.vel.y = 3;
       p.onGround = false;
     }
     if (by === 'punch') {
@@ -976,7 +1336,7 @@ export class TagSim {
           if (Math.hypot(r.pos.x - p.pos.x, r.pos.y - (p.pos.y + PLAYER_CENTER), r.pos.z - p.pos.z) < TAG_ROCKET_HIT_RADIUS + 0.4) boom = true;
         }
         for (const h of this.hayatos) {
-          if (Math.hypot(r.pos.x - h.pos.x, r.pos.y - h.pos.y, r.pos.z - h.pos.z) < TAG_ROCKET_HIT_RADIUS + TAG_HAYATO_RADIUS) boom = true;
+          if (Math.hypot(r.pos.x - h.pos.x, r.pos.y - h.pos.y, r.pos.z - h.pos.z) < TAG_ROCKET_HIT_RADIUS + hayatoRadius(h)) boom = true;
         }
       }
       if (!boom) continue;
@@ -1003,8 +1363,8 @@ export class TagSim {
         this.send(['B', p.id, TAG_ROCKET_STUN, dir.x, dir.z]);
       }
       for (const h of this.hayatos) {
-        const d = Math.hypot(h.pos.x - at.x, h.pos.y - at.y, h.pos.z - at.z);
-        if (d > TAG_ROCKET_STUN_RADIUS) continue;
+        const d = Math.hypot(h.pos.x - at.x, h.pos.y - at.y, h.pos.z - at.z) - (hayatoRadius(h) - TAG_HAYATO_RADIUS);
+        if (d > TAG_ROCKET_STUN_RADIUS || h.state === 'eat') continue;
         h.stun = TAG_ROCKET_HAYATO_STUN;
         h.state = 'stun';
         h.charge = 0;

@@ -32,8 +32,8 @@ import type { CameraPose } from '../openworld/OpenWorldSim';
 import { getHayatoHeadGeometry } from '../render/HayatoHeadModel';
 import { buildKabukun, poseKabukun, type KabukunModel } from './KabukunModel';
 import { KABUKUN_GLB_HEIGHT, KabukunActor, loadKabukun } from './KabukunGltf';
-import { TAG_HAYATO_SIZE, TAG_LASER_CHARGE, TAG_PLAYER_COLORS } from './TagConfig';
-import type { TagEvent, TagSim } from './TagSim';
+import { TAG_BLUE_EAT_TIME, TAG_LASER_CHARGE, TAG_PLAYER_COLORS } from './TagConfig';
+import { hayatoSize, type Hayato, type TagEvent, type TagSim } from './TagSim';
 
 /** 演出の粒の上限 */
 const FX_MAX = 600;
@@ -63,6 +63,8 @@ interface PlayerView {
   /** 前のフレームの高さ（ほかの人の縦の速さを求める） */
   lastY: number;
   vy: number;
+  /** 青鬼に食べられている（吸い込まれる演出の経過秒） */
+  eaten: { hayato: number; t: number } | null;
 }
 
 interface HayatoView {
@@ -88,6 +90,8 @@ export class TagRenderer {
   private readonly transMat = new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.62, depthWrite: false });
   private readonly entityMat = voxelMaterial();
   private readonly hayatoMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  /** 青鬼（頂点の色に青をかける） */
+  private readonly blueMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0x5d8dff });
   private readonly boltCore = new MeshBasicMaterial({ color: 0xffffff });
   private readonly boltGlow = new MeshBasicMaterial({ color: 0xff3048, transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false });
   private readonly aimMat = new MeshBasicMaterial({ color: 0xff2a3a, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false });
@@ -244,7 +248,7 @@ export class TagRenderer {
     // ほかの人には名前の札を出す（席の色）
     const label = id === this.sim.localId || this.sim.solo ? null : makeLabel(name, TAG_PLAYER_COLORS[id % TAG_PLAYER_COLORS.length]);
     if (label) model.root.add(label);
-    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0 });
+    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0, eaten: null });
   }
 
   /** kabukun.glb を読み込み、読めたらボクセルの代役と差し替える */
@@ -269,12 +273,13 @@ export class TagRenderer {
       });
   }
 
-  private addHayato(id: number): HayatoView {
+  private addHayato(h: Hayato): HayatoView {
+    const id = h.id;
     const root = new Group();
-    const head = new Mesh(getHayatoHeadGeometry(), this.hayatoMat);
+    const head = new Mesh(getHayatoHeadGeometry(), h.kind === 'blue' ? this.blueMat : this.hayatoMat);
     head.castShadow = true;
     head.morphTargetInfluences = [0];
-    head.scale.setScalar(TAG_HAYATO_SIZE);
+    head.scale.setScalar(hayatoSize(h));
     root.add(head);
     const aim = new Mesh(this.boltGeo, this.aimMat);
     aim.visible = false;
@@ -291,8 +296,21 @@ export class TagRenderer {
     for (const e of events) {
       switch (e.kind) {
         case 'spawn':
-          this.burst(e.pos.x, e.pos.y, e.pos.z, 0xffe9c4, 24, 5);
+          if (e.blue) {
+            this.burst(e.pos.x, e.pos.y, e.pos.z, 0x5d8dff, 50, 9);
+            this.burst(e.pos.x, e.pos.y, e.pos.z, 0xffffff, 20, 6);
+          } else {
+            this.burst(e.pos.x, e.pos.y, e.pos.z, 0xffe9c4, 24, 5);
+          }
           break;
+        case 'eaten': {
+          const v = this.players.get(e.player);
+          if (v) v.eaten = { hayato: e.hayato, t: 0 };
+          const p = this.sim.player(e.player);
+          if (p) this.burst(p.pos.x, p.pos.y + 0.7, p.pos.z, 0x5d8dff, 30, 6);
+          if (e.player === this.sim.localId) this.shake = Math.max(this.shake, 1.2);
+          break;
+        }
         case 'fire': {
           const v = this.hayatos.get(e.hayato);
           if (v) v.shout = 0.35;
@@ -311,7 +329,7 @@ export class TagRenderer {
         }
         case 'out': {
           const p = this.sim.player(e.player);
-          if (p) this.burst(p.pos.x, p.pos.y + 0.7, p.pos.z, 0x7fdca0, 30, 7);
+          if (p && !this.players.get(e.player)?.eaten) this.burst(p.pos.x, p.pos.y + 0.7, p.pos.z, 0x7fdca0, 30, 7);
           break;
         }
         case 'punch': {
@@ -393,20 +411,45 @@ export class TagRenderer {
         a.root.position.set(p.pos.x, p.pos.y, p.pos.z);
         a.root.rotation.y = p.yaw;
         const speed = p.id === this.sim.localId ? Math.hypot(p.vel.x, p.vel.z) : p.moving ? 5 : 0;
-        const alarmed = p.alive && this.sim.hayatos.some((h) => h.target === p.id && h.state === 'aim');
+        const alarmed = p.alive && this.sim.hayatos.some((h) => h.target === p.id && (h.state === 'aim' || (h.kind === 'blue' && h.state === 'chase')));
         const won = this.sim.phase === 'over' && this.sim.winner === p.id;
-        a.update(dt, { speed, air, vy: p.id === this.sim.localId ? p.vel.y : v.vy, alive: p.alive, alarmed, won, stunned: p.stun > 0 });
-        a.root.visible = visible;
+        a.update(dt, { speed, air, vy: p.id === this.sim.localId ? p.vel.y : v.vy, alive: p.alive, alarmed, won, stunned: p.stun > 0, flung: p.fling > 0 });
+        a.root.visible = visible && this.swallow(v, a.root, dt);
       } else {
         const m = v.model;
         if (p.moving) v.phase += dt * 13;
         m.root.position.set(p.pos.x, p.pos.y, p.pos.z);
         m.root.rotation.y = p.yaw;
         poseKabukun(m, v.phase, p.moving, air, !p.alive);
-        m.root.visible = visible;
+        m.root.visible = visible && this.swallow(v, m.root, dt);
       }
       if (v.label) v.label.visible = p.alive;
     }
+  }
+
+  /**
+   * 青鬼に食べられる演出: 体が浮いて口へ吸い込まれながら小さくなる。見せる間は true、飲み込まれたら false。
+   */
+  private swallow(v: PlayerView, root: Object3D, dt: number): boolean {
+    if (!v.eaten) {
+      root.scale.setScalar(1);
+      return true;
+    }
+    const e = v.eaten;
+    e.t += dt;
+    const h = this.sim.hayatos.find((x) => x.id === e.hayato);
+    const k = Math.min(1, e.t / 0.7);
+    if (h) {
+      const m = this.sim.mouthPos(h);
+      const ease = k * k * (3 - 2 * k);
+      root.position.x += (m.x - root.position.x) * ease;
+      root.position.y += (m.y - 0.3 - root.position.y) * ease;
+      root.position.z += (m.z - root.position.z) * ease;
+    }
+    root.rotation.x = 0;
+    root.rotation.z = e.t * 14;
+    root.scale.setScalar(Math.max(0.01, 1 - k * 0.9));
+    return e.t < 0.75;
   }
 
   /** ロケットの模型（拾う物は少し大きく、ゆっくり回す） */
@@ -491,12 +534,27 @@ export class TagRenderer {
     const seen = new Set<number>();
     for (const h of this.sim.hayatos) {
       seen.add(h.id);
-      const v = this.hayatos.get(h.id) ?? this.addHayato(h.id);
-      v.root.position.set(h.pos.x, h.pos.y + Math.sin(this.time * 2.2 + h.id) * 0.12, h.pos.z);
+      const v = this.hayatos.get(h.id) ?? this.addHayato(h);
+      const blue = h.kind === 'blue';
+      // 青鬼は浮かずにどすどす揺れる
+      const bob = blue ? Math.abs(Math.sin(this.time * (h.state === 'chase' ? 9 : 4) + h.id)) * 0.18 : Math.sin(this.time * 2.2 + h.id) * 0.12;
+      v.root.position.set(h.pos.x, h.pos.y + bob, h.pos.z);
       v.root.rotation.y = h.yaw;
       v.shout = Math.max(0, v.shout - dt);
       const aiming = h.state === 'aim';
-      const wantMouth = v.shout > 0 ? 1 : aiming ? Math.min(1, h.charge / TAG_LASER_CHARGE) : 0;
+      let wantMouth = v.shout > 0 ? 1 : aiming ? Math.min(1, h.charge / TAG_LASER_CHARGE) : 0;
+      if (blue) {
+        if (h.state === 'eat') {
+          // 食べている: 最初は大きく開け、そのあと、もぐもぐ
+          const t = TAG_BLUE_EAT_TIME - h.eat;
+          wantMouth = t < 0.5 ? 1 : 0.5 + 0.5 * Math.sin(t * 16);
+        } else if (h.state === 'chase') {
+          // 追いかけ中: 相手が近いほど口を開ける
+          const p = this.sim.player(h.target);
+          const d = p ? Math.hypot(p.pos.x - h.pos.x, p.pos.z - h.pos.z) : 99;
+          wantMouth = Math.max(0.15, Math.min(1, 1 - (d - 3) / 12));
+        }
+      }
       v.mouth += (wantMouth - v.mouth) * Math.min(1, dt * 12);
       v.head.morphTargetInfluences![0] = v.mouth;
       // ため中は狙っている相手へ赤い線を引く（避ける合図）
@@ -594,7 +652,7 @@ export class TagRenderer {
       c.opaque?.geometry.dispose();
       c.trans?.geometry.dispose();
     }
-    for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.boltCore, this.boltGlow, this.aimMat]) mat.dispose();
+    for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.blueMat, this.boltCore, this.boltGlow, this.aimMat]) mat.dispose();
     for (const v of this.players.values()) {
       if (!v.label) continue;
       v.label.material.map?.dispose();

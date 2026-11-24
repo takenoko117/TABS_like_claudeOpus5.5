@@ -13,7 +13,7 @@ import {
   TAG_ROCKET_RESPAWN,
 } from '../src/tag/TagConfig';
 import { TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
-import { KabukunMotion, PUNI_MAX } from '../src/tag/KabukunMotion';
+import { BREATH_AMOUNT, KabukunMotion, PUNI_MAX } from '../src/tag/KabukunMotion';
 import { TOUCH_STICK_RADIUS, TOUCH_SPRINT_AT, stickVector } from '../src/tag/TagTouch';
 
 const town = generateGifuTown(1);
@@ -246,7 +246,7 @@ describe('かぶくんのぷにぷに・よちよち', () => {
     // 揺り戻しで一度伸びる
     expect(max).toBeGreaterThan(0.01);
     for (let k = 0; k < 120; k++) m.update(1 / 60, base);
-    expect(Math.abs(m.update(1 / 60, base).stretch)).toBeLessThan(0.01);
+    expect(Math.abs(m.update(1 / 60, base).stretch)).toBeLessThan(BREATH_AMOUNT + 0.01);
   });
 
   it('歩くと左右に傾き（よちよち）、止まると戻る', () => {

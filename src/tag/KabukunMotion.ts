@@ -13,6 +13,12 @@ export const PUNI_MAX = 0.35;
 export const WADDLE_ROLL = 0.16;
 /** 一歩ごとのつぶれ */
 export const STEP_SQUASH = 0.07;
+/** 立っているときの呼吸の伸び縮み */
+export const BREATH_AMOUNT = 0.035;
+/** 呼吸の速さ（1 秒あたりのラジアン。2π で 1 呼吸） */
+export const BREATH_SPEED = 2.6;
+/** ふっとんでいるときの回転の速さ（ラジアン/秒） */
+export const TUMBLE_SPEED = 13;
 
 export interface KabukunMotionInput {
   /** 横方向の速さ（m/s） */
@@ -28,6 +34,8 @@ export interface KabukunMotionInput {
   won: boolean;
   /** パンチ・爆風で動けない（くらくら） */
   stunned?: boolean;
+  /** ふっとんでいる（ぐるぐる回る） */
+  flung?: boolean;
 }
 
 /** 当てる値 */
@@ -40,6 +48,8 @@ export interface KabukunPose {
   lean: number;
   /** 弾む高さ */
   bob: number;
+  /** ふっとびの前転（ラジアン。体の真ん中を軸に回す） */
+  spin: number;
   /** 歩きのアニメの重み（0〜1）と速さ */
   walkWeight: number;
   walkSpeed: number;
@@ -66,7 +76,10 @@ export class KabukunMotion {
   /** パンチで前へ突き出す残り秒 */
   private lunge = 0;
   private dizzy = 0;
-  private readonly pose: KabukunPose = { stretch: 0, roll: 0, lean: 0, bob: 0, walkWeight: 0, walkSpeed: 1, eyes: {}, mouth: {} };
+  /** 呼吸の位相 */
+  private breath = 0;
+  private spin = 0;
+  private readonly pose: KabukunPose = { stretch: 0, roll: 0, lean: 0, bob: 0, spin: 0, walkWeight: 0, walkSpeed: 1, eyes: {}, mouth: {} };
 
   constructor(private readonly random: () => number = Math.random) {}
 
@@ -119,9 +132,13 @@ export class KabukunMotion {
     }
 
     const p = this.pose;
-    p.stretch = this.s;
+    // 立っているときは呼吸で、ゆっくりふくらんだりしぼんだりする（体も少しゆれる）
+    const still = inp.alive && !inp.air ? 1 - this.walkW : 0;
+    this.breath += dt * BREATH_SPEED;
+    const breath = Math.sin(this.breath);
+    p.stretch = this.s + breath * BREATH_AMOUNT * still;
     // よちよち: 一歩ごとに左右へ体を傾ける
-    p.roll = Math.sin(this.phase) * WADDLE_ROLL * this.walkW;
+    p.roll = Math.sin(this.phase) * WADDLE_ROLL * this.walkW + Math.sin(this.breath * 0.5) * 0.025 * still;
     p.lean = Math.min(0.25, inp.speed * 0.025) * this.walkW;
     // パンチの突き出し
     this.lunge = Math.max(0, this.lunge - dt);
@@ -133,6 +150,15 @@ export class KabukunMotion {
       p.lean += Math.cos(this.dizzy) * 0.12;
     }
     p.bob = Math.abs(Math.sin(this.phase)) * 0.05 * this.walkW;
+    // ふっとび: 前へぐるぐる回り、終わったら近いほうの一回転へ戻す
+    if (inp.flung && inp.alive) {
+      this.spin += dt * TUMBLE_SPEED;
+    } else if (this.spin !== 0) {
+      const target = Math.round(this.spin / (Math.PI * 2)) * Math.PI * 2;
+      this.spin += (target - this.spin) * Math.min(1, dt * 10);
+      if (Math.abs(target - this.spin) < 0.01) this.spin = 0;
+    }
+    p.spin = this.spin;
     p.walkWeight = this.walkW;
     p.walkSpeed = 0.7 + inp.speed * 0.22;
 
@@ -153,6 +179,9 @@ export class KabukunMotion {
     } else if (inp.won) {
       eyes.happy = 1;
       mouth.smile_open = 1;
+    } else if (inp.flung) {
+      eyes.surprised = 1;
+      mouth.wide = 1;
     } else if (inp.stunned) {
       eyes.half = 1;
       eyes[Math.sin(this.dizzy) > 0 ? 'look_left' : 'look_right'] = 1;
