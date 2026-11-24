@@ -1,4 +1,4 @@
-import { AnimationMixer, Group, LoopOnce, type AnimationAction, type Mesh, type Object3D } from 'three';
+import { AnimationMixer, Group, LoopOnce, Quaternion, Vector3, type AnimationAction, type Mesh, type Object3D } from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { KabukunMotion, type KabukunMotionInput } from './KabukunMotion';
@@ -37,9 +37,19 @@ export class KabukunActor {
   private readonly mouths: Mesh[] = [];
   readonly motion = new KabukunMotion();
   private wasAir = false;
+  private readonly model: Object3D;
+  /** パンチで動かす右腕（肩の骨と手の骨） */
+  private readonly armR: Object3D | null;
+  private readonly handR: Object3D | null;
+  /** パンチで向け直す前の肩の骨の向き（アニメが肩を動かさないときに、ずれがたまらないよう戻す） */
+  private readonly armSaved = new Quaternion();
+  private armTouched = false;
 
   constructor(gltf: GLTF) {
     const model = cloneSkinned(gltf.scene) as Object3D;
+    this.model = model;
+    this.armR = model.getObjectByName('arm_R') ?? null;
+    this.handR = model.getObjectByName('hand_R') ?? null;
     model.scale.setScalar(KABUKUN_GLB_SCALE);
     model.traverse((o) => {
       const m = o as Mesh;
@@ -99,26 +109,66 @@ export class KabukunActor {
       this.walk.timeScale = pose.walkSpeed;
     }
     this.idle?.setEffectiveWeight(1 - pose.walkWeight);
+    if (this.armTouched && this.armR) {
+      this.armR.quaternion.copy(this.armSaved);
+      this.armTouched = false;
+    }
     this.mixer.update(dt);
 
     // ぷにぷに（体積を保つように横へふくらむ）とよちよち
     const sy = 1 + pose.stretch;
     const sxz = 1 / Math.sqrt(sy);
     this.inner.scale.set(sxz, sy, sxz);
-    this.inner.rotation.set(pose.lean, 0, pose.roll);
+    this.inner.rotation.set(pose.lean, pose.twist, pose.roll);
     this.inner.position.y = pose.bob;
     this.spinner.rotation.x = pose.spin;
     // アウトになったら仰向けに倒れる
     this.root.rotation.x = inp.alive ? 0 : -Math.PI / 2;
 
+    if (pose.punchArm !== 0) this.aimArm(pose.punchArm);
+
     setMorphs(this.eyes, pose.eyes);
     setMorphs(this.mouths, pose.mouth);
+  }
+
+  /**
+   * パンチの腕: アニメで決まった腕の向きから、前（+）か後ろ（-）へ向け直す。
+   * 骨の軸の向きに頼らないよう、肩 → 手の向きを模型の空間で求め、目標の向きへ回す分だけ肩の骨に足す。
+   */
+  private aimArm(amount: number): void {
+    const arm = this.armR;
+    const hand = this.handR;
+    if (!arm || !hand || !arm.parent) return;
+    this.armSaved.copy(arm.quaternion);
+    this.armTouched = true;
+    this.root.updateMatrixWorld(true);
+    const shoulder = arm.getWorldPosition(_v1);
+    const wrist = hand.getWorldPosition(_v2);
+    const cur = wrist.sub(shoulder).normalize();
+    // 目標の向き（模型の正面は +z）を世界の向きへ
+    const modelQ = this.model.getWorldQuaternion(_q1);
+    const want = (amount > 0 ? _v3.set(0, 0.15, 1) : _v3.set(0.2, 0.35, -1)).normalize().applyQuaternion(modelQ);
+    const full = _q2.setFromUnitVectors(cur, want);
+    const delta = _q3.identity().slerp(full, Math.min(1, Math.abs(amount)));
+    // 世界での回転を親の空間に直して、肩の骨の向きに足す
+    const parentQ = arm.parent.getWorldQuaternion(_q4);
+    const local = _q5.copy(parentQ).invert().multiply(delta).multiply(parentQ);
+    arm.quaternion.premultiply(local);
   }
 
   dispose(): void {
     this.mixer.stopAllAction();
   }
 }
+
+const _v1 = new Vector3();
+const _v2 = new Vector3();
+const _v3 = new Vector3();
+const _q1 = new Quaternion();
+const _q2 = new Quaternion();
+const _q3 = new Quaternion();
+const _q4 = new Quaternion();
+const _q5 = new Quaternion();
 
 /** モーフをなめらかに目標へ寄せる（指定のない名前は 0 へ） */
 function setMorphs(meshes: Mesh[], target: Record<string, number>): void {

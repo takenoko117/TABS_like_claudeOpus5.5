@@ -37,23 +37,27 @@ export const TAG_GRAVITY = 22;
 export const TAG_MAX_HP = 3;
 /** 当たったあと、次に当たらない時間（秒） */
 export const TAG_INVULN_TIME = 2;
-/** 当たったときに横へふっとぶ速さ（大きくふっとんで、敵から離れられる） */
-export const TAG_KNOCKBACK = 17;
+/** 当たったときに横へふっとぶ速さ（開けた所なら 50 m ほど飛ぶ。敵から一気に離れられる） */
+export const TAG_KNOCKBACK = 19;
 /** 当たったときに上へふっとぶ速さ */
-export const TAG_KNOCKBACK_UP = 9.5;
+export const TAG_KNOCKBACK_UP = 13;
+/** ふっとんでいる間の重力の倍率（ふわっと長く飛ぶ） */
+export const TAG_FLING_GRAVITY = 0.6;
 /** ふっとんでいる間の空気抵抗（1 秒あたりに横の速さが減る割合） */
-export const TAG_FLING_DRAG = 0.6;
-/** ふっとんで壁に当たったときに跳ね返る割合 */
-export const TAG_FLING_BOUNCE = 0.55;
+export const TAG_FLING_DRAG = 0.12;
+/** ふっとんで壁・天井・町の端に当たったときに跳ね返る割合 */
+export const TAG_FLING_BOUNCE = 0.6;
 /** ふっとんで着地したときに弾む割合（この速さより速く落ちたときだけ弾む） */
-export const TAG_FLING_LAND_BOUNCE = 0.42;
-export const TAG_FLING_BOUNCE_MIN = 5;
+export const TAG_FLING_LAND_BOUNCE = 0.5;
+export const TAG_FLING_BOUNCE_MIN = 3;
+/** 着地で弾むとき、横の速さを残す割合 */
+export const TAG_FLING_LAND_KEEP = 0.85;
 /** 地面を転がるときの摩擦（1 秒あたりに減る速さ m/s） */
-export const TAG_FLING_FRICTION = 14;
+export const TAG_FLING_FRICTION = 12;
 /** ふっとびが終わる横の速さ（これより遅くなって着地していれば操作が戻る） */
 export const TAG_FLING_END_SPEED = 2.5;
 /** ふっとびの最長時間（秒） */
-export const TAG_FLING_MAX = 2.2;
+export const TAG_FLING_MAX = 5;
 
 // ---- 鬼（ハヤト） ----
 /** 始まったときのハヤトの数 */
@@ -159,8 +163,10 @@ export const TAG_PUNCH_HEIGHT = 1.6;
 export const TAG_PUNCH_COOLDOWN = 2.5;
 /** パンチで相手が動けなくなる時間（秒） */
 export const TAG_PUNCH_STUN = 3;
-/** パンチで相手を押す速さ */
-export const TAG_PUNCH_KNOCK = 5;
+/** パンチで相手がふっとぶ速さ（レーザーに当たったときと同じく 50 m ほど飛ぶ） */
+export const TAG_PUNCH_KNOCK = TAG_KNOCKBACK;
+/** パンチで相手が上へふっとぶ速さ */
+export const TAG_PUNCH_KNOCK_UP = TAG_KNOCKBACK_UP;
 /** 町に落ちているロケットの数 */
 export const TAG_ROCKET_PICKUPS = 14;
 /** 拾われたロケットが同じ場所にまた出るまで（秒） */

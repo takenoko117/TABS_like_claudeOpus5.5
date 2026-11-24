@@ -520,8 +520,15 @@ export class TagApp {
     // ゲスト: 連打で何度も送らないよう、こちらでも待ち時間を数える
     const r = (v: number) => Math.round(v * 100) / 100;
     this.client?.send({ t: 'act', k: kind === 'punch' ? 0 : 1, d: [r(dir.x), r(dir.y), r(dir.z)] });
-    if (kind === 'punch') me.punchCooldown = TAG_PUNCH_COOLDOWN;
-    else me.rocketCooldown = TAG_ROCKET_COOLDOWN;
+    if (kind === 'punch') {
+      me.punchCooldown = TAG_PUNCH_COOLDOWN;
+      // ホストの知らせを待たずに、自分のパンチの動きを始める（相手のほうを向いて）
+      const target = sim.punchTarget(me.id);
+      if (target) me.yaw = Math.atan2(target.pos.x - me.pos.x, target.pos.z - me.pos.z);
+      this.renderer?.punchPlayer(me.id);
+    } else {
+      me.rocketCooldown = TAG_ROCKET_COOLDOWN;
+    }
   }
 
   private gatherInput() {

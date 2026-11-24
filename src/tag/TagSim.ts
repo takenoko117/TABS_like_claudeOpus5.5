@@ -28,7 +28,9 @@ import {
   TAG_FLING_DRAG,
   TAG_FLING_END_SPEED,
   TAG_FLING_FRICTION,
+  TAG_FLING_GRAVITY,
   TAG_FLING_LAND_BOUNCE,
+  TAG_FLING_LAND_KEEP,
   TAG_FLING_MAX,
   TAG_GRAVITY,
   TAG_HAYATO_CHASE_SPEED,
@@ -59,6 +61,7 @@ import {
   TAG_PUNCH_COOLDOWN,
   TAG_PUNCH_HEIGHT,
   TAG_PUNCH_KNOCK,
+  TAG_PUNCH_KNOCK_UP,
   TAG_PUNCH_RANGE,
   TAG_PUNCH_STUN,
   TAG_ROCKET_BLAST,
@@ -396,7 +399,8 @@ export class TagSim {
         p.yaw = lerpAngle(p.yaw, p.net.yaw, k);
       }
       p.invuln = Math.max(0, p.invuln - dt);
-      p.stun = Math.max(0, p.stun - dt);
+      // 動けない時間は、ふっとび終わって着地してから数える
+      if (p.fling <= 0) p.stun = Math.max(0, p.stun - dt);
       // ほかの端末の人のふっとびは見た目だけ（回転の演出）なので時間で終える
       if (p.id !== this.localId) p.fling = Math.max(0, p.fling - dt * 2);
       p.punchCooldown = Math.max(0, p.punchCooldown - dt);
@@ -485,6 +489,7 @@ export class TagSim {
     p.vel.x *= drag;
     p.vel.z *= drag;
     if (p.onGround) {
+      // 地面をすべって減速する
       const hs = Math.hypot(p.vel.x, p.vel.z);
       if (hs > 0) {
         const k = Math.max(0, hs - TAG_FLING_FRICTION * dt) / hs;
@@ -493,15 +498,29 @@ export class TagSim {
       }
     }
     const inWater = this.world.get(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.3), Math.floor(p.pos.z)) === B.WATER;
-    p.vel.y -= TAG_GRAVITY * (inWater ? 0.5 : 1) * dt;
+    if (inWater) {
+      // 水に落ちたら勢いが消える
+      p.vel.x *= 0.9;
+      p.vel.z *= 0.9;
+    }
+    p.vel.y -= TAG_GRAVITY * TAG_FLING_GRAVITY * (inWater ? 0.5 : 1) * dt;
     const before = { x: p.vel.x, y: p.vel.y, z: p.vel.z };
+    const wasGround = p.onGround;
     p.onGround = moveBox(this.world, p.pos, p.vel, TAG_PLAYER_HALF, TAG_PLAYER_HEIGHT, dt, false, false);
     // 壁に当たった向きは跳ね返す
     if (before.x !== 0 && p.vel.x === 0) p.vel.x = -before.x * TAG_FLING_BOUNCE;
     if (before.z !== 0 && p.vel.z === 0) p.vel.z = -before.z * TAG_FLING_BOUNCE;
-    // 強く落ちたら弾む
-    if (p.onGround && before.y < -TAG_FLING_BOUNCE_MIN) {
+    // 町の端も壁と同じに跳ね返す
+    const w = this.world;
+    if ((p.pos.x <= 0.5 && p.vel.x < 0) || (p.pos.x >= w.sizeX - 0.5 && p.vel.x > 0)) p.vel.x = -p.vel.x * TAG_FLING_BOUNCE;
+    if ((p.pos.z <= 0.5 && p.vel.z < 0) || (p.pos.z >= w.sizeZ - 0.5 && p.vel.z > 0)) p.vel.z = -p.vel.z * TAG_FLING_BOUNCE;
+    // 天井（高架・アーケードの屋根など）に当たったら下へ跳ね返す
+    if (before.y > 0 && p.vel.y === 0 && !p.onGround) p.vel.y = -before.y * TAG_FLING_BOUNCE;
+    // 強く落ちたら弾む（横の勢いは少しだけ減る）
+    if (p.onGround && !wasGround && before.y < -TAG_FLING_BOUNCE_MIN) {
       p.vel.y = -before.y * TAG_FLING_LAND_BOUNCE;
+      p.vel.x *= TAG_FLING_LAND_KEEP;
+      p.vel.z *= TAG_FLING_LAND_KEEP;
       p.onGround = false;
     }
     p.moving = false;
@@ -517,7 +536,8 @@ export class TagSim {
       p.onGround = false;
       p.fling = TAG_FLING_MAX;
     } else {
-      p.fling = 1.2;
+      // ほかの端末の人は届く位置で飛んで見えるので、回転の演出だけ（長めに）
+      p.fling = 2.5;
     }
   }
 
@@ -1279,15 +1299,8 @@ export class TagSim {
     const p = this.player(victim);
     if (!p || !p.alive) return;
     p.stun = Math.max(p.stun, time);
-    if (by === 'blast') {
-      // 爆風は物理でふっとぶ
-      this.fling(p, dir, knock, 7);
-    } else if (p.id === this.localId) {
-      p.vel.x = dir.x * knock;
-      p.vel.z = dir.z * knock;
-      p.vel.y = 3;
-      p.onGround = false;
-    }
+    // パンチも爆風も物理でふっとぶ（パンチはレーザーと同じくらい大きく）
+    this.fling(p, dir, knock, by === 'blast' ? 7 : TAG_PUNCH_KNOCK_UP);
     if (by === 'punch') {
       const a = this.player(attacker);
       if (a && a.id !== this.localId) a.yaw = Math.atan2(-dir.x, -dir.z) + Math.PI;

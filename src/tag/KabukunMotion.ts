@@ -17,6 +17,10 @@ export const STEP_SQUASH = 0.07;
 export const BREATH_AMOUNT = 0.035;
 /** 呼吸の速さ（1 秒あたりのラジアン。2π で 1 呼吸） */
 export const BREATH_SPEED = 2.6;
+/** パンチの振りかぶり・打ち込み・戻りの時間（秒） */
+export const PUNCH_WIND = 0.12;
+export const PUNCH_STRIKE = 0.08;
+export const PUNCH_RECOVER = 0.24;
 /** ふっとんでいるときの回転の速さ（ラジアン/秒） */
 export const TUMBLE_SPEED = 13;
 
@@ -50,6 +54,10 @@ export interface KabukunPose {
   bob: number;
   /** ふっとびの前転（ラジアン。体の真ん中を軸に回す） */
   spin: number;
+  /** 体のひねり（ラジアン。パンチで振りかぶると右へ、打つと左へ） */
+  twist: number;
+  /** 右腕の向き（-1 = 後ろへ振りかぶる、0 = いつもの腕、+1 = 前へ突き出す） */
+  punchArm: number;
   /** 歩きのアニメの重み（0〜1）と速さ */
   walkWeight: number;
   walkSpeed: number;
@@ -73,13 +81,13 @@ export class KabukunMotion {
   private blink = 0;
   /** 当たったときの顔の残り秒 */
   private ouch = 0;
-  /** パンチで前へ突き出す残り秒 */
-  private lunge = 0;
+  /** パンチを打ち始めてからの秒（負ならパンチしていない） */
+  private punchT = -1;
   private dizzy = 0;
   /** 呼吸の位相 */
   private breath = 0;
   private spin = 0;
-  private readonly pose: KabukunPose = { stretch: 0, roll: 0, lean: 0, bob: 0, spin: 0, walkWeight: 0, walkSpeed: 1, eyes: {}, mouth: {} };
+  private readonly pose: KabukunPose = { stretch: 0, roll: 0, lean: 0, bob: 0, spin: 0, twist: 0, punchArm: 0, walkWeight: 0, walkSpeed: 1, eyes: {}, mouth: {} };
 
   constructor(private readonly random: () => number = Math.random) {}
 
@@ -94,10 +102,12 @@ export class KabukunMotion {
     this.ouch = 0.9;
   }
 
-  /** パンチを打つ（体ごと前へ突き出す） */
+  /** パンチを打つ（振りかぶって、右腕を体ごと前へ突き出す） */
   punch(): void {
-    this.lunge = 0.25;
-    this.poke(0.18);
+    // 打っている最中に同じパンチの知らせが遅れて届いても、やり直さない
+    if (this.punchT >= 0 && this.punchT < PUNCH_WIND + PUNCH_STRIKE + PUNCH_RECOVER) return;
+    this.punchT = 0;
+    this.poke(-0.12);
   }
 
   update(dt: number, inp: KabukunMotionInput): KabukunPose {
@@ -140,9 +150,43 @@ export class KabukunMotion {
     // よちよち: 一歩ごとに左右へ体を傾ける
     p.roll = Math.sin(this.phase) * WADDLE_ROLL * this.walkW + Math.sin(this.breath * 0.5) * 0.025 * still;
     p.lean = Math.min(0.25, inp.speed * 0.025) * this.walkW;
-    // パンチの突き出し
-    this.lunge = Math.max(0, this.lunge - dt);
-    if (this.lunge > 0) p.lean += Math.sin((this.lunge / 0.25) * Math.PI) * 0.55;
+    // パンチ: 振りかぶる → 打ち込む → 戻る
+    p.twist = 0;
+    p.punchArm = 0;
+    if (this.punchT >= 0) {
+      const before = this.punchT;
+      this.punchT += dt;
+      const t = this.punchT;
+      let arm = 0;
+      let lean = 0;
+      let twist = 0;
+      if (t < PUNCH_WIND) {
+        const k = t / PUNCH_WIND;
+        arm = -0.8 * k;
+        lean = -0.25 * k;
+        twist = -0.4 * k;
+      } else if (t < PUNCH_WIND + PUNCH_STRIKE) {
+        // 打ち込んだ瞬間に体がびよんと伸びる
+        if (before < PUNCH_WIND) this.poke(0.3);
+        const k = (t - PUNCH_WIND) / PUNCH_STRIKE;
+        arm = -0.8 + 1.8 * k;
+        lean = -0.25 + 0.85 * k;
+        twist = -0.4 + 0.8 * k;
+      } else if (t < PUNCH_WIND + PUNCH_STRIKE + PUNCH_RECOVER) {
+        if (before < PUNCH_WIND) this.poke(0.3);
+        const k = (t - PUNCH_WIND - PUNCH_STRIKE) / PUNCH_RECOVER;
+        // 突き出したまま少し止めてから戻す
+        const e = k < 0.3 ? 1 : 1 - (k - 0.3) / 0.7;
+        arm = e;
+        lean = 0.6 * e;
+        twist = 0.4 * e;
+      } else {
+        this.punchT = -1;
+      }
+      p.punchArm = arm;
+      p.lean += lean;
+      p.twist = twist;
+    }
     // くらくら: 体がぐるぐる揺れる
     if (inp.stunned && inp.alive) {
       this.dizzy += dt * 7;

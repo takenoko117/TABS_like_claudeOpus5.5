@@ -10,10 +10,11 @@ import {
   TAG_BLUE_RADIUS,
   TAG_BLUE_SIZE,
   TAG_KNOCKBACK,
+  TAG_PUNCH_STUN,
   TAG_SPRINT_SPEED,
 } from '../src/tag/TagConfig';
 import { TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
-import { BREATH_AMOUNT, KabukunMotion } from '../src/tag/KabukunMotion';
+import { BREATH_AMOUNT, KabukunMotion, PUNCH_RECOVER, PUNCH_STRIKE, PUNCH_WIND } from '../src/tag/KabukunMotion';
 import { boxCollides } from '../src/openworld/OpenWorldSim';
 
 const STEP = 1 / 60;
@@ -27,9 +28,9 @@ function run(sim: TagSim, seconds: number, input = emptyTagInput()): void {
  * 実験用の平らな広場（64×64）。alley なら、真ん中に幅 2 ブロックの路地をはさんだ 2 棟の建物を建てる。
  * 建物: x 20〜29 と x 32〜41、z 20〜40、高さ 7。路地は x 30〜31。
  */
-function arena(alley = false): GifuTown {
-  const w = new VoxelWorld(64, 16, 64);
-  for (let x = 0; x < 64; x++) for (let z = 0; z < 64; z++) for (let y = 0; y < GROUND; y++) w.data[w.index(x, y, z)] = B.STONE;
+function arena(alley = false, size = 64): GifuTown {
+  const w = new VoxelWorld(size, 16, size);
+  for (let x = 0; x < size; x++) for (let z = 0; z < size; z++) for (let y = 0; y < GROUND; y++) w.data[w.index(x, y, z)] = B.STONE;
   if (alley) {
     for (let y = GROUND; y < GROUND + 7; y++) {
       for (let z = 20; z <= 40; z++) {
@@ -171,8 +172,8 @@ describe('青鬼ハヤト', () => {
 });
 
 describe('当たると大きくふっとぶ', () => {
-  it('レーザーに当たると遠くまでふっとび、その間は操作が効かず、止まると操作が戻る', () => {
-    const sim = new TagSim(1, solo, 0, true, arena());
+  it('レーザーに当たると開けた所なら 50 m ほどふっとび、その間は操作が効かず、止まると操作が戻る', () => {
+    const sim = new TagSim(1, solo, 0, true, arena(false, 128));
     sim.hayatos.length = 0;
     const p = sim.local!;
     const x0 = p.pos.x;
@@ -183,9 +184,12 @@ describe('当たると大きくふっとぶ', () => {
     const back = { ...emptyTagInput(), moveX: 1, yaw: 0 };
     run(sim, 0.5, back);
     expect(p.pos.x - x0).toBeGreaterThan(5);
-    run(sim, 2.5);
-    expect(p.pos.x - x0).toBeGreaterThan(10);
+    for (let t = 0; t < 8 && p.fling > 0; t += STEP) sim.step(STEP, emptyTagInput());
     expect(p.fling).toBe(0);
+    expect(p.pos.x - x0).toBeGreaterThan(40);
+    expect(p.pos.x - x0).toBeLessThan(65);
+    // 高く舞い上がる
+    expect(sim.events.some((e) => e.kind === 'hit')).toBe(true);
     // 操作が戻る
     const x1 = p.pos.x;
     run(sim, 0.5, back);
@@ -206,6 +210,57 @@ describe('当たると大きくふっとぶ', () => {
   });
 });
 
+describe('パンチでもふっとぶ', () => {
+  it('殴られた人はレーザーと同じくらい遠くへふっとび、着地してから動けない時間が数えられる', () => {
+    // 殴られる B（id 1）をこの端末で動かす
+    const sim = new TagSim(1, duo, 1, true, arena(false, 128));
+    sim.hayatos.length = 0;
+    const a = sim.player(0)!;
+    const b = sim.player(1)!;
+    b.pos.x = a.pos.x + 1.5;
+    b.pos.z = a.pos.z;
+    const x0 = b.pos.x;
+    expect(sim.requestPunch(0)).toBe(true);
+    expect(b.fling).toBeGreaterThan(0);
+    expect(b.vel.x).toBeCloseTo(TAG_KNOCKBACK);
+    for (let t = 0; t < 8 && b.fling > 0; t += STEP) sim.step(STEP, emptyTagInput());
+    expect(b.pos.x - x0).toBeGreaterThan(40);
+    // 飛んでいる間は減らないので、着地した時点でまだほぼまるごと残っている
+    expect(b.stun).toBeGreaterThan(TAG_PUNCH_STUN - 0.1);
+  });
+});
+
+describe('ふっとびの跳ね返り（つづき）', () => {
+  it('町の端に当たっても跳ね返る', () => {
+    const sim = new TagSim(1, solo, 0, true, arena());
+    sim.hayatos.length = 0;
+    const p = sim.local!;
+    p.pos.x = 58;
+    sim.applyHit(0, 2, 0, { x: 1, y: 0, z: 0 });
+    run(sim, 0.6);
+    expect(p.vel.x).toBeLessThan(0);
+  });
+
+  it('天井に当たると下へ跳ね返る', () => {
+    const town = arena();
+    const w = town.world;
+    // 頭の少し上に屋根
+    for (let x = 0; x < 64; x++) for (let z = 40; z < 64; z++) w.data[w.index(x, GROUND + 3, z)] = B.CONCRETE;
+    town.pristine = w.data.slice();
+    const sim = new TagSim(1, solo, 0, true, town);
+    sim.hayatos.length = 0;
+    const p = sim.local!;
+    sim.applyHit(0, 2, 0, { x: 1, y: 0, z: 0 });
+    let hitCeiling = false;
+    for (let t = 0; t < 0.5; t += STEP) {
+      sim.step(STEP, emptyTagInput());
+      if (p.vel.y < -4 && p.pos.y > GROUND + 1.5) hitCeiling = true;
+    }
+    expect(hitCeiling).toBe(true);
+    expect(p.pos.y + 1.3).toBeLessThanOrEqual(GROUND + 3 + 0.01);
+  });
+});
+
 describe('かぶくんの立ちモーション', () => {
   const idle = { speed: 0, air: false, vy: 0, alive: true, alarmed: false, won: false };
 
@@ -222,6 +277,32 @@ describe('かぶくんの立ちモーション', () => {
     expect(hi).toBeGreaterThan(BREATH_AMOUNT * 0.8);
     expect(lo).toBeLessThan(-BREATH_AMOUNT * 0.8);
     expect(hi).toBeLessThan(BREATH_AMOUNT * 1.5);
+  });
+
+  it('パンチは振りかぶってから右腕を前へ突き出し、体ごと伸びて、元に戻る', () => {
+    const m = new KabukunMotion(() => 0.5);
+    m.punch();
+    let minArm = 0;
+    let maxArm = 0;
+    let maxLean = 0;
+    let maxStretch = -1;
+    const total = PUNCH_WIND + PUNCH_STRIKE + PUNCH_RECOVER;
+    let armAtWind = 0;
+    for (let t = 0; t < total + 0.2; t += STEP) {
+      const pose = m.update(STEP, idle);
+      if (t < PUNCH_WIND) armAtWind = Math.min(armAtWind, pose.punchArm);
+      minArm = Math.min(minArm, pose.punchArm);
+      maxArm = Math.max(maxArm, pose.punchArm);
+      maxLean = Math.max(maxLean, pose.lean);
+      if (t > PUNCH_WIND) maxStretch = Math.max(maxStretch, pose.stretch);
+    }
+    expect(armAtWind).toBeLessThan(-0.5);
+    expect(maxArm).toBeGreaterThan(0.9);
+    expect(maxLean).toBeGreaterThan(0.4);
+    expect(maxStretch).toBeGreaterThan(0.1);
+    const end = m.update(STEP, idle);
+    expect(end.punchArm).toBe(0);
+    expect(end.twist).toBe(0);
   });
 
   it('ふっとんでいる間はぐるぐる回り、終わると元の姿勢に戻る', () => {

@@ -362,6 +362,11 @@ export class TagRenderer {
     }
   }
 
+  /** パンチの動きだけを始める（ゲストが自分のパンチを、ホストの知らせより先に見せる） */
+  punchPlayer(id: number): void {
+    this.players.get(id)?.actor?.punch();
+  }
+
   private burst(x: number, y: number, z: number, color: number, n: number, speed: number): void {
     for (let k = 0; k < n && this.fx.length < FX_MAX; k++) {
       const a = Math.random() * Math.PI * 2;
