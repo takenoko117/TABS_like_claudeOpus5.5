@@ -7,6 +7,9 @@
 //
 // 接続先: wss://<worker>/room/<部屋名>?intent=create|join|watch
 // 部屋の一覧: GET https://<worker>/rooms
+//
+// 鬼ごっこ（かぶくん vs ハヤト）の部屋も同じ Worker で中継する: wss://<worker>/tag/<部屋名>
+// （TagRoomObject。最大 6 人。位置と鬼の様子をそのまま中継するだけで、一覧には出さない）
 import { DurableObject } from 'cloudflare:workers';
 import {
   TD_VS_LIST_REFRESH_MS,
@@ -17,6 +20,8 @@ import {
 } from '../../src/net/tdVersusProtocol';
 import { RoomDirectory, reportKey, shouldReport, type RoomReport } from './roomDirectory';
 import { TDVersusRoom, type RoomOutput } from './roomLogic';
+import { parseTagClientMessage, type TagServerMessage } from '../../src/net/tagProtocol';
+import { TagRoom, type TagRoomOutput } from './tagRoomLogic';
 
 /** 一覧の Durable Object の名前（1 つだけ作る） */
 const LOBBY_NAME = 'lobby';
@@ -24,6 +29,7 @@ const LOBBY_NAME = 'lobby';
 export interface Env {
   ROOMS: DurableObjectNamespace<VersusRoomObject>;
   LOBBY: DurableObjectNamespace<LobbyObject>;
+  TAG_ROOMS: DurableObjectNamespace<TagRoomObject>;
   /** 接続を許す Origin（カンマ区切り）。空なら制限しない */
   ALLOWED_ORIGINS?: string;
 }
@@ -36,6 +42,21 @@ export default {
     const origin = request.headers.get('Origin') ?? '';
     const originOk = allowed.length === 0 || allowed.includes(origin);
     if (url.pathname === '/rooms') return listRooms(request, env, allowed, origin, originOk);
+    const tagMatch = /^\/tag\/([^/]+)$/.exec(url.pathname);
+    if (tagMatch) {
+      if (request.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
+      if (!originOk) return new Response('forbidden origin', { status: 403 });
+      let rawTag: string;
+      try {
+        rawTag = decodeURIComponent(tagMatch[1]);
+      } catch {
+        return new Response('bad room name', { status: 400 });
+      }
+      const tagName = normalizeRoomName(rawTag);
+      if (!tagName) return new Response('bad room name', { status: 400 });
+      const tagStub = env.TAG_ROOMS.get(env.TAG_ROOMS.idFromName(tagName));
+      return tagStub.fetch(new Request(`https://tag/${encodeURIComponent(tagName)}`, request));
+    }
     const match = /^\/room\/([^/]+)$/.exec(url.pathname);
     if (!match) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
@@ -286,5 +307,105 @@ export class LobbyObject extends DurableObject<Env> {
     }
     if (url.pathname === '/list') return Response.json({ rooms: dir.list(now) });
     return new Response('not found', { status: 404 });
+  }
+}
+
+/** 鬼ごっこの 1 部屋。位置と鬼の様子を中継する。誰からも 3 分間メッセージが来なければ閉じる */
+export class TagRoomObject extends DurableObject<Env> {
+  private room: TagRoom | null = null;
+  private readonly sockets = new Map<number, WebSocket>();
+  private alarmSet = false;
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const name = decodeURIComponent(url.pathname.slice(1));
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    server.accept();
+    this.room ??= new TagRoom(name, Date.now());
+    const { slot, out, error } = this.room.join(Date.now());
+    if (slot === null) {
+      const code = error ?? 'full';
+      server.send(JSON.stringify({ t: 'error', code } satisfies TagServerMessage));
+      server.close(code === 'playing' ? 4006 : 4001, code);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    this.sockets.set(slot, server);
+    server.addEventListener('message', (e) => this.onMessage(slot, server, e.data));
+    server.addEventListener('close', () => this.onClose(slot, server));
+    server.addEventListener('error', () => this.onClose(slot, server));
+    this.deliver(out);
+    await this.ensureAlarm();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  private onMessage(slot: number, ws: WebSocket, data: unknown): void {
+    if (!this.room || this.sockets.get(slot) !== ws) return;
+    const msg = typeof data === 'string' ? parseTagClientMessage(data) : null;
+    if (!msg) {
+      ws.send(JSON.stringify({ t: 'error', code: 'bad_message' } satisfies TagServerMessage));
+      return;
+    }
+    this.deliver(this.room.message(slot, msg, Date.now()));
+    void this.ensureAlarm();
+  }
+
+  private onClose(slot: number, ws: WebSocket): void {
+    if (!this.room || this.sockets.get(slot) !== ws) return;
+    this.sockets.delete(slot);
+    this.deliver(this.room.leave(slot, Date.now()));
+    if (this.room.empty) void this.destroy();
+  }
+
+  private deliver(out: readonly TagRoomOutput[]): void {
+    for (const { to, except, msg } of out) {
+      const text = JSON.stringify(msg);
+      const targets = to === 'all' ? [...this.sockets.entries()].filter(([s]) => s !== except).map(([, ws]) => ws) : [this.sockets.get(to)];
+      for (const ws of targets) {
+        try {
+          ws?.send(text);
+        } catch {
+          // 切れかけの接続への送信失敗は無視する（close で片付く）
+        }
+      }
+    }
+  }
+
+  private async ensureAlarm(): Promise<void> {
+    if (this.alarmSet || !this.room) return;
+    this.alarmSet = true;
+    await this.ctx.storage.setAlarm(this.room.idleDeadline);
+  }
+
+  async alarm(): Promise<void> {
+    this.alarmSet = false;
+    const room = this.room;
+    if (!room) {
+      await this.ctx.storage.deleteAll();
+      return;
+    }
+    if (!room.isIdle(Date.now())) {
+      await this.ensureAlarm();
+      return;
+    }
+    const closed = JSON.stringify({ t: 'closed', reason: 'idle' } satisfies TagServerMessage);
+    for (const ws of this.sockets.values()) {
+      try {
+        ws.send(closed);
+        ws.close(4000, 'idle');
+      } catch {
+        // すでに切れていれば何もしない
+      }
+    }
+    await this.destroy();
+  }
+
+  private async destroy(): Promise<void> {
+    this.sockets.clear();
+    this.room = null;
+    this.alarmSet = false;
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
   }
 }

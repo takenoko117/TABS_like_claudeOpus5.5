@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src", "../src/net/tdVersusProtocol.ts"]
+  "include": ["src", "../src/net/tdVersusProtocol.ts", "../src/net/tagProtocol.ts"]
 }

@@ -1,4 +1,5 @@
 import { OpenWorldApp } from '../openworld/OpenWorldApp';
+import { TagApp } from '../tag/TagApp';
 import { vx, vxStars, type VoxelIconName } from '../ui/VoxelIcons';
 import { setHtml } from '../fx/ui/dom';
 import { Vector3 } from 'three';
@@ -503,6 +504,8 @@ export class GameApp {
   readonly sound = new SoundManager();
   /** オープンワールドを開いている間だけある */
   private openWorld: OpenWorldApp | null = null;
+  /** 鬼ごっこモード（開いている間は tick を TagApp に任せる） */
+  private tagMode: TagApp | null = null;
   readonly music = new MusicPlayer();
   private settings: GameSettings = loadSettings();
   private readonly adaptiveQuality = new AdaptiveQuality();
@@ -1394,6 +1397,11 @@ export class GameApp {
           this.enterOpenWorld();
           return;
         }
+        // 鬼ごっこも自前の画面と描画を持つ
+        if (button.dataset.mode === 'tag') {
+          this.enterTagMode();
+          return;
+        }
         this.leaveTitleScreen(button.dataset.mode as PlayStyle);
       });
     });
@@ -1427,6 +1435,27 @@ export class GameApp {
     this.openWorld?.dispose();
     this.openWorld = null;
     document.body.classList.remove('in-openworld');
+    this.showTitleScreen();
+  }
+
+  /** 鬼ごっこ（かぶくん vs ハヤト）を開く（開いている間は tick を TagApp に任せる） */
+  private enterTagMode(): void {
+    this.sound.playPlace();
+    this.onTitleScreen = false;
+    document.body.classList.remove('on-title');
+    document.body.classList.add('in-tag');
+    document.getElementById('title-screen')?.classList.add('hidden');
+    this.music.setTrack(null);
+    this.tagMode = new TagApp({
+      sound: this.sound,
+      onExit: () => this.leaveTagMode(),
+    });
+  }
+
+  private leaveTagMode(): void {
+    this.tagMode?.dispose();
+    this.tagMode = null;
+    document.body.classList.remove('in-tag');
     this.showTitleScreen();
   }
 
@@ -5490,6 +5519,10 @@ export class GameApp {
   tick(realDt: number): void {
     if (this.openWorld) {
       this.openWorld.tick(realDt);
+      return;
+    }
+    if (this.tagMode) {
+      this.tagMode.tick(realDt);
       return;
     }
     const frameStart = this.frameProbe ? performance.now() : 0;

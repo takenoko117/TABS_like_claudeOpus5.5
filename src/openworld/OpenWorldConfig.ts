@@ -152,6 +152,10 @@ export const B = {
   WALL_GREEN: 23,
   PLANK: 24,
   SNOW: 25,
+  /** 金（鬼ごっこの岐阜の町の信長像） */
+  GOLD: 26,
+  /** 瓦（城の屋根） */
+  TILE: 27,
 } as const;
 export type BlockId = (typeof B)[keyof typeof B];
 
@@ -206,6 +210,8 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   def('緑の壁', 0x6f9a6a, 3, 1400),
   def('板', 0xb98a52, 2, 500),
   def('雪', 0xf2f5f7, 1, 100),
+  def('金', 0xe2b33c, 6, 50000),
+  def('瓦', 0x3a4150, 3, 1500),
 ];
 
 /** 建築で置けるブロック（Q / E で切り替える） */

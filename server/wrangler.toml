@@ -16,6 +16,11 @@ class_name = "VersusRoomObject"
 name = "LOBBY"
 class_name = "LobbyObject"
 
+# 鬼ごっこ（かぶくん vs ハヤト）の部屋
+[[durable_objects.bindings]]
+name = "TAG_ROOMS"
+class_name = "TagRoomObject"
+
 # 無料プランでは SQLite 版の Durable Object を使う
 [[migrations]]
 tag = "v1"
@@ -24,3 +29,7 @@ new_sqlite_classes = ["VersusRoomObject"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["LobbyObject"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["TagRoomObject"]

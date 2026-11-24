@@ -95,6 +95,19 @@ npm run outline -- src                          # 全ファイルの行数
 | `OpenWorldRenderer.ts` | 730 | 描画。チャンクのメッシュの作り直し `updateChunks`、昼夜 `updateSky`、落ちる塊・破片・炎と煙の粒 `syncFx`、乗り物・歩行者・弾、出来事から演出 `handleEvents` |
 | `OpenWorldApp.ts` | 510 | 画面（DOM の HUD・道具の列・ミニマップ・ポーズ）、キーボードとマウス（ポインターロック）、固定ステップの進行、効果音の割り当て `playSounds`。見た目は `openworld.css` |
 
+### src/tag — 鬼ごっこモード（かぶくん vs ハヤト。独立した画面と描画）
+
+タイトルの「鬼ごっこ」から `GameApp.enterTagMode` が `TagApp` を作る。開いている間は `GameApp.tick` が `TagApp.tick` だけを呼ぶ。町のブロックの格子・面の生成・箱の移動 `moveBox` はオープンワールドのもの（`VoxelWorld`・`ChunkMesher`・`OpenWorldSim`）を使う。シミュレーションは Three.js 非依存で `tests/tag.test.ts` から検証する。
+
+| ファイル | 行 | 役割 |
+| --- | --- | --- |
+| `TagConfig.ts` | 110 | 数値 `TAG_*`（町の大きさ・かぶくんの速さと息・HP・ハヤトの増え方 `TAG_HAYATO_SPAWN_INTERVAL`・視野 `TAG_SIGHT_*`・レーザー `TAG_LASER_*`・通信の間隔・席の色） |
+| `GifuTown.ts` | 560 | 岐阜の町（お昼）のボクセル版 `generateGifuTown`（長良川と金華橋・長良橋 `buildBridge`、区画のビル `findLots`/`buildLot`/`buildBuilding`、柳ケ瀬 `buildArcade`、金華山と岐阜城 `buildMountain`、駅前広場・信長像・タワー43・スカイウイング37・JR 岐阜駅・高架 `buildStationArea`）、ハヤトの目的地 `navPoints`、山の高さ `mountainHeight`、足もとの床 `floorBelow`。映像用の `gifu_stage.blend` の配置をもとにしたもの |
+| `TagSim.ts` | 640 | 1 ステップの更新 `TagSim.step`。かぶくんの移動 `movePlayer`（息・水）、ハヤトの思考 `updateHayato`（うろつく→見つける `canSee`→ため→撃つ `fire`→見失ったら探す）と飛行 `flyToward`、弾 `updateBolts`、当たり `applyHit`、増える `updateSpawns`、決着 `checkOver`・順位 `ranking`。オンラインはホストが権限（`authority`）を持ち、`snapshot` → ゲストの `applySnapshot`、ほかの人の位置 `setRemotePlayer`、抜けた人 `removePlayer`、ホストの引き継ぎ `becomeAuthority`。3 人称カメラ `camera` |
+| `KabukunModel.ts` | 170 | かぶくんのボクセル模型 `buildKabukun`（顔は表面の色分け）と歩き・ジャンプ・アウトのポーズ `poseKabukun` |
+| `TagRenderer.ts` | 380 | 描画。町のチャンクを最初に全部作る `buildTown`、かぶくん（ほかの人は名札）、ハヤト（`HayatoHeadModel` の顔。ため中は口が開き、狙う相手へ赤い照準の線）、レーザーの弾、粒 `burst` |
+| `TagApp.ts` | 640 | 画面（メニュー・ロビー・HUD・ミニマップ・結果）、キーボードとマウス、固定ステップの進行と数え、オンラインの接続（`TagClient`）と位置・様子の送信 `sendNet`、効果音。見た目は `tag.css` |
+
 ### src/render — 描画（Three.js）
 
 | ファイル | 行 | 役割 |
@@ -151,12 +164,15 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | `audio/SoundManager.ts` | 1878 | 効果音（WebAudio で合成）。`playEffect` が大半 |
 | `audio/MusicPlayer.ts` / `MusicPatterns.ts` | 小 | BGM |
 
-### src/net・server — TD オンライン対戦の通信
+### src/net・server — TD オンライン対戦・鬼ごっこの通信
 
 | ファイル | 行 | 役割 |
 | --- | --- | --- |
 | `src/net/tdVersusProtocol.ts` | 233 | 通信メッセージの型・検証（試合中の操作 `TDDuelCommand`・ハッシュ・決着・観戦の `watch` と操作の記録 `TDVersusInputLog`）、部屋名の整形、部屋の一覧の行 `TDVersusRoomListing`（`status` 募集中/対戦中）と検証 `parseRoomList`、入室のしかた `TDVersusJoinIntent`（create/join/watch）、定数（放置で消すまでの `TD_VS_IDLE_MS`、一覧の取り直し間隔 `TD_VS_LIST_POLL_MS` など）。クライアントとサーバーで共用 |
 | `src/net/TDVersusClient.ts` | 92 | WebSocket の接続（`open` に部屋を作る・一覧から入るの区別を付ける）と、募集中の部屋の一覧の取得 `fetchTDVersusRooms`。URL はビルド時の `VITE_TD_VS_SERVER`（未設定の開発時は `ws://localhost:8787`） |
+| `src/net/tagProtocol.ts` | 210 | 鬼ごっこのオンラインの通信の型・検証（位置 `pos`・ホストの様子 `TagSnapshot`/`parseSnapshot`・名前の整形 `normalizeTagName`）、定員 `TAG_VS_CAPACITY`。クライアントとサーバーで共用 |
+| `src/net/TagClient.ts` | 90 | 鬼ごっこの WebSocket 接続（TD 対戦と同じサーバーの `/tag/<部屋名>`） |
+| `server/src/tagRoomLogic.ts` | 140 | 鬼ごっこの部屋のルール `TagRoom`（入室・名前・開始〈ホストだけ〉・位置と様子の中継・ホストの引き継ぎ・放置判定）。`tests/tagRoom.test.ts` から検証。Durable Object は `server/src/index.ts` の `TagRoomObject` |
 | `server/src/roomLogic.ts` | 210 | 部屋のルール `TDVersusRoom`（入室〈作成・一覧からの入室の区別〉・一覧に出す情報 `listing`・準備・ドラフト `beginDraft`/`pick`〈部屋ごとの種 `draftSeed`〉・開始・操作とハッシュの中継・決着・放置判定・観戦 `watch`〈操作の記録を渡す〉）。席 0 がホスト。Cloudflare 非依存で `tests/tdVersus.test.ts` から検証 |
 | `server/src/roomDirectory.ts` | 105 | 募集中の部屋の一覧 `RoomDirectory`（部屋からの知らせ・古い部屋の削除）と、知らせ直す判定 `shouldReport`。`tests/tdVersus.test.ts` から検証 |
 | `server/src/index.ts` | 230 | Cloudflare Worker と Durable Object `VersusRoomObject`（部屋名ごとに 1 つ、アラームで放置部屋を消す）・`LobbyObject`（部屋の一覧、`GET /rooms`）。手順は `server/README.md` |
@@ -186,6 +202,7 @@ TD 対戦への適用は `RealtimeTDHud.ts`（`updateCastleFx`・`updateClockFx`
 | サンドボックス | `loadPreset`, `PRESETS`（ファイル冒頭の定数） |
 | オープンワールド | `enterOpenWorld` / `leaveOpenWorld`（中身は `src/openworld/`） |
 | TD モード | `enterTDMode`, `startTDRun`, `beginTDRun`, `handleTDBattleEnd`, `openTDChest`, `handleTDKey`（HUD 本体は `RealtimeTDHud.ts`） |
+| 鬼ごっこ | 町 `tag/GifuTown.ts`、ルール `tag/TagSim.ts`（数値 `TagConfig.ts`）、画面 `tag/TagApp.ts`、通信 `net/tagProtocol.ts`・`server/src/tagRoomLogic.ts` |
 | TD オンライン対戦 | `enterTDVersusMode`（友人対戦→オンライン対戦の入口）, `tdVersus`（セッションとイベント）, `syncTDDraftTimer`（ドラフトの制限時間）, `showTDVersusLobby`, `refreshTDVersusRooms`/`startTDVersusRoomPolling`（募集中の部屋の一覧）, `joinTDVersusRoom`, `startTDVersusRun`（`TDDuel` と `TDLockstep` を作る）, `startTDVersusWatch`（観戦）, `syncTDDuelChests`/`openNextTDDuelChest`（対戦の宝箱）, `handleTDVersusEnd`, `showTDVersusResult`, `disposeTDDuel`, `isTDVersusLive`（対戦中は `tick` で `tdLockstep.advance`） |
 | チャレンジ | `enterChallengeMode`, `loadChallengeRound`, `handleChallengeBattleEnd`, `renderChallengePanel` |
 | ローグライト | `enterRogueliteMode`, `startRogueRun`, `loadRogueRound`, `showRogueWarRoom`（作戦室）, `showRogueRewards`, `handleRogueBattleEnd`, `renderRoguePanel`, `showRogueModal` |

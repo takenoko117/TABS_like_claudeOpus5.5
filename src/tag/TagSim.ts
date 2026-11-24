@@ -1,0 +1,778 @@
+import { moveBox, viewDir, type CameraPose } from '../openworld/OpenWorldSim';
+import { B } from '../openworld/OpenWorldConfig';
+import type { V3 } from '../openworld/VoxelWorld';
+import { makeRng } from '../openworld/WorldGen';
+import type { TagSnapshot } from '../net/tagProtocol';
+import { floorBelow, generateGifuTown, type GifuTown } from './GifuTown';
+import {
+  TAG_CHASE_KEEP,
+  TAG_GRAVITY,
+  TAG_HAYATO_CHASE_SPEED,
+  TAG_HAYATO_HOVER,
+  TAG_HAYATO_MAX,
+  TAG_HAYATO_MAX_RISE,
+  TAG_HAYATO_RADIUS,
+  TAG_HAYATO_SIZE,
+  TAG_HAYATO_SPAWN_INTERVAL,
+  TAG_HAYATO_SPAWN_MIN_DIST,
+  TAG_HAYATO_SPEEDUP_MAX,
+  TAG_HAYATO_SPEEDUP_PER_MIN,
+  TAG_HAYATO_START,
+  TAG_HAYATO_WANDER_SPEED,
+  TAG_INVULN_TIME,
+  TAG_JUMP_SPEED,
+  TAG_KNOCKBACK,
+  TAG_LASER_CHARGE,
+  TAG_LASER_COOLDOWN,
+  TAG_LASER_LEAD,
+  TAG_LASER_RADIUS,
+  TAG_LASER_RANGE,
+  TAG_LASER_SPEED,
+  TAG_MAX_HP,
+  TAG_PLAYER_HALF,
+  TAG_PLAYER_HEIGHT,
+  TAG_SEARCH_TIME,
+  TAG_SENSE_RANGE,
+  TAG_SIGHT_COS,
+  TAG_SIGHT_RANGE,
+  TAG_SPRINT_SPEED,
+  TAG_STAMINA_MAX,
+  TAG_STAMINA_RECOVER,
+  TAG_STAMINA_REGEN,
+  TAG_WALK_SPEED,
+} from './TagConfig';
+
+/**
+ * 鬼ごっこのシミュレーション（Three.js 非依存）。
+ *
+ * - ソロとオンラインのホストは「権限あり」（authority）: ハヤトの動き・レーザー・当たり・決着をここで決める。
+ * - オンラインのゲストは権限なし: 自分のかぶくんだけを動かし、ハヤトとレーザーはホストの様子（snapshot）を写す。
+ * - どの端末も、自分のかぶくんの動きは自分で計算する（ほかの人の位置は届いた値へなめらかに寄せる）。
+ */
+
+/** 1 ステップの操作 */
+export interface TagInput {
+  /** 左右（右が +1） */
+  moveX: number;
+  /** 前後（前が +1） */
+  moveZ: number;
+  /** カメラの向き（移動の基準） */
+  yaw: number;
+  jump: boolean;
+  sprint: boolean;
+}
+
+export function emptyTagInput(): TagInput {
+  return { moveX: 0, moveZ: 0, yaw: 0, jump: false, sprint: false };
+}
+
+export interface TagPlayer {
+  id: number;
+  name: string;
+  /** 足もとの中心 */
+  pos: V3;
+  vel: V3;
+  /** 体の向き */
+  yaw: number;
+  onGround: boolean;
+  hp: number;
+  alive: boolean;
+  /** 無敵の残り秒 */
+  invuln: number;
+  /** 息（ダッシュの残り秒） */
+  stamina: number;
+  /** 息切れ中（回復するまで走れない） */
+  exhausted: boolean;
+  /** 逃げ切った秒数（アウトになった時刻。生きている間は今の時刻） */
+  survived: number;
+  /** 歩いているか（描画用） */
+  moving: boolean;
+  /** 届いた位置（この端末で動かさない人） */
+  net: { x: number; y: number; z: number; yaw: number } | null;
+  /** 回線が切れて抜けた */
+  left: boolean;
+}
+
+export type HayatoState = 'wander' | 'chase' | 'aim' | 'search';
+const HAYATO_STATES: readonly HayatoState[] = ['wander', 'chase', 'aim', 'search'];
+
+export interface Hayato {
+  id: number;
+  /** 顔の中心 */
+  pos: V3;
+  yaw: number;
+  state: HayatoState;
+  /** 狙っているプレイヤー（いなければ -1） */
+  target: number;
+  /** ための経過（秒） */
+  charge: number;
+  /** 次のためを始められるまで（秒） */
+  cooldown: number;
+  lastSeen: V3 | null;
+  searchTimer: number;
+  goal: { x: number; z: number } | null;
+  /** 進めなかった時間（目的地を変える） */
+  stuck: number;
+  /** 壁を越えるために浮き上がっている量 */
+  climb: number;
+  /** 届いた位置（権限のない端末） */
+  net: { x: number; y: number; z: number; yaw: number } | null;
+}
+
+export interface Bolt {
+  id: number;
+  owner: number;
+  pos: V3;
+  dir: V3;
+  traveled: number;
+}
+
+export type TagEvent =
+  | { kind: 'spawn'; hayato: number; pos: V3 }
+  | { kind: 'spot'; hayato: number; target: number }
+  | { kind: 'fire'; bolt: number; hayato: number; from: V3; dir: V3 }
+  | { kind: 'bolt_end'; bolt: number; pos: V3 }
+  | { kind: 'hit'; player: number; hp: number; bolt: number; dir: V3 }
+  | { kind: 'out'; player: number; time: number }
+  | { kind: 'over'; winner: number };
+
+export type { TagSnapshot };
+
+export type TagPhase = 'playing' | 'over';
+
+const PLAYER_CENTER = TAG_PLAYER_HEIGHT * 0.5;
+const r2 = (v: number): number => Math.round(v * 100) / 100;
+
+export class TagSim {
+  readonly town: GifuTown;
+  readonly players: TagPlayer[] = [];
+  readonly hayatos: Hayato[] = [];
+  readonly bolts: Bolt[] = [];
+  readonly events: TagEvent[] = [];
+  time = 0;
+  /** 次にハヤトが増える時刻 */
+  nextSpawn = TAG_HAYATO_SPAWN_INTERVAL;
+  phase: TagPhase = 'playing';
+  /** 勝者（オンライン）。ソロ・全員同時アウトで決まらないときは -1 */
+  winner = -1;
+  /** ソロか（1 人で始めた） */
+  readonly solo: boolean;
+  private nextHayatoId = 1;
+  private nextBoltId = 1;
+  private readonly rng: () => number;
+  /** ゲストに送る出来事（snapshot で送ったら空にする） */
+  private readonly outbox: (string | number)[][] = [];
+
+  constructor(
+    readonly seed: number,
+    roster: readonly { id: number; name: string }[],
+    /** この端末で動かすプレイヤー（観戦なら null） */
+    readonly localId: number | null,
+    public authority: boolean,
+    town?: GifuTown,
+  ) {
+    this.town = town ?? generateGifuTown(1);
+    this.rng = makeRng(seed);
+    this.solo = roster.length <= 1;
+    roster.forEach((r, k) => {
+      const sp = this.town.playerSpawns[k % this.town.playerSpawns.length];
+      this.players.push({
+        id: r.id,
+        name: r.name,
+        pos: { x: sp.x, y: sp.y, z: sp.z },
+        vel: { x: 0, y: 0, z: 0 },
+        yaw: Math.PI,
+        onGround: true,
+        hp: TAG_MAX_HP,
+        alive: true,
+        invuln: 0,
+        stamina: TAG_STAMINA_MAX,
+        exhausted: false,
+        survived: 0,
+        moving: false,
+        net: null,
+        left: false,
+      });
+    });
+    if (authority) for (let k = 0; k < TAG_HAYATO_START; k++) this.spawnHayato();
+  }
+
+  get world() {
+    return this.town.world;
+  }
+
+  player(id: number): TagPlayer | undefined {
+    return this.players.find((p) => p.id === id);
+  }
+
+  get local(): TagPlayer | undefined {
+    return this.localId === null ? undefined : this.player(this.localId);
+  }
+
+  aliveCount(): number {
+    return this.players.filter((p) => p.alive).length;
+  }
+
+  /** ハヤトが速くなる倍率（時間とともに上がる） */
+  speedMul(): number {
+    return Math.min(TAG_HAYATO_SPEEDUP_MAX, 1 + (this.time / 60) * TAG_HAYATO_SPEEDUP_PER_MIN);
+  }
+
+  // ---- 1 ステップ ----
+
+  step(dt: number, input: TagInput | null): void {
+    if (this.phase === 'playing') this.time += dt;
+    for (const p of this.players) {
+      if (p.alive) p.survived = this.time;
+      if (p.id === this.localId) {
+        if (p.alive && input && this.phase === 'playing') this.movePlayer(p, input, dt);
+        else this.movePlayer(p, emptyTagInput(), dt);
+      } else if (p.net) {
+        // 届いた位置へなめらかに寄せる
+        const k = Math.min(1, dt * 12);
+        const dx = p.net.x - p.pos.x;
+        const dz = p.net.z - p.pos.z;
+        p.moving = Math.hypot(dx, dz) > 0.05;
+        p.pos.x += dx * k;
+        p.pos.y += (p.net.y - p.pos.y) * k;
+        p.pos.z += dz * k;
+        p.yaw = lerpAngle(p.yaw, p.net.yaw, k);
+      }
+      p.invuln = Math.max(0, p.invuln - dt);
+    }
+    if (this.authority) {
+      if (this.phase === 'playing') {
+        this.updateSpawns();
+        for (const h of this.hayatos) this.updateHayato(h, dt);
+      }
+      this.updateBolts(dt, true);
+      if (this.phase === 'playing') this.checkOver();
+    } else {
+      for (const h of this.hayatos) {
+        if (!h.net) continue;
+        const k = Math.min(1, dt * 10);
+        h.pos.x += (h.net.x - h.pos.x) * k;
+        h.pos.y += (h.net.y - h.pos.y) * k;
+        h.pos.z += (h.net.z - h.pos.z) * k;
+        h.yaw = lerpAngle(h.yaw, h.net.yaw, k);
+        if (h.state === 'aim') h.charge += dt;
+      }
+      this.updateBolts(dt, false);
+    }
+  }
+
+  // ---- かぶくん ----
+
+  private movePlayer(p: TagPlayer, input: TagInput, dt: number): void {
+    const fx = Math.sin(input.yaw);
+    const fz = Math.cos(input.yaw);
+    // 右 = 前 × 上
+    let mx = fx * input.moveZ - fz * input.moveX;
+    let mz = fz * input.moveZ + fx * input.moveX;
+    const len = Math.hypot(mx, mz);
+    if (len > 1) {
+      mx /= len;
+      mz /= len;
+    }
+    const moving = len > 0.01;
+    // 息
+    const wantSprint = input.sprint && moving && !p.exhausted;
+    if (wantSprint) {
+      p.stamina = Math.max(0, p.stamina - dt);
+      if (p.stamina <= 0) p.exhausted = true;
+    } else {
+      p.stamina = Math.min(TAG_STAMINA_MAX, p.stamina + TAG_STAMINA_REGEN * dt);
+      if (p.exhausted && p.stamina >= TAG_STAMINA_RECOVER) p.exhausted = false;
+    }
+    const inWater = this.world.get(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.3), Math.floor(p.pos.z)) === B.WATER;
+    const speed = (wantSprint ? TAG_SPRINT_SPEED : TAG_WALK_SPEED) * (inWater ? 0.55 : 1);
+    const accel = p.onGround ? 40 : 14;
+    const tx = mx * speed;
+    const tz = mz * speed;
+    p.vel.x += clampAbs(tx - p.vel.x, accel * dt);
+    p.vel.z += clampAbs(tz - p.vel.z, accel * dt);
+    if (input.jump && p.onGround) {
+      p.vel.y = TAG_JUMP_SPEED;
+      p.onGround = false;
+    }
+    p.vel.y -= TAG_GRAVITY * (inWater ? 0.5 : 1) * dt;
+    if (inWater) p.vel.y = Math.max(p.vel.y, input.jump ? 3 : -3);
+    p.onGround = moveBox(this.world, p.pos, p.vel, TAG_PLAYER_HALF, TAG_PLAYER_HEIGHT, dt, true, p.onGround);
+    if (moving) p.yaw = lerpAngle(p.yaw, Math.atan2(mx, mz), Math.min(1, dt * 14));
+    p.moving = moving && Math.hypot(p.vel.x, p.vel.z) > 0.5;
+  }
+
+  /** ほかの端末から届いたプレイヤーの位置 */
+  setRemotePlayer(id: number, x: number, y: number, z: number, yaw: number): void {
+    const p = this.player(id);
+    if (!p || p.id === this.localId) return;
+    if (!p.net) {
+      p.pos.x = x;
+      p.pos.y = y;
+      p.pos.z = z;
+    }
+    p.net = { x, y, z, yaw };
+  }
+
+  /** 回線が切れて抜けた人（アウト扱い。勝者にはならない） */
+  removePlayer(id: number): void {
+    const p = this.player(id);
+    if (!p || p.left) return;
+    p.left = true;
+    if (p.alive) {
+      p.alive = false;
+      p.survived = this.time;
+      this.events.push({ kind: 'out', player: id, time: this.time });
+    }
+    if (this.authority && this.phase === 'playing') this.checkOver();
+  }
+
+  // ---- ハヤト ----
+
+  private spawnHayato(): void {
+    const alive = this.players.filter((p) => p.alive);
+    const nav = this.town.navPoints;
+    let best = nav[0];
+    let bestD = -1;
+    for (let k = 0; k < 40; k++) {
+      const c = nav[Math.floor(this.rng() * nav.length)];
+      const d = alive.length ? Math.min(...alive.map((p) => Math.hypot(p.pos.x - c.x, p.pos.z - c.z))) : 999;
+      if (d >= TAG_HAYATO_SPAWN_MIN_DIST) {
+        best = c;
+        bestD = d;
+        break;
+      }
+      if (d > bestD) {
+        best = c;
+        bestD = d;
+      }
+    }
+    const floor = floorBelow(this.world, best.x, this.world.sizeY - 1, best.z);
+    const h: Hayato = {
+      id: this.nextHayatoId++,
+      pos: { x: best.x, y: floor + TAG_HAYATO_HOVER, z: best.z },
+      yaw: this.rng() * Math.PI * 2,
+      state: 'wander',
+      target: -1,
+      charge: 0,
+      cooldown: 1.5,
+      lastSeen: null,
+      searchTimer: 0,
+      goal: null,
+      stuck: 0,
+      climb: 0,
+      net: null,
+    };
+    this.hayatos.push(h);
+    this.events.push({ kind: 'spawn', hayato: h.id, pos: { ...h.pos } });
+  }
+
+  private updateSpawns(): void {
+    while (this.time >= this.nextSpawn) {
+      this.nextSpawn += TAG_HAYATO_SPAWN_INTERVAL;
+      if (this.hayatos.length < TAG_HAYATO_MAX) this.spawnHayato();
+    }
+  }
+
+  /** ハヤトから見えるか（距離・視野・さえぎるブロック） */
+  canSee(h: Hayato, p: TagPlayer): boolean {
+    if (!p.alive) return false;
+    const cx = p.pos.x - h.pos.x;
+    const cy = p.pos.y + PLAYER_CENTER - h.pos.y;
+    const cz = p.pos.z - h.pos.z;
+    const d = Math.hypot(cx, cy, cz);
+    if (d > TAG_SIGHT_RANGE) return false;
+    if (d > TAG_SENSE_RANGE) {
+      const fx = Math.sin(h.yaw);
+      const fz = Math.cos(h.yaw);
+      const hd = Math.hypot(cx, cz) || 1;
+      if ((cx * fx + cz * fz) / hd < TAG_SIGHT_COS) return false;
+    }
+    return this.lineClear(h.pos, { x: p.pos.x, y: p.pos.y + PLAYER_CENTER, z: p.pos.z });
+  }
+
+  /** 2 点の間をブロックがさえぎっていないか */
+  lineClear(a: V3, b: V3): boolean {
+    const dir = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const d = Math.hypot(dir.x, dir.y, dir.z);
+    if (d < 0.01) return true;
+    const hit = this.world.raycast(a, dir, d);
+    return !hit || hit.dist >= d - 0.5;
+  }
+
+  private updateHayato(h: Hayato, dt: number): void {
+    h.cooldown = Math.max(0, h.cooldown - dt);
+    const mul = this.speedMul();
+    // いちばん近い、見えているプレイヤー
+    let seen: TagPlayer | null = null;
+    let seenD = Infinity;
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      const d = Math.hypot(p.pos.x - h.pos.x, p.pos.z - h.pos.z);
+      // 狙っている相手は少しだけ優先する
+      const score = p.id === h.target ? d - 4 : d;
+      if (score < seenD && this.canSee(h, p)) {
+        seen = p;
+        seenD = score;
+      }
+    }
+
+    if (seen) {
+      if (h.state === 'wander' || h.state === 'search' || h.target !== seen.id) {
+        this.events.push({ kind: 'spot', hayato: h.id, target: seen.id });
+        this.send(['s', h.id, seen.id]);
+      }
+      if (h.target !== seen.id && h.state === 'aim') h.charge = 0;
+      h.target = seen.id;
+      h.lastSeen = { x: seen.pos.x, y: seen.pos.y, z: seen.pos.z };
+      h.searchTimer = TAG_SEARCH_TIME;
+      const tx = seen.pos.x - h.pos.x;
+      const tz = seen.pos.z - h.pos.z;
+      const face = Math.atan2(tx, tz);
+      if (h.state !== 'aim' && h.cooldown <= 0) {
+        h.state = 'aim';
+        h.charge = 0;
+      } else if (h.state !== 'aim') {
+        h.state = 'chase';
+      }
+      if (h.state === 'aim') {
+        h.yaw = lerpAngle(h.yaw, face, Math.min(1, dt * 10));
+        h.charge += dt;
+        // ためている間はゆっくり寄るだけ
+        this.flyToward(h, seen.pos.x, seen.pos.z, TAG_HAYATO_WANDER_SPEED * 0.3 * mul, dt, TAG_CHASE_KEEP);
+        if (h.charge >= TAG_LASER_CHARGE) this.fire(h, seen);
+      } else {
+        h.yaw = lerpAngle(h.yaw, face, Math.min(1, dt * 6));
+        this.flyToward(h, seen.pos.x, seen.pos.z, TAG_HAYATO_CHASE_SPEED * mul, dt, TAG_CHASE_KEEP);
+      }
+      return;
+    }
+
+    // 見失った: 最後に見た場所を探す
+    if (h.state === 'aim') h.charge = 0;
+    if (h.lastSeen && h.searchTimer > 0) {
+      h.state = 'search';
+      h.searchTimer -= dt;
+      const arrived = this.flyToward(h, h.lastSeen.x, h.lastSeen.z, TAG_HAYATO_CHASE_SPEED * mul, dt, 0.8, true);
+      // 着いたら見回す
+      if (arrived) h.yaw += dt * 2.4;
+      if (h.searchTimer <= 0) {
+        h.lastSeen = null;
+        h.target = -1;
+        h.state = 'wander';
+      }
+      return;
+    }
+    h.state = 'wander';
+    h.target = -1;
+    const nav = this.town.navPoints;
+    if (!h.goal || h.stuck > 3.5) {
+      h.goal = nav[Math.floor(this.rng() * nav.length)];
+      h.stuck = 0;
+    }
+    const arrived = this.flyToward(h, h.goal.x, h.goal.z, TAG_HAYATO_WANDER_SPEED * mul, dt, 1.5, true);
+    if (arrived) h.goal = null;
+  }
+
+  /** 目的地へ飛ぶ。keep より近ければ止まる。着いていれば true */
+  private flyToward(h: Hayato, gx: number, gz: number, speed: number, dt: number, keep: number, turn = false): boolean {
+    const dx = gx - h.pos.x;
+    const dz = gz - h.pos.z;
+    const d = Math.hypot(dx, dz);
+    const half = TAG_HAYATO_SIZE / 2;
+    const floor = floorBelow(this.world, h.pos.x, h.pos.y - half + 0.2, h.pos.z);
+    let vx = 0;
+    let vz = 0;
+    if (d > keep) {
+      vx = (dx / d) * speed;
+      vz = (dz / d) * speed;
+      if (turn) h.yaw = lerpAngle(h.yaw, Math.atan2(dx, dz), Math.min(1, dt * 5));
+    }
+    const wantY = floor + TAG_HAYATO_HOVER + h.climb;
+    const vel = { x: vx, y: clampAbs((wantY - h.pos.y) * 3, 5), z: vz };
+    const bottom = { x: h.pos.x, y: h.pos.y - half, z: h.pos.z };
+    const before = { x: bottom.x, z: bottom.z };
+    moveBox(this.world, bottom, vel, TAG_HAYATO_RADIUS, TAG_HAYATO_SIZE, dt, false, false);
+    const moved = Math.hypot(bottom.x - before.x, bottom.z - before.z);
+    const intended = Math.hypot(vx, vz) * dt;
+    if (intended > 0 && moved < intended * 0.35) {
+      // 壁に当たった: 浮き上がって越えようとする
+      h.climb = Math.min(TAG_HAYATO_MAX_RISE, h.climb + dt * 4);
+      h.stuck += dt;
+    } else {
+      h.climb = Math.max(0, h.climb - dt * 1.2);
+      if (intended > 0) h.stuck = Math.max(0, h.stuck - dt);
+    }
+    h.pos.x = bottom.x;
+    h.pos.y = bottom.y + half;
+    h.pos.z = bottom.z;
+    return d <= keep + 0.3;
+  }
+
+  /** 口からレーザーを撃つ（相手の動きを少し先読みする） */
+  private fire(h: Hayato, target: TagPlayer): void {
+    const from = this.mouthPos(h);
+    const tc = { x: target.pos.x, y: target.pos.y + PLAYER_CENTER, z: target.pos.z };
+    const dist = Math.hypot(tc.x - from.x, tc.y - from.y, tc.z - from.z);
+    const vel = target.net ? { x: 0, y: 0, z: 0 } : target.vel;
+    const t = (dist / TAG_LASER_SPEED) * TAG_LASER_LEAD;
+    const aim = { x: tc.x + vel.x * t - from.x, y: tc.y - from.y, z: tc.z + vel.z * t - from.z };
+    const len = Math.hypot(aim.x, aim.y, aim.z) || 1;
+    const dir = { x: aim.x / len, y: aim.y / len, z: aim.z / len };
+    const bolt: Bolt = { id: this.nextBoltId++, owner: h.id, pos: from, dir, traveled: 0 };
+    this.bolts.push(bolt);
+    this.events.push({ kind: 'fire', bolt: bolt.id, hayato: h.id, from: { ...from }, dir: { ...dir } });
+    this.send(['f', bolt.id, h.id, r2(from.x), r2(from.y), r2(from.z), r2(dir.x), r2(dir.y), r2(dir.z)]);
+    h.cooldown = TAG_LASER_COOLDOWN;
+    h.charge = 0;
+    h.state = 'chase';
+  }
+
+  /** 口の位置（顔の中心から前へ・少し下） */
+  mouthPos(h: Hayato): V3 {
+    const s = TAG_HAYATO_SIZE;
+    return { x: h.pos.x + Math.sin(h.yaw) * 0.42 * s, y: h.pos.y - 0.29 * s, z: h.pos.z + Math.cos(h.yaw) * 0.42 * s };
+  }
+
+  private updateBolts(dt: number, judge: boolean): void {
+    for (let i = this.bolts.length - 1; i >= 0; i--) {
+      const b = this.bolts[i];
+      let remaining = TAG_LASER_SPEED * dt;
+      let ended = false;
+      while (remaining > 0 && !ended) {
+        const stepLen = Math.min(0.5, remaining);
+        remaining -= stepLen;
+        b.pos.x += b.dir.x * stepLen;
+        b.pos.y += b.dir.y * stepLen;
+        b.pos.z += b.dir.z * stepLen;
+        b.traveled += stepLen;
+        if (this.world.solidAtPoint(b.pos.x, b.pos.y, b.pos.z) || b.traveled >= TAG_LASER_RANGE) {
+          ended = true;
+          break;
+        }
+        if (!judge) continue;
+        for (const p of this.players) {
+          if (!p.alive || p.invuln > 0) continue;
+          const dx = b.pos.x - p.pos.x;
+          const dz = b.pos.z - p.pos.z;
+          const dy = b.pos.y - (p.pos.y + PLAYER_CENTER);
+          if (Math.hypot(dx, dz) < TAG_LASER_RADIUS + TAG_PLAYER_HALF + 0.1 && Math.abs(dy) < PLAYER_CENTER + TAG_LASER_RADIUS) {
+            this.hitPlayer(p, b);
+            ended = true;
+            break;
+          }
+        }
+      }
+      if (ended) {
+        this.bolts.splice(i, 1);
+        this.events.push({ kind: 'bolt_end', bolt: b.id, pos: { ...b.pos } });
+      }
+    }
+  }
+
+  private hitPlayer(p: TagPlayer, b: Bolt): void {
+    const hd = Math.hypot(b.dir.x, b.dir.z) || 1;
+    const dir = { x: b.dir.x / hd, y: 0, z: b.dir.z / hd };
+    this.applyHit(p.id, p.hp - 1, b.id, dir);
+    this.send(['h', p.id, p.hp, b.id, r2(dir.x), r2(dir.z)]);
+  }
+
+  /** 当たった（権限のある端末で決めた結果を、ゲストはそのまま写す） */
+  applyHit(id: number, hp: number, bolt: number, dir: V3): void {
+    const p = this.player(id);
+    if (!p || !p.alive) return;
+    p.hp = Math.max(0, hp);
+    p.invuln = TAG_INVULN_TIME;
+    if (p.id === this.localId) {
+      p.vel.x = dir.x * TAG_KNOCKBACK;
+      p.vel.z = dir.z * TAG_KNOCKBACK;
+      p.vel.y = 4.5;
+      p.onGround = false;
+    }
+    this.events.push({ kind: 'hit', player: id, hp: p.hp, bolt, dir });
+    // 当たった弾は消す（ゲストの見た目の弾も）
+    const k = this.bolts.findIndex((x) => x.id === bolt);
+    if (k >= 0 && !this.authority) {
+      const [gone] = this.bolts.splice(k, 1);
+      this.events.push({ kind: 'bolt_end', bolt: gone.id, pos: { ...gone.pos } });
+    }
+    if (p.hp <= 0) {
+      p.alive = false;
+      p.survived = this.time;
+      this.events.push({ kind: 'out', player: id, time: this.time });
+    }
+  }
+
+  /** ゲストへ送る出来事を積む（ソロでは送る相手がいないので積まない） */
+  private send(ev: (string | number)[]): void {
+    if (!this.solo) this.outbox.push(ev);
+  }
+
+  // ---- 決着 ----
+
+  private checkOver(): void {
+    const alive = this.players.filter((p) => p.alive);
+    if (this.solo) {
+      if (alive.length === 0) this.finish(-1);
+      return;
+    }
+    if (alive.length > 1) return;
+    if (alive.length === 1) {
+      this.finish(alive[0].id);
+      return;
+    }
+    // 全員が同時にアウト: いちばん長く逃げた人（抜けた人は除く）
+    const ranked = this.players.filter((p) => !p.left).sort((a, c) => c.survived - a.survived);
+    this.finish(ranked.length ? ranked[0].id : -1);
+  }
+
+  private finish(winner: number): void {
+    if (this.phase === 'over') return;
+    this.phase = 'over';
+    this.winner = winner;
+    this.events.push({ kind: 'over', winner });
+    this.send(['o', winner]);
+  }
+
+  /** 逃げ切った順（勝者が先頭） */
+  ranking(): TagPlayer[] {
+    return [...this.players].sort((a, c) => {
+      if (a.id === this.winner) return -1;
+      if (c.id === this.winner) return 1;
+      return c.survived - a.survived;
+    });
+  }
+
+  // ---- 通信 ----
+
+  /** ホスト → ゲストの様子（出来事は送ったぶんだけ消える） */
+  snapshot(): TagSnapshot {
+    const snap: TagSnapshot = {
+      time: r2(this.time),
+      next: r2(this.nextSpawn),
+      hy: this.hayatos.map((h) => [h.id, r2(h.pos.x), r2(h.pos.y), r2(h.pos.z), r2(h.yaw), HAYATO_STATES.indexOf(h.state), h.target, r2(h.charge)]),
+      pl: this.players.map((p) => [p.id, p.hp, p.alive ? 1 : 0, r2(p.survived)]),
+      ev: this.outbox.splice(0),
+    };
+    return snap;
+  }
+
+  /** ホストの様子を写す（ゲスト） */
+  applySnapshot(s: TagSnapshot): void {
+    if (this.authority) return;
+    this.time = s.time;
+    this.nextSpawn = s.next;
+    const seen = new Set<number>();
+    for (const row of s.hy) {
+      const [id, x, y, z, yaw, st, target, charge] = row;
+      seen.add(id);
+      let h = this.hayatos.find((e) => e.id === id);
+      if (!h) {
+        h = {
+          id,
+          pos: { x, y, z },
+          yaw,
+          state: 'wander',
+          target: -1,
+          charge: 0,
+          cooldown: 0,
+          lastSeen: null,
+          searchTimer: 0,
+          goal: null,
+          stuck: 0,
+          climb: 0,
+          net: null,
+        };
+        this.hayatos.push(h);
+        this.nextHayatoId = Math.max(this.nextHayatoId, id + 1);
+        this.events.push({ kind: 'spawn', hayato: id, pos: { x, y, z } });
+      }
+      h.net = { x, y, z, yaw };
+      h.state = HAYATO_STATES[st] ?? 'wander';
+      h.target = target;
+      h.charge = charge;
+    }
+    for (let i = this.hayatos.length - 1; i >= 0; i--) if (!seen.has(this.hayatos[i].id)) this.hayatos.splice(i, 1);
+    for (const ev of s.ev) this.applyEvent(ev);
+    for (const [id, hp, alive, survived] of s.pl) {
+      const p = this.player(id);
+      if (!p) continue;
+      if (p.alive && !alive && hp > 0) {
+        // 抜けた人
+        p.alive = false;
+        this.events.push({ kind: 'out', player: id, time: survived });
+      }
+      if (!alive) p.alive = false;
+      p.survived = survived;
+      if (p.hp !== hp && alive) p.hp = hp;
+    }
+  }
+
+  private applyEvent(ev: (string | number)[]): void {
+    const n = (k: number): number => Number(ev[k]);
+    switch (ev[0]) {
+      case 'f': {
+        const bolt: Bolt = { id: n(1), owner: n(2), pos: { x: n(3), y: n(4), z: n(5) }, dir: { x: n(6), y: n(7), z: n(8) }, traveled: 0 };
+        this.bolts.push(bolt);
+        this.nextBoltId = Math.max(this.nextBoltId, bolt.id + 1);
+        this.events.push({ kind: 'fire', bolt: bolt.id, hayato: bolt.owner, from: { ...bolt.pos }, dir: { ...bolt.dir } });
+        break;
+      }
+      case 'h':
+        this.applyHit(n(1), n(2), n(3), { x: n(4), y: 0, z: n(5) });
+        break;
+      case 's':
+        this.events.push({ kind: 'spot', hayato: n(1), target: n(2) });
+        break;
+      case 'o':
+        this.phase = 'over';
+        this.winner = n(1);
+        this.events.push({ kind: 'over', winner: this.winner });
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** ホストが抜けたので、この端末が権限を引き継ぐ（届いていた位置から続ける） */
+  becomeAuthority(): void {
+    if (this.authority) return;
+    this.authority = true;
+    for (const h of this.hayatos) {
+      if (h.net) {
+        h.pos.x = h.net.x;
+        h.pos.y = h.net.y;
+        h.pos.z = h.net.z;
+        h.yaw = h.net.yaw;
+      }
+      h.net = null;
+      if (h.state === 'aim') h.state = 'chase';
+      h.charge = 0;
+      h.cooldown = 1;
+    }
+  }
+
+  // ---- カメラ ----
+
+  /** かぶくんの後ろから見る 3 人称カメラ（壁に埋まらないよう縮める） */
+  camera(yaw: number, pitch: number, focus: V3): CameraPose {
+    const target = { x: focus.x, y: focus.y + 1.5, z: focus.z };
+    const dir = viewDir(yaw, pitch);
+    const back = { x: -dir.x, y: -dir.y, z: -dir.z };
+    const dist = 5.5;
+    const hit = this.world.raycast(target, back, dist);
+    const d = hit ? Math.max(0.8, hit.dist - 0.3) : dist;
+    return { pos: { x: target.x + back.x * d, y: target.y + back.y * d, z: target.z + back.z * d }, target, dir };
+  }
+}
+
+function clampAbs(v: number, max: number): number {
+  return v > max ? max : v < -max ? -max : v;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}

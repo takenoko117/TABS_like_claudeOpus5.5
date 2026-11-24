@@ -1,0 +1,439 @@
+/* 鬼ごっこモード（かぶくん vs ハヤト）の画面。色・縁・影・書体は theme.css のトークンを使う */
+
+.tag-root {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  user-select: none;
+  overflow: hidden;
+}
+
+.tag-root .hidden {
+  display: none !important;
+}
+
+body.in-tag #title-screen {
+  display: none;
+}
+
+.tag-viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.tag-viewport canvas {
+  display: block;
+}
+
+/* ---- HUD ---- */
+.tag-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tag-stats {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  min-width: 190px;
+  font-family: var(--font-pixel);
+}
+
+.tag-hearts {
+  display: flex;
+  gap: 4px;
+}
+
+.tag-hearts span.off {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.tag-time,
+.tag-oni {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-time b {
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--gold);
+  text-shadow: var(--text-shadow-block);
+}
+
+.tag-oni b {
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--enemy);
+}
+
+.tag-oni small {
+  color: var(--sub);
+  font-size: 11px;
+}
+
+.tag-stamina {
+  height: 8px;
+  border: 2px solid var(--panel-edge);
+  background: var(--ink);
+}
+
+.tag-stamina i {
+  display: block;
+  height: 100%;
+  background: var(--team-green);
+}
+
+.tag-stamina i.tired {
+  background: var(--danger);
+}
+
+.tag-minimap {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 220px;
+  height: 240px;
+  border: 2px solid var(--panel-edge);
+  box-shadow: var(--shadow-panel);
+  image-rendering: pixelated;
+}
+
+.tag-alive {
+  position: absolute;
+  right: 12px;
+  top: 262px;
+  width: 220px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.tag-alive div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-alive div.out {
+  opacity: 0.45;
+}
+
+.tag-alive i,
+.tag-roster i,
+.tag-ranking i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ink);
+  flex: none;
+}
+
+.tag-alive b {
+  font-weight: 400;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-alive span {
+  font-family: var(--font-pixel);
+  color: var(--heart);
+}
+
+.tag-warn {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  font-family: var(--font-pixel);
+  font-size: 18px;
+  color: #fff;
+  background: var(--danger);
+  border: 2px solid var(--danger-deep);
+  box-shadow: var(--bevel);
+  animation: tag-blink 0.5s steps(2) infinite;
+}
+
+@keyframes tag-blink {
+  50% {
+    filter: brightness(1.4);
+  }
+}
+
+.tag-center {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-pixel);
+  font-size: 34px;
+  color: #fff;
+  text-shadow: var(--text-shadow-block);
+  opacity: 0;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+
+.tag-center.on {
+  opacity: 1;
+}
+
+.tag-center.count {
+  font-size: 96px;
+  color: var(--gold);
+}
+
+.tag-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: var(--sub);
+  text-shadow: var(--text-shadow-block);
+}
+
+.tag-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(255, 40, 60, 0.45);
+  opacity: 0;
+}
+
+.tag-flash.on {
+  animation: tag-flash 0.5s ease-out;
+}
+
+@keyframes tag-flash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---- メニュー・ロビー・結果 ---- */
+.tag-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 22, 0.6);
+}
+
+.tag-box {
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px 22px;
+}
+
+.tag-small {
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-pixel);
+  font-size: 20px;
+}
+
+.tag-small b {
+  font-weight: 400;
+}
+
+.tag-small-box {
+  width: min(380px, calc(100vw - 32px));
+}
+
+.tag-box h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--gold);
+  text-shadow: var(--text-shadow-block);
+}
+
+.tag-sub {
+  margin: 0 0 12px;
+  color: var(--sub);
+  font-size: 13px;
+}
+
+.tag-rules {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.tag-rules li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-rules b {
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  color: var(--gold);
+}
+
+.tag-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-family: var(--font-pixel);
+}
+
+.tag-field span {
+  min-width: 52px;
+}
+
+.tag-field input {
+  flex: 1;
+  padding: 7px 9px;
+  font: 400 15px var(--font-pixel);
+  color: var(--text);
+  background: var(--ink);
+  border: 2px solid var(--panel-edge);
+  box-shadow: var(--bevel-pressed);
+}
+
+.tag-online {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.tag-online .tag-field {
+  flex: 1;
+  margin: 0;
+}
+
+.tag-note {
+  margin: 6px 0 10px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.tag-error {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--danger-deep);
+  border: 2px solid var(--danger);
+}
+
+.tag-keys {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px;
+  margin: 10px 0 14px;
+}
+
+.tag-keys div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.tag-keys kbd {
+  min-width: 60px;
+  text-align: center;
+}
+
+.tag-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tag-btn {
+  flex: 1 1 140px;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.tag-btn.primary {
+  --key-bg: var(--cta);
+  --key-edge: var(--cta-deep);
+}
+
+.tag-roster,
+.tag-ranking {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.tag-roster li,
+.tag-ranking li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel-raised);
+  border: 2px solid var(--panel-edge);
+}
+
+.tag-roster b,
+.tag-ranking b {
+  flex: 1;
+  font-weight: 400;
+  font-family: var(--font-pixel);
+}
+
+.tag-roster em,
+.tag-ranking em {
+  font-style: normal;
+  font-size: 11px;
+  padding: 2px 6px;
+  color: var(--ink);
+  background: var(--gold);
+}
+
+.tag-ranking span {
+  font-family: var(--font-pixel);
+  color: var(--gold);
+}
+
+.tag-big {
+  margin: 4px 0;
+  font-family: var(--font-pixel);
+  font-size: 56px;
+  color: var(--gold);
+  text-shadow: var(--text-shadow-block);
+}
+
+.tag-record {
+  font-weight: 400;
+  color: var(--gold);
+}
