@@ -97,6 +97,18 @@ body.in-tag #title-screen {
   background: var(--danger);
 }
 
+/* ミサイルまでの残り・狭まっている知らせ */
+.tag-zone {
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--sub);
+}
+
+.tag-zone.on {
+  color: var(--danger);
+}
+
 .tag-minimap {
   position: absolute;
   right: 12px;
@@ -708,4 +720,12 @@ body.in-tag #title-screen {
   font-family: var(--font-pixel);
   font-weight: 400;
   color: #8fb3ff;
+}
+
+/* 足もとに隕石の印が出ている（橙） */
+.tag-warn-meteor {
+  top: 156px;
+  background: #d8661b;
+  border-color: #8f3a0b;
+  animation-duration: 0.25s;
 }

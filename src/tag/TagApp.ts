@@ -11,7 +11,12 @@ import {
   TAG_ONI_DELAY,
   TAG_HAYATO_SPAWN_INTERVAL,
   TAG_HAYATO_START,
+  TAG_HAYATO_MAX,
   TAG_MAX_HP,
+  TAG_METEOR_FIRST,
+  TAG_METEOR_HIT_RADIUS,
+  TAG_METEOR_STILL_TIME,
+  TAG_ZONE_START,
   TAG_PLAYER_COLORS,
   TAG_POS_INTERVAL,
   TAG_SIZE_X,
@@ -25,7 +30,7 @@ import {
 } from './TagConfig';
 import { viewDir } from '../openworld/OpenWorldSim';
 import { TagRenderer } from './TagRenderer';
-import { TagSim, emptyTagInput, type TagEvent } from './TagSim';
+import { HIT_METEOR, HIT_MISSILE, TagSim, emptyTagInput, zoneMoving, type TagEvent } from './TagSim';
 import { TagTouchControls, prefersTouch } from './TagTouch';
 
 /** 鬼ごっこを開いた側（GameApp）から受け取るもの */
@@ -153,6 +158,7 @@ export class TagApp {
           <div class="tag-time"><span>${vx('stopwatch')}</span><b data-tag="time">0:00.0</b></div>
           <div class="tag-oni"><span>${vx('oni')}</span><b data-tag="oni">1</b><small data-tag="next"></small></div>
           <div class="tag-stamina"><i data-tag="stamina"></i></div>
+          <div class="tag-zone" data-tag="zone"></div>
         </div>
         <canvas class="tag-minimap" data-tag="minimap" width="220" height="240"></canvas>
         <div class="tag-alive vx-panel hidden" data-tag="alive"></div>
@@ -161,6 +167,7 @@ export class TagApp {
         <div class="tag-prompt hidden" data-tag="prompt"></div>
         <div class="tag-stun hidden" data-tag="stun"></div>
         <div class="tag-warn hidden" data-tag="warn">${vx('warn')} ハヤトに見つかった！</div>
+        <div class="tag-warn tag-warn-meteor hidden" data-tag="meteorwarn">${vx('warn')} 上から隕石が来る！ 動け！</div>
         <div class="tag-warn tag-warn-blue hidden" data-tag="bluewarn">${vx('warn')} 青鬼に追われている！ 狭い路地へ逃げろ</div>
         <div class="tag-center" data-tag="center"></div>
         <div class="tag-hint" data-tag="hint"></div>
@@ -174,10 +181,12 @@ export class TagApp {
             <li>${vx('eye')} ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</li>
             <li>${vx('heart')} レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たると大きくふっとぶので、その勢いで逃げよう。</li>
             <li>${vx('oni')} ${TAG_BLUE_FIRST} 秒たつと、でかい<b>青鬼ハヤト</b>が現れる。ダッシュと同じ速さでどこまでも追ってきて、触れられたら食べられてアウト。体が大きいので狭い路地には入れない。ほかの人に近づけば、そちらへ狙いが移る。</li>
-            <li>${vx('hourglass')} ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに 1 人ずつ増える。地図にはハヤトが映らないので、曲がり角に注意！</li>
+            <li>${vx('hourglass')} ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに<b>倍に増える</b>（最大 ${TAG_HAYATO_MAX} 人）。地図にはハヤトが映らないので、曲がり角に注意！</li>
+            <li>${vx('warn')} ${TAG_METEOR_FIRST} 秒たつと、空の高い所に<b>隕石ハヤト</b>が現れる。${TAG_METEOR_STILL_TIME} 秒ほど同じ所にとどまっている人に隕石を落とす。地面に赤い印が出たら走れ！</li>
+            <li>${vx('boom')} ${TAG_ZONE_START} 秒たつと、町の外側に<b>ミサイル</b>が降りはじめ、移動できる所が四方から少しずつ狭まる。赤い壁に押されるとミサイルに当たる。</li>
             <li>${vx('stopwatch')} ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</li>
             <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</li>
-            <li>${vx('hand')} お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック）すると、相手を ${TAG_PUNCH_STUN} 秒動けなくする。</li>
+            <li>${vx('hand')} お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック）すると、相手をふっとばして ${TAG_PUNCH_STUN} 秒動けなくする。動けない人をまた殴ると 10 倍ふっとぶ（ハメ技はできない）。</li>
             <li>${vx('boom')} ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック）で発射。建物を壊し、爆風で人もハヤトもひるむ。</li>
           </ul>
           <label class="tag-field"><span>名前</span><input data-tag="name" maxlength="10" /></label>
@@ -581,6 +590,14 @@ export class TagApp {
 
     const focus = this.cameraFocus();
     renderer.render(sim.camera(this.yaw, this.pitch, focus, !!sim.local?.oni && sim.phase === 'playing'), dt);
+    // 近くに落ちたミサイルの音（多すぎるとうるさいので間をあける）
+    this.missileSoundTimer -= dt;
+    const cam = renderer.camera.position;
+    for (const b of renderer.takeMissileBooms()) {
+      if (this.missileSoundTimer > 0 || Math.hypot(b.x - cam.x, b.z - cam.z) > 45) continue;
+      this.missileSoundTimer = 0.3;
+      this.host.sound.playEffect({ kind: 'bomb_explosion' } as unknown as CombatEffectEvent);
+    }
 
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
@@ -653,7 +670,10 @@ export class TagApp {
             s.playHit(true, false, false);
             this.flash();
             if (this.touchMode) navigator.vibrate?.(150);
+            if (e.bolt === HIT_MISSILE) this.showCenter('ミサイルに当たった！ 赤い壁から離れろ', 2);
+            else if (e.bolt === HIT_METEOR) this.showCenter('隕石に当たった！ 止まっていると狙われる', 2);
           }
+          if (e.bolt === HIT_MISSILE && near(sim.player(e.player)?.pos ?? cam, 60)) fx('bomb_explosion');
           break;
         case 'out':
           if (e.player === sim.localId) {
@@ -664,12 +684,28 @@ export class TagApp {
           }
           break;
         case 'spawn':
-          if (e.blue) {
+          if (e.hayatoKind === 'meteor') {
+            this.showCenter('隕石ハヤトが空に現れた！ 止まっていると隕石が落ちてくる', 2.8);
+            s.playFxCue('rumble', 2);
+          } else if (e.blue) {
             this.showCenter('青鬼ハヤトが現れた！ 狭い路地へ逃げろ', 2.6);
             fx('dragon_roar');
-          } else if (sim.time > 1) {
-            this.showCenter('ハヤトが増えた！', 1.6);
+          } else if (sim.time > 1 && sim.time - this.lastDoubleMsg > 1) {
+            // 倍に増えるときは一度に何人も出るので、知らせは 1 回だけ
+            this.lastDoubleMsg = sim.time;
+            this.showCenter(`ハヤトが倍に増えた！（${sim.hayatos.filter((h) => h.kind === 'red').length} 人）`, 2);
           }
+          break;
+        case 'meteor_warn': {
+          const me = sim.local;
+          if (me && me.alive && Math.hypot(e.target.x - me.pos.x, e.target.z - me.pos.z) < TAG_METEOR_HIT_RADIUS + 2) {
+            s.playFxCue('stage2', 1);
+            if (this.touchMode) navigator.vibrate?.([80, 60, 80]);
+          }
+          break;
+        }
+        case 'meteor_hit':
+          if (near(e.pos, 90)) fx('bomb_explosion');
           break;
         case 'oni':
           if (e.player === sim.localId) {
@@ -699,6 +735,12 @@ export class TagApp {
           break;
         case 'punch':
           if (e.attacker === sim.localId || e.victim === sim.localId) s.playHit(true, false, true);
+          if (e.combo) {
+            // 動けない所を殴った: 10 倍ふっとぶ
+            if (near(sim.player(e.victim)?.pos ?? cam, 60)) fx('bomb_explosion');
+            if (e.victim === sim.localId) this.showCenter('連続パンチで 10 倍ふっとんだ！', 2);
+            else if (e.attacker === sim.localId) this.showCenter('動けない相手を殴って 10 倍ふっとばした！', 2);
+          }
           break;
         case 'stun':
           if (e.player === sim.localId) {
@@ -780,6 +822,12 @@ export class TagApp {
   }
 
   private centerTimer = 0;
+  /** 「倍に増えた」を最後に知らせた時刻 */
+  private lastDoubleMsg = -99;
+  /** 前に HUD を更新したときの時刻（ミサイルが始まった瞬間を知る） */
+  private lastHudTime = 0;
+  /** ミサイルの音を最後に鳴らしてからの秒（鳴らしすぎない） */
+  private missileSoundTimer = 0;
   private showCenter(text: string, sec: number): void {
     this.el.center.textContent = text;
     this.el.center.classList.add('on');
@@ -796,7 +844,21 @@ export class TagApp {
       : Array.from({ length: TAG_MAX_HP }, (_, k) => `<span class="${k < hp ? 'on' : 'off'}">${vx('heart')}</span>`).join('');
     this.el.time.textContent = formatSurvival(me ? me.survived : sim.time);
     this.el.oni.textContent = String(sim.hayatos.length);
-    this.el.next.textContent = sim.phase === 'playing' ? `あと ${Math.max(0, Math.ceil(sim.nextSpawn - sim.time))} 秒で増える` : '';
+    this.el.next.textContent = sim.phase === 'playing' ? `あと ${Math.max(0, Math.ceil(sim.nextSpawn - sim.time))} 秒で倍に増える` : '';
+    // ミサイル（移動できる所が狭まる）
+    const zm = zoneMoving(sim.time);
+    if (sim.phase !== 'playing') this.el.zone.textContent = '';
+    else if (sim.time < TAG_ZONE_START) this.el.zone.textContent = `ミサイルまで ${Math.ceil(TAG_ZONE_START - sim.time)} 秒`;
+    else this.el.zone.textContent = zm.x || zm.z ? '外からミサイル！ 狭まっている' : '狭まりきった';
+    this.el.zone.classList.toggle('on', sim.phase === 'playing' && sim.time >= TAG_ZONE_START);
+    if (sim.phase === 'playing' && this.lastHudTime < TAG_ZONE_START && sim.time >= TAG_ZONE_START) {
+      this.showCenter('外からミサイルが降ってきた！ 移動できる所が狭まる', 2.6);
+      this.host.sound.playFxCue('stage2', 2);
+    }
+    this.lastHudTime = sim.time;
+    // 自分の足もとに隕石の印が出ている
+    const meteorOnMe = !!me && me.alive && sim.meteors.some((m) => Math.hypot(m.target.x - me.pos.x, m.target.z - me.pos.z) < TAG_METEOR_HIT_RADIUS + 0.5);
+    this.el.meteorwarn.classList.toggle('hidden', !meteorOnMe);
     const st = me ? me.stamina / TAG_STAMINA_MAX : 0;
     const bar = this.el.stamina;
     bar.style.width = `${Math.round(st * 100)}%`;
@@ -899,6 +961,23 @@ export class TagApp {
       ctx.fillText(l.name, l.x * sx + 1, l.z * sz + 1);
       ctx.fillStyle = '#fff';
       ctx.fillText(l.name, l.x * sx, l.z * sz);
+    }
+    // ミサイルで入れない外側を赤黒く塗り、外縁を赤い線で描く
+    const z = sim.zone();
+    if (z.x0 > 0 || z.z0 > 0) {
+      ctx.fillStyle = 'rgba(70,0,0,0.6)';
+      ctx.fillRect(0, 0, canvas.width, z.z0 * sz);
+      ctx.fillRect(0, z.z1 * sz, canvas.width, canvas.height - z.z1 * sz);
+      ctx.fillRect(0, z.z0 * sz, z.x0 * sx, (z.z1 - z.z0) * sz);
+      ctx.fillRect(z.x1 * sx, z.z0 * sz, canvas.width - z.x1 * sx, (z.z1 - z.z0) * sz);
+      ctx.strokeStyle = '#ff3a2a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(z.x0 * sx, z.z0 * sz, (z.x1 - z.x0) * sx, (z.z1 - z.z0) * sz);
+    }
+    // 隕石の落ちる所（点滅する赤い四角）
+    if (Math.floor(performance.now() / 200) % 2 === 0) {
+      ctx.fillStyle = '#ff2a1a';
+      for (const m of sim.meteors) ctx.fillRect(m.target.x * sx - 4, m.target.z * sz - 4, 8, 8);
     }
     // ハヤトの位置は出さない（物陰で突然出くわすドキドキのため）
     for (const p of sim.players) {

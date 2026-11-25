@@ -62,10 +62,10 @@ export const TAG_FLING_MAX = 5;
 // ---- 鬼（ハヤト） ----
 /** 始まったときのハヤトの数 */
 export const TAG_HAYATO_START = 4;
-/** この秒数ごとにハヤトが 1 人増える */
-export const TAG_HAYATO_SPAWN_INTERVAL = 20;
-/** ハヤトの最大数 */
-export const TAG_HAYATO_MAX = 16;
+/** この秒数ごとにハヤトが倍に増える（4 → 8 → 16 → 32） */
+export const TAG_HAYATO_SPAWN_INTERVAL = 30;
+/** ハヤトの最大数（倍々で増えても、ここで止まる） */
+export const TAG_HAYATO_MAX = 32;
 /** 増えるハヤトは、生きているプレイヤー全員からこの距離以上離れた所に出る */
 export const TAG_HAYATO_SPAWN_MIN_DIST = 40;
 /** うろつく速さ（m/s） */
@@ -128,6 +128,46 @@ export const TAG_BLUE_IGNORE = 12;
 /** 壁につかえたとき、横へ回り込む時間（秒） */
 export const TAG_BLUE_DETOUR = 1.4;
 
+// ---- 隕石ハヤト（空の高い所にとどまり、動かずにいる人へ隕石を落とす） ----
+/** 最初の隕石ハヤトが出る時刻（秒） */
+export const TAG_METEOR_FIRST = 40;
+/** そのあと、この秒数ごとに増える */
+export const TAG_METEOR_INTERVAL = 70;
+/** 隕石ハヤトの最大数 */
+export const TAG_METEOR_MAX = 2;
+/** 顔の大きさ（高さ m） */
+export const TAG_METEOR_HAYATO_SIZE = 2.8;
+/** 浮いている高さ（世界の y。町のいちばん高い建物より上） */
+export const TAG_METEOR_ALT = 46;
+/** 空をゆっくり漂う速さ（m/s） */
+export const TAG_METEOR_DRIFT = 2;
+/** この距離（m）より動いていない時間が TAG_METEOR_STILL_TIME を超えた人を狙う */
+export const TAG_METEOR_STILL_RADIUS = 3;
+export const TAG_METEOR_STILL_TIME = 4;
+/** 狙ってから隕石を落とすまで（秒）。この間、地面に赤い印が出る */
+export const TAG_METEOR_WARN = 1.6;
+/** 隕石の落ちる速さ（m/s） */
+export const TAG_METEOR_FALL_SPEED = 42;
+/** 落とし終わってから、次に狙えるまで（秒） */
+export const TAG_METEOR_COOLDOWN = 2.5;
+/** 隕石が当たる半径（この中の人は 1 回当たった扱いでふっとぶ） */
+export const TAG_METEOR_HIT_RADIUS = 3.6;
+/** 隕石で地形を壊す半径（屋根に隠れても屋根ごと壊れる） */
+export const TAG_METEOR_BLAST = 2.4;
+
+// ---- ミサイル（外側から移動できる所が狭まる） ----
+/** ミサイルが落ち始める時刻（秒） */
+export const TAG_ZONE_START = 60;
+/** 外縁が内側へ進む速さ（m/s。四方から同時に進む） */
+export const TAG_ZONE_SPEED = 0.5;
+/** 狭まりきったときの、移動できる所の一辺（m） */
+export const TAG_ZONE_MIN = 40;
+/** 狭まる中心（町の真ん中） */
+export const TAG_ZONE_CENTER_X = TAG_SIZE_X / 2;
+export const TAG_ZONE_CENTER_Z = TAG_SIZE_Z / 2;
+/** 外縁に押されている人（外縁からこの距離より近い）は、ミサイルに当たって内側へふっとぶ */
+export const TAG_ZONE_HIT_DIST = 0.6;
+
 // ---- 青鬼になったプレイヤー（オンラインで先にアウトになった人） ----
 /** アウトになってから青鬼として出てくるまで（秒） */
 export const TAG_ONI_DELAY = 3;
@@ -180,6 +220,12 @@ export const TAG_PUNCH_STUN = 3;
 export const TAG_PUNCH_KNOCK = TAG_KNOCKBACK;
 /** パンチで相手が上へふっとぶ速さ */
 export const TAG_PUNCH_KNOCK_UP = TAG_KNOCKBACK_UP;
+/** パンチで動けない人をさらに殴ると、横へこの倍率でふっとぶ（連続パンチのハメ技を防ぐ。殴られた人は遠くへ逃げられる） */
+export const TAG_PUNCH_COMBO_MUL = 10;
+/** そのときの上へふっとぶ速さ */
+export const TAG_PUNCH_COMBO_UP = 20;
+/** ふっとび中、1 回の移動でこれより長く進まないよう細かく分ける（速すぎて壁をすり抜けないように） */
+export const TAG_FLING_SUBSTEP = 0.4;
 /** 町に落ちているロケットの数 */
 export const TAG_ROCKET_PICKUPS = 14;
 /** 拾われたロケットが同じ場所にまた出るまで（秒） */

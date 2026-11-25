@@ -105,13 +105,13 @@ describe('鬼ごっこ: ハヤト', () => {
     for (const h of sim.hayatos) expect(Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z)).toBeGreaterThan(30);
   });
 
-  it(`はじめは ${TAG_HAYATO_START} 人で、${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに増える`, () => {
+  it(`はじめは ${TAG_HAYATO_START} 人で、${TAG_HAYATO_SPAWN_INTERVAL} 秒たつと倍になる`, () => {
     const sim = new TagSim(3, [{ id: 0, name: 'A' }], 0, true, town);
     expect(sim.hayatos.length).toBe(TAG_HAYATO_START);
     // 撃たれないよう無敵にしておく
     sim.local!.invuln = 1e9;
-    run(sim, TAG_HAYATO_SPAWN_INTERVAL * 2 + 0.5);
-    expect(sim.hayatos.length).toBe(TAG_HAYATO_START + 2);
+    run(sim, TAG_HAYATO_SPAWN_INTERVAL + 0.5);
+    expect(sim.hayatos.filter((h) => h.kind === 'red').length).toBe(TAG_HAYATO_START * 2);
   });
 
   it('見つけたらためてレーザーを撃ち、当たると HP が減る', () => {

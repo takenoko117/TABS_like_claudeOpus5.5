@@ -32,8 +32,44 @@ import type { CameraPose } from '../openworld/OpenWorldSim';
 import { getHayatoHeadGeometry } from '../render/HayatoHeadModel';
 import { buildKabukun, poseKabukun, type KabukunModel } from './KabukunModel';
 import { KABUKUN_GLB_HEIGHT, KabukunActor, loadKabukun } from './KabukunGltf';
-import { TAG_BLUE_EAT_TIME, TAG_BLUE_HOVER, TAG_BLUE_SIZE, TAG_LASER_CHARGE, TAG_ONI_EAT_PAUSE, TAG_PLAYER_COLORS } from './TagConfig';
-import { hayatoSize, type Hayato, type TagEvent, type TagPlayer, type TagSim } from './TagSim';
+import {
+  TAG_BLUE_EAT_TIME,
+  TAG_BLUE_HOVER,
+  TAG_BLUE_SIZE,
+  TAG_LASER_CHARGE,
+  TAG_METEOR_HIT_RADIUS,
+  TAG_METEOR_WARN,
+  TAG_ONI_EAT_PAUSE,
+  TAG_PLAYER_COLORS,
+  TAG_SIZE_X,
+  TAG_SIZE_Y,
+  TAG_SIZE_Z,
+} from './TagConfig';
+import { floorBelow } from './GifuTown';
+import { hayatoSize, zoneMoving, type Hayato, type TagEvent, type TagPlayer, type TagSim } from './TagSim';
+
+/** 同時に落ちているミサイル（見た目だけ）の上限 */
+const MISSILE_MAX = 28;
+/** ミサイルを落とす間隔（秒） */
+const MISSILE_INTERVAL = 0.07;
+/** ミサイルの落ちる速さ（m/s） */
+const MISSILE_SPEED = 70;
+
+/** 落ちてくるミサイル（外縁の演出。当たりはシミュレーションが外縁の位置で決める） */
+interface MissileView {
+  g: Group;
+  x: number;
+  y: number;
+  z: number;
+  /** 地面の高さ */
+  floor: number;
+}
+
+/** 隕石の見た目（空の岩と、地面の印） */
+interface MeteorView {
+  rock: Group;
+  marker: Group;
+}
 
 /** 演出の粒の上限 */
 const FX_MAX = 600;
@@ -128,6 +164,24 @@ export class TagRenderer {
     star: buildBlock(1, 1, 1, 0xffd43b, 0.12),
   };
   private trailTimer = 0;
+  /** 隕石ハヤト（頂点の色に橙をかける） */
+  private readonly meteorMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true, color: 0xff9a4a });
+  /** 外縁の外（ミサイルで入れない所）を赤黒く塗る箱と、外縁の光る壁 */
+  private readonly zoneOutMat = new MeshBasicMaterial({ color: 0x3a0606, transparent: true, opacity: 0.42, depthWrite: false, fog: false });
+  private readonly zoneWallMat = new MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false });
+  private readonly markerMat = new MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.6, blending: AdditiveBlending, depthWrite: false });
+  private readonly unitBox = new BoxGeometry(1, 1, 1);
+  private readonly zoneOut: Mesh[] = [];
+  private readonly zoneWalls: Mesh[] = [];
+  private readonly missiles: MissileView[] = [];
+  private missileTimer = 0;
+  /** 落ちたミサイルの位置（画面側が音を鳴らすために取り出す） */
+  private readonly missileBooms: { x: number; y: number; z: number }[] = [];
+  private readonly meteorViews = new Map<number, MeteorView>();
+  private readonly meteorGeo = {
+    rock: buildBlock(4, 4, 4, 0x5a3426, 0.42),
+    core: buildBlock(3, 3, 3, 0xffa040, 0.62),
+  };
 
   constructor(
     private readonly container: HTMLElement,
@@ -161,7 +215,18 @@ export class TagRenderer {
     this.scene.add(this.sun, this.sun.target);
 
     this.fxMesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ fog: true }), FX_MAX);
-    this.owned.push(this.fxMesh.geometry, this.boltGeo, ...Object.values(this.rocketGeo));
+    this.owned.push(this.fxMesh.geometry, this.boltGeo, this.unitBox, ...Object.values(this.rocketGeo), ...Object.values(this.meteorGeo));
+    for (let k = 0; k < 4; k++) {
+      const out = new Mesh(this.unitBox, this.zoneOutMat);
+      out.visible = false;
+      out.renderOrder = 2;
+      const wall = new Mesh(this.unitBox, this.zoneWallMat);
+      wall.visible = false;
+      wall.renderOrder = 3;
+      this.zoneOut.push(out);
+      this.zoneWalls.push(wall);
+      this.scene.add(out, wall);
+    }
     this.fxMesh.instanceMatrix.setUsage(DynamicDrawUsage);
     this.fxMesh.frustumCulled = false;
     this.fxMesh.count = 0;
@@ -279,7 +344,7 @@ export class TagRenderer {
   private addHayato(h: Hayato): HayatoView {
     const id = h.id;
     const root = new Group();
-    const head = new Mesh(getHayatoHeadGeometry(), h.kind === 'blue' ? this.blueMat : this.hayatoMat);
+    const head = new Mesh(getHayatoHeadGeometry(), h.kind === 'blue' ? this.blueMat : h.kind === 'meteor' ? this.meteorMat : this.hayatoMat);
     head.castShadow = true;
     head.morphTargetInfluences = [0];
     head.scale.setScalar(hayatoSize(h));
@@ -299,7 +364,10 @@ export class TagRenderer {
     for (const e of events) {
       switch (e.kind) {
         case 'spawn':
-          if (e.blue) {
+          if (e.hayatoKind === 'meteor') {
+            this.burst(e.pos.x, e.pos.y, e.pos.z, 0xff9a4a, 50, 10);
+            this.burst(e.pos.x, e.pos.y, e.pos.z, 0xfff1a8, 20, 6);
+          } else if (e.blue) {
             this.burst(e.pos.x, e.pos.y, e.pos.z, 0x5d8dff, 50, 9);
             this.burst(e.pos.x, e.pos.y, e.pos.z, 0xffffff, 20, 6);
           } else {
@@ -345,7 +413,12 @@ export class TagRenderer {
           this.players.get(e.attacker)?.actor?.punch();
           const v = this.sim.player(e.victim);
           if (v) this.burst(v.pos.x, v.pos.y + 0.8, v.pos.z, 0xffffff, 16, 5);
-          if (e.victim === this.sim.localId) this.shake = Math.max(this.shake, 0.6);
+          // 連続パンチの 10 倍ふっとびは派手に
+          if (v && e.combo) {
+            this.burst(v.pos.x, v.pos.y + 0.8, v.pos.z, 0xffd43b, 40, 14);
+            this.burst(v.pos.x, v.pos.y + 0.8, v.pos.z, 0xff7a2a, 24, 10);
+          }
+          if (e.victim === this.sim.localId) this.shake = Math.max(this.shake, e.combo ? 1.2 : 0.6);
           break;
         }
         case 'stun':
@@ -358,6 +431,15 @@ export class TagRenderer {
           this.burst(x, y, z, 0x6b6e75, 30, 8);
           const d = Math.hypot(x - this.camera.position.x, y - this.camera.position.y, z - this.camera.position.z);
           if (d < 40) this.shake = Math.max(this.shake, 1 - d / 40);
+          break;
+        }
+        case 'meteor_hit': {
+          const { x, y, z } = e.pos;
+          this.burst(x, y, z, 0xff7a2a, 60, 12);
+          this.burst(x, y, z, 0xfff1a8, 24, 8);
+          this.burst(x, y, z, 0x5a3426, 40, 9);
+          const d = Math.hypot(x - this.camera.position.x, y - this.camera.position.y, z - this.camera.position.z);
+          if (d < 50) this.shake = Math.max(this.shake, 1.2 - d / 45);
           break;
         }
         case 'pickup': {
@@ -395,6 +477,8 @@ export class TagRenderer {
     this.syncHayatos(dt);
     this.syncBolts();
     this.syncGadgets(dt);
+    this.syncZone(dt);
+    this.syncMeteors();
     this.updateChunks();
     this.syncFx(dt);
 
@@ -592,13 +676,16 @@ export class TagRenderer {
       seen.add(h.id);
       const v = this.hayatos.get(h.id) ?? this.addHayato(h);
       const blue = h.kind === 'blue';
-      // 青鬼は浮かずにどすどす揺れる
-      const bob = blue ? Math.abs(Math.sin(this.time * (h.state === 'chase' ? 9 : 4) + h.id)) * 0.18 : Math.sin(this.time * 2.2 + h.id) * 0.12;
+      const meteor = h.kind === 'meteor';
+      // 青鬼は浮かずにどすどす揺れる。隕石ハヤトは空でゆっくり上下する
+      const bob = meteor ? Math.sin(this.time * 1.3 + h.id) * 0.5 : blue ? Math.abs(Math.sin(this.time * (h.state === 'chase' ? 9 : 4) + h.id)) * 0.18 : Math.sin(this.time * 2.2 + h.id) * 0.12;
       v.root.position.set(h.pos.x, h.pos.y + bob, h.pos.z);
       v.root.rotation.y = h.yaw;
       v.shout = Math.max(0, v.shout - dt);
-      const aiming = h.state === 'aim';
+      // 隕石ハヤトは照準の線を出さない（地面の印で知らせる）
+      const aiming = h.state === 'aim' && !meteor;
       let wantMouth = v.shout > 0 ? 1 : aiming ? Math.min(1, h.charge / TAG_LASER_CHARGE) : 0;
+      if (meteor && h.state === 'aim') wantMouth = 1;
       if (blue) {
         if (h.state === 'eat') {
           // 食べている: 最初は大きく開け、そのあと、もぐもぐ
@@ -633,6 +720,164 @@ export class TagRenderer {
       if (seen.has(id)) continue;
       this.scene.remove(v.root, v.aim);
       this.hayatos.delete(id);
+    }
+  }
+
+  /** 外縁（ミサイルで入れない所）の塗りと壁、落ちてくるミサイル */
+  private syncZone(dt: number): void {
+    const z = this.sim.zone();
+    const H = TAG_SIZE_Y + 10;
+    // 外の 4 つの帯（西・東・北・南）
+    const outs: [number, number, number, number][] = [
+      [0, z.x0, 0, TAG_SIZE_Z],
+      [z.x1, TAG_SIZE_X, 0, TAG_SIZE_Z],
+      [z.x0, z.x1, 0, z.z0],
+      [z.x0, z.x1, z.z1, TAG_SIZE_Z],
+    ];
+    outs.forEach(([x0, x1, z0, z1], k) => {
+      const m = this.zoneOut[k];
+      m.visible = x1 - x0 > 0.01 && z1 - z0 > 0.01;
+      if (!m.visible) return;
+      m.position.set((x0 + x1) / 2, H / 2 - 2, (z0 + z1) / 2);
+      m.scale.set(x1 - x0, H, z1 - z0);
+    });
+    // 外縁の光る壁（脈打つ）
+    const walls: [number, number, number, number, boolean][] = [
+      [z.x0, z.x0, z.z0, z.z1, z.x0 > 0.01],
+      [z.x1, z.x1, z.z0, z.z1, z.x1 < TAG_SIZE_X - 0.01],
+      [z.x0, z.x1, z.z0, z.z0, z.z0 > 0.01],
+      [z.x0, z.x1, z.z1, z.z1, z.z1 < TAG_SIZE_Z - 0.01],
+    ];
+    walls.forEach(([x0, x1, z0, z1, show], k) => {
+      const m = this.zoneWalls[k];
+      m.visible = show;
+      if (!show) return;
+      m.position.set((x0 + x1) / 2, H / 2 - 2, (z0 + z1) / 2);
+      m.scale.set(Math.max(0.15, x1 - x0), H, Math.max(0.15, z1 - z0));
+    });
+    this.zoneWallMat.opacity = 0.28 + 0.12 * Math.sin(this.time * 6);
+
+    // 外縁が迫っている間は、外縁にそってミサイルが降りそそぐ
+    const moving = zoneMoving(this.sim.time);
+    this.missileTimer -= dt;
+    if ((moving.x || moving.z) && this.sim.phase === 'playing' && this.missileTimer <= 0 && this.missiles.length < MISSILE_MAX) {
+      this.missileTimer = MISSILE_INTERVAL;
+      const at = this.missileSpot(z, moving);
+      if (at) {
+        const g = this.buildRocketModel(false);
+        g.scale.setScalar(1.6);
+        const floor = floorBelow(this.sim.world, at.x, this.sim.world.sizeY - 1, at.z);
+        const y = floor + 40 + Math.random() * 20;
+        g.position.set(at.x, y, at.z);
+        // 先を真下へ向ける
+        g.lookAt(at.x, y - 1, at.z);
+        this.scene.add(g);
+        this.missiles.push({ g, x: at.x, y, z: at.z, floor });
+      }
+    }
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      m.y -= MISSILE_SPEED * dt;
+      m.g.position.set(m.x, m.y, m.z);
+      if (Math.random() < 0.5 && this.fx.length < FX_MAX) {
+        this.fx.push({ x: m.x, y: m.y + 1.2, z: m.z, vx: 0, vy: 0.5, vz: 0, life: 0.45, max: 0.45, size: 0.35, color: 0xb9b6ae });
+      }
+      if (m.y > m.floor) continue;
+      this.scene.remove(m.g);
+      this.missiles.splice(i, 1);
+      this.burst(m.x, m.floor + 0.5, m.z, 0xff7a2a, 22, 9);
+      this.burst(m.x, m.floor + 0.5, m.z, 0x6b6e75, 14, 6);
+      this.missileBooms.push({ x: m.x, y: m.floor, z: m.z });
+      const d = Math.hypot(m.x - this.camera.position.x, m.z - this.camera.position.z);
+      if (d < 18) this.shake = Math.max(this.shake, 0.5 - d / 40);
+    }
+  }
+
+  /** ミサイルを落とす外縁の上の点（半分は見ている所の近くの外縁に落として、迫ってくる感じを出す） */
+  private missileSpot(z: { x0: number; x1: number; z0: number; z1: number }, moving: { x: boolean; z: boolean }): { x: number; z: number } | null {
+    const edges: { x0: number; z0: number; x1: number; z1: number }[] = [];
+    if (moving.x) edges.push({ x0: z.x0, z0: z.z0, x1: z.x0, z1: z.z1 }, { x0: z.x1, z0: z.z0, x1: z.x1, z1: z.z1 });
+    if (moving.z) edges.push({ x0: z.x0, z0: z.z0, x1: z.x1, z1: z.z0 }, { x0: z.x0, z0: z.z1, x1: z.x1, z1: z.z1 });
+    if (edges.length === 0) return null;
+    const c = this.camera.position;
+    let e = edges[Math.floor(Math.random() * edges.length)];
+    let t = Math.random();
+    if (Math.random() < 0.55) {
+      // いちばん近い外縁の、見ている所の前後 40 m
+      let best = Infinity;
+      for (const ed of edges) {
+        const len = Math.hypot(ed.x1 - ed.x0, ed.z1 - ed.z0) || 1;
+        const tt = Math.max(0, Math.min(1, ((c.x - ed.x0) * (ed.x1 - ed.x0) + (c.z - ed.z0) * (ed.z1 - ed.z0)) / (len * len)));
+        const d = Math.hypot(ed.x0 + (ed.x1 - ed.x0) * tt - c.x, ed.z0 + (ed.z1 - ed.z0) * tt - c.z);
+        if (d < best) {
+          best = d;
+          e = ed;
+          t = Math.max(0, Math.min(1, tt + ((Math.random() * 2 - 1) * 40) / len));
+        }
+      }
+    }
+    // 外縁の少し外側に落とす
+    const nx = e.x0 === e.x1 ? (e.x0 <= z.x0 ? -1 : 1) : 0;
+    const nz = e.z0 === e.z1 ? (e.z0 <= z.z0 ? -1 : 1) : 0;
+    const out = Math.random() * 3;
+    return { x: e.x0 + (e.x1 - e.x0) * t + nx * out, z: e.z0 + (e.z1 - e.z0) * t + nz * out };
+  }
+
+  /** 落ちたミサイルの位置を取り出す（音を鳴らす） */
+  takeMissileBooms(): { x: number; y: number; z: number }[] {
+    return this.missileBooms.splice(0);
+  }
+
+  /** 隕石（空で光る岩）と、落ちる所の印 */
+  private syncMeteors(): void {
+    const seen = new Set<number>();
+    for (const m of this.sim.meteors) {
+      seen.add(m.id);
+      let v = this.meteorViews.get(m.id);
+      if (!v) {
+        const rock = new Group();
+        rock.add(new Mesh(this.meteorGeo.rock, this.entityMat));
+        const core = new Mesh(this.meteorGeo.core, this.markerMat);
+        rock.add(core);
+        const marker = new Group();
+        const r = TAG_METEOR_HIT_RADIUS;
+        // 四角い枠（ドットの味に合わせて角は丸めない）と、中の薄い塗り
+        for (const [px, pz, sx, sz] of [
+          [0, -r, 2 * r, 0.3],
+          [0, r, 2 * r, 0.3],
+          [-r, 0, 0.3, 2 * r],
+          [r, 0, 0.3, 2 * r],
+          [0, 0, 2 * r, 2 * r],
+        ] as const) {
+          const bar = new Mesh(this.unitBox, this.markerMat);
+          bar.position.set(px, 0, pz);
+          bar.scale.set(sx, 0.08, sz);
+          marker.add(bar);
+        }
+        this.scene.add(rock, marker);
+        v = { rock, marker };
+        this.meteorViews.set(m.id, v);
+      }
+      v.rock.position.set(m.pos.x, m.pos.y, m.pos.z);
+      v.rock.rotation.set(this.time * 3, this.time * 2, 0);
+      const falling = m.warn <= 0;
+      v.rock.scale.setScalar(falling ? 1 : 0.5 + 0.5 * Math.min(1, 1 - m.warn / TAG_METEOR_WARN));
+      if (falling) {
+        for (let k = 0; k < 3 && this.fx.length < FX_MAX; k++) {
+          this.fx.push({ x: m.pos.x + (Math.random() - 0.5), y: m.pos.y + 0.8, z: m.pos.z + (Math.random() - 0.5), vx: 0, vy: 2, vz: 0, life: 0.5, max: 0.5, size: 0.4, color: k === 0 ? 0xfff1a8 : 0xff7a2a });
+        }
+      }
+      // 印は落ちるのが近いほど速く点滅する
+      v.marker.position.set(m.target.x, m.target.y + 0.06, m.target.z);
+      const urgency = falling ? 1 : 1 - m.warn / TAG_METEOR_WARN;
+      v.marker.visible = Math.sin(this.time * (8 + urgency * 22)) > -0.4;
+      v.marker.children[4].visible = urgency > 0.5;
+    }
+    this.markerMat.opacity = 0.45 + 0.25 * Math.sin(this.time * 10);
+    for (const [id, v] of this.meteorViews) {
+      if (seen.has(id)) continue;
+      this.scene.remove(v.rock, v.marker);
+      this.meteorViews.delete(id);
     }
   }
 
@@ -708,7 +953,7 @@ export class TagRenderer {
       c.opaque?.geometry.dispose();
       c.trans?.geometry.dispose();
     }
-    for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.blueMat, this.boltCore, this.boltGlow, this.aimMat]) mat.dispose();
+    for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.blueMat, this.boltCore, this.boltGlow, this.aimMat, this.meteorMat, this.zoneOutMat, this.zoneWallMat, this.markerMat]) mat.dispose();
     for (const v of this.players.values()) {
       if (!v.label) continue;
       v.label.material.map?.dispose();

@@ -12,6 +12,7 @@ import {
   TAG_KNOCKBACK,
   TAG_ONI_DELAY,
   TAG_ONI_SPEED,
+  TAG_PUNCH_COMBO_MUL,
   TAG_PUNCH_STUN,
   TAG_SPRINT_SPEED,
 } from '../src/tag/TagConfig';
@@ -229,6 +230,67 @@ describe('パンチでもふっとぶ', () => {
     expect(b.pos.x - x0).toBeGreaterThan(40);
     // 飛んでいる間は減らないので、着地した時点でまだほぼまるごと残っている
     expect(b.stun).toBeGreaterThan(TAG_PUNCH_STUN - 0.1);
+  });
+});
+
+describe('動けない所をまた殴ると 10 倍ふっとぶ（連続パンチのハメ技を防ぐ）', () => {
+  it('1 発目はふつう、動けない間の 2 発目は横へ 10 倍の速さでふっとぶ', () => {
+    const sim = new TagSim(1, duo, 1, true, arena(false, 128));
+    sim.hayatos.length = 0;
+    const a = sim.player(0)!;
+    const b = sim.player(1)!;
+    b.pos.x = a.pos.x + 1.5;
+    b.pos.z = a.pos.z;
+    expect(sim.requestPunch(0)).toBe(true);
+    expect(b.vel.x).toBeCloseTo(TAG_KNOCKBACK);
+    expect(sim.events.some((e) => e.kind === 'punch' && !e.combo)).toBe(true);
+    // 飛び終わって動けないところへ、また近づいて殴る
+    for (let t = 0; t < 8 && b.fling > 0; t += STEP) sim.step(STEP, emptyTagInput());
+    expect(b.stun).toBeGreaterThan(0);
+    a.pos.x = b.pos.x - 1.5;
+    a.pos.y = b.pos.y;
+    a.pos.z = b.pos.z;
+    a.punchCooldown = 0;
+    expect(sim.requestPunch(0)).toBe(true);
+    expect(b.vel.x).toBeCloseTo(TAG_KNOCKBACK * TAG_PUNCH_COMBO_MUL);
+    expect(sim.events.some((e) => e.kind === 'punch' && e.combo)).toBe(true);
+  });
+
+  it('速くても建物の壁をすり抜けず、跳ね返る', () => {
+    const sim = new TagSim(1, duo, 1, true, arena(true, 64));
+    sim.hayatos.length = 0;
+    const b = sim.player(1)!;
+    // 建物（x 20〜29）の西 6 m から東へ 190 m/s でふっとばす
+    b.pos.x = 14;
+    b.pos.y = GROUND;
+    b.pos.z = 30;
+    b.stun = 1;
+    const a = sim.player(0)!;
+    a.pos.x = 12.5;
+    a.pos.y = GROUND;
+    a.pos.z = 30;
+    expect(sim.requestPunch(0)).toBe(true);
+    for (let t = 0; t < 0.3; t += STEP) {
+      sim.step(STEP, emptyTagInput());
+      // 建物の中に入っていない
+      expect(boxCollides(sim.world, b.pos.x, b.pos.y, b.pos.z, 0.5, 1.3)).toBe(false);
+    }
+    expect(b.pos.x < 20 || b.pos.y >= GROUND + 7).toBe(true);
+  });
+
+  it('オンライン: ゲストにも 10 倍の知らせが届き、殴られたゲストが大きくふっとぶ', () => {
+    const host = new TagSim(1, duo, 0, true, arena(false, 128));
+    const guest = new TagSim(1, duo, 1, false, arena(false, 128));
+    host.hayatos.length = 0;
+    const b = host.player(1)!;
+    const a = host.player(0)!;
+    b.stun = 2;
+    b.pos.x = a.pos.x + 1.5;
+    b.pos.z = a.pos.z;
+    expect(host.requestPunch(0)).toBe(true);
+    guest.applySnapshot(host.snapshot());
+    expect(guest.local!.vel.x).toBeCloseTo(TAG_KNOCKBACK * TAG_PUNCH_COMBO_MUL);
+    expect(guest.events.some((e) => e.kind === 'punch' && e.combo)).toBe(true);
   });
 });
 
