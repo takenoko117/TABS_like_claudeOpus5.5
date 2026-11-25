@@ -9,7 +9,8 @@
 // 部屋の一覧: GET https://<worker>/rooms
 //
 // 鬼ごっこ（かぶくん vs ハヤト）の部屋も同じ Worker で中継する: wss://<worker>/tag/<部屋名>
-// （TagRoomObject。最大 6 人。位置と鬼の様子をそのまま中継するだけで、一覧には出さない）
+// （TagRoomObject。最大 6 人。位置と鬼の様子をそのまま中継する）
+// 鬼ごっこの部屋の一覧: GET https://<worker>/tag-rooms（一覧は LobbyObject を名前 'tag-lobby' でもう 1 つ作って持つ）
 import { DurableObject } from 'cloudflare:workers';
 import {
   TD_VS_LIST_REFRESH_MS,
@@ -25,6 +26,8 @@ import { TagRoom, type TagRoomOutput } from './tagRoomLogic';
 
 /** 一覧の Durable Object の名前（1 つだけ作る） */
 const LOBBY_NAME = 'lobby';
+/** 鬼ごっこの部屋の一覧の Durable Object の名前（TD 対戦の一覧とは分ける） */
+const TAG_LOBBY_NAME = 'tag-lobby';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<VersusRoomObject>;
@@ -41,7 +44,8 @@ export default {
     const allowed = (env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     const origin = request.headers.get('Origin') ?? '';
     const originOk = allowed.length === 0 || allowed.includes(origin);
-    if (url.pathname === '/rooms') return listRooms(request, env, allowed, origin, originOk);
+    if (url.pathname === '/rooms') return listRooms(request, env, allowed, origin, originOk, LOBBY_NAME);
+    if (url.pathname === '/tag-rooms') return listRooms(request, env, allowed, origin, originOk, TAG_LOBBY_NAME);
     const tagMatch = /^\/tag\/([^/]+)$/.exec(url.pathname);
     if (tagMatch) {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
@@ -77,7 +81,7 @@ export default {
 };
 
 /** 募集中の部屋の一覧（ブラウザの fetch から読むので CORS を付ける） */
-async function listRooms(request: Request, env: Env, allowed: string[], origin: string, originOk: boolean): Promise<Response> {
+async function listRooms(request: Request, env: Env, allowed: string[], origin: string, originOk: boolean, lobby: string): Promise<Response> {
   const cors: Record<string, string> = {
     'Access-Control-Allow-Origin': allowed.length === 0 ? '*' : originOk ? origin : allowed[0],
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -86,7 +90,7 @@ async function listRooms(request: Request, env: Env, allowed: string[], origin: 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (request.method !== 'GET') return new Response('method not allowed', { status: 405, headers: cors });
   if (!originOk) return new Response('forbidden origin', { status: 403, headers: cors });
-  const res = await env.LOBBY.get(env.LOBBY.idFromName(LOBBY_NAME)).fetch('https://lobby/list');
+  const res = await env.LOBBY.get(env.LOBBY.idFromName(lobby)).fetch('https://lobby/list');
   return new Response(res.body, {
     status: res.status,
     headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -315,6 +319,8 @@ export class TagRoomObject extends DurableObject<Env> {
   private room: TagRoom | null = null;
   private readonly sockets = new Map<number, WebSocket>();
   private alarmSet = false;
+  /** 最後に一覧へ知らせた内容と時刻 */
+  private lastReport: { key: string; at: number } | null = null;
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -336,6 +342,7 @@ export class TagRoomObject extends DurableObject<Env> {
     server.addEventListener('close', () => this.onClose(slot, server));
     server.addEventListener('error', () => this.onClose(slot, server));
     this.deliver(out);
+    this.reportToLobby();
     await this.ensureAlarm();
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -348,6 +355,8 @@ export class TagRoomObject extends DurableObject<Env> {
       return;
     }
     this.deliver(this.room.message(slot, msg, Date.now()));
+    // 始まった・終わった（一覧の「プレイ中」）を知らせる（内容が同じなら、ときどきしか送らない）
+    this.reportToLobby();
     void this.ensureAlarm();
   }
 
@@ -355,7 +364,20 @@ export class TagRoomObject extends DurableObject<Env> {
     if (!this.room || this.sockets.get(slot) !== ws) return;
     this.sockets.delete(slot);
     this.deliver(this.room.leave(slot, Date.now()));
+    this.reportToLobby();
     if (this.room.empty) void this.destroy();
+  }
+
+  /** 人数・プレイ中かどうかが変わったら、鬼ごっこの部屋の一覧へ知らせる（一覧に出ている間はときどき知らせ直す） */
+  private reportToLobby(force?: RoomReport): void {
+    const report: RoomReport | null = force ?? this.room?.listing() ?? null;
+    if (!report) return;
+    const now = Date.now();
+    if (!force && !shouldReport(this.lastReport, report, now, TD_VS_LIST_REFRESH_MS)) return;
+    this.lastReport = { key: reportKey(report), at: now };
+    const stub = this.env.LOBBY.get(this.env.LOBBY.idFromName(TAG_LOBBY_NAME));
+    const req = stub.fetch('https://lobby/report', { method: 'POST', body: JSON.stringify(report) });
+    this.ctx.waitUntil(req.then(() => undefined).catch(() => undefined));
   }
 
   private deliver(out: readonly TagRoomOutput[]): void {
@@ -402,6 +424,8 @@ export class TagRoomObject extends DurableObject<Env> {
   }
 
   private async destroy(): Promise<void> {
+    if (this.room && this.lastReport) this.reportToLobby({ name: this.room.name, players: 0, open: false });
+    this.lastReport = null;
     this.sockets.clear();
     this.room = null;
     this.alarmSet = false;

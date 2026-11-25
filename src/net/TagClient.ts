@@ -1,6 +1,28 @@
 // 鬼ごっこのオンライン接続（WebSocket）。中継サーバーは TD 対戦と同じ Worker（VITE_TD_VS_SERVER）の /tag/<部屋名>。
 import { getTDVersusServerUrl } from './TDVersusClient';
-import { normalizeRoomName, parseTagServerMessage, type TagClientMessage, type TagServerMessage } from './tagProtocol';
+import {
+  normalizeRoomName,
+  parseTagRoomList,
+  parseTagServerMessage,
+  type TagClientMessage,
+  type TagRoomListing,
+  type TagServerMessage,
+} from './tagProtocol';
+
+/** 鬼ごっこの部屋の一覧を取る（GET /tag-rooms）。失敗したらエラー文を返す */
+export async function fetchTagRooms(): Promise<TagRoomListing[] | string> {
+  const base = getTDVersusServerUrl();
+  if (!base) return 'オンラインのサーバーが設定されていません';
+  // wss:// → https://、ws:// → http://
+  const http = base.replace(/^ws(s?):\/\//, 'http$1://');
+  try {
+    const res = await fetch(`${http}/tag-rooms`, { cache: 'no-store' });
+    if (!res.ok) return '部屋の一覧を取得できませんでした';
+    return parseTagRoomList(await res.json()) ?? '部屋の一覧を取得できませんでした';
+  } catch {
+    return 'サーバーに接続できませんでした';
+  }
+}
 
 export interface TagClientHandlers {
   onMessage(msg: TagServerMessage): void;

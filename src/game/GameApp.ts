@@ -1448,6 +1448,7 @@ export class GameApp {
     this.music.setTrack(null);
     this.tagMode = new TagApp({
       sound: this.sound,
+      music: this.music,
       onExit: () => this.leaveTagMode(),
     });
   }

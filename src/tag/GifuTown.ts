@@ -1,6 +1,7 @@
 import { B } from '../openworld/OpenWorldConfig';
 import { VoxelWorld, type V3 } from '../openworld/VoxelWorld';
 import { makeRng } from '../openworld/WorldGen';
+import { applyAreas, chooseAreas, type TagArea } from './TagAreas';
 import { TAG_GROUND, TAG_SIZE_X, TAG_SIZE_Y, TAG_SIZE_Z } from './TagConfig';
 
 /**
@@ -31,6 +32,8 @@ export interface GifuTown {
   landmarks: GifuLandmark[];
   /** 作りたての町のブロック（ロケットで壊れた町を元に戻すため） */
   pristine: Uint8Array;
+  /** 今回、別の景色に入れ替わった区画（入れ替えなしなら空） */
+  areas?: TagArea[];
 }
 
 /** 地面の表面のブロックの高さ（この上に立つ） */
@@ -125,8 +128,11 @@ function riverBed(z: number): number {
   return Math.max(2, SURF - fromEdge);
 }
 
-/** 岐阜の町を作る。同じ種なら同じ町になる（オンラインの全員が同じ町を作る） */
-export function generateGifuTown(seed = 1): GifuTown {
+/**
+ * 岐阜の町を作る。同じ種なら同じ町になる（オンラインの全員が同じ町を作る）。
+ * variant を渡すと、市街地のいくつかの区画が別の景色（森・湖・雪原など）に入れ替わる（試合ごとに変える）。
+ */
+export function generateGifuTown(seed = 1, variant?: number): GifuTown {
   const world = new VoxelWorld(TAG_SIZE_X, TAG_SIZE_Y, TAG_SIZE_Z);
   const b = new Builder(world);
   const rng = makeRng(seed * 7919 + 13);
@@ -218,9 +224,12 @@ export function generateGifuTown(seed = 1): GifuTown {
     { name: 'スカイウイング37', x: 112, z: 155 },
     { name: 'JR岐阜駅', x: 82, z: 176 },
   ];
+  // 10. 入れ替わる区画（試合ごとの手続き生成）
+  const areas = variant === undefined ? [] : chooseAreas(variant);
+  if (areas.length > 0) applyAreas(world, areas, nav, landmarks, onMountain, variant!);
   world.dirtyChunks.clear();
   world.dirtyColumns.clear();
-  return { world, navPoints: nav, playerSpawns, landmarks, pristine: world.data.slice() };
+  return { world, navPoints: nav, playerSpawns, landmarks, pristine: world.data.slice(), areas };
 }
 
 /** 道路で囲まれた長方形の区画を探す（市街地・山の南の住宅地） */

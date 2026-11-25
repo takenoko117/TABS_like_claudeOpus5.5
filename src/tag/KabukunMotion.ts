@@ -246,3 +246,35 @@ export class KabukunMotion {
     return p;
   }
 }
+
+/** 段差を上ったときに、見た目の高さを元の高さから寄せていく速さ（大きいほど速い） */
+export const STEP_SMOOTH_RATE = 16;
+/** 段差を上ったとみなす、1 フレームの高さの変化の範囲（m） */
+export const STEP_MIN = 0.35;
+export const STEP_MAX = 1.25;
+
+/**
+ * 1 マスの段差を上ると、足もとの高さは 1 フレームで 1 m 上がる（瞬間移動に見える）。
+ * 見た目の高さだけを、上がる前の高さから少しずつ追いつかせて、よいしょと上がるように見せる。
+ * カメラの高さにも使う。
+ */
+export class StepSmoother {
+  private last: number | null = null;
+  /** 見た目の高さの遅れ（負: まだ下にいる） */
+  offset = 0;
+
+  /** 本当の高さ y を渡すと、見せる高さを返す。jumpy なら（ふっとび中など）なめらかにしない */
+  update(y: number, dt: number, jumpy = false): number {
+    if (this.last !== null && !jumpy) {
+      const dy = y - this.last;
+      if (dy > STEP_MIN && dy < STEP_MAX) this.offset -= dy;
+    }
+    if (jumpy) this.offset = 0;
+    this.last = y;
+    this.offset *= Math.exp(-STEP_SMOOTH_RATE * dt);
+    if (Math.abs(this.offset) < 0.002) this.offset = 0;
+    // 遅れすぎない（続けて段を上っても 1 段ぶんまで）
+    this.offset = Math.max(-1.2, this.offset);
+    return y + this.offset;
+  }
+}

@@ -1,10 +1,12 @@
 import type { SoundManager } from '../audio/SoundManager';
+import type { MusicTrackId } from '../audio/MusicPatterns';
 import type { CombatEffectEvent } from '../combat/CombatSystem';
-import { TagClient } from '../net/TagClient';
-import { normalizeTagName, type TagRosterEntry, type TagServerMessage } from '../net/tagProtocol';
+import { TagClient, fetchTagRooms } from '../net/TagClient';
+import { TAG_LIST_POLL_MS, TAG_VS_CAPACITY, normalizeTagName, type TagRoomListing, type TagRosterEntry, type TagServerMessage } from '../net/tagProtocol';
 import { BLOCK_DEFS, B } from '../openworld/OpenWorldConfig';
 import { vx } from '../ui/VoxelIcons';
 import { generateGifuTown, type GifuTown } from './GifuTown';
+import { TAG_AREA_NAMES } from './TagAreas';
 import {
   TAG_BEST_KEY,
   TAG_BLUE_FIRST,
@@ -24,6 +26,8 @@ import {
   TAG_SIZE_Z,
   TAG_SNAP_INTERVAL,
   TAG_STAMINA_MAX,
+  TAG_STAMINA_RECOVER,
+  TAG_SCARY_HOLD,
   TAG_PUNCH_COOLDOWN,
   TAG_PUNCH_STUN,
   TAG_ROCKET_COOLDOWN,
@@ -33,15 +37,20 @@ import { viewDir } from '../openworld/OpenWorldSim';
 import { TagRenderer } from './TagRenderer';
 import { HIT_METEOR, HIT_MISSILE, TagSim, emptyTagInput, zoneMoving, type TagEvent } from './TagSim';
 import { TagTouchControls, prefersTouch } from './TagTouch';
+import { StepSmoother } from './KabukunMotion';
 
 /** 鬼ごっこを開いた側（GameApp）から受け取るもの */
 export interface TagHost {
   sound: SoundManager;
+  /** BGM（ふつうは楽しい曲、ハヤトに見つかると怖い曲） */
+  music?: { setTrack(track: MusicTrackId | null): void };
   /** タイトルへ戻る */
   onExit: () => void;
 }
 
 const STEP = 1 / 60;
+/** ダッシュのゲージのブロックの数 */
+const DASH_SEGMENTS = 14;
 const MOUSE_SENS = 0.0024;
 const ROOT_ID = 'tag-root';
 /** 始まる前の数え */
@@ -59,11 +68,11 @@ export function formatSurvival(sec: number): string {
   return `${m}:${rest < 10 ? '0' : ''}${rest.toFixed(1)}`;
 }
 
-/** 町は一度作れば使い回せる（壊れないので） */
-let townCache: GifuTown | null = null;
-function getTown(): GifuTown {
-  townCache ??= generateGifuTown(1);
-  return townCache;
+/** 最後に作った町（同じ種の町は使い回す。試合ごとに種を変えて、いくつかの区画を別の景色に入れ替える） */
+let townCache: { variant: number; town: GifuTown } | null = null;
+function getTown(variant: number): GifuTown {
+  if (townCache?.variant !== variant) townCache = { variant, town: generateGifuTown(1, variant) };
+  return townCache.town;
 }
 
 /**
@@ -158,7 +167,6 @@ export class TagApp {
           <div class="tag-hearts" data-tag="hearts"></div>
           <div class="tag-time"><span>${vx('stopwatch')}</span><b data-tag="time">0:00.0</b></div>
           <div class="tag-oni"><span>${vx('oni')}</span><b data-tag="oni">1</b><small data-tag="next"></small></div>
-          <div class="tag-stamina"><i data-tag="stamina"></i></div>
           <div class="tag-zone" data-tag="zone"></div>
         </div>
         <canvas class="tag-minimap" data-tag="minimap" width="220" height="240"></canvas>
@@ -166,6 +174,10 @@ export class TagApp {
         <div class="tag-gadget vx-panel" data-tag="gadget"></div>
         <div class="tag-crosshair hidden" data-tag="crosshair"></div>
         <div class="tag-prompt hidden" data-tag="prompt"></div>
+        <div class="tag-dash" data-tag="dash">
+          <span class="tag-dash-label" data-tag="dashlabel"></span>
+          <div class="tag-dash-bar" data-tag="dashbar">${Array.from({ length: DASH_SEGMENTS }, (_, k) => `<i class="${k === Math.ceil((TAG_STAMINA_RECOVER / TAG_STAMINA_MAX) * DASH_SEGMENTS) - 1 ? 'mark' : ''}"></i>`).join('')}</div>
+        </div>
         <div class="tag-stun hidden" data-tag="stun"></div>
         <div class="tag-warn hidden" data-tag="warn">${vx('warn')} ハヤトに見つかった！</div>
         <div class="tag-warn tag-warn-meteor hidden" data-tag="meteorwarn">${vx('warn')} 上から隕石が来る！ 動け！</div>
@@ -195,11 +207,13 @@ export class TagApp {
           <div class="tag-buttons">
             <button type="button" class="vx-key tag-btn primary" data-tag="solo">${vx('play')} ひとりで遊ぶ</button>
           </div>
+          <h3 class="tag-rooms-title">${vx('globe')} オンラインの部屋 <small data-tag="roomsinfo"></small></h3>
+          <div class="tag-rooms" data-tag="rooms"></div>
           <div class="tag-online">
-            <label class="tag-field"><span>部屋名</span><input data-tag="room" maxlength="20" /></label>
-            <button type="button" class="vx-key tag-btn" data-tag="join">${vx('globe')} オンラインで遊ぶ</button>
+            <label class="tag-field"><span>部屋名</span><input data-tag="room" maxlength="20" placeholder="空なら自動で決める" /></label>
+            <button type="button" class="vx-key tag-btn" data-tag="join">${vx('home')} 部屋を作る</button>
           </div>
-          <p class="tag-note">同じ部屋名を入れた人どうしで遊べます。最初に入った人がホストです。</p>
+          <p class="tag-note">上の一覧の部屋をタップすると、そのまま入れます。部屋を作るとホストになり、一覧に出ます（同じ部屋名を入れても入れます）。</p>
           <p class="tag-error hidden" data-tag="error"></p>
           <p class="tag-touch-help">${vx('hand')} スマホ: 画面の左をなぞるとスティックが出て歩けます（端まで倒すとダッシュ）。右をなぞると視点、右下のボタンでジャンプ。</p>
           <div class="tag-keys">${keys.map(([k, d]) => `<div><kbd>${k}</kbd><span>${d}</span></div>`).join('')}</div>
@@ -218,6 +232,7 @@ export class TagApp {
           <h2>${vx('people', 'vx-lg')} 部屋 <span data-tag="roomname"></span></h2>
           <p class="tag-sub" data-tag="lobbyinfo"></p>
           <ul class="tag-roster" data-tag="roster"></ul>
+          <button type="button" class="vx-key tag-btn tag-chain-opt" data-tag="chainopt"></button>
           <div class="tag-buttons">
             <button type="button" class="vx-key tag-btn primary" data-tag="start">${vx('play')} 鬼ごっこを始める</button>
             <button type="button" class="vx-key tag-btn" data-tag="leave">${vx('undo')} 退室</button>
@@ -250,6 +265,7 @@ export class TagApp {
 
   private showScreen(s: Screen): void {
     this.screen = s;
+    this.setRoomPolling(s === 'menu');
     for (const k of ['menu', 'connecting', 'lobby', 'result'] as const) this.el[k].classList.toggle('hidden', k !== s);
     this.el.hud.classList.toggle('hidden', s !== 'game' && s !== 'result');
     if (s !== 'game') this.setPaused(false);
@@ -286,6 +302,20 @@ export class TagApp {
     click('start', () => {
       this.host.sound.playPlace();
       this.client?.send({ t: 'start' });
+    });
+    click('chainopt', () => {
+      // 足かせと鎖のあり・なし（ホストだけが変えられる）
+      if (this.mySlot !== this.hostSlot) return;
+      this.host.sound.playPlace();
+      this.client?.send({ t: 'opts', chain: !this.roomChain });
+    });
+    this.listen(this.el.rooms, 'click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-room]');
+      if (!btn || btn.disabled) return;
+      this.host.sound.playPlace();
+      this.saveName();
+      (this.el.room as HTMLInputElement).value = btn.dataset.room!;
+      this.connect();
     });
     click('leave', () => this.leaveRoom());
     click('resume', () => {
@@ -387,7 +417,13 @@ export class TagApp {
   // ---- オンライン ----
 
   private connect(): void {
-    const room = (this.el.room as HTMLInputElement).value;
+    // 部屋名が空なら、名前から自動で決める（例: たけし-37）
+    const input = this.el.room as HTMLInputElement;
+    if (!input.value.trim()) {
+      const base = this.myName().replace(/[^\p{L}\p{N}_-]/gu, '').slice(0, 14) || 'kabu';
+      input.value = `${base}-${Math.floor(10 + Math.random() * 90)}`;
+    }
+    const room = input.value;
     this.showError('');
     const client = TagClient.open(room, {
       onMessage: (m) => this.onMessage(m),
@@ -430,12 +466,13 @@ export class TagApp {
       case 'roster':
         this.roster = m.players;
         this.hostSlot = m.host;
+        this.roomChain = m.chain;
         // ホストが抜けて自分の番になったら、ハヤトの動きを引き継ぐ
         if (this.sim && m.host === this.mySlot && !this.sim.authority) this.sim.becomeAuthority();
         this.renderLobby();
         break;
       case 'start':
-        this.startGame(m.seed, m.players, this.mySlot, this.hostSlot);
+        this.startGame(m.seed, m.players, this.mySlot, this.hostSlot, m.chain);
         break;
       case 'pos':
         this.sim?.setRemotePlayer(m.s, m.p[0], m.p[1], m.p[2], m.p[3]);
@@ -474,15 +511,42 @@ export class TagApp {
       ? `${this.roster.length} 人。そろったら始めてください（1 人でも始められます）。`
       : 'ホストが始めるのを待っています…';
     (this.el.start as HTMLButtonElement).disabled = !isHost;
+    const opt = this.el.chainopt as HTMLButtonElement;
+    opt.innerHTML = `${vx('handshake')} 足かせと鎖: <b>${this.roomChain ? 'あり' : 'なし'}</b>${isHost ? '<small>（タップで切り替え）</small>' : '<small>（ホストが決める）</small>'}`;
+    opt.disabled = !isHost;
+    opt.classList.toggle('on', this.roomChain);
+  }
+
+  // ---- 部屋の一覧 ----
+
+  /** メニューを開いている間だけ、部屋の一覧を取り直し続ける */
+  private setRoomPolling(on: boolean): void {
+    if (on === (this.roomTimer !== null)) return;
+    if (!on) {
+      clearInterval(this.roomTimer!);
+      this.roomTimer = null;
+      return;
+    }
+    void this.loadRooms();
+    this.roomTimer = setInterval(() => void this.loadRooms(), TAG_LIST_POLL_MS);
+  }
+
+  private async loadRooms(): Promise<void> {
+    const list = await fetchTagRooms();
+    if (this.screen !== 'menu') return;
+    this.el.rooms.innerHTML = typeof list === 'string' ? '' : renderTagRooms(list);
+    this.el.roomsinfo.textContent = typeof list === 'string' ? list : list.length === 0 ? 'いまは部屋がありません。部屋を作って待とう' : `${list.length} 部屋`;
   }
 
   // ---- ゲーム ----
 
-  private startGame(seed: number, players: TagRosterEntry[], mySlot: number, hostSlot: number): void {
+  private startGame(seed: number, players: TagRosterEntry[], mySlot: number, hostSlot: number, chain = true): void {
     this.endGame();
     const roster = players.map((p) => ({ id: p.slot, name: p.name }));
     const authority = !this.online || mySlot === hostSlot;
-    this.sim = new TagSim(seed, roster, roster.some((r) => r.id === mySlot) ? mySlot : null, authority, getTown());
+    this.sim = new TagSim(seed, roster, roster.some((r) => r.id === mySlot) ? mySlot : null, authority, getTown(seed));
+    // ホストが選んだ「足かせと鎖」（ひとりならもともと無い）
+    this.sim.chained = this.sim.chained && chain;
     // スマホは重くならないよう解像度を抑える
     this.renderer = new TagRenderer(this.viewport, this.sim, this.touchMode ? 1 : Math.min(window.devicePixelRatio || 1, 1.25));
     this.yaw = Math.PI;
@@ -501,6 +565,7 @@ export class TagApp {
   }
 
   private endGame(): void {
+    this.host.music?.setTrack(null);
     this.renderer?.dispose();
     this.renderer = null;
     this.sim = null;
@@ -558,6 +623,7 @@ export class TagApp {
     if (t?.jump) inp.jump = true;
     if (t?.sprint) inp.sprint = true;
     inp.yaw = this.yaw;
+    this.lastSprint = inp.sprint;
     return inp;
   }
 
@@ -590,7 +656,7 @@ export class TagApp {
     this.onEvents(events);
     renderer.handleEvents(events);
 
-    const focus = this.cameraFocus();
+    const focus = this.cameraFocus(dt);
     renderer.render(sim.camera(this.yaw, this.pitch, focus, !!sim.local?.oni && sim.phase === 'playing'), dt);
     // 近くに落ちたミサイルの音（多すぎるとうるさいので間をあける）
     this.missileSoundTimer -= dt;
@@ -601,6 +667,7 @@ export class TagApp {
       this.host.sound.playEffect({ kind: 'bomb_explosion' } as unknown as CombatEffectEvent);
     }
 
+    this.updateMusic(dt);
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.1;
@@ -634,16 +701,50 @@ export class TagApp {
   }
 
   /** カメラが追う人（アウトなら生きている人を観戦） */
-  private cameraFocus() {
+  /**
+   * BGM を選ぶ。鬼ごっこの最中はふつう楽しい曲、ハヤトに見つかって狙われている間（と、その少しあと）は怖い曲。
+   * 決着したら止める。
+   */
+  private updateMusic(dt: number): void {
+    const sim = this.sim;
+    const music = this.host.music;
+    if (!music) return;
+    if (!sim || sim.phase !== 'playing' || this.screen !== 'game') {
+      music.setTrack(null);
+      return;
+    }
+    if (this.isHunted()) this.scaryHold = TAG_SCARY_HOLD;
+    else this.scaryHold = Math.max(0, this.scaryHold - dt);
+    music.setTrack(this.scaryHold > 0 ? 'tag_scary' : 'tag_fun');
+  }
+
+  /** 自分がハヤト（赤・青・隕石）か青鬼のプレイヤーに狙われているか */
+  private isHunted(): boolean {
     const sim = this.sim!;
     const me = sim.local;
-    if (me && (me.alive || me.oni || sim.phase === 'over')) return me.pos;
+    if (!me || !me.alive) return false;
+    const chased = sim.hayatos.some((h) => h.target === me.id && h.state !== 'wander' && h.state !== 'stun');
+    const oniNear = sim.players.some((q) => q.oni && !q.left && Math.hypot(q.pos.x - me.pos.x, q.pos.z - me.pos.z) < 25);
+    return chased || oniNear;
+  }
+
+  /** カメラが追う人（自分か、アウトなら見ている人） */
+  private focusPlayer() {
+    const sim = this.sim!;
+    const me = sim.local;
+    if (me && (me.alive || me.oni || sim.phase === 'over')) return me;
     let w = sim.player(this.watchId);
     if (!w || !w.alive) {
       w = sim.players.find((p) => p.alive) ?? me ?? sim.players[0];
       this.watchId = w.id;
     }
-    return w.pos;
+    return w;
+  }
+
+  /** カメラの注視点（段差を上ったときは高さをなめらかにして、画面がガクッと跳ねないようにする） */
+  private cameraFocus(dt = 0) {
+    const p = this.focusPlayer();
+    return { x: p.pos.x, y: this.camStep.update(p.pos.y, dt, p.fling > 0), z: p.pos.z };
   }
 
   private cycleWatch(): void {
@@ -662,7 +763,14 @@ export class TagApp {
     for (const e of events) {
       switch (e.kind) {
         case 'spot':
-          if (e.target === sim.localId) fx('mouth_laser_charge');
+          if (e.target === sim.localId) {
+            if (sim.hayatos.find((h) => h.id === e.hayato)?.kind === 'meteor') {
+              this.showCenter('止まっていたら隕石ハヤトに狙われた！', 2);
+              this.host.sound.playFxCue('rumble', 1);
+            } else {
+              fx('mouth_laser_charge');
+            }
+          }
           break;
         case 'fire':
           if (near(e.from, 50)) fx('mouth_laser', { isInitial: true });
@@ -824,6 +932,16 @@ export class TagApp {
   }
 
   private centerTimer = 0;
+  /** 部屋の一覧を取り直すタイマー */
+  private roomTimer: ReturnType<typeof setInterval> | null = null;
+  /** いる部屋の「足かせと鎖でつなぐか」 */
+  private roomChain = true;
+  /** 怖い曲を続ける残り秒（見失われてもすぐには戻さない） */
+  private scaryHold = 0;
+  /** 最後の入力でダッシュしようとしていたか（ゲージの表示用） */
+  private lastSprint = false;
+  /** カメラの高さを段差でなめらかにする */
+  private readonly camStep = new StepSmoother();
   /** 「倍に増えた」を最後に知らせた時刻 */
   private lastDoubleMsg = -99;
   /** 前に HUD を更新したときの時刻（ミサイルが始まった瞬間を知る） */
@@ -860,11 +978,25 @@ export class TagApp {
     this.lastHudTime = sim.time;
     // 自分の足もとに隕石の印が出ている
     const meteorOnMe = !!me && me.alive && sim.meteors.some((m) => Math.hypot(m.target.x - me.pos.x, m.target.z - me.pos.z) < TAG_METEOR_HIT_RADIUS + 0.5);
-    this.el.meteorwarn.classList.toggle('hidden', !meteorOnMe);
+    // 隕石ハヤトが真上へ飛んでくる
+    const meteorComing = !!me && me.alive && sim.hayatos.some((h) => h.kind === 'meteor' && h.target === me.id && h.state === 'chase');
+    this.el.meteorwarn.classList.toggle('hidden', !meteorOnMe && !meteorComing);
+    this.el.meteorwarn.innerHTML = meteorOnMe ? `${vx('warn')} 上から隕石が来る！ 動け！` : `${vx('warn')} 隕石ハヤトが真上に飛んでくる！ 走って逃げろ`;
+    // ダッシュのゲージ（ブロックの数で残りを見せる。息切れしたら赤く点滅し、回復の目印まで走れない）
     const st = me ? me.stamina / TAG_STAMINA_MAX : 0;
-    const bar = this.el.stamina;
-    bar.style.width = `${Math.round(st * 100)}%`;
-    bar.classList.toggle('tired', !!me?.exhausted);
+    const lit = Math.ceil(st * DASH_SEGMENTS - 0.01);
+    const segs = this.el.dashbar.children;
+    for (let k = 0; k < segs.length; k++) segs[k].classList.toggle('on', k < lit);
+    const tired = !!me?.exhausted;
+    const sprinting = !!me && me.alive && me.moving && !tired && st < 0.999 && this.lastSprint;
+    const dash = this.el.dash;
+    dash.classList.toggle('hidden', !me || !me.alive);
+    dash.classList.toggle('tired', tired);
+    dash.classList.toggle('low', !tired && st < 0.35);
+    dash.classList.toggle('full', !tired && st >= 0.999);
+    dash.classList.toggle('active', sprinting);
+    const how = this.touchMode ? 'スティックを端まで' : 'Shift';
+    this.el.dashlabel.innerHTML = tired ? `${vx('warn')} 息切れ！ 回復待ち` : sprinting ? `${vx('boot')} ダッシュ中` : `${vx('boot')} ダッシュ（${how}）`;
     // お邪魔の道具
     const rockets = me?.rockets ?? 0;
     this.el.gadget.innerHTML = `<span>${vx('boom')}</span><b>${rockets}</b><small>/ ${TAG_ROCKET_MAX}</small>`;
@@ -912,7 +1044,12 @@ export class TagApp {
       this.el.center.classList.add('on', 'count');
     } else if (this.el.center.classList.contains('count')) {
       this.el.center.classList.remove('count');
-      this.showCenter(this.sim && !this.sim.solo ? '鎖でつながった！ 息を合わせて にげろ！' : 'にげろ！', this.sim && !this.sim.solo ? 2 : 1.2);
+      const chained = !!this.sim?.chained;
+      // 今回入れ替わった区画の景色も知らせる
+      const areas = (this.sim?.town.areas ?? []).map((a) => TAG_AREA_NAMES[a.kind]).join('・');
+      const go = chained ? '鎖でつながった！ 息を合わせて にげろ！' : 'にげろ！';
+      this.showCenter(areas ? `${go}
+今回の町: ${areas}` : go, areas || chained ? 2.4 : 1.2);
     }
     this.centerTimer -= 0.1;
     if (this.countdown <= 0 && this.centerTimer <= 0) this.el.center.classList.remove('on');
@@ -923,7 +1060,7 @@ export class TagApp {
   // ---- ミニマップ ----
 
   private buildMinimapBase(): void {
-    const world = getTown().world;
+    const world = this.sim!.town.world;
     const c = document.createElement('canvas');
     c.width = TAG_SIZE_X;
     c.height = TAG_SIZE_Z;
@@ -958,7 +1095,7 @@ export class TagApp {
     ctx.drawImage(this.minimapBase, 0, 0, canvas.width, canvas.height);
     ctx.font = '10px "DotGothic16", sans-serif';
     ctx.textAlign = 'center';
-    for (const l of getTown().landmarks) {
+    for (const l of this.sim!.town.landmarks) {
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillText(l.name, l.x * sx + 1, l.z * sz + 1);
       ctx.fillStyle = '#fff';
@@ -1010,6 +1147,7 @@ export class TagApp {
   }
 
   dispose(): void {
+    this.setRoomPolling(false);
     if (document.pointerLockElement === this.viewport) document.exitPointerLock();
     this.client?.close();
     this.client = null;
@@ -1020,6 +1158,24 @@ export class TagApp {
     this.touch = null;
     this.root.remove();
   }
+}
+
+/** 部屋の一覧（アイコンのボタン。募集中はタップで入れる。満員・プレイ中は押せない） */
+export function renderTagRooms(list: readonly TagRoomListing[]): string {
+  return list
+    .map((r) => {
+      const full = r.players >= TAG_VS_CAPACITY;
+      const playing = r.status === 'playing';
+      const state = playing ? 'プレイ中' : full ? '満員' : '募集中';
+      const dots = Array.from({ length: TAG_VS_CAPACITY }, (_, k) => `<i class="${k < r.players ? 'on' : ''}"></i>`).join('');
+      return `<button type="button" class="vx-key tag-room${playing || full ? ' busy' : ''}" data-room="${escapeHtml(r.name)}"${playing || full ? ' disabled' : ''}>
+        <span class="tag-room-icon">${vx('home', 'vx-lg')}</span>
+        <b>${escapeHtml(r.name)}</b>
+        <span class="tag-room-dots">${dots}</span>
+        <small>${state} ${r.players}/${TAG_VS_CAPACITY}</small>
+      </button>`;
+    })
+    .join('');
 }
 
 function escapeHtml(s: string): string {

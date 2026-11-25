@@ -37,6 +37,8 @@ import {
   TAG_METEOR_HIT_RADIUS,
   TAG_METEOR_INTERVAL,
   TAG_METEOR_MAX,
+  TAG_METEOR_OVERHEAD,
+  TAG_METEOR_SPEED,
   TAG_METEOR_STILL_RADIUS,
   TAG_METEOR_STILL_TIME,
   TAG_METEOR_WARN,
@@ -1866,27 +1868,44 @@ export class TagSim {
       h.yaw += dt * 6;
       return;
     }
-    // ゆっくり漂う（建物より上なので、ぶつからない）
+    h.pos.y += clampAbs(TAG_METEOR_ALT - h.pos.y, 5 * dt);
+    // 隕石をためている間は、その場で止まって見下ろす
+    if (this.meteors.some((m) => m.owner === h.id)) return;
+    const target = this.player(h.target);
+    if (target && target.alive) {
+      // 狙った人の真上へ、ダッシュと同じ速さで飛んでいく（建物より上なので、ぶつからない）
+      const tx = target.pos.x - h.pos.x;
+      const tz = target.pos.z - h.pos.z;
+      const td = Math.hypot(tx, tz);
+      h.state = 'chase';
+      if (td > 0.01) h.yaw = lerpAngle(h.yaw, Math.atan2(tx, tz), Math.min(1, dt * 6));
+      const stepLen = Math.min(td, TAG_METEOR_SPEED * dt);
+      if (td > 0.01) {
+        h.pos.x += (tx / td) * stepLen;
+        h.pos.z += (tz / td) * stepLen;
+      }
+      if (td - stepLen > TAG_METEOR_OVERHEAD) return;
+      // 真上に着いた: 足もとへ隕石を落とす
+      const at = { x: r2(target.pos.x), y: r2(target.pos.y), z: r2(target.pos.z) };
+      const id = this.nextMeteorId++;
+      this.addMeteor(id, h.id, at);
+      this.send(['M', id, h.id, at.x, at.y, at.z]);
+      h.state = 'aim';
+      h.charge = 0;
+      h.cooldown = TAG_METEOR_WARN + TAG_METEOR_COOLDOWN;
+      return;
+    }
+    // 狙う人がいない: ゆっくり漂う
+    h.state = 'wander';
+    h.target = -1;
     if (!h.goal || Math.hypot(h.goal.x - h.pos.x, h.goal.z - h.pos.z) < 2) h.goal = this.navInZone(6);
     const dx = h.goal.x - h.pos.x;
     const dz = h.goal.z - h.pos.z;
     const d = Math.hypot(dx, dz) || 1;
     h.pos.x += (dx / d) * TAG_METEOR_DRIFT * dt;
     h.pos.z += (dz / d) * TAG_METEOR_DRIFT * dt;
-    h.pos.y += clampAbs(TAG_METEOR_ALT - h.pos.y, 5 * dt);
-    const pending = this.meteors.some((m) => m.owner === h.id);
-    const target = this.player(h.target);
-    if (pending && target) {
-      // 狙った人を見下ろす
-      h.yaw = lerpAngle(h.yaw, Math.atan2(target.pos.x - h.pos.x, target.pos.z - h.pos.z), Math.min(1, dt * 6));
-      return;
-    }
-    if (!pending) {
-      h.state = 'wander';
-      h.target = -1;
-      h.yaw = lerpAngle(h.yaw, Math.atan2(dx, dz), Math.min(1, dt * 2));
-    }
-    if (h.cooldown > 0 || pending) return;
+    h.yaw = lerpAngle(h.yaw, Math.atan2(dx, dz), Math.min(1, dt * 2));
+    if (h.cooldown > 0) return;
     // いちばん長く動かずにいる人（ほかの隕石に狙われている人は除く）
     let pick: TagPlayer | null = null;
     for (const p of this.players) {
@@ -1895,15 +1914,13 @@ export class TagSim {
       if (!pick || p.still > pick.still) pick = p;
     }
     if (!pick) return;
-    const target2 = { x: r2(pick.pos.x), y: r2(pick.pos.y), z: r2(pick.pos.z) };
-    const id = this.nextMeteorId++;
-    this.addMeteor(id, h.id, target2);
-    this.send(['M', id, h.id, target2.x, target2.y, target2.z]);
+    // 狙いを決めた（ほかの隕石ハヤトと同じ人を重ねて狙わない）。次の更新から真上へ飛んでいく
+    if (this.hayatos.some((o) => o !== h && o.kind === 'meteor' && o.target === pick!.id)) return;
     h.target = pick.id;
-    h.state = 'aim';
-    h.charge = 0;
-    h.cooldown = TAG_METEOR_WARN + TAG_METEOR_COOLDOWN;
+    h.state = 'chase';
     pick.still = 0;
+    this.events.push({ kind: 'spot', hayato: h.id, target: pick.id });
+    this.send(['s', h.id, pick.id]);
   }
 
   /** 隕石を空に出す（狙いの印が出る）。ゲストはホストの知らせで呼ぶ */

@@ -24,6 +24,8 @@ export class TagRoom {
   readonly slots: Array<string | null> = Array.from({ length: TAG_VS_CAPACITY }, () => null);
   lastActivity: number;
   seed = 0;
+  /** 足かせと鎖でつなぐか（ホストが選ぶ） */
+  chain = true;
 
   constructor(
     readonly name: string,
@@ -63,7 +65,12 @@ export class TagRoom {
   }
 
   private rosterMsg(): TagRoomOutput {
-    return { to: 'all', msg: { t: 'roster', host: this.host, phase: this.phase, players: this.roster() } };
+    return { to: 'all', msg: { t: 'roster', host: this.host, phase: this.phase, players: this.roster(), chain: this.chain } };
+  }
+
+  /** 部屋の一覧に出す内容（誰もいなければ出さない。鬼ごっこの最中は「プレイ中」で、入れない） */
+  listing(): { name: string; players: number; open: boolean; status: 'open' | 'playing' } {
+    return { name: this.name, players: this.players, open: !this.empty, status: this.phase === 'playing' ? 'playing' : 'open' };
   }
 
   /** 入室。鬼ごっこの最中と満員は断る */
@@ -71,7 +78,10 @@ export class TagRoom {
     if (this.phase === 'playing' && !this.empty) return { slot: null, out: [], error: 'playing' };
     const slot = this.slots.findIndex((s) => s === null);
     if (slot < 0) return { slot: null, out: [], error: 'full' };
-    if (this.empty) this.phase = 'lobby';
+    if (this.empty) {
+      this.phase = 'lobby';
+      this.chain = true;
+    }
     this.lastActivity = now;
     this.slots[slot] = `かぶくん${slot + 1}`;
     return { slot, out: [{ to: slot, msg: { t: 'welcome', slot } }, this.rosterMsg()] };
@@ -104,8 +114,13 @@ export class TagRoom {
         if (this.phase !== 'lobby') return [];
         this.phase = 'playing';
         this.seed = Math.floor(this.random() * 2 ** 31);
-        return [{ to: 'all', msg: { t: 'start', seed: this.seed, players: this.roster() } }, this.rosterMsg()];
+        return [{ to: 'all', msg: { t: 'start', seed: this.seed, players: this.roster(), chain: this.chain } }, this.rosterMsg()];
       }
+      case 'opts':
+        if (!isHost) return [{ to: slot, msg: { t: 'error', code: 'not_host' } }];
+        if (this.phase !== 'lobby') return [];
+        this.chain = msg.chain;
+        return [this.rosterMsg()];
       case 'pos':
         if (this.phase !== 'playing') return [];
         return [{ to: 'all', except: slot, msg: { t: 'pos', s: slot, p: msg.p } }];

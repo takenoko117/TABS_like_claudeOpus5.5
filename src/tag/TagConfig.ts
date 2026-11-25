@@ -29,8 +29,8 @@ export const TAG_STAMINA_MAX = 3.5;
 export const TAG_STAMINA_REGEN = 0.8;
 /** 息を使い切ったあと、走れるようになる残量 */
 export const TAG_STAMINA_RECOVER = 1.2;
-/** ジャンプの初速 */
-export const TAG_JUMP_SPEED = 7.2;
+/** ジャンプの初速（約 2 m 跳べる。2 段の塀にも跳び乗れる） */
+export const TAG_JUMP_SPEED = 9.5;
 /** 重力 */
 export const TAG_GRAVITY = 22;
 /** 何回レーザーに当たるとアウトか */
@@ -135,12 +135,16 @@ export const TAG_METEOR_FIRST = 40;
 export const TAG_METEOR_INTERVAL = 70;
 /** 隕石ハヤトの最大数 */
 export const TAG_METEOR_MAX = 2;
-/** 顔の大きさ（高さ m） */
-export const TAG_METEOR_HAYATO_SIZE = 2.8;
+/** 顔の大きさ（高さ m）。でっかくて、頭に 2 本のつのが生えている */
+export const TAG_METEOR_HAYATO_SIZE = 5;
 /** 浮いている高さ（世界の y。町のいちばん高い建物より上） */
 export const TAG_METEOR_ALT = 46;
 /** 空をゆっくり漂う速さ（m/s） */
 export const TAG_METEOR_DRIFT = 2;
+/** 狙った人の真上へ飛んでいく速さ（プレイヤーのダッシュと同じ。息が切れると追いつかれる） */
+export const TAG_METEOR_SPEED = TAG_SPRINT_SPEED;
+/** 狙った人の真上に着いたとみなす横の距離（m）。着いたら隕石を落とす */
+export const TAG_METEOR_OVERHEAD = 1.5;
 /** この距離（m）より動いていない時間が TAG_METEOR_STILL_TIME を超えた人を狙う */
 export const TAG_METEOR_STILL_RADIUS = 3;
 export const TAG_METEOR_STILL_TIME = 4;
@@ -194,6 +198,14 @@ export const TAG_LASER_RANGE = 48;
 export const TAG_LASER_RADIUS = 0.35;
 /** 撃つとき、相手の動きをどれだけ先読みするか（0 = しない, 1 = 完全に） */
 export const TAG_LASER_LEAD = 0.45;
+
+// ---- 入れ替わる区画（手続き生成） ----
+/** 1 試合で別の景色に作り替える区画の数（市街地の 3 × 3 区画のうち、山にかからない 7 区画から選ぶ） */
+export const TAG_AREA_SWAPS = 3;
+
+// ---- BGM ----
+/** ハヤトに見失われてから、怖い曲を楽しい曲に戻すまでの秒 */
+export const TAG_SCARY_HOLD = 4;
 
 // ---- オンライン ----
 /** 自分の位置を送る間隔（秒） */

@@ -81,22 +81,6 @@ body.in-tag #title-screen {
   font-size: 11px;
 }
 
-.tag-stamina {
-  height: 8px;
-  border: 2px solid var(--panel-edge);
-  background: var(--ink);
-}
-
-.tag-stamina i {
-  display: block;
-  height: 100%;
-  background: var(--team-green);
-}
-
-.tag-stamina i.tired {
-  background: var(--danger);
-}
-
 /* ミサイルまでの残り・狭まっている知らせ */
 .tag-zone {
   font-family: var(--font-pixel);
@@ -196,7 +180,8 @@ body.in-tag #title-screen {
   text-shadow: var(--text-shadow-block);
   opacity: 0;
   transition: opacity 0.2s;
-  white-space: nowrap;
+  white-space: pre;
+  text-align: center;
 }
 
 .tag-center.on {
@@ -646,7 +631,7 @@ body.in-tag #title-screen {
 .tag-prompt {
   position: absolute;
   left: 50%;
-  bottom: 56px;
+  bottom: 70px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -695,7 +680,7 @@ body.in-tag #title-screen {
 
   .tag-prompt {
     font-size: 13px;
-    bottom: 40px;
+    bottom: 60px;
   }
 
   .tag-stun {
@@ -728,4 +713,175 @@ body.in-tag #title-screen {
   background: #d8661b;
   border-color: #8f3a0b;
   animation-duration: 0.25s;
+}
+
+/* ダッシュのゲージ（画面の下の真ん中。ブロックの数で残りを見せる） */
+.tag-dash {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  transition: opacity 0.2s steps(2);
+}
+
+.tag-dash.full {
+  opacity: 0.55;
+}
+
+.tag-dash-label {
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  font-size: 13px;
+  color: #fff;
+  text-shadow: 2px 2px 0 var(--ink);
+}
+
+.tag-dash-bar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--ink);
+  border: 2px solid var(--panel-edge);
+  box-shadow: var(--drop);
+}
+
+.tag-dash-bar i {
+  display: block;
+  width: 16px;
+  height: 14px;
+  background: #2a2f38;
+}
+
+/* 息切れから戻る目印（ここまでたまると、また走れる） */
+.tag-dash-bar i.mark {
+  box-shadow: inset 0 -3px 0 #fff;
+}
+
+.tag-dash-bar i.on {
+  background: var(--team-green);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25);
+}
+
+.tag-dash.low .tag-dash-bar i.on {
+  background: var(--gold);
+}
+
+.tag-dash.tired .tag-dash-bar i.on {
+  background: var(--danger);
+}
+
+.tag-dash.tired .tag-dash-label {
+  color: var(--danger);
+  animation: tag-blink 0.5s steps(2) infinite;
+}
+
+.tag-dash.active .tag-dash-bar {
+  border-color: var(--gold);
+}
+
+@media (max-width: 720px) {
+  .tag-dash-bar i {
+    width: 11px;
+    height: 12px;
+  }
+
+  .tag-dash {
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+}
+
+/* オンラインの部屋の一覧（アイコンのボタンを並べる。タップでそのまま入る） */
+.tag-rooms-title {
+  margin: 14px 0 6px;
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  font-size: 15px;
+}
+
+.tag-rooms-title small {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--sub);
+}
+
+.tag-rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.tag-room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  --key-bg: var(--cta);
+  --key-edge: var(--cta-deep);
+}
+
+.tag-room b {
+  font-weight: 400;
+  font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-room small {
+  font-size: 10px;
+}
+
+.tag-room.busy {
+  --key-bg: var(--panel);
+  --key-edge: var(--panel-edge);
+  opacity: 0.6;
+}
+
+/* 入っている人数（6 マス） */
+.tag-room-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.tag-room-dots i {
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  border: 1px solid var(--panel-edge);
+}
+
+.tag-room-dots i.on {
+  background: var(--team-green);
+}
+
+/* ロビーの「足かせと鎖」のあり・なし */
+.tag-chain-opt {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.tag-chain-opt b {
+  font-weight: 400;
+  color: var(--danger);
+}
+
+.tag-chain-opt.on b {
+  color: var(--team-green);
+}
+
+.tag-chain-opt small {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--sub);
 }

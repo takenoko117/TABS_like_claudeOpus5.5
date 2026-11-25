@@ -84,3 +84,32 @@ describe('鬼ごっこの部屋', () => {
     expect(parseTagClientMessage(text)).not.toBeNull();
   });
 });
+
+describe('部屋一覧と足かせの選択', () => {
+  it('ホストだけがロビーで鎖のあり・なしを選べ、始まりの合図にも載る', () => {
+    const room = new TagRoom('gifu', 0, () => 0.5);
+    room.join(0);
+    room.join(0);
+    expect(room.message(1, { t: 'opts', chain: false }, 1)[0].msg).toEqual({ t: 'error', code: 'not_host' });
+    const out = room.message(0, { t: 'opts', chain: false }, 1);
+    expect(out[0].msg).toMatchObject({ t: 'roster', chain: false });
+    expect(room.message(0, { t: 'start' }, 2)[0].msg).toMatchObject({ t: 'start', chain: false });
+    // 始まったあとは変えられない
+    room.message(0, { t: 'opts', chain: true }, 3);
+    expect(room.chain).toBe(false);
+  });
+
+  it('一覧には人数と、募集中かプレイ中かを出す', () => {
+    const room = new TagRoom('gifu', 0);
+    room.join(0);
+    expect(room.listing()).toEqual({ name: 'gifu', players: 1, open: true, status: 'open' });
+    room.message(0, { t: 'start' }, 1);
+    expect(room.listing().status).toBe('playing');
+  });
+
+  it('鎖の指定のない古い合図は「鎖あり」として読む', () => {
+    expect(parseTagClientMessage('{"t":"opts","chain":false}')).toEqual({ t: 'opts', chain: false });
+    const roster = parseTagServerMessage('{"t":"roster","host":0,"phase":"lobby","players":[{"slot":0,"name":"A"}]}');
+    expect(roster).toMatchObject({ t: 'roster', chain: true });
+  });
+});

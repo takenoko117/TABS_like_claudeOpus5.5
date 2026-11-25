@@ -10,6 +10,9 @@ import {
   TAG_MAX_HP,
   TAG_METEOR_ALT,
   TAG_METEOR_FIRST,
+  TAG_METEOR_OVERHEAD,
+  TAG_METEOR_SPEED,
+  TAG_SPRINT_SPEED,
   TAG_METEOR_STILL_TIME,
   TAG_METEOR_WARN,
   TAG_SIZE_X,
@@ -169,13 +172,33 @@ describe('隕石ハヤト', () => {
     const blocks = sim.world.data.reduce((a, v) => a + (v ? 1 : 0), 0);
     // 止まっているだけで狙われる
     run(sim, TAG_METEOR_STILL_TIME + 0.2);
+    expect(h.target).toBe(p.id);
+    expect(h.state).toBe('chase');
+    // 真上まで飛んできてから落とす
+    for (let t = 0; t < 4 && sim.meteors.length === 0; t += STEP) sim.step(STEP, emptyTagInput());
     expect(sim.meteors.length).toBe(1);
+    expect(Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z)).toBeLessThan(TAG_METEOR_OVERHEAD + 0.3);
     expect(sim.events.some((e) => e.kind === 'meteor_warn')).toBe(true);
     run(sim, TAG_METEOR_WARN + 2);
     expect(sim.events.some((e) => e.kind === 'meteor_hit')).toBe(true);
     expect(sim.events.some((e) => e.kind === 'hit' && e.bolt === HIT_METEOR)).toBe(true);
     expect(p.hp).toBe(TAG_MAX_HP - 1);
     expect(sim.world.data.reduce((a, v) => a + (v ? 1 : 0), 0)).toBeLessThan(blocks);
+  });
+
+  it('狙った人の真上へ、ダッシュと同じ速さで飛んでいく', () => {
+    const sim = new TagSim(4, solo, 0, true, flatTown());
+    sim.hayatos.length = 0;
+    const h = sim.spawnMeteor()!;
+    const p = sim.local!;
+    h.pos.x = p.pos.x + 60;
+    h.pos.z = p.pos.z;
+    run(sim, TAG_METEOR_STILL_TIME + 0.2);
+    expect(h.state).toBe('chase');
+    const x0 = h.pos.x;
+    run(sim, 1);
+    expect(x0 - h.pos.x).toBeCloseTo(TAG_METEOR_SPEED, 0);
+    expect(TAG_METEOR_SPEED).toBe(TAG_SPRINT_SPEED);
   });
 
   it('走り回っている人は狙われない', () => {
@@ -194,9 +217,12 @@ describe('隕石ハヤト', () => {
   it('印が出てから走って逃げれば当たらない', () => {
     const sim = new TagSim(4, solo, 0, true, flatTown());
     sim.hayatos.length = 0;
-    sim.spawnMeteor();
+    const h = sim.spawnMeteor()!;
     const p = sim.local!;
-    run(sim, TAG_METEOR_STILL_TIME + 0.2);
+    h.pos.x = p.pos.x;
+    h.pos.z = p.pos.z;
+    // 漂っていた隕石ハヤトが真上に戻ってきて、印が出るまで待つ
+    for (let t = 0; t < TAG_METEOR_STILL_TIME + 6 && sim.meteors.length === 0; t += STEP) sim.step(STEP, emptyTagInput());
     expect(sim.meteors.length).toBe(1);
     run(sim, TAG_METEOR_WARN + 2, { ...emptyTagInput(), moveZ: 1, sprint: true, yaw: 0 });
     expect(sim.events.some((e) => e.kind === 'meteor_hit')).toBe(true);
@@ -207,9 +233,11 @@ describe('隕石ハヤト', () => {
     const host = new TagSim(4, duo, 0, true, flatTown());
     const guest = new TagSim(4, duo, 1, false, flatTown());
     host.hayatos.length = 0;
-    host.spawnMeteor();
+    const h = host.spawnMeteor()!;
     // ゲストの人は止まったまま（届いた位置を写す）
     const gp = guest.local!;
+    h.pos.x = gp.pos.x + 5;
+    h.pos.z = gp.pos.z;
     host.setRemotePlayer(1, gp.pos.x, gp.pos.y, gp.pos.z, 0);
     host.player(0)!.invuln = 1e9;
     for (let t = 0; t < TAG_METEOR_STILL_TIME + TAG_METEOR_WARN + 3; t += STEP) {

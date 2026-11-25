@@ -5,9 +5,16 @@
 // - 各プレイヤーは自分のかぶくんの位置を 1 秒に 15 回送る（pos）。
 // - ホスト（席の番号がいちばん小さい人）がハヤト・レーザー・当たり・決着を決め、1 秒に 10 回その様子を送る（snap）。
 // - ホストが抜けたら、次に小さい席の人がホストを引き継ぐ（roster の host が変わる）。
-import { normalizeRoomName } from './tdVersusProtocol';
+import { TD_VS_LIST_POLL_MS, normalizeRoomName, parseRoomList, type TDVersusRoomListing } from './tdVersusProtocol';
 
 export { normalizeRoomName };
+
+/** 鬼ごっこの部屋の一覧（GET /tag-rooms の応答。形は TD 対戦の部屋の一覧と同じ） */
+export type TagRoomListing = TDVersusRoomListing;
+/** 部屋の一覧（GET /tag-rooms）を検証する */
+export const parseTagRoomList = parseRoomList;
+/** 部屋の一覧を取り直す間隔（ミリ秒） */
+export const TAG_LIST_POLL_MS = TD_VS_LIST_POLL_MS;
 
 /** 部屋の定員 */
 export const TAG_VS_CAPACITY = 6;
@@ -44,6 +51,8 @@ export type TagRoomPhase = 'lobby' | 'playing';
 export type TagClientMessage =
   | { t: 'hello'; name: string }
   | { t: 'start' }
+  /** ホストが部屋の設定を変える（chain: 足かせと鎖でつなぐか） */
+  | { t: 'opts'; chain: boolean }
   | { t: 'pos'; p: [number, number, number, number] }
   | { t: 'snap'; s: TagSnapshot }
   /** ホストが「決着したのでロビーに戻る」を知らせる */
@@ -55,8 +64,9 @@ export type TagErrorCode = 'full' | 'playing' | 'bad_message' | 'not_host';
 
 export type TagServerMessage =
   | { t: 'welcome'; slot: number }
-  | { t: 'roster'; host: number; phase: TagRoomPhase; players: TagRosterEntry[] }
-  | { t: 'start'; seed: number; players: TagRosterEntry[] }
+  /** chain: ホストが選んだ「足かせと鎖でつなぐか」 */
+  | { t: 'roster'; host: number; phase: TagRoomPhase; players: TagRosterEntry[]; chain: boolean }
+  | { t: 'start'; seed: number; players: TagRosterEntry[]; chain: boolean }
   | { t: 'pos'; s: number; p: [number, number, number, number] }
   | { t: 'snap'; s: TagSnapshot }
   | { t: 'left'; s: number }
@@ -122,6 +132,8 @@ export function parseTagClientMessage(text: string): TagClientMessage | null {
     }
     case 'start':
       return { t: 'start' };
+    case 'opts':
+      return typeof m.chain === 'boolean' ? { t: 'opts', chain: m.chain } : null;
     case 'end':
       return { t: 'end' };
     case 'pos': {
@@ -170,11 +182,12 @@ export function parseTagServerMessage(text: string): TagServerMessage | null {
     case 'roster': {
       const players = parseRoster(m.players);
       if (!players || !isNum(m.host) || (m.phase !== 'lobby' && m.phase !== 'playing')) return null;
-      return { t: 'roster', host: m.host, phase: m.phase, players };
+      // 古いサーバーは chain を送らないので、つなぐ（これまでどおり）とみなす
+      return { t: 'roster', host: m.host, phase: m.phase, players, chain: m.chain !== false };
     }
     case 'start': {
       const players = parseRoster(m.players);
-      return players && isNum(m.seed) ? { t: 'start', seed: m.seed, players } : null;
+      return players && isNum(m.seed) ? { t: 'start', seed: m.seed, players, chain: m.chain !== false } : null;
     }
     case 'pos': {
       const p = parsePos(m.p);

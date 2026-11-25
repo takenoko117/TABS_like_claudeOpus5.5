@@ -32,6 +32,7 @@ import type { CameraPose } from '../openworld/OpenWorldSim';
 import { getHayatoHeadGeometry } from '../render/HayatoHeadModel';
 import { buildKabukun, poseKabukun, type KabukunModel } from './KabukunModel';
 import { KABUKUN_GLB_HEIGHT, KabukunActor, loadKabukun } from './KabukunGltf';
+import { StepSmoother } from './KabukunMotion';
 import {
   TAG_BLUE_EAT_TIME,
   TAG_BLUE_HOVER,
@@ -115,6 +116,8 @@ interface PlayerView {
   /** 青鬼になったあとの姿（大きな青い顔） */
   oni: { root: Group; head: Mesh; mouth: number } | null;
   name: string;
+  /** 段差を上ったときの見た目の高さ（よいしょと上がる） */
+  step: StepSmoother;
 }
 
 interface HayatoView {
@@ -182,6 +185,9 @@ export class TagRenderer {
   private readonly zoneWallMat = new MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false });
   private readonly markerMat = new MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.6, blending: AdditiveBlending, depthWrite: false });
   private readonly unitBox = new BoxGeometry(1, 1, 1);
+  /** 隕石ハヤトのつの */
+  private readonly hornMat = new MeshLambertMaterial({ color: 0xf2e6c8, flatShading: true });
+  private readonly hornTipMat = new MeshLambertMaterial({ color: 0x5a3426, flatShading: true });
   /** 足かせと鎖（輪を 1 つずつ並べる） */
   private readonly chainMesh: InstancedMesh;
   private readonly zoneOut: Mesh[] = [];
@@ -350,7 +356,7 @@ export class TagRenderer {
     // ほかの人には名前の札を出す（席の色）
     const label = id === this.sim.localId || this.sim.solo ? null : makeLabel(name, TAG_PLAYER_COLORS[id % TAG_PLAYER_COLORS.length]);
     if (label) model.root.add(label);
-    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0, eaten: null, oni: null, name });
+    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0, eaten: null, oni: null, name, step: new StepSmoother() });
   }
 
   /** kabukun.glb を読み込み、読めたらボクセルの代役と差し替える */
@@ -387,9 +393,33 @@ export class TagRenderer {
     aim.visible = false;
     this.scene.add(aim);
     this.scene.add(root);
+    if (h.kind === 'meteor') root.add(this.buildHorns(hayatoSize(h)));
     const view = { root, head, aim, mouth: 0, shout: 0 };
     this.hayatos.set(id, view);
     return view;
+  }
+
+  /** 隕石ハヤトの 2 本のつの（根元が太く、外へ反りながら先がとがる。先は焦げ茶） */
+  private buildHorns(size: number): Group {
+    const g = new Group();
+    // [横の位置, 高さ, 太さ, 長さ] を根元から先へ（顔の大きさに対する割合）
+    const segs: [number, number, number, number][] = [
+      [0.25, 0.43, 0.16, 0.16],
+      [0.32, 0.57, 0.12, 0.15],
+      [0.39, 0.7, 0.09, 0.13],
+      [0.44, 0.81, 0.06, 0.1],
+    ];
+    for (const side of [-1, 1]) {
+      segs.forEach(([x, y, w, h], k) => {
+        const m = new Mesh(this.unitBox, k === segs.length - 1 ? this.hornTipMat : this.hornMat);
+        m.position.set(side * x * size, y * size, 0);
+        m.scale.set(w * size, h * size, w * size);
+        m.rotation.z = -side * (0.25 + k * 0.12);
+        m.castShadow = true;
+        g.add(m);
+      });
+    }
+    return g;
   }
 
   // ---- 出来事 ----
@@ -540,12 +570,14 @@ export class TagRenderer {
       }
       // 当たった直後は点滅
       const visible = !p.left && !(p.invuln > 0 && p.alive && Math.floor(this.time * 14) % 2 === 0);
-      if (dt > 0) v.vy = (p.pos.y - v.lastY) / dt;
-      v.lastY = p.pos.y;
+      // 段差を上ったときは見た目の高さを遅らせて、なめらかに上がる
+      const y = v.step.update(p.pos.y, dt, p.fling > 0);
+      if (dt > 0) v.vy = (y - v.lastY) / dt;
+      v.lastY = y;
       const air = p.id === this.sim.localId ? !p.onGround : Math.abs(v.vy) > 1.2;
       if (v.actor) {
         const a = v.actor;
-        a.root.position.set(p.pos.x, p.pos.y, p.pos.z);
+        a.root.position.set(p.pos.x, y, p.pos.z);
         a.root.rotation.y = p.yaw;
         const speed = p.id === this.sim.localId ? Math.hypot(p.vel.x, p.vel.z) : p.moving ? 5 : 0;
         const alarmed = p.alive && this.sim.hayatos.some((h) => h.target === p.id && (h.state === 'aim' || (h.kind === 'blue' && h.state === 'chase')));
@@ -555,7 +587,7 @@ export class TagRenderer {
       } else {
         const m = v.model;
         if (p.moving) v.phase += dt * 13;
-        m.root.position.set(p.pos.x, p.pos.y, p.pos.z);
+        m.root.position.set(p.pos.x, y, p.pos.z);
         m.root.rotation.y = p.yaw;
         poseKabukun(m, v.phase, p.moving, air, !p.alive);
         m.root.visible = visible && this.swallow(v, m.root, dt);
@@ -1072,7 +1104,7 @@ export class TagRenderer {
       c.opaque?.geometry.dispose();
       c.trans?.geometry.dispose();
     }
-    for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.blueMat, this.boltCore, this.boltGlow, this.aimMat, this.meteorMat, this.zoneOutMat, this.zoneWallMat, this.markerMat]) mat.dispose();
+    for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.blueMat, this.boltCore, this.boltGlow, this.aimMat, this.meteorMat, this.zoneOutMat, this.zoneWallMat, this.markerMat, this.hornMat, this.hornTipMat]) mat.dispose();
     for (const v of this.players.values()) {
       if (!v.label) continue;
       v.label.material.map?.dispose();
