@@ -32,8 +32,8 @@ import type { CameraPose } from '../openworld/OpenWorldSim';
 import { getHayatoHeadGeometry } from '../render/HayatoHeadModel';
 import { buildKabukun, poseKabukun, type KabukunModel } from './KabukunModel';
 import { KABUKUN_GLB_HEIGHT, KabukunActor, loadKabukun } from './KabukunGltf';
-import { TAG_BLUE_EAT_TIME, TAG_LASER_CHARGE, TAG_PLAYER_COLORS } from './TagConfig';
-import { hayatoSize, type Hayato, type TagEvent, type TagSim } from './TagSim';
+import { TAG_BLUE_EAT_TIME, TAG_BLUE_HOVER, TAG_BLUE_SIZE, TAG_LASER_CHARGE, TAG_ONI_EAT_PAUSE, TAG_PLAYER_COLORS } from './TagConfig';
+import { hayatoSize, type Hayato, type TagEvent, type TagPlayer, type TagSim } from './TagSim';
 
 /** 演出の粒の上限 */
 const FX_MAX = 600;
@@ -63,8 +63,11 @@ interface PlayerView {
   /** 前のフレームの高さ（ほかの人の縦の速さを求める） */
   lastY: number;
   vy: number;
-  /** 青鬼に食べられている（吸い込まれる演出の経過秒） */
-  eaten: { hayato: number; t: number } | null;
+  /** 青鬼に食べられている（吸い込まれる演出の経過秒。byPlayer は食べた青鬼のプレイヤー、NPC なら -1） */
+  eaten: { hayato: number; byPlayer: number; t: number } | null;
+  /** 青鬼になったあとの姿（大きな青い顔） */
+  oni: { root: Group; head: Mesh; mouth: number } | null;
+  name: string;
 }
 
 interface HayatoView {
@@ -248,7 +251,7 @@ export class TagRenderer {
     // ほかの人には名前の札を出す（席の色）
     const label = id === this.sim.localId || this.sim.solo ? null : makeLabel(name, TAG_PLAYER_COLORS[id % TAG_PLAYER_COLORS.length]);
     if (label) model.root.add(label);
-    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0, eaten: null });
+    this.players.set(id, { model, actor: null, label, phase: 0, lastY: 0, vy: 0, eaten: null, oni: null, name });
   }
 
   /** kabukun.glb を読み込み、読めたらボクセルの代役と差し替える */
@@ -303,9 +306,15 @@ export class TagRenderer {
             this.burst(e.pos.x, e.pos.y, e.pos.z, 0xffe9c4, 24, 5);
           }
           break;
+        case 'oni': {
+          this.burst(e.pos.x, e.pos.y + 1.8, e.pos.z, 0x5d8dff, 50, 9);
+          this.burst(e.pos.x, e.pos.y + 1.8, e.pos.z, 0xffffff, 20, 6);
+          if (e.player === this.sim.localId) this.shake = Math.max(this.shake, 0.8);
+          break;
+        }
         case 'eaten': {
           const v = this.players.get(e.player);
-          if (v) v.eaten = { hayato: e.hayato, t: 0 };
+          if (v) v.eaten = { hayato: e.hayato, byPlayer: e.byPlayer, t: 0 };
           const p = this.sim.player(e.player);
           if (p) this.burst(p.pos.x, p.pos.y + 0.7, p.pos.z, 0x5d8dff, 30, 6);
           if (e.player === this.sim.localId) this.shake = Math.max(this.shake, 1.2);
@@ -406,6 +415,10 @@ export class TagRenderer {
     for (const p of this.sim.players) {
       const v = this.players.get(p.id);
       if (!v) continue;
+      if (p.oni) {
+        this.syncOni(p, v, dt);
+        continue;
+      }
       // 当たった直後は点滅
       const visible = !p.left && !(p.invuln > 0 && p.alive && Math.floor(this.time * 14) % 2 === 0);
       if (dt > 0) v.vy = (p.pos.y - v.lastY) / dt;
@@ -432,6 +445,43 @@ export class TagRenderer {
     }
   }
 
+  /** 青鬼になったプレイヤーの姿（かぶくんを隠して、大きな青い顔を出す） */
+  private syncOni(p: TagPlayer, v: PlayerView, dt: number): void {
+    if (v.actor) v.actor.root.visible = false;
+    v.model.root.visible = false;
+    if (!v.oni) {
+      const root = new Group();
+      const head = new Mesh(getHayatoHeadGeometry(), this.blueMat);
+      head.castShadow = true;
+      head.morphTargetInfluences = [0];
+      head.scale.setScalar(TAG_BLUE_SIZE);
+      root.add(head);
+      // 誰の青鬼か分かるよう、名札（自分にも出す）
+      const label = makeLabel(`${v.name}（青鬼）`, TAG_PLAYER_COLORS[p.id % TAG_PLAYER_COLORS.length]);
+      label.position.y = TAG_BLUE_SIZE / 2 + 0.7;
+      root.add(label);
+      this.scene.add(root);
+      v.oni = { root, head, mouth: 0 };
+    }
+    const o = v.oni;
+    o.root.visible = !p.left;
+    const bob = Math.abs(Math.sin(this.time * (p.moving ? 9 : 4) + p.id)) * 0.18;
+    o.root.position.set(p.pos.x, p.pos.y + TAG_BLUE_HOVER + TAG_BLUE_SIZE / 2 + bob, p.pos.z);
+    o.root.rotation.y = p.yaw;
+    // 食べた直後はもぐもぐ、ふだんは近くの人ほど大きく口を開ける
+    let want = 0.15;
+    if (p.stun > 0) {
+      const t = TAG_ONI_EAT_PAUSE - p.stun;
+      want = t < 0.4 ? 1 : 0.5 + 0.5 * Math.sin(t * 16);
+    } else {
+      let d = 99;
+      for (const q of this.sim.players) if (q.alive) d = Math.min(d, Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z));
+      want = Math.max(0.15, Math.min(1, 1 - (d - 3) / 12));
+    }
+    o.mouth += (want - o.mouth) * Math.min(1, dt * 12);
+    o.head.morphTargetInfluences![0] = o.mouth;
+  }
+
   /**
    * 青鬼に食べられる演出: 体が浮いて口へ吸い込まれながら小さくなる。見せる間は true、飲み込まれたら false。
    */
@@ -443,9 +493,10 @@ export class TagRenderer {
     const e = v.eaten;
     e.t += dt;
     const h = this.sim.hayatos.find((x) => x.id === e.hayato);
+    const eater = e.byPlayer >= 0 ? this.sim.player(e.byPlayer) : undefined;
     const k = Math.min(1, e.t / 0.7);
-    if (h) {
-      const m = this.sim.mouthPos(h);
+    const m = eater ? this.sim.oniMouth(eater) : h ? this.sim.mouthPos(h) : null;
+    if (m) {
       const ease = k * k * (3 - 2 * k);
       root.position.x += (m.x - root.position.x) * ease;
       root.position.y += (m.y - 0.3 - root.position.y) * ease;

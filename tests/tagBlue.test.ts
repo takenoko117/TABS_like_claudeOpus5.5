@@ -10,6 +10,8 @@ import {
   TAG_BLUE_RADIUS,
   TAG_BLUE_SIZE,
   TAG_KNOCKBACK,
+  TAG_ONI_DELAY,
+  TAG_ONI_SPEED,
   TAG_PUNCH_STUN,
   TAG_SPRINT_SPEED,
 } from '../src/tag/TagConfig';
@@ -312,5 +314,107 @@ describe('かぶくんの立ちモーション', () => {
     let spin = 1;
     for (let t = 0; t < 1.5; t += STEP) spin = m.update(STEP, idle).spin;
     expect(spin).toBe(0);
+  });
+});
+
+describe('先にアウトになった人は青鬼になって復活する（オンライン）', () => {
+  const trio = [
+    { id: 0, name: 'A' },
+    { id: 1, name: 'B' },
+    { id: 2, name: 'C' },
+  ];
+  /** ハヤト（NPC）を消した 3 人の部屋。localId の人をこの端末で動かす */
+  function room(localId: number, authority = true): TagSim {
+    const sim = new TagSim(4, trio, localId, authority, arena(false, 96));
+    sim.hayatos.length = 0;
+    sim.nextSpawn = 1e9;
+    sim.nextBlue = 1e9;
+    return sim;
+  }
+
+  it(`アウトから ${TAG_ONI_DELAY} 秒で、生きている人から離れた広い所に青鬼として出てくる`, () => {
+    const sim = room(0);
+    sim.applyHit(2, 0, 0, { x: 1, y: 0, z: 0 });
+    const c = sim.player(2)!;
+    expect(c.alive).toBe(false);
+    run(sim, TAG_ONI_DELAY - 0.2);
+    expect(c.oni).toBe(false);
+    run(sim, 0.4);
+    expect(c.oni).toBe(true);
+    expect(c.alive).toBe(false);
+    expect(sim.events.some((e) => e.kind === 'oni' && e.player === 2)).toBe(true);
+    expect(boxCollides(sim.world, c.pos.x, c.pos.y, c.pos.z, TAG_BLUE_RADIUS, TAG_BLUE_SIZE)).toBe(false);
+    for (const p of sim.players.filter((q) => q.alive)) expect(Math.hypot(p.pos.x - c.pos.x, p.pos.z - c.pos.z)).toBeGreaterThan(20);
+    expect(sim.phase).toBe('playing');
+  });
+
+  it('ソロでは青鬼にならない（アウトで終わり）', () => {
+    const sim = new TagSim(4, solo, 0, true, arena());
+    sim.hayatos.length = 0;
+    sim.applyHit(0, 0, 0, { x: 1, y: 0, z: 0 });
+    run(sim, TAG_ONI_DELAY + 1);
+    expect(sim.local!.oni).toBe(false);
+    expect(sim.phase).toBe('over');
+  });
+
+  it('青鬼は自分で操作でき、ダッシュと同じ速さで歩き、ジャンプはできない', () => {
+    const sim = room(2);
+    sim.applyHit(2, 0, 0, { x: 1, y: 0, z: 0 });
+    run(sim, TAG_ONI_DELAY + 0.1);
+    const c = sim.local!;
+    expect(c.oni).toBe(true);
+    // 人から遠い所で試す
+    c.pos.x = 48;
+    c.pos.z = 10;
+    const z0 = c.pos.z;
+    const fwd = { ...emptyTagInput(), moveZ: 1, yaw: 0, jump: true };
+    run(sim, 0.3, fwd);
+    const z1 = c.pos.z;
+    run(sim, 1, fwd);
+    expect(c.pos.z - z1).toBeGreaterThan(TAG_ONI_SPEED * 0.9);
+    expect(c.pos.z - z1).toBeLessThan(TAG_ONI_SPEED * 1.1);
+    expect(z1).toBeGreaterThan(z0);
+    expect(c.pos.y).toBeCloseTo(GROUND);
+  });
+
+  it('青鬼が生きている人に触れると食べ、最後に残った人が勝つ', () => {
+    const sim = room(0);
+    sim.applyHit(2, 0, 0, { x: 1, y: 0, z: 0 });
+    run(sim, TAG_ONI_DELAY + 0.1);
+    const c = sim.player(2)!;
+    const b = sim.player(1)!;
+    // 青鬼の C のすぐ横に B
+    b.pos.x = c.pos.x + 1.5;
+    b.pos.y = c.pos.y;
+    b.pos.z = c.pos.z;
+    run(sim, STEP * 2);
+    expect(b.alive).toBe(false);
+    expect(c.eats).toBe(1);
+    expect(c.stun).toBeGreaterThan(0);
+    expect(sim.events.some((e) => e.kind === 'eaten' && e.player === 1 && e.byPlayer === 2)).toBe(true);
+    expect(sim.phase).toBe('over');
+    expect(sim.winner).toBe(0);
+  });
+
+  it('ゲストにも、青鬼になった知らせと食べた知らせが写る', () => {
+    const host = room(0);
+    const guest = room(1, false);
+    host.applyHit(2, 0, 0, { x: 1, y: 0, z: 0 });
+    run(host, TAG_ONI_DELAY + 0.1);
+    guest.applySnapshot(host.snapshot());
+    const gc = guest.player(2)!;
+    expect(gc.oni).toBe(true);
+    expect(gc.pos.x).toBeCloseTo(host.player(2)!.pos.x, 1);
+    // 青鬼の C がゲストの B を食べる
+    const hc = host.player(2)!;
+    const hb = host.player(1)!;
+    hb.pos.x = hc.pos.x + 1.5;
+    hb.pos.y = hc.pos.y;
+    hb.pos.z = hc.pos.z;
+    run(host, STEP * 2);
+    guest.applySnapshot(host.snapshot());
+    expect(guest.local!.alive).toBe(false);
+    expect(guest.player(2)!.eats).toBe(1);
+    expect(guest.events.some((e) => e.kind === 'eaten' && e.byPlayer === 2)).toBe(true);
   });
 });

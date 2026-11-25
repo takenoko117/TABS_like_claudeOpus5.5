@@ -8,6 +8,7 @@ import { generateGifuTown, type GifuTown } from './GifuTown';
 import {
   TAG_BEST_KEY,
   TAG_BLUE_FIRST,
+  TAG_ONI_DELAY,
   TAG_HAYATO_SPAWN_INTERVAL,
   TAG_HAYATO_START,
   TAG_MAX_HP,
@@ -123,7 +124,7 @@ export class TagApp {
       () => this.setPaused(true),
       () => {
         const sim = this.sim;
-        if (sim && sim.local && !sim.local.alive) this.cycleWatch();
+        if (sim && sim.local && !sim.local.alive && !sim.local.oni) this.cycleWatch();
         else this.useGadget();
       },
     );
@@ -175,7 +176,7 @@ export class TagApp {
             <li>${vx('oni')} ${TAG_BLUE_FIRST} 秒たつと、でかい<b>青鬼ハヤト</b>が現れる。ダッシュと同じ速さでどこまでも追ってきて、触れられたら食べられてアウト。体が大きいので狭い路地には入れない。ほかの人に近づけば、そちらへ狙いが移る。</li>
             <li>${vx('hourglass')} ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに 1 人ずつ増える。地図にはハヤトが映らないので、曲がり角に注意！</li>
             <li>${vx('stopwatch')} ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</li>
-            <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。</li>
+            <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</li>
             <li>${vx('hand')} お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック）すると、相手を ${TAG_PUNCH_STUN} 秒動けなくする。</li>
             <li>${vx('boom')} ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック）で発射。建物を壊し、爆風で人もハヤトもひるむ。</li>
           </ul>
@@ -319,7 +320,7 @@ export class TagApp {
       if (document.pointerLockElement !== this.viewport) this.lockPointer();
       // 観戦中はクリックで見る人を替える
       const sim = this.sim;
-      if (sim && sim.local && !sim.local.alive) this.cycleWatch();
+      if (sim && sim.local && !sim.local.alive && !sim.local.oni) this.cycleWatch();
     });
     this.listen(document, 'mousedown', (e) => {
       // マウスが固定されているときの左クリックで道具を使う（固定する前のクリックは固定だけ）
@@ -579,7 +580,7 @@ export class TagApp {
     renderer.handleEvents(events);
 
     const focus = this.cameraFocus();
-    renderer.render(sim.camera(this.yaw, this.pitch, focus), dt);
+    renderer.render(sim.camera(this.yaw, this.pitch, focus, !!sim.local?.oni && sim.phase === 'playing'), dt);
 
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
@@ -617,7 +618,7 @@ export class TagApp {
   private cameraFocus() {
     const sim = this.sim!;
     const me = sim.local;
-    if (me && (me.alive || sim.phase === 'over')) return me.pos;
+    if (me && (me.alive || me.oni || sim.phase === 'over')) return me.pos;
     let w = sim.player(this.watchId);
     if (!w || !w.alive) {
       w = sim.players.find((p) => p.alive) ?? me ?? sim.players[0];
@@ -657,7 +658,7 @@ export class TagApp {
         case 'out':
           if (e.player === sim.localId) {
             s.playDefeat();
-            if (!sim.solo && sim.phase === 'playing') this.showCenter(`アウト！ 観戦中（${this.touchMode ? 'タップ' : 'クリック'}で切り替え）`, 3);
+            if (!sim.solo && sim.phase === 'playing') this.showCenter(`アウト！ ${TAG_ONI_DELAY} 秒後に青鬼になって復活する`, 3);
           } else if (!sim.solo) {
             this.showCenter(`${sim.player(e.player)?.name ?? '?'} がアウト`, 2);
           }
@@ -670,13 +671,26 @@ export class TagApp {
             this.showCenter('ハヤトが増えた！', 1.6);
           }
           break;
+        case 'oni':
+          if (e.player === sim.localId) {
+            this.showCenter('青鬼になった！ 生きている人に触れて食べよう', 3);
+            fx('dragon_roar');
+            if (this.touchMode) navigator.vibrate?.(250);
+          } else {
+            this.showCenter(`${sim.player(e.player)?.name ?? '?'} が青鬼になって復活した！`, 2.2);
+          }
+          break;
         case 'eaten':
           this.lastEaten = e.player;
           if (e.player === sim.localId) {
             this.flash();
             if (this.touchMode) navigator.vibrate?.([120, 60, 300]);
+          } else if (e.byPlayer === sim.localId) {
+            this.showCenter(`${sim.player(e.player)?.name ?? '?'} を食べた！`, 2);
+            if (this.touchMode) navigator.vibrate?.([60, 40, 60]);
           } else if (!sim.solo) {
-            this.showCenter(`${sim.player(e.player)?.name ?? '?'} が青鬼に食べられた`, 2);
+            const by = e.byPlayer >= 0 ? `青鬼の ${sim.player(e.byPlayer)?.name ?? '?'}` : '青鬼';
+            this.showCenter(`${sim.player(e.player)?.name ?? '?'} が${by}に食べられた`, 2);
           }
           fx('anaconda_bite');
           break;
@@ -747,7 +761,7 @@ export class TagApp {
         .ranking()
         .map((p) => {
           const color = `#${TAG_PLAYER_COLORS[p.id % TAG_PLAYER_COLORS.length].toString(16).padStart(6, '0')}`;
-          const note = p.id === sim.winner ? '勝ち' : p.left ? '退室' : 'アウト';
+          const note = p.id === sim.winner ? '勝ち' : p.left ? '退室' : p.oni ? `青鬼で ${p.eats} 人食べた` : 'アウト';
           return `<li><i style="background:${color}"></i><b>${escapeHtml(p.name)}${p.id === sim.localId ? '（あなた）' : ''}</b><span>${formatSurvival(p.survived)}</span><em>${note}</em></li>`;
         })
         .join('')}</ol>`;
@@ -776,7 +790,10 @@ export class TagApp {
     const sim = this.sim!;
     const me = sim.local;
     const hp = me?.hp ?? 0;
-    this.el.hearts.innerHTML = Array.from({ length: TAG_MAX_HP }, (_, k) => `<span class="${k < hp ? 'on' : 'off'}">${vx('heart')}</span>`).join('');
+    // 青鬼になったら、HP の代わりに食べた人数
+    this.el.hearts.innerHTML = me?.oni
+      ? `<b class="tag-oni-me">${vx('oni')} 青鬼 ・ 食べた ${me.eats} 人</b>`
+      : Array.from({ length: TAG_MAX_HP }, (_, k) => `<span class="${k < hp ? 'on' : 'off'}">${vx('heart')}</span>`).join('');
     this.el.time.textContent = formatSurvival(me ? me.survived : sim.time);
     this.el.oni.textContent = String(sim.hayatos.length);
     this.el.next.textContent = sim.phase === 'playing' ? `あと ${Math.max(0, Math.ceil(sim.nextSpawn - sim.time))} 秒で増える` : '';
@@ -798,14 +815,19 @@ export class TagApp {
     this.el.stun.classList.toggle('hidden', !stunned);
     if (stunned) this.el.stun.textContent = `うごけない！ ${me!.stun.toFixed(1)}`;
     // 自分を狙ってためているハヤトがいるか
-    const chasedByBlue = !!me && me.alive && sim.hayatos.some((h) => h.kind === 'blue' && h.target === me.id && h.state === 'chase');
+    // 青鬼のプレイヤーが近くにいるのも「追われている」
+    const oniNear = !!me && me.alive && sim.players.some((q) => q.oni && !q.left && Math.hypot(q.pos.x - me.pos.x, q.pos.z - me.pos.z) < 25);
+    const chasedByBlue = !!me && me.alive && (oniNear || sim.hayatos.some((h) => h.kind === 'blue' && h.target === me.id && h.state === 'chase'));
     const aimed = !!me && me.alive && sim.hayatos.some((h) => h.kind === 'red' && h.target === me.id && (h.state === 'aim' || h.state === 'chase'));
     this.el.warn.classList.toggle('hidden', !aimed || chasedByBlue);
     this.el.bluewarn.classList.toggle('hidden', !chasedByBlue);
     // 青鬼が近いほど速い心臓の音
     this.heartTimer -= 0.1;
     if (chasedByBlue && me) {
-      const d = Math.min(...sim.hayatos.filter((h) => h.kind === 'blue' && h.target === me.id).map((h) => Math.hypot(h.pos.x - me.pos.x, h.pos.z - me.pos.z)));
+      const d = Math.min(
+        ...sim.hayatos.filter((h) => h.kind === 'blue' && h.target === me.id).map((h) => Math.hypot(h.pos.x - me.pos.x, h.pos.z - me.pos.z)),
+        ...sim.players.filter((q) => q.oni && !q.left).map((q) => Math.hypot(q.pos.x - me.pos.x, q.pos.z - me.pos.z)),
+      );
       if (d < 30 && this.heartTimer <= 0) {
         this.heartTimer = 0.35 + (d / 30) * 0.6;
         this.host.sound.playEffect({ kind: 'heartbeat' } as unknown as CombatEffectEvent);
@@ -815,7 +837,7 @@ export class TagApp {
       this.el.alive.innerHTML = sim.players
         .map((p) => {
           const color = `#${TAG_PLAYER_COLORS[p.id % TAG_PLAYER_COLORS.length].toString(16).padStart(6, '0')}`;
-          const hearts = p.alive ? `HP ${p.hp}` : 'アウト';
+          const hearts = p.alive ? `HP ${p.hp}` : p.oni ? `青鬼（${p.eats}）` : 'アウト';
           return `<div class="${p.alive ? '' : 'out'}"><i style="background:${color}"></i><b>${escapeHtml(p.name)}</b><span>${hearts}</span></div>`;
         })
         .join('');

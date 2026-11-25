@@ -702,3 +702,10 @@ body.in-tag #title-screen {
   border-color: #1b3a8f;
   animation-duration: 0.3s;
 }
+
+/* 青鬼になった自分の表示（HP の代わり） */
+.tag-oni-me {
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  color: #8fb3ff;
+}

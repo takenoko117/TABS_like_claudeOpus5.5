@@ -128,6 +128,19 @@ export const TAG_BLUE_IGNORE = 12;
 /** 壁につかえたとき、横へ回り込む時間（秒） */
 export const TAG_BLUE_DETOUR = 1.4;
 
+// ---- 青鬼になったプレイヤー（オンラインで先にアウトになった人） ----
+/** アウトになってから青鬼として出てくるまで（秒） */
+export const TAG_ONI_DELAY = 3;
+/** 青鬼のプレイヤーが出る場所は、生きている人全員からこの距離以上離す */
+export const TAG_ONI_SPAWN_MIN_DIST = 30;
+/** 青鬼のプレイヤーの速さ（NPC の青鬼と同じ。生きている人のダッシュと同じ速さ） */
+export const TAG_ONI_SPEED = TAG_BLUE_SPEED;
+/** 食べたあと、もぐもぐして動けない時間（秒） */
+export const TAG_ONI_EAT_PAUSE = 1.2;
+/** 青鬼のプレイヤーを後ろから見るカメラの距離と高さ */
+export const TAG_ONI_CAMERA_DIST = 9;
+export const TAG_ONI_CAMERA_HEIGHT = 3.2;
+
 // ---- レーザー ----
 /** 見つけてから撃つまでのため（秒）。この間、口が開いて照準の線が見える */
 export const TAG_LASER_CHARGE = 0.85;

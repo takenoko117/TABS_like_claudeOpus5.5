@@ -23,6 +23,12 @@ import {
   TAG_BLUE_TOUCH,
   TAG_BLUE_WANDER_SPEED,
   TAG_CHASE_KEEP,
+  TAG_ONI_CAMERA_DIST,
+  TAG_ONI_CAMERA_HEIGHT,
+  TAG_ONI_DELAY,
+  TAG_ONI_EAT_PAUSE,
+  TAG_ONI_SPAWN_MIN_DIST,
+  TAG_ONI_SPEED,
   TAG_FLING_BOUNCE,
   TAG_FLING_BOUNCE_MIN,
   TAG_FLING_DRAG,
@@ -146,6 +152,12 @@ export interface TagPlayer {
   rocketCooldown: number;
   /** ふっとんでいる残り秒（0 なら操作できる。物理で飛び、壁で跳ね返る） */
   fling: number;
+  /** アウトになったあと、青鬼として操作している（オンラインだけ。alive は false のまま） */
+  oni: boolean;
+  /** 青鬼として出てくるまでの残り秒（権限のある端末が数える。-1 は数えていない） */
+  oniTimer: number;
+  /** 青鬼として食べた人数 */
+  eats: number;
 }
 
 /** eat は青鬼が食べている間 */
@@ -260,7 +272,9 @@ export interface RocketPickup {
 export type TagEvent =
   | { kind: 'spawn'; hayato: number; pos: V3; blue: boolean }
   /** 青鬼に食べられた（アウト） */
-  | { kind: 'eaten'; hayato: number; player: number }
+  | { kind: 'eaten'; hayato: number; player: number; byPlayer: number }
+  /** アウトになった人が青鬼として出てきた */
+  | { kind: 'oni'; player: number; pos: V3 }
   | { kind: 'spot'; hayato: number; target: number }
   | { kind: 'fire'; bolt: number; hayato: number; from: V3; dir: V3 }
   | { kind: 'bolt_end'; bolt: number; pos: V3 }
@@ -342,6 +356,9 @@ export class TagSim {
         punchCooldown: 0,
         rocketCooldown: 0,
         fling: 0,
+        oni: false,
+        oniTimer: -1,
+        eats: 0,
       });
     });
     // 落ちているロケット（全員が同じ場所になるよう、種から決める）
@@ -385,7 +402,8 @@ export class TagSim {
       if (p.alive) p.survived = this.time;
       if (p.id === this.localId) {
         // パンチや爆風で動けない間は操作を受け付けない
-        if (p.alive && input && this.phase === 'playing' && p.stun <= 0) this.movePlayer(p, input, dt);
+        if (p.oni) this.moveOni(p, input && this.phase === 'playing' && p.stun <= 0 ? input : emptyTagInput(), dt);
+        else if (p.alive && input && this.phase === 'playing' && p.stun <= 0) this.movePlayer(p, input, dt);
         else this.movePlayer(p, emptyTagInput(), dt);
       } else if (p.net) {
         // 届いた位置へなめらかに寄せる
@@ -414,6 +432,7 @@ export class TagSim {
           else this.updateHayato(h, dt);
         }
       }
+      if (this.phase === 'playing') this.updateOniPlayers(dt);
       this.updateBolts(dt, true);
       this.updateRockets(dt, true);
       if (this.phase === 'playing') this.updatePickups(dt);
@@ -539,6 +558,134 @@ export class TagSim {
       // ほかの端末の人は届く位置で飛んで見えるので、回転の演出だけ（長めに）
       p.fling = 2.5;
     }
+  }
+
+  // ---- 青鬼になったプレイヤー ----
+
+  /** 青鬼のプレイヤーの動き（大きな体で地面を歩く。ジャンプ・息切れなし。1 段の段差は上れる） */
+  private moveOni(p: TagPlayer, input: TagInput, dt: number): void {
+    const fx = Math.sin(input.yaw);
+    const fz = Math.cos(input.yaw);
+    let mx = fx * input.moveZ - fz * input.moveX;
+    let mz = fz * input.moveZ + fx * input.moveX;
+    const len = Math.hypot(mx, mz);
+    if (len > 1) {
+      mx /= len;
+      mz /= len;
+    }
+    const moving = len > 0.01;
+    const inWater = this.world.get(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.3), Math.floor(p.pos.z)) === B.WATER;
+    const speed = TAG_ONI_SPEED * (inWater ? 0.55 : 1);
+    const accel = 40;
+    p.vel.x += clampAbs(mx * speed - p.vel.x, accel * dt);
+    p.vel.z += clampAbs(mz * speed - p.vel.z, accel * dt);
+    p.vel.y -= TAG_GRAVITY * dt;
+    p.onGround = moveBox(this.world, p.pos, p.vel, TAG_BLUE_RADIUS, TAG_BLUE_SIZE, dt, true, p.onGround);
+    if (moving) p.yaw = lerpAngle(p.yaw, Math.atan2(mx, mz), Math.min(1, dt * 10));
+    p.moving = moving && Math.hypot(p.vel.x, p.vel.z) > 0.5;
+  }
+
+  /**
+   * 権限のある端末: アウトになった人を、しばらくして青鬼として出す。青鬼のプレイヤーが生きている人に触れたら食べる。
+   * ソロでは何もしない（アウトで終わり）。
+   */
+  private updateOniPlayers(dt: number): void {
+    if (this.solo) return;
+    for (const p of this.players) {
+      if (p.alive || p.left || p.oni) continue;
+      p.oniTimer = p.oniTimer < 0 ? TAG_ONI_DELAY : p.oniTimer - dt;
+      if (p.oniTimer > 0) continue;
+      const at = this.pickOniSpawn();
+      this.applyOni(p.id, at.x, at.y, at.z);
+      this.send(['N', p.id, at.x, at.y, at.z]);
+    }
+    for (const p of this.players) {
+      if (!p.oni || p.left || p.stun > 0) continue;
+      for (const q of this.players) {
+        if (q.id === p.id || !this.oniTouches(p, q)) continue;
+        this.applyOniEat(p.id, q.id);
+        this.send(['e', p.id, q.id]);
+        break;
+      }
+    }
+  }
+
+  /** 青鬼のプレイヤーが出る場所（体が入りきる広い所で、生きている人からなるべく遠く） */
+  private pickOniSpawn(): V3 {
+    const alive = this.players.filter((p) => p.alive);
+    const nav = this.town.navPoints;
+    let best: V3 | null = null;
+    let bestD = -1;
+    for (let k = 0; k < 80; k++) {
+      const c = nav[Math.floor(this.rng() * nav.length)];
+      // 屋根や橋の上ではなく、いちばん下の地面に出す
+      const y = groundAt(this.world, c.x, c.z);
+      if (y < 0 || boxCollides(this.world, c.x, y, c.z, TAG_BLUE_RADIUS, TAG_BLUE_SIZE)) continue;
+      const d = alive.length ? Math.min(...alive.map((p) => Math.hypot(p.pos.x - c.x, p.pos.z - c.z))) : 999;
+      if (d > bestD) {
+        best = { x: r2(c.x), y, z: r2(c.z) };
+        bestD = d;
+      }
+      if (d >= TAG_ONI_SPAWN_MIN_DIST) break;
+    }
+    if (best) return best;
+    const c = nav[0];
+    return { x: c.x, y: floorBelow(this.world, c.x, this.world.sizeY - 1, c.z), z: c.z };
+  }
+
+  /** 青鬼として出てきた（ゲストはホストの知らせをそのまま写す） */
+  applyOni(id: number, x: number, y: number, z: number): void {
+    const p = this.player(id);
+    if (!p || p.left) return;
+    // アウトの知らせより先に届いても、ホストの決めたとおりアウト扱いにする
+    p.alive = false;
+    p.hp = 0;
+    p.oni = true;
+    p.oniTimer = 0;
+    p.pos.x = x;
+    p.pos.y = y;
+    p.pos.z = z;
+    p.vel.x = 0;
+    p.vel.y = 0;
+    p.vel.z = 0;
+    p.fling = 0;
+    p.stun = 0;
+    p.invuln = 0;
+    // ほかの端末の人は、出てきた所から動き始める（古い位置へ引き戻さない）
+    if (p.id !== this.localId) p.net = { x, y, z, yaw: p.yaw };
+    this.events.push({ kind: 'oni', player: id, pos: { x, y, z } });
+  }
+
+  /** 青鬼のプレイヤーの体に、生きている人が触れているか */
+  oniTouches(oni: TagPlayer, q: TagPlayer): boolean {
+    if (!oni.oni || !q.alive) return false;
+    const d = Math.hypot(q.pos.x - oni.pos.x, q.pos.z - oni.pos.z);
+    if (d > TAG_BLUE_RADIUS + TAG_PLAYER_HALF + TAG_BLUE_TOUCH) return false;
+    return q.pos.y + TAG_PLAYER_HEIGHT > oni.pos.y - 0.3 && q.pos.y < oni.pos.y + TAG_BLUE_SIZE;
+  }
+
+  /** 青鬼のプレイヤーが食べた */
+  applyOniEat(eater: number, victim: number): void {
+    const e = this.player(eater);
+    const q = this.player(victim);
+    if (!e || !q || !q.alive) return;
+    q.hp = 0;
+    q.alive = false;
+    q.fling = 0;
+    q.survived = this.time;
+    e.eats++;
+    // もぐもぐしている間は動けない
+    e.stun = TAG_ONI_EAT_PAUSE;
+    e.yaw = Math.atan2(q.pos.x - e.pos.x, q.pos.z - e.pos.z);
+    this.events.push({ kind: 'eaten', hayato: -1, player: victim, byPlayer: eater });
+    this.events.push({ kind: 'out', player: victim, time: this.time });
+  }
+
+  /** 青鬼のプレイヤーの口の位置 */
+  oniMouth(p: TagPlayer): V3 {
+    const s = TAG_BLUE_SIZE;
+    const cy = p.pos.y + TAG_BLUE_HOVER + s / 2;
+    return { x: p.pos.x + Math.sin(p.yaw) * 0.42 * s, y: cy - 0.29 * s, z: p.pos.z + Math.cos(p.yaw) * 0.42 * s };
   }
 
   /** ほかの端末から届いたプレイヤーの位置 */
@@ -948,7 +1095,7 @@ export class TagSim {
       h.target = id;
       h.eat = Math.max(h.eat, TAG_BLUE_EAT_TIME);
     }
-    this.events.push({ kind: 'eaten', hayato, player: id });
+    this.events.push({ kind: 'eaten', hayato, player: id, byPlayer: -1 });
     this.events.push({ kind: 'out', player: id, time: this.time });
   }
 
@@ -1191,6 +1338,12 @@ export class TagSim {
       case 'E':
         this.applyEaten(n(1), n(2));
         break;
+      case 'N':
+        this.applyOni(n(1), n(2), n(3), n(4));
+        break;
+      case 'e':
+        this.applyOniEat(n(1), n(2));
+        break;
       case 'P':
         this.applyStun(n(1), n(2), TAG_PUNCH_STUN, { x: n(3), y: 0, z: n(4) }, TAG_PUNCH_KNOCK, 'punch');
         break;
@@ -1420,11 +1573,12 @@ export class TagSim {
   // ---- カメラ ----
 
   /** かぶくんの後ろから見る 3 人称カメラ（壁に埋まらないよう縮める） */
-  camera(yaw: number, pitch: number, focus: V3): CameraPose {
-    const target = { x: focus.x, y: focus.y + 1.5, z: focus.z };
+  camera(yaw: number, pitch: number, focus: V3, oni = false): CameraPose {
+    const target = { x: focus.x, y: focus.y + (oni ? TAG_ONI_CAMERA_HEIGHT : 1.5), z: focus.z };
     const dir = viewDir(yaw, pitch);
     const back = { x: -dir.x, y: -dir.y, z: -dir.z };
-    const dist = 5.5;
+    // 青鬼は体が大きいので、離れて見る
+    const dist = oni ? TAG_ONI_CAMERA_DIST : 5.5;
     const hit = this.world.raycast(target, back, dist);
     const d = hit ? Math.max(0.8, hit.dist - 0.3) : dist;
     return { pos: { x: target.x + back.x * d, y: target.y + back.y * d, z: target.z + back.z * d }, target, dir };
