@@ -1,4 +1,4 @@
-import { AnimationMixer, Group, LoopOnce, Quaternion, Vector3, type AnimationAction, type Mesh, type Object3D } from 'three';
+import { AnimationMixer, Group, LoopOnce, Quaternion, Vector3, type AnimationAction, type Material, type Mesh, type MeshStandardMaterial, type Object3D } from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { KabukunMotion, type KabukunMotionInput } from './KabukunMotion';
@@ -44,8 +44,11 @@ export class KabukunActor {
   /** パンチで向け直す前の肩の骨の向き（アニメが肩を動かさないときに、ずれがたまらないよう戻す） */
   private readonly armSaved = new Quaternion();
   private armTouched = false;
+  /** 色を変えるために複製した材質（片付けで捨てる） */
+  private readonly ownMats: Material[] = [];
 
-  constructor(gltf: GLTF) {
+  /** bodyColor を渡すと、体（白い所）をその色に染める（材質はこのかぶくん専用に複製する） */
+  constructor(gltf: GLTF, bodyColor: number | null = null) {
     const model = cloneSkinned(gltf.scene) as Object3D;
     this.model = model;
     this.armR = model.getObjectByName('arm_R') ?? null;
@@ -57,6 +60,13 @@ export class KabukunActor {
       m.castShadow = true;
       // 骨で動くので、画面外判定で消えないようにする
       m.frustumCulled = false;
+      const mat = m.material as Material;
+      if (bodyColor !== null && !Array.isArray(m.material) && mat.name === 'Kabu_Body') {
+        const own = mat.clone() as MeshStandardMaterial;
+        own.color.setHex(bodyColor);
+        m.material = own;
+        this.ownMats.push(own);
+      }
       if (!m.morphTargetDictionary) return;
       const name = `${m.name} ${m.parent?.name ?? ''}`;
       if (name.includes('Eyes')) this.eyes.push(m);
@@ -158,6 +168,7 @@ export class KabukunActor {
 
   dispose(): void {
     this.mixer.stopAllAction();
+    for (const m of this.ownMats) m.dispose();
   }
 }
 

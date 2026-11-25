@@ -22,6 +22,10 @@ import {
   TAG_BLUE_SWITCH,
   TAG_BLUE_TOUCH,
   TAG_BLUE_WANDER_SPEED,
+  TAG_CHAIN_FLING_PULL,
+  TAG_CHAIN_LENGTH,
+  TAG_CHAIN_PULL_MAX,
+  TAG_CHAIN_STIFFNESS,
   TAG_CHASE_KEEP,
   TAG_METEOR_ALT,
   TAG_METEOR_BLAST,
@@ -396,6 +400,8 @@ export class TagSim {
   winner = -1;
   /** ソロか（1 人で始めた） */
   readonly solo: boolean;
+  /** 足かせと鎖でつなぐか（オンラインなら最初から。試験で外せる） */
+  chained: boolean;
   private nextHayatoId = 1;
   private nextBoltId = 1;
   private readonly rng: () => number;
@@ -415,6 +421,7 @@ export class TagSim {
     resetGifuTown(this.town);
     this.rng = makeRng(seed);
     this.solo = roster.length <= 1;
+    this.chained = !this.solo;
     roster.forEach((r, k) => {
       const sp = this.town.playerSpawns[k % this.town.playerSpawns.length];
       this.players.push({
@@ -489,6 +496,8 @@ export class TagSim {
         if (p.oni) this.moveOni(p, input && this.phase === 'playing' && p.stun <= 0 ? input : emptyTagInput(), dt);
         else if (p.alive && input && this.phase === 'playing' && p.stun <= 0) this.movePlayer(p, input, dt);
         else this.movePlayer(p, emptyTagInput(), dt);
+        // 鎖でつながった人から離れすぎたら引き戻される（相手の端末でも同じことが起き、互いに引き合う）
+        if (p.alive && !p.oni) this.pullByChain(p, dt);
       } else if (p.net) {
         // 届いた位置へなめらかに寄せる
         const k = Math.min(1, dt * 12);
@@ -743,6 +752,50 @@ export class TagSim {
     } else {
       // ほかの端末の人は届く位置で飛んで見えるので、回転の演出だけ（長めに）
       p.fling = 2.5;
+    }
+  }
+
+  // ---- 足かせと鎖 ----
+
+  /**
+   * 鎖でつながった 2 人の組（オンラインだけ）。生きている人を席の順に並べ、となりどうしをつなぐ。
+   * アウトになった人や抜けた人は外れ、その両どなりがつなぎ直される。
+   */
+  chainLinks(): [TagPlayer, TagPlayer][] {
+    if (!this.chained) return [];
+    const chained = this.players.filter((p) => p.alive && !p.left);
+    const links: [TagPlayer, TagPlayer][] = [];
+    for (let k = 0; k + 1 < chained.length; k++) links.push([chained[k], chained[k + 1]]);
+    return links;
+  }
+
+  /**
+   * この端末で動かす人が、鎖の長さより離れていたら相手の方へ引き寄せる（ばね。相手の端末でも相手が引き寄せられる）。
+   * 1 人が走ると、止まっている相手を引きずって半分より少し遅い速さで進む。息を合わせて同じ向きへ走れば速い。
+   */
+  private pullByChain(p: TagPlayer, dt: number): void {
+    for (const [a, b] of this.chainLinks()) {
+      if (a.id !== p.id && b.id !== p.id) continue;
+      const q = a.id === p.id ? b : a;
+      const dx = q.pos.x - p.pos.x;
+      const dz = q.pos.z - p.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d <= TAG_CHAIN_LENGTH || d < 1e-6) continue;
+      const nx = dx / d;
+      const nz = dz / d;
+      const over = d - TAG_CHAIN_LENGTH;
+      if (p.fling > 0) {
+        // ふっとび中: 相手の方へ加速する（勢いを少しずつ失いながら、相手を引きずって一緒に飛ぶ）
+        const acc = Math.min(over * TAG_CHAIN_FLING_PULL, TAG_CHAIN_PULL_MAX * 2) * dt;
+        p.vel.x += nx * acc;
+        p.vel.z += nz * acc;
+        continue;
+      }
+      // 歩き・走り: 相手の方へ引き寄せる（自分の勢いは消さないので、止まっている相手を引きずって進める）。
+      // 壁は抜けないよう、箱の移動で引っぱる
+      const speed = Math.min(over * TAG_CHAIN_STIFFNESS, TAG_CHAIN_PULL_MAX);
+      const vel = { x: nx * speed, y: 0, z: nz * speed };
+      moveBox(this.world, p.pos, vel, TAG_PLAYER_HALF, TAG_PLAYER_HEIGHT, dt, true, p.onGround);
     }
   }
 

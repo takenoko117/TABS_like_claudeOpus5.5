@@ -36,12 +36,14 @@ import {
   TAG_BLUE_EAT_TIME,
   TAG_BLUE_HOVER,
   TAG_BLUE_SIZE,
+  TAG_CHAIN_LENGTH,
   TAG_LASER_CHARGE,
   TAG_METEOR_HIT_RADIUS,
   TAG_METEOR_WARN,
   TAG_ONI_EAT_PAUSE,
   TAG_PLAYER_COLORS,
   TAG_SIZE_X,
+  kabukunBodyColor,
   TAG_SIZE_Y,
   TAG_SIZE_Z,
 } from './TagConfig';
@@ -70,6 +72,15 @@ interface MeteorView {
   rock: Group;
   marker: Group;
 }
+
+/** 鎖の輪の数の上限（足かせの枠も含む） */
+const CHAIN_MAX = 480;
+/** 鎖の輪 1 つの長さ（m） */
+const CHAIN_LINK = 0.24;
+/** 足かせの高さ（足首） */
+const SHACKLE_Y = 0.12;
+/** 足かせの枠の半幅 */
+const SHACKLE_HALF = 0.3;
 
 /** 演出の粒の上限 */
 const FX_MAX = 600;
@@ -171,6 +182,8 @@ export class TagRenderer {
   private readonly zoneWallMat = new MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false });
   private readonly markerMat = new MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.6, blending: AdditiveBlending, depthWrite: false });
   private readonly unitBox = new BoxGeometry(1, 1, 1);
+  /** 足かせと鎖（輪を 1 つずつ並べる） */
+  private readonly chainMesh: InstancedMesh;
   private readonly zoneOut: Mesh[] = [];
   private readonly zoneWalls: Mesh[] = [];
   private readonly missiles: MissileView[] = [];
@@ -216,6 +229,14 @@ export class TagRenderer {
 
     this.fxMesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ fog: true }), FX_MAX);
     this.owned.push(this.fxMesh.geometry, this.boltGeo, this.unitBox, ...Object.values(this.rocketGeo), ...Object.values(this.meteorGeo));
+    this.chainMesh = new InstancedMesh(this.unitBox, new MeshLambertMaterial(), CHAIN_MAX);
+    this.chainMesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.chainMesh.frustumCulled = false;
+    this.chainMesh.castShadow = true;
+    this.chainMesh.count = 0;
+    this.chainMesh.setColorAt(0, this.tmpColor.set(0xffffff));
+    this.owned.push(this.chainMesh.material as MeshLambertMaterial);
+    this.scene.add(this.chainMesh);
     for (let k = 0; k < 4; k++) {
       const out = new Mesh(this.unitBox, this.zoneOutMat);
       out.visible = false;
@@ -310,8 +331,21 @@ export class TagRenderer {
     }
   }
 
+  /** かぶくんの体の色（オンラインだけ席の色に染める。ひとりなら白のまま） */
+  private bodyColor(id: number): number | null {
+    return this.sim.solo ? null : kabukunBodyColor(id);
+  }
+
   private addPlayer(id: number, name: string): void {
-    const model = buildKabukun(this.entityMat);
+    const color = this.bodyColor(id);
+    let mat = this.entityMat;
+    if (color !== null) {
+      // 代役のボクセルのかぶくんも色をかける
+      mat = voxelMaterial();
+      mat.color.setHex(color);
+      this.owned.push(mat);
+    }
+    const model = buildKabukun(mat);
     this.scene.add(model.root);
     // ほかの人には名前の札を出す（席の色）
     const label = id === this.sim.localId || this.sim.solo ? null : makeLabel(name, TAG_PLAYER_COLORS[id % TAG_PLAYER_COLORS.length]);
@@ -324,8 +358,8 @@ export class TagRenderer {
     loadKabukun()
       .then((gltf) => {
         if (this.disposed) return;
-        for (const v of this.players.values()) {
-          const actor = new KabukunActor(gltf);
+        for (const [id, v] of this.players) {
+          const actor = new KabukunActor(gltf, this.bodyColor(id));
           this.scene.add(actor.root);
           v.actor = actor;
           v.model.root.visible = false;
@@ -479,6 +513,7 @@ export class TagRenderer {
     this.syncGadgets(dt);
     this.syncZone(dt);
     this.syncMeteors();
+    this.syncChains();
     this.updateChunks();
     this.syncFx(dt);
 
@@ -826,6 +861,90 @@ export class TagRenderer {
   /** 落ちたミサイルの位置を取り出す（音を鳴らす） */
   takeMissileBooms(): { x: number; y: number; z: number }[] {
     return this.missileBooms.splice(0);
+  }
+
+  /**
+   * 足かせと鎖。つながった人の足もとに四角い足かせ、そのあいだに輪を交互の向きで並べる。
+   * ゆるんでいるときは垂れ下がり（地面より下へは垂れない）、ピンと張ると赤みがかる。
+   */
+  private syncChains(): void {
+    let n = 0;
+    const put = (x: number, y: number, z: number, sx: number, sy: number, sz: number, yaw: number, pitch: number, roll: number, color: number): void => {
+      if (n >= CHAIN_MAX) return;
+      this.tmpObj.position.set(x, y, z);
+      this.tmpObj.rotation.set(pitch, yaw, roll, 'YXZ');
+      this.tmpObj.scale.set(sx, sy, sz);
+      this.tmpObj.updateMatrix();
+      this.chainMesh.setMatrixAt(n, this.tmpObj.matrix);
+      this.chainMesh.setColorAt(n, this.tmpColor.setHex(color));
+      n++;
+    };
+    const links = this.sim.chainLinks();
+    const shackled = new Set<number>();
+    for (const [a, b] of links) {
+      shackled.add(a.id);
+      shackled.add(b.id);
+    }
+    // 足かせ（四角い枠。角は丸めない）
+    for (const p of this.sim.players) {
+      if (!shackled.has(p.id)) continue;
+      const y = p.pos.y + SHACKLE_Y;
+      const h = SHACKLE_HALF;
+      const c = 0x41464f;
+      put(p.pos.x, y, p.pos.z - h, h * 2 + 0.1, 0.1, 0.1, 0, 0, 0, c);
+      put(p.pos.x, y, p.pos.z + h, h * 2 + 0.1, 0.1, 0.1, 0, 0, 0, c);
+      put(p.pos.x - h, y, p.pos.z, 0.1, 0.1, h * 2, 0, 0, 0, c);
+      put(p.pos.x + h, y, p.pos.z, 0.1, 0.1, h * 2, 0, 0, 0, c);
+    }
+    const world = this.sim.world;
+    for (const [a, b] of links) {
+      const dx = b.pos.x - a.pos.x;
+      const dz = b.pos.z - a.pos.z;
+      const hd = Math.hypot(dx, dz) || 1e-6;
+      // 足かせの枠のふちから出す
+      const ux = dx / hd;
+      const uz = dz / hd;
+      const x0 = a.pos.x + ux * SHACKLE_HALF;
+      const z0 = a.pos.z + uz * SHACKLE_HALF;
+      const y0 = a.pos.y + SHACKLE_Y;
+      const x1 = b.pos.x - ux * SHACKLE_HALF;
+      const z1 = b.pos.z - uz * SHACKLE_HALF;
+      const y1 = b.pos.y + SHACKLE_Y;
+      const span = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+      const taut = hd >= TAG_CHAIN_LENGTH - 0.3;
+      // ゆるみの分だけ垂れる（張っていれば 0）
+      const slack = Math.max(0, TAG_CHAIN_LENGTH - hd);
+      const sag = Math.min(1.6, Math.sqrt(slack * TAG_CHAIN_LENGTH) * 0.18);
+      const count = Math.max(2, Math.min(70, Math.ceil(span / CHAIN_LINK)));
+      const color = taut ? 0x9a5a4e : 0x6b717c;
+      const yaw = Math.atan2(x1 - x0, z1 - z0);
+      let px = x0;
+      let py = y0;
+      let pz = z0;
+      for (let k = 1; k <= count; k++) {
+        const t = k / count;
+        const x = x0 + (x1 - x0) * t;
+        const z = z0 + (z1 - z0) * t;
+        let y = y0 + (y1 - y0) * t - 4 * sag * t * (1 - t);
+        // 地面にめりこまない
+        const floor = floorBelow(world, x, Math.max(y0, y1, y) + 0.3, z) + 0.05;
+        if (y < floor) y = floor;
+        const mx = (px + x) / 2;
+        const my = (py + y) / 2;
+        const mz = (pz + z) / 2;
+        const seg = Math.hypot(x - px, y - py, z - pz);
+        const pitch = -Math.atan2(y - py, Math.hypot(x - px, z - pz) || 1e-6);
+        // 輪を交互に縦・横に向けて、鎖らしく見せる
+        const roll = k % 2 === 0 ? Math.PI / 2 : 0;
+        put(mx, my, mz, 0.1, 0.05, Math.max(0.05, seg * 1.15), yaw, pitch, roll, color);
+        px = x;
+        py = y;
+        pz = z;
+      }
+    }
+    this.chainMesh.count = n;
+    this.chainMesh.instanceMatrix.needsUpdate = true;
+    if (this.chainMesh.instanceColor) this.chainMesh.instanceColor.needsUpdate = true;
   }
 
   /** 隕石（空で光る岩）と、落ちる所の印 */

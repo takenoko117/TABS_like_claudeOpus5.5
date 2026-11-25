@@ -215,8 +215,9 @@ describe('当たると大きくふっとぶ', () => {
 
 describe('パンチでもふっとぶ', () => {
   it('殴られた人はレーザーと同じくらい遠くへふっとび、着地してから動けない時間が数えられる', () => {
-    // 殴られる B（id 1）をこの端末で動かす
+    // 殴られる B（id 1）をこの端末で動かす（鎖なしで、ひとりのときの飛び方を確かめる）
     const sim = new TagSim(1, duo, 1, true, arena(false, 128));
+    sim.chained = false;
     sim.hayatos.length = 0;
     const a = sim.player(0)!;
     const b = sim.player(1)!;

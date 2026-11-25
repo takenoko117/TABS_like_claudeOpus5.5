@@ -203,6 +203,31 @@ export const TAG_SNAP_INTERVAL = 1 / 10;
 
 /** プレイヤーごとの目印の色（席の番号順） */
 export const TAG_PLAYER_COLORS: readonly number[] = [0x3fa7ff, 0xff5a4e, 0xffd23f, 0x5ad46a, 0xc77dff, 0xff9a3c];
+/** オンラインでかぶくんの体を席の色に染める濃さ（0 = 白のまま、1 = 席の色そのもの） */
+export const TAG_KABUKUN_TINT = 0.6;
+
+/** 席の番号から、かぶくんの体の色（白と席の色を TAG_KABUKUN_TINT で混ぜる。かぶの白さを少し残す） */
+export function kabukunBodyColor(id: number): number {
+  const c = TAG_PLAYER_COLORS[id % TAG_PLAYER_COLORS.length];
+  const mix = (shift: number): number => Math.round(255 + (((c >> shift) & 255) - 255) * TAG_KABUKUN_TINT);
+  return (mix(16) << 16) | (mix(8) << 8) | mix(0);
+}
+
+// ---- 足かせと鎖（オンライン。生きている人どうしを席の順に鎖でつなぐ） ----
+/** 鎖の長さ（つながった 2 人は、横にこれ以上離れられない） */
+export const TAG_CHAIN_LENGTH = 10;
+/**
+ * 鎖の引く強さ（1 秒あたり）。離れすぎた長さ × この値の速さで、相手の方へ引き寄せられる。
+ * 相手の位置は少し遅れて届くので、半分ずつ戻すような硬いつなぎ方はせず、ばねのように引き合う。
+ */
+export const TAG_CHAIN_STIFFNESS = 7;
+/** 鎖に引っぱられて動く速さの上限（m/s。張った鎖で瞬間移動しないように） */
+export const TAG_CHAIN_PULL_MAX = 30;
+/**
+ * ふっとんでいる人を鎖が引き戻す強さ（離れすぎた 1 m あたりの加速度 m/s²）。
+ * ふっとび中は位置ではなく速さに力をかけるので、勢いを保ったまま相手を引きずって一緒に飛ぶ。
+ */
+export const TAG_CHAIN_FLING_PULL = 3;
 
 /** ソロのベスト記録を保存するキー */
 export const TAG_BEST_KEY = 'exblocks-tag-best';

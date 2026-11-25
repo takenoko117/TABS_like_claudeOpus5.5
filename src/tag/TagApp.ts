@@ -8,6 +8,7 @@ import { generateGifuTown, type GifuTown } from './GifuTown';
 import {
   TAG_BEST_KEY,
   TAG_BLUE_FIRST,
+  TAG_CHAIN_LENGTH,
   TAG_ONI_DELAY,
   TAG_HAYATO_SPAWN_INTERVAL,
   TAG_HAYATO_START,
@@ -186,6 +187,7 @@ export class TagApp {
             <li>${vx('boom')} ${TAG_ZONE_START} 秒たつと、町の外側に<b>ミサイル</b>が降りはじめ、移動できる所が四方から少しずつ狭まる。赤い壁に押されるとミサイルに当たる。</li>
             <li>${vx('stopwatch')} ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</li>
             <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</li>
+            <li>${vx('handshake')} オンラインでは、生きている人どうしが<b>足かせと鎖</b>で席の順につながる（かぶくんの色は席の色）。となりの人とは ${TAG_CHAIN_LENGTH} m までしか離れられず、ひとりで走ると相手を引きずって遅くなる。息を合わせて逃げるか、相手をハヤトの前へ引きずっていくか……。</li>
             <li>${vx('hand')} お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック）すると、相手をふっとばして ${TAG_PUNCH_STUN} 秒動けなくする。動けない人をまた殴ると 10 倍ふっとぶ（ハメ技はできない）。</li>
             <li>${vx('boom')} ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック）で発射。建物を壊し、爆風で人もハヤトもひるむ。</li>
           </ul>
@@ -910,7 +912,7 @@ export class TagApp {
       this.el.center.classList.add('on', 'count');
     } else if (this.el.center.classList.contains('count')) {
       this.el.center.classList.remove('count');
-      this.showCenter('にげろ！', 1.2);
+      this.showCenter(this.sim && !this.sim.solo ? '鎖でつながった！ 息を合わせて にげろ！' : 'にげろ！', this.sim && !this.sim.solo ? 2 : 1.2);
     }
     this.centerTimer -= 0.1;
     if (this.countdown <= 0 && this.centerTimer <= 0) this.el.center.classList.remove('on');
