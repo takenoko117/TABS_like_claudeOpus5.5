@@ -672,7 +672,7 @@ export class TagSim {
 
   private movePlayer(p: TagPlayer, input: TagInput, dt: number): void {
     if (p.fling > 0) {
-      this.flingPlayer(p, dt);
+      this.flingPlayer(p, input, dt);
       return;
     }
     const fx = Math.sin(input.yaw);
@@ -715,11 +715,27 @@ export class TagSim {
   }
 
   /**
-   * ふっとんでいる間の動き（操作は効かない）。重力・空気抵抗・地面の摩擦で減速し、
-   * 壁に当たると跳ね返り、強く落ちると地面で弾む。遅くなって着地したら終わる。
+   * ふっとんでいる間の動き。重力・空気抵抗・地面の摩擦で減速し、壁に当たると跳ね返る。
+   * スタン中でなければ（レーザー・隕石・ミサイルなど）、空中で少し軌道を調整でき、
+   * 移動やジャンプを入れていれば着地した瞬間に弾まずすぐ走り出せる。
    */
-  private flingPlayer(p: TagPlayer, dt: number): void {
+  private flingPlayer(p: TagPlayer, input: TagInput, dt: number): void {
     p.fling = Math.max(0, p.fling - dt);
+    const fx = Math.sin(input.yaw);
+    const fz = Math.cos(input.yaw);
+    let mx = fx * input.moveZ - fz * input.moveX;
+    let mz = fz * input.moveZ + fx * input.moveX;
+    const len = Math.hypot(mx, mz);
+    if (len > 1) {
+      mx /= len;
+      mz /= len;
+    }
+    const canRecover = p.stun <= 0 && (len > 0.01 || input.jump);
+    // 空中でも移動入力で少し方向を寄せられる（スタン中は不可）
+    if (p.stun <= 0 && !p.onGround && len > 0.01) {
+      p.vel.x += mx * 10 * dt;
+      p.vel.z += mz * 10 * dt;
+    }
     const drag = Math.max(0, 1 - TAG_FLING_DRAG * dt);
     p.vel.x *= drag;
     p.vel.z *= drag;
@@ -741,13 +757,15 @@ export class TagSim {
     p.vel.y -= TAG_GRAVITY * TAG_FLING_GRAVITY * (inWater ? 0.5 : 1) * dt;
     // 速いときは細かく分けて動かす（壁をすり抜けないように）
     const n = Math.min(40, Math.max(1, Math.ceil((Math.hypot(p.vel.x, p.vel.y, p.vel.z) * dt) / TAG_FLING_SUBSTEP)));
-    for (let k = 0; k < n; k++) this.flingMove(p, dt / n);
+    for (let k = 0; k < n && p.fling > 0; k++) this.flingMove(p, dt / n, canRecover);
     p.moving = false;
-    if (p.fling <= 0 || (p.onGround && Math.hypot(p.vel.x, p.vel.z) < TAG_FLING_END_SPEED)) p.fling = 0;
+    if (p.fling <= 0 || (p.onGround && (canRecover || Math.hypot(p.vel.x, p.vel.z) < TAG_FLING_END_SPEED))) {
+      p.fling = 0;
+    }
   }
 
   /** ふっとび中の 1 回ぶんの移動と跳ね返り */
-  private flingMove(p: TagPlayer, dt: number): void {
+  private flingMove(p: TagPlayer, dt: number, canRecover: boolean): void {
     const before = { x: p.vel.x, y: p.vel.y, z: p.vel.z };
     const wasGround = p.onGround;
     p.onGround = moveBox(this.world, p.pos, p.vel, TAG_PLAYER_HALF, TAG_PLAYER_HEIGHT, dt, false, false);
@@ -762,8 +780,14 @@ export class TagSim {
     this.keepInZone(p.pos, p.vel, TAG_PLAYER_HALF, TAG_PLAYER_HEIGHT, true);
     // 天井（高架・アーケードの屋根など）に当たったら下へ跳ね返す
     if (before.y > 0 && p.vel.y === 0 && !p.onGround) p.vel.y = -before.y * TAG_FLING_BOUNCE;
-    // 強く落ちたら弾む（横の勢いは少しだけ減る）
+    // 強く落ちたら弾む（ただしスタン中でなく移動・ジャンプ入力があれば着地で即復帰する）
     if (p.onGround && !wasGround && before.y < -TAG_FLING_BOUNCE_MIN) {
+      if (canRecover) {
+        p.fling = 0;
+        p.vel.x *= 0.4;
+        p.vel.z *= 0.4;
+        return;
+      }
       p.vel.y = -before.y * TAG_FLING_LAND_BOUNCE;
       p.vel.x *= TAG_FLING_LAND_KEEP;
       p.vel.z *= TAG_FLING_LAND_KEEP;
@@ -1498,9 +1522,8 @@ export class TagSim {
     if (!p || !p.alive) return;
     p.hp = Math.max(0, hp);
     p.invuln = TAG_INVULN_TIME;
-    // ハヤトのレーザー（bolt >= 0）では操作不能にせず、当たった直後からすぐ逃げられるようにする。
-    // ミサイル・隕石など（bolt < 0）は大きくふっとぶ
-    if (bolt < 0) this.fling(p, dir, TAG_KNOCKBACK, TAG_KNOCKBACK_UP);
+    // 大きくふっとぶ（ハヤトから離れられる。スタンは付かず、着地時に動かせばすぐ走れる）
+    this.fling(p, dir, TAG_KNOCKBACK, TAG_KNOCKBACK_UP);
     this.events.push({ kind: 'hit', player: id, hp: p.hp, bolt, dir });
     // 当たった弾は消す（ゲストの見た目の弾も）
     const k = this.bolts.findIndex((x) => x.id === bolt);

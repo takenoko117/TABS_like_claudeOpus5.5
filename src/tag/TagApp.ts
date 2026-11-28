@@ -211,7 +211,7 @@ export class TagApp {
           <div class="tag-stages" data-tag="stages">${stageButtons}</div>
           <ul class="tag-rules">
             <li>${vx('eye')}<span>ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</span></li>
-            <li>${vx('heart')}<span>レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たってもすぐ動けて、直後の ${TAG_INVULN_TIME} 秒は無敵。</span></li>
+            <li>${vx('heart')}<span>レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たると大きくふっとび、飛んでいる間と着地後の ${TAG_INVULN_TIME} 秒は無敵。動かせば着地してすぐ走れる。</span></li>
             <li>${vx('oni')}<span>${TAG_BLUE_FIRST} 秒たつと、でかい<b>青鬼ハヤト</b>が現れる。ダッシュと同じ速さでどこまでも追ってきて、触れられたら食べられてアウト。体が大きいので狭い路地には入れない。ほかの人に近づけば、そちらへ狙いが移る。</span></li>
             <li>${vx('hourglass')}<span>ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに<b>倍に増える</b>（最大 ${TAG_HAYATO_MAX} 人）。地図にはハヤトが映らないので、曲がり角に注意！</span></li>
             <li>${vx('warn')}<span>${TAG_METEOR_FIRST} 秒たつと、空の高い所に<b>隕石ハヤト</b>が現れる。${TAG_METEOR_STILL_TIME} 秒ほど同じ所にとどまっている人に隕石を落とす。地面に赤い印が出たら走れ！</span></li>

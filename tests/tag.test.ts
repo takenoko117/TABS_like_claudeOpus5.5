@@ -12,7 +12,7 @@ import {
   TAG_ROCKET_PICKUPS,
   TAG_ROCKET_RESPAWN,
 } from '../src/tag/TagConfig';
-import { HIT_METEOR, TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
+import { TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
 import { BREATH_AMOUNT, KabukunMotion, PUNI_MAX } from '../src/tag/KabukunMotion';
 import { TOUCH_STICK_RADIUS, TOUCH_SPRINT_AT, stickVector } from '../src/tag/TagTouch';
 
@@ -407,7 +407,7 @@ describe('お邪魔の道具', () => {
   it('ふっとんでいる間は無敵時間が減らず、操作不能のまま連続被弾しない', () => {
     const sim = quiet(new TagSim(7, [{ id: 0, name: 'A' }], 0, true, town));
     const p = sim.local!;
-    sim.applyHit(0, TAG_MAX_HP - 1, HIT_METEOR, { x: 0, y: 0, z: -1 });
+    sim.applyHit(0, TAG_MAX_HP - 1, 1, { x: 0, y: 0, z: -1 });
     const inv0 = p.invuln;
     expect(p.fling).toBeGreaterThan(0);
     run(sim, 1.0);

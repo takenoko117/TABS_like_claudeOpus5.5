@@ -174,42 +174,45 @@ describe('青鬼ハヤト', () => {
   });
 });
 
-describe('当たったときの動き（レーザーはスタンなし・隕石やミサイルは大きくふっとぶ）', () => {
-  it('ハヤトのレーザーに当たってもスタン・ふっとびせず、直後からすぐ操作できる', () => {
+describe('当たると大きくふっとぶ（無敵あり・スタンなし）', () => {
+  it('レーザーに当たると開けた所なら 50 m ほどふっとび、スタンは付かず、着地時に動かせばすぐ走れる', () => {
     const sim = new TagSim(1, solo, 0, true, arena(false, 128));
     sim.hayatos.length = 0;
     const p = sim.local!;
     const x0 = p.pos.x;
     sim.applyHit(0, 2, 1, { x: 1, y: 0, z: 0 });
-    expect(p.hp).toBe(2);
-    expect(p.invuln).toBeGreaterThan(0);
-    expect(p.fling).toBe(0);
-    expect(p.stun).toBe(0);
-    // 当たった直後から逆向き（-x）へ自由に動ける
-    const back = { ...emptyTagInput(), moveX: 1, yaw: 0 };
-    run(sim, 0.5, back);
-    expect(p.pos.x).toBeLessThan(x0 - 1);
-  });
-
-  it('隕石やミサイルに当たると開けた所なら 50 m ほどふっとび、その間は操作が効かず、止まると操作が戻る', () => {
-    const sim = new TagSim(1, solo, 0, true, arena(false, 128));
-    sim.hayatos.length = 0;
-    const p = sim.local!;
-    const x0 = p.pos.x;
-    sim.applyHit(0, 2, HIT_METEOR, { x: 1, y: 0, z: 0 });
     expect(p.fling).toBeGreaterThan(0);
+    expect(p.stun).toBe(0);
+    expect(p.invuln).toBeGreaterThan(0);
     expect(Math.hypot(p.vel.x, p.vel.z)).toBeCloseTo(TAG_KNOCKBACK);
-    // 逆向き（-x）に歩こうとしても押し戻せない
-    const back = { ...emptyTagInput(), moveX: 1, yaw: 0 };
-    run(sim, 0.5, back);
-    expect(p.pos.x - x0).toBeGreaterThan(5);
+    // 何も入力しなければ 50 m ほど飛ぶ
     for (let t = 0; t < 8 && p.fling > 0; t += STEP) sim.step(STEP, emptyTagInput());
     expect(p.fling).toBe(0);
     expect(p.pos.x - x0).toBeGreaterThan(40);
     expect(p.pos.x - x0).toBeLessThan(65);
-    // 高く舞い上がる
     expect(sim.events.some((e) => e.kind === 'hit')).toBe(true);
-    // 操作が戻る
+    // 着地後も無敵が残っており、すぐ逆向きへ動ける
+    expect(p.invuln).toBeGreaterThan(1.5);
+    const back = { ...emptyTagInput(), moveX: 1, yaw: 0 };
+    const x1 = p.pos.x;
+    run(sim, 0.5, back);
+    expect(p.pos.x).toBeLessThan(x1 - 1);
+  });
+
+  it('レーザーでふっとんでも移動入力していれば最初の着地で即座に操作復帰し、転がり硬直がない', () => {
+    const sim = new TagSim(1, solo, 0, true, arena(false, 128));
+    sim.hayatos.length = 0;
+    const p = sim.local!;
+    sim.applyHit(0, 2, 1, { x: 1, y: 0, z: 0 });
+    const inv0 = p.invuln;
+    const back = { ...emptyTagInput(), moveX: 1, yaw: 0 };
+    // 1 回目の着地（約 2 秒）で即座にふっとびが終わる（バウンド・転がりで 4〜5 秒待たされない）
+    let elapsed = 0;
+    for (; elapsed < 3 && p.fling > 0; elapsed += STEP) sim.step(STEP, back);
+    expect(p.fling).toBe(0);
+    expect(elapsed).toBeLessThan(2.5);
+    // 飛んでいる間は無敵が減らないので、着地復帰時点でほぼまるごと無敵が残っている
+    expect(p.invuln).toBeGreaterThan(inv0 - 0.1);
     const x1 = p.pos.x;
     run(sim, 0.5, back);
     expect(p.pos.x).toBeLessThan(x1 - 1);
@@ -221,7 +224,7 @@ describe('当たったときの動き（レーザーはスタンなし・隕石�
     const p = sim.local!;
     p.pos.x = 17;
     p.pos.z = 30.5;
-    sim.applyHit(0, 2, HIT_METEOR, { x: 1, y: 0, z: 0 });
+    sim.applyHit(0, 2, 1, { x: 1, y: 0, z: 0 });
     run(sim, 0.4);
     // 壁（x = 20）の手前で跳ね返されて、来た向きへ戻っている
     expect(p.pos.x).toBeLessThan(19.5);
