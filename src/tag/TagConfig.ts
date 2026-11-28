@@ -291,3 +291,12 @@ export const TAG_ROCKET_STUN = 1.5;
 export const TAG_ROCKET_HAYATO_STUN = 2.5;
 /** 爆風で飛ばされる速さ */
 export const TAG_ROCKET_KNOCK = 9;
+
+// ---- ハヤトを倒す・ハート ----
+// ロケットが直接当たったハヤトは倒れて、ハートを落とす（爆風に入っただけなら、ひるむだけ）
+/** ハートを拾うと HP がこの値まで戻る（全回復） */
+export const TAG_HEART_HEAL = TAG_MAX_HP;
+/** ハートを拾える距離 */
+export const TAG_HEART_PICK_RADIUS = 1.4;
+/** 落ちたハートが消えるまで（秒） */
+export const TAG_HEART_LIFETIME = 30;

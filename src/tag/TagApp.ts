@@ -32,6 +32,7 @@ import {
   TAG_PUNCH_STUN,
   TAG_ROCKET_COOLDOWN,
   TAG_ROCKET_MAX,
+  TAG_HEART_LIFETIME,
 } from './TagConfig';
 import { viewDir } from '../openworld/OpenWorldSim';
 import { TagRenderer } from './TagRenderer';
@@ -220,7 +221,8 @@ export class TagApp {
             <li>${vx('crown')}<span>オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</span></li>
             <li>${vx('handshake')}<span>オンラインでは、生きている人どうしが<b>足かせと鎖</b>で席の順につながる（かぶくんの色は席の色）。となりの人とは ${TAG_CHAIN_LENGTH} m までしか離れられず、ひとりで走ると相手を引きずって遅くなる。息を合わせて逃げるか、相手をハヤトの前へ引きずっていくか……。</span></li>
             <li>${vx('hand')}<span>お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック / F）すると、相手をふっとばして ${TAG_PUNCH_STUN} 秒動けなくする。動けない人をまた殴ると 10 倍ふっとぶ（ハメ技はできない）。</span></li>
-            <li>${vx('boom')}<span>ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック / F）で発射。建物を壊し、爆風で人もハヤトもひるむ。</span></li>
+            <li>${vx('boom')}<span>ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック / F）で発射。建物を壊し、爆風で人もハヤトもひるむ。ハヤトに直接当てると倒せて、ハートを落とす。</span></li>
+            <li>${vx('heart')}<span>ハート: 拾うと HP が全回復（${TAG_MAX_HP}）。HP が減っているときだけ拾え、${TAG_HEART_LIFETIME} 秒で消える。</span></li>
           </ul>
           <label class="tag-field"><span>名前</span><input data-tag="name" maxlength="10" /></label>
           <div class="tag-buttons">
@@ -924,6 +926,16 @@ export class TagApp {
           break;
         case 'pickup':
           if (e.player === sim.localId) s.playPurchase();
+          break;
+        case 'hayato_down':
+          if (e.by === sim.localId) this.showCenter('ハヤトを倒した！ ハートを拾うと HP が全回復', 2.2);
+          if (near(e.pos, 90)) fx('bomb_explosion');
+          break;
+        case 'heart_pickup':
+          if (e.player === sim.localId) {
+            s.playPurchase();
+            this.showCenter('ハートを拾った！ HP が全回復', 1.8);
+          }
           break;
         default:
           break;

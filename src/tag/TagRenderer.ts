@@ -25,7 +25,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { meshWorldRegion } from '../openworld/ChunkMesher';
+import { meshVoxelModel, meshWorldRegion } from '../openworld/ChunkMesher';
 import { OW_CHUNK } from '../openworld/OpenWorldConfig';
 import { buildBlock, toGeometry, voxelMaterial } from '../openworld/OpenWorldModels';
 import type { CameraPose } from '../openworld/OpenWorldSim';
@@ -165,6 +165,9 @@ export class TagRenderer {
   private readonly chunks = new Map<number, { opaque: Mesh | null; trans: Mesh | null }>();
   /** 落ちているロケット（拾う物） */
   private readonly pickupViews = new Map<number, Group>();
+  /** 倒れたハヤトが落としたハート */
+  private readonly heartViews = new Map<number, Mesh>();
+  private readonly heartGeo = buildHeartGeometry();
   /** 飛んでいるロケット */
   private readonly rocketViews = new Map<number, Group>();
   /** くらくらの星（人ごと） */
@@ -233,7 +236,7 @@ export class TagRenderer {
     this.scene.add(this.sun, this.sun.target);
 
     this.fxMesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ fog: true }), FX_MAX);
-    this.owned.push(this.fxMesh.geometry, this.boltGeo, this.unitBox, ...Object.values(this.rocketGeo), ...Object.values(this.meteorGeo));
+    this.owned.push(this.heartGeo, this.fxMesh.geometry, this.boltGeo, this.unitBox, ...Object.values(this.rocketGeo), ...Object.values(this.meteorGeo));
     this.chainMesh = new InstancedMesh(this.unitBox, new MeshLambertMaterial(), CHAIN_MAX);
     this.chainMesh.instanceMatrix.setUsage(DynamicDrawUsage);
     this.chainMesh.frustumCulled = false;
@@ -506,6 +509,23 @@ export class TagRenderer {
           if (d < 50) this.shake = Math.max(this.shake, 1.2 - d / 45);
           break;
         }
+        case 'hayato_down': {
+          // 倒れたハヤト: 顔のかけらが飛び散る
+          const { x, y, z } = e.pos;
+          const big = e.hayatoKind === 'red' ? 1 : 2;
+          this.burst(x, y, z, 0xf2c9a0, 40 * big, 9 * big);
+          this.burst(x, y, z, 0x3a2a22, 20 * big, 7 * big);
+          this.burst(x, y, z, 0xff4f7a, 16, 5);
+          break;
+        }
+        case 'heart_pickup': {
+          const p = this.sim.player(e.player);
+          if (p) {
+            this.burst(p.pos.x, p.pos.y + 0.8, p.pos.z, 0xff4f7a, 30, 5);
+            this.burst(p.pos.x, p.pos.y + 0.8, p.pos.z, 0xffffff, 12, 4);
+          }
+          break;
+        }
         case 'pickup': {
           const pk = this.sim.pickups[e.pickup];
           if (pk) this.burst(pk.pos.x, pk.pos.y + 0.6, pk.pos.z, 0xffd43b, 14, 4);
@@ -713,6 +733,26 @@ export class TagRenderer {
       if (seen.has(id)) continue;
       this.scene.remove(g);
       this.rocketViews.delete(id);
+    }
+    // 落ちているハート（ふわふわ回る。消える前の 5 秒は点滅）
+    const hearts = new Set<number>();
+    for (const ht of this.sim.hearts) {
+      hearts.add(ht.id);
+      let m = this.heartViews.get(ht.id);
+      if (!m) {
+        m = new Mesh(this.heartGeo, this.entityMat);
+        m.castShadow = true;
+        this.scene.add(m);
+        this.heartViews.set(ht.id, m);
+      }
+      m.position.set(ht.pos.x, ht.pos.y + 0.9 + Math.sin(this.time * 3 + ht.id) * 0.15, ht.pos.z);
+      m.rotation.set(0, this.time * 2 + ht.id, 0);
+      m.visible = ht.life > 5 || Math.sin(this.time * 18) > -0.3;
+    }
+    for (const [id, m] of this.heartViews) {
+      if (hearts.has(id)) continue;
+      this.scene.remove(m);
+      this.heartViews.delete(id);
     }
     // くらくらの星（頭の上をぐるぐる回る）
     for (const p of this.sim.players) {
@@ -1144,4 +1184,20 @@ function makeLabel(name: string, color: number): Sprite {
   sprite.position.y = 1.95;
   sprite.renderOrder = 5;
   return sprite;
+}
+
+/** ハートのドット絵（上の行が上。# が赤、+ がつやの白） */
+const HEART_ROWS = ['.##.##.', '#+#####', '#######', '#######', '.#####.', '..###..', '...#...'];
+
+/** ハートの模型（7 × 7 × 2 のボクセル。真ん中が原点） */
+function buildHeartGeometry(): BufferGeometry {
+  const v = 0.12;
+  const W = 7;
+  const H = HEART_ROWS.length;
+  const D = 2;
+  const color = (x: number, y: number): number => {
+    const c = HEART_ROWS[H - 1 - y]?.[x];
+    return c === '#' ? 0xe8364f : c === '+' ? 0xffffff : -1;
+  };
+  return toGeometry(meshVoxelModel(W, H, D, (x, y) => color(x, y), v, (-W * v) / 2, (-H * v) / 2, (-D * v) / 2));
 }

@@ -105,6 +105,9 @@ import {
   TAG_ROCKET_HAYATO_STUN,
   TAG_ROCKET_HIT_RADIUS,
   TAG_ROCKET_KNOCK,
+  TAG_HEART_HEAL,
+  TAG_HEART_LIFETIME,
+  TAG_HEART_PICK_RADIUS,
   TAG_ROCKET_MAX,
   TAG_ROCKET_PICK_RADIUS,
   TAG_ROCKET_PICKUPS,
@@ -363,6 +366,14 @@ export interface RocketPickup {
   respawn: number;
 }
 
+/** 倒れたハヤトが落としたハート（拾うと HP が全回復） */
+export interface HeartDrop {
+  id: number;
+  pos: V3;
+  /** 消えるまでの残り秒 */
+  life: number;
+}
+
 export type TagEvent =
   | { kind: 'spawn'; hayato: number; pos: V3; blue: boolean; hayatoKind: HayatoKind }
   /** 青鬼に食べられた（アウト） */
@@ -381,6 +392,12 @@ export type TagEvent =
   | { kind: 'explode'; rocket: number; pos: V3; broken: number }
   | { kind: 'pickup'; pickup: number; player: number }
   | { kind: 'pickup_back'; pickup: number }
+  /** ロケットが直接当たってハヤトが倒れ、ハートを落とした */
+  | { kind: 'hayato_down'; hayato: number; hayatoKind: HayatoKind; pos: V3; heart: number; by: number }
+  /** ハートを拾って HP が全回復した */
+  | { kind: 'heart_pickup'; heart: number; player: number }
+  /** 拾われないままハートが消えた */
+  | { kind: 'heart_gone'; heart: number }
   /** 隕石ハヤトが狙った（地面に印が出る） */
   | { kind: 'meteor_warn'; meteor: number; hayato: number; target: V3 }
   /** 隕石が落ちた */
@@ -405,6 +422,9 @@ export class TagSim {
   readonly rockets: Rocket[] = [];
   readonly pickups: RocketPickup[] = [];
   readonly meteors: Meteor[] = [];
+  /** 倒れたハヤトが落としたハート */
+  readonly hearts: HeartDrop[] = [];
+  private nextHeartId = 1;
   private nextMeteorId = 1;
   /** 次に隕石ハヤトが出る時刻 */
   nextMeteor = TAG_METEOR_FIRST;
@@ -559,6 +579,7 @@ export class TagSim {
       this.updateRockets(dt, true);
       this.updateMeteors(dt, true);
       if (this.phase === 'playing') this.updatePickups(dt);
+      if (this.phase === 'playing') this.updateHearts(dt);
       if (this.phase === 'playing') this.checkOver();
     } else {
       for (const h of this.hayatos) {
@@ -1700,6 +1721,20 @@ export class TagSim {
         }
         break;
       }
+      case 'D':
+        this.applyHayatoDown(n(1), n(2), { x: n(3), y: n(4), z: n(5) }, n(6), n(7));
+        break;
+      case 'G':
+        this.applyHeart(n(1), n(2));
+        break;
+      case 'g': {
+        const k = this.hearts.findIndex((x) => x.id === n(1));
+        if (k >= 0) {
+          this.hearts.splice(k, 1);
+          this.events.push({ kind: 'heart_gone', heart: n(1) });
+        }
+        break;
+      }
       case 'o':
         this.phase = 'over';
         this.winner = n(1);
@@ -1813,6 +1848,8 @@ export class TagSim {
       const r = this.rockets[i];
       let remaining = TAG_ROCKET_SPEED * dt;
       let boom = false;
+      /** 直接当たったハヤト（倒れる） */
+      let struck: Hayato | null = null;
       while (remaining > 0 && !boom) {
         const stepLen = Math.min(0.5, remaining);
         remaining -= stepLen;
@@ -1830,7 +1867,11 @@ export class TagSim {
           if (Math.hypot(r.pos.x - p.pos.x, r.pos.y - (p.pos.y + PLAYER_CENTER), r.pos.z - p.pos.z) < TAG_ROCKET_HIT_RADIUS + 0.4) boom = true;
         }
         for (const h of this.hayatos) {
-          if (Math.hypot(r.pos.x - h.pos.x, r.pos.y - h.pos.y, r.pos.z - h.pos.z) < TAG_ROCKET_HIT_RADIUS + hayatoRadius(h)) boom = true;
+          if (struck) break;
+          if (Math.hypot(r.pos.x - h.pos.x, r.pos.y - h.pos.y, r.pos.z - h.pos.z) < TAG_ROCKET_HIT_RADIUS + hayatoRadius(h)) {
+            boom = true;
+            struck = h;
+          }
         }
       }
       if (!boom) continue;
@@ -1844,6 +1885,8 @@ export class TagSim {
       const at = { x: r2(r.pos.x - r.dir.x * 0.3), y: r2(r.pos.y - r.dir.y * 0.3), z: r2(r.pos.z - r.dir.z * 0.3) };
       this.send(['X', r.id, at.x, at.y, at.z]);
       this.explodeAt(r.id, at);
+      // 直接当たったハヤトは倒れて、ハートを落とす
+      if (struck) this.defeatHayato(struck, r.owner);
       // 爆風: プレイヤーとハヤトをひるませる（撃った本人は平気）
       for (const p of this.players) {
         if (!p.alive || p.id === r.owner) continue;
@@ -1896,6 +1939,64 @@ export class TagSim {
         break;
       }
     }
+  }
+
+  // ---- ハヤトを倒す・ハート ----
+
+  /** 権限のある端末: ハヤトを倒し、真下の床にハートを落とす */
+  private defeatHayato(h: Hayato, by: number): void {
+    const k = this.hayatos.indexOf(h);
+    if (k < 0) return;
+    this.hayatos.splice(k, 1);
+    const y = floorBelow(this.world, h.pos.x, Math.min(this.world.sizeY - 1, h.pos.y), h.pos.z);
+    const pos = { x: r2(h.pos.x), y: r2(Math.max(0, y)), z: r2(h.pos.z) };
+    const heart: HeartDrop = { id: this.nextHeartId++, pos, life: TAG_HEART_LIFETIME };
+    this.hearts.push(heart);
+    this.events.push({ kind: 'hayato_down', hayato: h.id, hayatoKind: h.kind, pos: { ...h.pos }, heart: heart.id, by });
+    // ハートは倒れた所の真下（x・z はハヤトと同じ）なので、床の高さだけ送る
+    this.send(['D', h.id, heart.id, pos.x, r2(h.pos.y), pos.z, pos.y, by]);
+  }
+
+  /** ゲスト: 倒れたハヤトとハートを写す */
+  private applyHayatoDown(id: number, heartId: number, at: V3, floorY: number, by: number): void {
+    const k = this.hayatos.findIndex((h) => h.id === id);
+    const kind: HayatoKind = k >= 0 ? this.hayatos[k].kind : 'red';
+    if (k >= 0) this.hayatos.splice(k, 1);
+    const pos = { x: at.x, y: floorY, z: at.z };
+    if (!this.hearts.some((x) => x.id === heartId)) this.hearts.push({ id: heartId, pos, life: TAG_HEART_LIFETIME });
+    this.nextHeartId = Math.max(this.nextHeartId, heartId + 1);
+    this.events.push({ kind: 'hayato_down', hayato: id, hayatoKind: kind, pos: at, heart: heartId, by });
+  }
+
+  /** 権限のある端末: ハートを拾う（HP が減っている人だけ）・時間で消す */
+  private updateHearts(dt: number): void {
+    for (let i = this.hearts.length - 1; i >= 0; i--) {
+      const ht = this.hearts[i];
+      ht.life -= dt;
+      if (ht.life <= 0) {
+        this.hearts.splice(i, 1);
+        this.events.push({ kind: 'heart_gone', heart: ht.id });
+        this.send(['g', ht.id]);
+        continue;
+      }
+      for (const p of this.players) {
+        if (!p.alive || p.hp >= TAG_HEART_HEAL) continue;
+        if (Math.hypot(p.pos.x - ht.pos.x, p.pos.z - ht.pos.z) > TAG_HEART_PICK_RADIUS || Math.abs(p.pos.y - ht.pos.y) > 1.5) continue;
+        this.hearts.splice(i, 1);
+        this.applyHeart(ht.id, p.id);
+        this.send(['G', ht.id, p.id]);
+        break;
+      }
+    }
+  }
+
+  /** ハートを拾った（HP が全回復する）。ゲストはホストの知らせで呼ぶ */
+  private applyHeart(heartId: number, playerId: number): void {
+    const k = this.hearts.findIndex((x) => x.id === heartId);
+    if (k >= 0) this.hearts.splice(k, 1);
+    const p = this.player(playerId);
+    if (p && p.alive) p.hp = Math.max(p.hp, TAG_HEART_HEAL);
+    this.events.push({ kind: 'heart_pickup', heart: heartId, player: playerId });
   }
 
   // ---- 隕石ハヤト ----
