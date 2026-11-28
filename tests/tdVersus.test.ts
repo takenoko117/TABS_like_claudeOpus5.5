@@ -535,6 +535,14 @@ describe('TD オンライン対戦: 地形と城壁', () => {
     expect(duel.sides[1].terrainBiome).toBe(duel.sides[0].terrainBiome);
   });
 
+  it('廃止した縮小の門は、持っていても出口に置かれない', () => {
+    const { battle, duel } = makeClient(5, 0);
+    const host = duel.sides[0];
+    host.run.relics.push({ id: 'shrink_gate', level: 0, active: true });
+    host.rebuildRelics(battle);
+    expect(battle.facilities.some((f) => f.type.id === 'shrink_gate')).toBe(false);
+  });
+
   it('地形の作り直しは両者の画面に知らせが出る', () => {
     const { battle, duel } = makeClient(77, 0);
     duel.sides[0].regenerateTerrain(battle);

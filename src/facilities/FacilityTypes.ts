@@ -364,8 +364,8 @@ export const GATE_TYPE_IDS: readonly GateTypeId[] = [
  */
 export const PASSIVE_GATE_IDS: readonly FacilityTypeId[] = ['rebirth_gate', 'samsara_gate', 'blast_gate', 'magnet_gate'];
 
-/** 廃止したレリック（報酬に出ず、セーブを読み込むときに取り除く） */
-export const RETIRED_RELIC_IDS: readonly FacilityTypeId[] = ['impact_gate'];
+/** 廃止したレリック（報酬に出ず、セーブを読み込むときに取り除く）。縮小の門はオンライン対戦で不要になったため廃止 */
+export const RETIRED_RELIC_IDS: readonly FacilityTypeId[] = ['impact_gate', 'shrink_gate'];
 
 /** ステータスを上げる門が変える値 */
 export type GateStat = 'damage' | 'range' | 'attack_rate' | 'hp' | 'speed' | 'guard' | 'knockback';

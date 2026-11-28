@@ -1298,7 +1298,8 @@ export const ROGUE_STARTERS: readonly RogueStarter[] = [
     id: 'raider',
     name: '遊撃隊',
     units: ['charger', 'ninja', 'bomber'],
-    relic: 'shrink_gate',
+    // 縮小の門は廃止したので、同じ「足の速さ」の役割の疾風の門を持たせる
+    relic: 'swift_gate',
     unlock: null,
     unlockText: '最初から',
   },
@@ -1356,7 +1357,6 @@ export function isSuperLegendUnit(id: UnitTypeId): boolean {
 
 /** 報酬に出る陣地レリックとレア度 */
 export const ROGUE_RELIC_POOL: ReadonlyArray<{ id: FacilityTypeId; rarity: Rarity }> = [
-  { id: 'shrink_gate', rarity: 'common' },
   { id: 'fire_gate', rarity: 'common' },
   { id: 'thunder_gate', rarity: 'common' },
   { id: 'venom_gate', rarity: 'common' },

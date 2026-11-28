@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import type { Facility } from '../facilities/Facility';
-import { FACILITY_TYPES, isGateTypeId, MAX_GATE_LEVEL, type FacilityTypeId } from '../facilities/FacilityTypes';
+import { FACILITY_TYPES, isGateTypeId, MAX_GATE_LEVEL, RETIRED_RELIC_IDS, type FacilityTypeId } from '../facilities/FacilityTypes';
 import type { Unit } from '../units/Unit';
 import { UNIT_TYPES, UNIT_TYPE_LIST, type UnitTypeId } from '../units/UnitTypes';
 import type { Battle, BattleResult, BattleRules } from './Battle';
@@ -627,7 +627,8 @@ export class TDRun {
     for (const f of this.relicFacilities) battle.removeFacility(f);
     this.gateFacilities = [];
     this.relicFacilities = [];
-    const active = this.run.relics.filter((r) => r.active);
+    // 廃止したレリック（縮小の門など）は置かない
+    const active = this.run.relics.filter((r) => r.active && !RETIRED_RELIC_IDS.includes(r.id));
     const gateCount = active.filter((r) => isGateTypeId(r.id)).length;
     let gateIndex = 0;
     for (const relic of active) {

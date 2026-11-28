@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import { Battle } from '../src/game/Battle';
-import { MELEE_CLEAVE_DAMAGE_MAX_LEVEL, TOTEM_HEAL_RATIO_BY_LEVEL } from '../src/facilities/FacilityTypes';
+import { MELEE_CLEAVE_DAMAGE_MAX_LEVEL, RETIRED_RELIC_IDS, TOTEM_HEAL_RATIO_BY_LEVEL } from '../src/facilities/FacilityTypes';
 import {
   BLAST_DAMAGE_RATIO,
   GATE_POISON_STACKS,
   REBIRTH_SLIME_COUNT,
   ROGUE_RELIC_POOL,
+  ROGUE_STARTERS,
   RogueliteRun,
   RogueliteRules,
   SAMSARA_GRACE_SECONDS,
@@ -49,6 +50,16 @@ describe('レリック更新: 抽選と互換', () => {
     for (const id of ['rebirth_gate', 'blast_gate', 'magnet_gate'] as const) {
       expect(ROGUE_RELIC_POOL.find((r) => r.id === id)?.rarity).toBe('rare');
     }
+  });
+
+  it('縮小の門は廃止: 報酬に出ず、初期レリックにも使わず、旧セーブからは除かれる', () => {
+    expect(ROGUE_RELIC_POOL.some((r) => r.id === 'shrink_gate')).toBe(false);
+    expect(ROGUE_STARTERS.some((s) => RETIRED_RELIC_IDS.includes(s.relic))).toBe(false);
+    const run = new RogueliteRun(1);
+    const state = run.toState();
+    state.relics.push({ id: 'shrink_gate', level: 1, active: true });
+    const loaded = RogueliteRun.fromState(JSON.parse(JSON.stringify(state)));
+    expect(loaded.relics.some((r) => r.id === 'shrink_gate')).toBe(false);
   });
 
   it('衝波の門を含む旧セーブを読み込むと、そのレリックが除かれる', () => {
