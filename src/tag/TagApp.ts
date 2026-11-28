@@ -15,6 +15,7 @@ import {
   TAG_HAYATO_SPAWN_INTERVAL,
   TAG_HAYATO_START,
   TAG_HAYATO_MAX,
+  TAG_INVULN_TIME,
   TAG_MAX_HP,
   TAG_METEOR_FIRST,
   TAG_METEOR_HIT_RADIUS,
@@ -123,7 +124,7 @@ export class TagApp {
     this.viewport = this.root.querySelector('.tag-viewport')!;
     for (const node of this.root.querySelectorAll<HTMLElement>('[data-tag]')) this.el[node.dataset.tag!] = node;
     (this.el.name as HTMLInputElement).value = localStorage.getItem(NAME_KEY) ?? 'かぶくん';
-    (this.el.room as HTMLInputElement).value = localStorage.getItem(ROOM_KEY) ?? 'gifu';
+    (this.el.room as HTMLInputElement).value = localStorage.getItem(ROOM_KEY) ?? '';
     this.bindInput();
     if (prefersTouch()) this.enableTouch();
     this.showScreen('menu');
@@ -155,7 +156,7 @@ export class TagApp {
       ['Shift', 'ダッシュ（息が切れるまで）'],
       ['Space', 'ジャンプ'],
       ['Q / E', '視点を回す'],
-      ['左クリック', 'パンチ / ロケット'],
+      ['左クリック / F', 'パンチ / ロケット'],
       ['Esc', 'メニュー'],
     ];
     const best = Number(localStorage.getItem(TAG_BEST_KEY) ?? 0);
@@ -163,15 +164,17 @@ export class TagApp {
       <div class="tag-viewport"></div>
       <div class="tag-flash" data-tag="flash"></div>
       <div class="tag-hud hidden" data-tag="hud">
-        <div class="tag-stats vx-panel">
-          <div class="tag-hearts" data-tag="hearts"></div>
-          <div class="tag-time"><span>${vx('stopwatch')}</span><b data-tag="time">0:00.0</b></div>
-          <div class="tag-oni"><span>${vx('oni')}</span><b data-tag="oni">1</b><small data-tag="next"></small></div>
-          <div class="tag-zone" data-tag="zone"></div>
+        <div class="tag-topleft">
+          <div class="tag-stats vx-panel">
+            <div class="tag-hearts" data-tag="hearts"></div>
+            <div class="tag-time"><span>${vx('stopwatch')}</span><b data-tag="time">0:00.0</b></div>
+            <div class="tag-oni"><span>${vx('oni')}</span><b data-tag="oni">1</b><small data-tag="next"></small></div>
+            <div class="tag-zone" data-tag="zone"></div>
+          </div>
+          <div class="tag-gadget vx-panel" data-tag="gadget"></div>
         </div>
         <canvas class="tag-minimap" data-tag="minimap" width="220" height="240"></canvas>
         <div class="tag-alive vx-panel hidden" data-tag="alive"></div>
-        <div class="tag-gadget vx-panel" data-tag="gadget"></div>
         <div class="tag-crosshair hidden" data-tag="crosshair"></div>
         <div class="tag-prompt hidden" data-tag="prompt"></div>
         <div class="tag-dash" data-tag="dash">
@@ -191,17 +194,17 @@ export class TagApp {
           <h2>${vx('oni', 'vx-lg')} 鬼ごっこ</h2>
           <p class="tag-sub">かぶくん vs ハヤト ─ 岐阜の町（お昼）</p>
           <ul class="tag-rules">
-            <li>${vx('eye')} ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</li>
-            <li>${vx('heart')} レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たると大きくふっとぶので、その勢いで逃げよう。</li>
-            <li>${vx('oni')} ${TAG_BLUE_FIRST} 秒たつと、でかい<b>青鬼ハヤト</b>が現れる。ダッシュと同じ速さでどこまでも追ってきて、触れられたら食べられてアウト。体が大きいので狭い路地には入れない。ほかの人に近づけば、そちらへ狙いが移る。</li>
-            <li>${vx('hourglass')} ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに<b>倍に増える</b>（最大 ${TAG_HAYATO_MAX} 人）。地図にはハヤトが映らないので、曲がり角に注意！</li>
-            <li>${vx('warn')} ${TAG_METEOR_FIRST} 秒たつと、空の高い所に<b>隕石ハヤト</b>が現れる。${TAG_METEOR_STILL_TIME} 秒ほど同じ所にとどまっている人に隕石を落とす。地面に赤い印が出たら走れ！</li>
-            <li>${vx('boom')} ${TAG_ZONE_START} 秒たつと、町の外側に<b>ミサイル</b>が降りはじめ、移動できる所が四方から少しずつ狭まる。赤い壁に押されるとミサイルに当たる。</li>
-            <li>${vx('stopwatch')} ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</li>
-            <li>${vx('crown')} オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</li>
-            <li>${vx('handshake')} オンラインでは、生きている人どうしが<b>足かせと鎖</b>で席の順につながる（かぶくんの色は席の色）。となりの人とは ${TAG_CHAIN_LENGTH} m までしか離れられず、ひとりで走ると相手を引きずって遅くなる。息を合わせて逃げるか、相手をハヤトの前へ引きずっていくか……。</li>
-            <li>${vx('hand')} お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック）すると、相手をふっとばして ${TAG_PUNCH_STUN} 秒動けなくする。動けない人をまた殴ると 10 倍ふっとぶ（ハメ技はできない）。</li>
-            <li>${vx('boom')} ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック）で発射。建物を壊し、爆風で人もハヤトもひるむ。</li>
+            <li>${vx('eye')}<span>ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</span></li>
+            <li>${vx('heart')}<span>レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たってもすぐ動けて、直後の ${TAG_INVULN_TIME} 秒は無敵。</span></li>
+            <li>${vx('oni')}<span>${TAG_BLUE_FIRST} 秒たつと、でかい<b>青鬼ハヤト</b>が現れる。ダッシュと同じ速さでどこまでも追ってきて、触れられたら食べられてアウト。体が大きいので狭い路地には入れない。ほかの人に近づけば、そちらへ狙いが移る。</span></li>
+            <li>${vx('hourglass')}<span>ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに<b>倍に増える</b>（最大 ${TAG_HAYATO_MAX} 人）。地図にはハヤトが映らないので、曲がり角に注意！</span></li>
+            <li>${vx('warn')}<span>${TAG_METEOR_FIRST} 秒たつと、空の高い所に<b>隕石ハヤト</b>が現れる。${TAG_METEOR_STILL_TIME} 秒ほど同じ所にとどまっている人に隕石を落とす。地面に赤い印が出たら走れ！</span></li>
+            <li>${vx('boom')}<span>${TAG_ZONE_START} 秒たつと、町の外側に<b>ミサイル</b>が降りはじめ、移動できる所が四方から少しずつ狭まる。赤い壁に押されるとミサイルに当たる。</span></li>
+            <li>${vx('stopwatch')}<span>ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</span></li>
+            <li>${vx('crown')}<span>オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</span></li>
+            <li>${vx('handshake')}<span>オンラインでは、生きている人どうしが<b>足かせと鎖</b>で席の順につながる（かぶくんの色は席の色）。となりの人とは ${TAG_CHAIN_LENGTH} m までしか離れられず、ひとりで走ると相手を引きずって遅くなる。息を合わせて逃げるか、相手をハヤトの前へ引きずっていくか……。</span></li>
+            <li>${vx('hand')}<span>お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック / F）すると、相手をふっとばして ${TAG_PUNCH_STUN} 秒動けなくする。動けない人をまた殴ると 10 倍ふっとぶ（ハメ技はできない）。</span></li>
+            <li>${vx('boom')}<span>ロケット: 町に落ちているのを拾い（最大 ${TAG_ROCKET_MAX} 発）、タップ（クリック / F）で発射。建物を壊し、爆風で人もハヤトもひるむ。</span></li>
           </ul>
           <label class="tag-field"><span>名前</span><input data-tag="name" maxlength="10" /></label>
           <div class="tag-buttons">
@@ -347,6 +350,11 @@ export class TagApp {
       if (e.code === 'Escape') {
         this.setPaused(!this.paused);
         return;
+      }
+      // ポインターロックなし（Q / E 視点など）でも道具を使えるよう F キーでも発動する
+      if (e.code === 'KeyF' && !this.paused && !e.repeat) {
+        const sim = this.sim;
+        if (sim?.local?.alive) this.useGadget();
       }
       this.keys.add(e.code);
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -553,10 +561,21 @@ export class TagApp {
     this.pitch = -0.2;
     this.countdown = COUNTDOWN;
     this.acc = 0;
+    this.hudTimer = 0;
     this.posTimer = 0;
     this.snapTimer = 0;
     this.resultTimer = -1;
     this.watchId = -1;
+    // リトライ時に前の試合の演出・通知状態が残らないように初期化する
+    this.lastEaten = -1;
+    this.lastDoubleMsg = -99;
+    this.lastHudTime = 0;
+    this.scaryHold = 0;
+    this.centerTimer = 0;
+    this.heartTimer = 0;
+    this.missileSoundTimer = 0;
+    this.el.center.classList.remove('on', 'count');
+    this.el.center.textContent = '';
     this.buildMinimapBase();
     this.el.alive.classList.toggle('hidden', this.sim.solo);
     this.showScreen('game');
@@ -901,10 +920,11 @@ export class TagApp {
       const record = mine >= best && mine > 0;
       const eaten = this.lastEaten === me?.id;
       this.el.resulttitle.innerHTML = `${vx('stopwatch', 'vx-lg')} ${eaten ? '青鬼に食べられた！' : 'つかまった！'}`;
+      const countNote = sim.hayatos.length > TAG_HAYATO_START ? `ハヤトは ${sim.hayatos.length} 人まで増えた` : `ハヤトは ${sim.hayatos.length} 人だった`;
       this.el.resultbody.innerHTML = `
         <p class="tag-big">${formatSurvival(mine)}</p>
         <p class="tag-sub">逃げ切った時間${record ? ' ─ <b class="tag-record">ベスト記録！</b>' : `（ベスト ${formatSurvival(best)}）`}</p>
-        <p class="tag-sub">ハヤトは ${sim.hayatos.length} 人まで増えた</p>`;
+        <p class="tag-sub">${countNote}</p>`;
     } else {
       const winner = sim.player(sim.winner);
       const iWon = sim.winner === sim.localId;
@@ -964,7 +984,13 @@ export class TagApp {
       : Array.from({ length: TAG_MAX_HP }, (_, k) => `<span class="${k < hp ? 'on' : 'off'}">${vx('heart')}</span>`).join('');
     this.el.time.textContent = formatSurvival(me ? me.survived : sim.time);
     this.el.oni.textContent = String(sim.hayatos.length);
-    this.el.next.textContent = sim.phase === 'playing' ? `あと ${Math.max(0, Math.ceil(sim.nextSpawn - sim.time))} 秒で倍に増える` : '';
+    const redCount = sim.hayatos.filter((h) => h.kind === 'red').length;
+    this.el.next.textContent =
+      sim.phase !== 'playing'
+        ? ''
+        : redCount >= TAG_HAYATO_MAX
+          ? '最大'
+          : `あと ${Math.max(0, Math.ceil(sim.nextSpawn - sim.time))} 秒で倍に増える`;
     // ミサイル（移動できる所が狭まる）
     const zm = zoneMoving(sim.time);
     if (sim.phase !== 'playing') this.el.zone.textContent = '';
@@ -1002,7 +1028,7 @@ export class TagApp {
     this.el.gadget.innerHTML = `<span>${vx('boom')}</span><b>${rockets}</b><small>/ ${TAG_ROCKET_MAX}</small>`;
     this.el.gadget.classList.toggle('empty', rockets === 0);
     const gadget = this.availableGadget();
-    const verb = this.touchMode ? 'タップ' : 'クリック';
+    const verb = this.touchMode ? 'タップ' : 'クリック / F';
     this.el.prompt.classList.toggle('hidden', !gadget);
     this.el.prompt.innerHTML = gadget === 'punch' ? `${vx('hand')} ${verb}でパンチ！` : gadget === 'rocket' ? `${vx('boom')} ${verb}でロケット発射` : '';
     this.el.crosshair.classList.toggle('hidden', !(me && me.alive && rockets > 0));

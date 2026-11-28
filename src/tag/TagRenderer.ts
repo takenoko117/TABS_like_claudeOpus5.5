@@ -125,6 +125,8 @@ interface HayatoView {
   head: Mesh;
   /** ため中の照準の線 */
   aim: Mesh;
+  /** 照準の線の材質（複数体が同時にためても透明度が上書きされないよう個別管理） */
+  aimMat: MeshBasicMaterial;
   mouth: number;
   /** 撃った直後に口を開けておく残り秒 */
   shout: number;
@@ -389,12 +391,13 @@ export class TagRenderer {
     head.morphTargetInfluences = [0];
     head.scale.setScalar(hayatoSize(h));
     root.add(head);
-    const aim = new Mesh(this.boltGeo, this.aimMat);
+    const aimMat = this.aimMat.clone();
+    const aim = new Mesh(this.boltGeo, aimMat);
     aim.visible = false;
     this.scene.add(aim);
     this.scene.add(root);
     if (h.kind === 'meteor') root.add(this.buildHorns(hayatoSize(h)));
-    const view = { root, head, aim, mouth: 0, shout: 0 };
+    const view = { root, head, aim, aimMat, mouth: 0, shout: 0 };
     this.hayatos.set(id, view);
     return view;
   }
@@ -777,7 +780,7 @@ export class TagRenderer {
         const len = Math.hypot(tx - from.x, ty - from.y, tz - from.z);
         const prog = Math.min(1, h.charge / TAG_LASER_CHARGE);
         this.placeBeam(v.aim, from.x, from.y, from.z, (tx - from.x) / len, (ty - from.y) / len, (tz - from.z) / len, len, 0.02 + prog * 0.05);
-        this.aimMat.opacity = 0.25 + prog * 0.5 * (0.7 + 0.3 * Math.sin(this.time * 30));
+        v.aimMat.opacity = 0.25 + prog * 0.5 * (0.7 + 0.3 * Math.sin(this.time * 30));
         v.aim.visible = true;
       } else {
         v.aim.visible = false;
@@ -786,6 +789,7 @@ export class TagRenderer {
     for (const [id, v] of this.hayatos) {
       if (seen.has(id)) continue;
       this.scene.remove(v.root, v.aim);
+      v.aimMat.dispose();
       this.hayatos.delete(id);
     }
   }
@@ -1104,6 +1108,7 @@ export class TagRenderer {
       c.opaque?.geometry.dispose();
       c.trans?.geometry.dispose();
     }
+    for (const v of this.hayatos.values()) v.aimMat.dispose();
     for (const mat of [this.opaqueMat, this.transMat, this.entityMat, this.hayatoMat, this.blueMat, this.boltCore, this.boltGlow, this.aimMat, this.meteorMat, this.zoneOutMat, this.zoneWallMat, this.markerMat, this.hornMat, this.hornTipMat]) mat.dispose();
     for (const v of this.players.values()) {
       if (!v.label) continue;

@@ -511,9 +511,11 @@ export class TagSim {
         p.pos.z += dz * k;
         p.yaw = lerpAngle(p.yaw, p.net.yaw, k);
       }
-      p.invuln = Math.max(0, p.invuln - dt);
-      // 動けない時間は、ふっとび終わって着地してから数える
-      if (p.fling <= 0) p.stun = Math.max(0, p.stun - dt);
+      // 無敵と動けない時間は、ふっとび終わって着地してから数える（操作できない空中で連続被弾しないように）
+      if (p.fling <= 0) {
+        p.invuln = Math.max(0, p.invuln - dt);
+        p.stun = Math.max(0, p.stun - dt);
+      }
       // ほかの端末の人のふっとびは見た目だけ（回転の演出）なので時間で終える
       if (p.id !== this.localId) p.fling = Math.max(0, p.fling - dt * 2);
       p.punchCooldown = Math.max(0, p.punchCooldown - dt);
@@ -1470,8 +1472,9 @@ export class TagSim {
     if (!p || !p.alive) return;
     p.hp = Math.max(0, hp);
     p.invuln = TAG_INVULN_TIME;
-    // 大きくふっとぶ（ハヤトから離れられる）
-    this.fling(p, dir, TAG_KNOCKBACK, TAG_KNOCKBACK_UP);
+    // ハヤトのレーザー（bolt >= 0）では操作不能にせず、当たった直後からすぐ逃げられるようにする。
+    // ミサイル・隕石など（bolt < 0）は大きくふっとぶ
+    if (bolt < 0) this.fling(p, dir, TAG_KNOCKBACK, TAG_KNOCKBACK_UP);
     this.events.push({ kind: 'hit', player: id, hp: p.hp, bolt, dir });
     // 当たった弾は消す（ゲストの見た目の弾も）
     const k = this.bolts.findIndex((x) => x.id === bolt);
@@ -1642,6 +1645,8 @@ export class TagSim {
         const pk = this.pickups[n(1)];
         if (pk) {
           pk.active = true;
+          // 地形が壊れていたら、ホストと同じくその下の床へ置き直す
+          pk.pos.y = floorBelow(this.world, pk.pos.x, pk.pos.y + 0.5, pk.pos.z);
           this.events.push({ kind: 'pickup_back', pickup: pk.id });
         }
         break;
@@ -1660,6 +1665,9 @@ export class TagSim {
   becomeAuthority(): void {
     if (this.authority) return;
     this.authority = true;
+    // ホスト交代時に過去の出現時刻ぶんが一気に出ないよう、現在時刻より先へそろえる
+    while (this.nextMeteor <= this.time) this.nextMeteor += TAG_METEOR_INTERVAL;
+    while (this.nextBlue <= this.time) this.nextBlue += TAG_BLUE_INTERVAL;
     for (const h of this.hayatos) {
       if (h.net) {
         h.pos.x = h.net.x;
@@ -1890,6 +1898,8 @@ export class TagSim {
       const id = this.nextMeteorId++;
       this.addMeteor(id, h.id, at);
       this.send(['M', id, h.id, at.x, at.y, at.z]);
+      // 1 発落としたら狙いを外し、クールダウン後に再び止まっている人だけを探す
+      h.target = -1;
       h.state = 'aim';
       h.charge = 0;
       h.cooldown = TAG_METEOR_WARN + TAG_METEOR_COOLDOWN;

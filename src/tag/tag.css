@@ -35,10 +35,17 @@ body.in-tag #title-screen {
   pointer-events: none;
 }
 
-.tag-stats {
+.tag-topleft {
   position: absolute;
   left: 12px;
   top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tag-stats {
   display: grid;
   gap: 6px;
   padding: 10px 12px;
@@ -174,13 +181,14 @@ body.in-tag #title-screen {
   left: 50%;
   top: 38%;
   transform: translate(-50%, -50%);
+  max-width: calc(100vw - 32px);
   font-family: var(--font-pixel);
   font-size: 34px;
   color: #fff;
   text-shadow: var(--text-shadow-block);
   opacity: 0;
   transition: opacity 0.2s;
-  white-space: pre;
+  white-space: pre-line;
   text-align: center;
 }
 
@@ -196,11 +204,13 @@ body.in-tag #title-screen {
 .tag-hint {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  top: 14px;
   transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
   font-size: 13px;
   color: var(--sub);
   text-shadow: var(--text-shadow-block);
+  text-align: center;
 }
 
 .tag-flash {
@@ -287,8 +297,19 @@ body.in-tag #title-screen {
 
 .tag-rules li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  line-height: 1.5;
+}
+
+.tag-rules li > i {
+  flex: none;
+  margin-top: 2px;
+}
+
+.tag-rules li > span {
+  flex: 1;
+  min-width: 0;
 }
 
 .tag-rules b {
@@ -593,9 +614,6 @@ body.in-tag #title-screen {
 
 /* ---- お邪魔の道具（パンチ・ロケット） ---- */
 .tag-gadget {
-  position: absolute;
-  left: 12px;
-  top: 150px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -670,7 +688,6 @@ body.in-tag #title-screen {
 
 @media (max-width: 760px), (max-height: 520px) {
   .tag-gadget {
-    top: 112px;
     padding: 4px 8px;
   }
 

@@ -229,6 +229,27 @@ describe('隕石ハヤト', () => {
     expect(p.hp).toBe(TAG_MAX_HP);
   });
 
+  it('1 発落としたあとは狙いを外し、走り続けている人へ連続で落とさない', () => {
+    const sim = new TagSim(4, solo, 0, true, flatTown());
+    sim.hayatos.length = 0;
+    const h = sim.spawnMeteor()!;
+    const p = sim.local!;
+    h.pos.x = p.pos.x;
+    h.pos.z = p.pos.z;
+    for (let t = 0; t < TAG_METEOR_STILL_TIME + 6 && sim.meteors.length === 0; t += STEP) sim.step(STEP, emptyTagInput());
+    expect(sim.meteors.length).toBe(1);
+    expect(h.target).toBe(-1);
+    // 1 発目を避けて走り続ける（円運動で止まらない）
+    sim.events.length = 0;
+    for (let t = 0; t < TAG_METEOR_WARN + 8; t += STEP) {
+      sim.step(STEP, { ...emptyTagInput(), moveZ: 1, yaw: t * 0.6 });
+    }
+    expect(sim.events.some((e) => e.kind === 'meteor_hit')).toBe(true);
+    expect(sim.events.some((e) => e.kind === 'meteor_warn')).toBe(false);
+    expect(h.target).toBe(-1);
+    expect(p.hp).toBe(TAG_MAX_HP);
+  });
+
   it('オンライン: ゲストにも隕石ハヤト・隕石・地面の穴・当たりが写る', () => {
     const host = new TagSim(4, duo, 0, true, flatTown());
     const guest = new TagSim(4, duo, 1, false, flatTown());

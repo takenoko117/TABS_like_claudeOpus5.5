@@ -12,7 +12,7 @@ import {
   TAG_ROCKET_PICKUPS,
   TAG_ROCKET_RESPAWN,
 } from '../src/tag/TagConfig';
-import { TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
+import { HIT_METEOR, TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
 import { BREATH_AMOUNT, KabukunMotion, PUNI_MAX } from '../src/tag/KabukunMotion';
 import { TOUCH_STICK_RADIUS, TOUCH_SPRINT_AT, stickVector } from '../src/tag/TagTouch';
 
@@ -402,5 +402,65 @@ describe('お邪魔の道具', () => {
     guest.applySnapshot(JSON.parse(JSON.stringify(host.snapshot())));
     expect(guest.rockets.length).toBe(1);
     expect(guest.local!.rockets).toBe(0);
+  });
+
+  it('ふっとんでいる間は無敵時間が減らず、操作不能のまま連続被弾しない', () => {
+    const sim = quiet(new TagSim(7, [{ id: 0, name: 'A' }], 0, true, town));
+    const p = sim.local!;
+    sim.applyHit(0, TAG_MAX_HP - 1, HIT_METEOR, { x: 0, y: 0, z: -1 });
+    const inv0 = p.invuln;
+    expect(p.fling).toBeGreaterThan(0);
+    run(sim, 1.0);
+    // まだふっとび中なら無敵時間は減っていない
+    if (p.fling > 0) expect(p.invuln).toBeCloseTo(inv0, 4);
+    // ふっとびが終わったあとに減り始める
+    for (let t = 0; t < 8 && p.fling > 0; t += STEP) sim.step(STEP, emptyTagInput());
+    expect(p.fling).toBe(0);
+    expect(p.invuln).toBeCloseTo(inv0, 1);
+    run(sim, 0.5);
+    expect(p.invuln).toBeLessThan(inv0 - 0.3);
+  });
+
+  it('オンライン: ホスト交代時に過去の出現時刻ぶんの隕石・青鬼が一気に出ない', () => {
+    const host = quiet(new TagSim(8, duo, 0, true, town));
+    const guest = new TagSim(8, duo, 1, false, town);
+    // 150 秒経過時点のスナップショットを受け取り、ホストが抜けてゲストが引き継ぐ
+    host.time = 150;
+    host.nextSpawn = 180;
+    guest.applySnapshot(JSON.parse(JSON.stringify(host.snapshot())));
+    guest.removePlayer(0);
+    guest.becomeAuthority();
+    const before = guest.hayatos.length;
+    guest.step(STEP, emptyTagInput());
+    expect(guest.hayatos.length).toBe(before);
+    expect(guest.nextMeteor).toBeGreaterThan(guest.time);
+    expect(guest.nextBlue).toBeGreaterThan(guest.time);
+  });
+
+  it('オンライン: 地形破壊後のロケット復活でゲスト側の高さも床へそろう', () => {
+    const hostTown = generateGifuTown(1);
+    const guestTown = generateGifuTown(1);
+    const host = quiet(new TagSim(9, duo, 0, true, hostTown));
+    const guest = new TagSim(9, duo, 1, false, guestTown);
+    const pk = host.pickups[0];
+    // ホストのプレイヤーが拾う
+    const hp = host.player(0)!;
+    hp.pos.x = pk.pos.x;
+    hp.pos.y = pk.pos.y;
+    hp.pos.z = pk.pos.z;
+    host.step(STEP, null);
+    guest.applySnapshot(JSON.parse(JSON.stringify(host.snapshot())));
+    expect(guest.pickups[0].active).toBe(false);
+    // 両端末で同じ床ブロックを 1 段削ってから復活させる
+    const bx = Math.floor(pk.pos.x);
+    const by = Math.floor(pk.pos.y) - 1;
+    const bz = Math.floor(pk.pos.z);
+    hostTown.world.setRaw(bx, by, bz, B.AIR);
+    guestTown.world.setRaw(bx, by, bz, B.AIR);
+    hp.pos.x += 30;
+    run(host, TAG_ROCKET_RESPAWN + 0.2);
+    guest.applySnapshot(JSON.parse(JSON.stringify(host.snapshot())));
+    expect(guest.pickups[0].active).toBe(true);
+    expect(guest.pickups[0].pos.y).toBe(host.pickups[0].pos.y);
   });
 });

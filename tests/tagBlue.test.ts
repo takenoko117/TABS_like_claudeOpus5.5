@@ -16,7 +16,7 @@ import {
   TAG_PUNCH_STUN,
   TAG_SPRINT_SPEED,
 } from '../src/tag/TagConfig';
-import { TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
+import { HIT_METEOR, TagSim, emptyTagInput, type Hayato } from '../src/tag/TagSim';
 import { BREATH_AMOUNT, KabukunMotion, PUNCH_RECOVER, PUNCH_STRIKE, PUNCH_WIND } from '../src/tag/KabukunMotion';
 import { boxCollides } from '../src/openworld/OpenWorldSim';
 
@@ -174,13 +174,29 @@ describe('青鬼ハヤト', () => {
   });
 });
 
-describe('当たると大きくふっとぶ', () => {
-  it('レーザーに当たると開けた所なら 50 m ほどふっとび、その間は操作が効かず、止まると操作が戻る', () => {
+describe('当たったときの動き（レーザーはスタンなし・隕石やミサイルは大きくふっとぶ）', () => {
+  it('ハヤトのレーザーに当たってもスタン・ふっとびせず、直後からすぐ操作できる', () => {
     const sim = new TagSim(1, solo, 0, true, arena(false, 128));
     sim.hayatos.length = 0;
     const p = sim.local!;
     const x0 = p.pos.x;
-    sim.applyHit(0, 2, 0, { x: 1, y: 0, z: 0 });
+    sim.applyHit(0, 2, 1, { x: 1, y: 0, z: 0 });
+    expect(p.hp).toBe(2);
+    expect(p.invuln).toBeGreaterThan(0);
+    expect(p.fling).toBe(0);
+    expect(p.stun).toBe(0);
+    // 当たった直後から逆向き（-x）へ自由に動ける
+    const back = { ...emptyTagInput(), moveX: 1, yaw: 0 };
+    run(sim, 0.5, back);
+    expect(p.pos.x).toBeLessThan(x0 - 1);
+  });
+
+  it('隕石やミサイルに当たると開けた所なら 50 m ほどふっとび、その間は操作が効かず、止まると操作が戻る', () => {
+    const sim = new TagSim(1, solo, 0, true, arena(false, 128));
+    sim.hayatos.length = 0;
+    const p = sim.local!;
+    const x0 = p.pos.x;
+    sim.applyHit(0, 2, HIT_METEOR, { x: 1, y: 0, z: 0 });
     expect(p.fling).toBeGreaterThan(0);
     expect(Math.hypot(p.vel.x, p.vel.z)).toBeCloseTo(TAG_KNOCKBACK);
     // 逆向き（-x）に歩こうとしても押し戻せない
@@ -205,7 +221,7 @@ describe('当たると大きくふっとぶ', () => {
     const p = sim.local!;
     p.pos.x = 17;
     p.pos.z = 30.5;
-    sim.applyHit(0, 2, 0, { x: 1, y: 0, z: 0 });
+    sim.applyHit(0, 2, HIT_METEOR, { x: 1, y: 0, z: 0 });
     run(sim, 0.4);
     // 壁（x = 20）の手前で跳ね返されて、来た向きへ戻っている
     expect(p.pos.x).toBeLessThan(19.5);
@@ -301,7 +317,7 @@ describe('ふっとびの跳ね返り（つづき）', () => {
     sim.hayatos.length = 0;
     const p = sim.local!;
     p.pos.x = 58;
-    sim.applyHit(0, 2, 0, { x: 1, y: 0, z: 0 });
+    sim.applyHit(0, 2, HIT_METEOR, { x: 1, y: 0, z: 0 });
     run(sim, 0.6);
     expect(p.vel.x).toBeLessThan(0);
   });
@@ -315,7 +331,7 @@ describe('ふっとびの跳ね返り（つづき）', () => {
     const sim = new TagSim(1, solo, 0, true, town);
     sim.hayatos.length = 0;
     const p = sim.local!;
-    sim.applyHit(0, 2, 0, { x: 1, y: 0, z: 0 });
+    sim.applyHit(0, 2, HIT_METEOR, { x: 1, y: 0, z: 0 });
     let hitCeiling = false;
     for (let t = 0; t < 0.5; t += STEP) {
       sim.step(STEP, emptyTagInput());
