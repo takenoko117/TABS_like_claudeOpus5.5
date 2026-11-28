@@ -43,13 +43,10 @@ import {
   TAG_METEOR_WARN,
   TAG_ONI_EAT_PAUSE,
   TAG_PLAYER_COLORS,
-  TAG_SIZE_X,
   kabukunBodyColor,
-  TAG_SIZE_Y,
-  TAG_SIZE_Z,
 } from './TagConfig';
 import { floorBelow } from './GifuTown';
-import { hayatoSize, zoneMoving, type Hayato, type TagEvent, type TagPlayer, type TagSim } from './TagSim';
+import { hayatoSize, type Hayato, type TagEvent, type TagPlayer, type TagSim } from './TagSim';
 
 /** 同時に落ちているミサイル（見た目だけ）の上限 */
 const MISSILE_MAX = 28;
@@ -797,13 +794,16 @@ export class TagRenderer {
   /** 外縁（ミサイルで入れない所）の塗りと壁、落ちてくるミサイル */
   private syncZone(dt: number): void {
     const z = this.sim.zone();
-    const H = TAG_SIZE_Y + 10;
+    const w = this.sim.world;
+    const SX = w.sizeX;
+    const SZ = w.sizeZ;
+    const H = w.sizeY + 10;
     // 外の 4 つの帯（西・東・北・南）
     const outs: [number, number, number, number][] = [
-      [0, z.x0, 0, TAG_SIZE_Z],
-      [z.x1, TAG_SIZE_X, 0, TAG_SIZE_Z],
+      [0, z.x0, 0, SZ],
+      [z.x1, SX, 0, SZ],
       [z.x0, z.x1, 0, z.z0],
-      [z.x0, z.x1, z.z1, TAG_SIZE_Z],
+      [z.x0, z.x1, z.z1, SZ],
     ];
     outs.forEach(([x0, x1, z0, z1], k) => {
       const m = this.zoneOut[k];
@@ -815,9 +815,9 @@ export class TagRenderer {
     // 外縁の光る壁（脈打つ）
     const walls: [number, number, number, number, boolean][] = [
       [z.x0, z.x0, z.z0, z.z1, z.x0 > 0.01],
-      [z.x1, z.x1, z.z0, z.z1, z.x1 < TAG_SIZE_X - 0.01],
+      [z.x1, z.x1, z.z0, z.z1, z.x1 < SX - 0.01],
       [z.x0, z.x1, z.z0, z.z0, z.z0 > 0.01],
-      [z.x0, z.x1, z.z1, z.z1, z.z1 < TAG_SIZE_Z - 0.01],
+      [z.x0, z.x1, z.z1, z.z1, z.z1 < SZ - 0.01],
     ];
     walls.forEach(([x0, x1, z0, z1, show], k) => {
       const m = this.zoneWalls[k];
@@ -829,7 +829,7 @@ export class TagRenderer {
     this.zoneWallMat.opacity = 0.28 + 0.12 * Math.sin(this.time * 6);
 
     // 外縁が迫っている間は、外縁にそってミサイルが降りそそぐ
-    const moving = zoneMoving(this.sim.time);
+    const moving = this.sim.zoneMoving();
     this.missileTimer -= dt;
     if ((moving.x || moving.z) && this.sim.phase === 'playing' && this.missileTimer <= 0 && this.missiles.length < MISSILE_MAX) {
       this.missileTimer = MISSILE_INTERVAL;

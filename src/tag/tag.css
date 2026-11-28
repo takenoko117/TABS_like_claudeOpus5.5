@@ -105,7 +105,8 @@ body.in-tag #title-screen {
   right: 12px;
   top: 12px;
   width: 220px;
-  height: 240px;
+  /* 縦は舞台の縦横比に合わせる（canvas の height を TagApp が決める） */
+  height: auto;
   border: 2px solid var(--panel-edge);
   box-shadow: var(--shadow-panel);
   image-rendering: pixelated;
@@ -576,7 +577,7 @@ body.in-tag #title-screen {
 
   .tag-minimap {
     width: 120px;
-    height: 131px;
+    height: auto;
   }
 
   .tag-alive {
@@ -901,4 +902,46 @@ body.in-tag #title-screen {
   margin-left: 6px;
   font-size: 10px;
   color: var(--sub);
+}
+
+/* 舞台の選択（ひとりで遊ぶとき） */
+.tag-stages {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tag-stage-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+
+.tag-stage-btn b {
+  font-weight: 400;
+}
+
+.tag-stage-btn small {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--sub);
+}
+
+.tag-stage-btn.on {
+  border-color: var(--team-green);
+  background: color-mix(in srgb, var(--team-green) 22%, var(--panel));
+}
+
+.tag-stage-btn.on b {
+  color: var(--team-green);
+}
+
+@media (max-width: 520px) {
+  .tag-stages {
+    grid-template-columns: 1fr;
+  }
 }

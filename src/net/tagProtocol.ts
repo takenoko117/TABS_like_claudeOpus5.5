@@ -48,11 +48,20 @@ export interface TagRosterEntry {
 
 export type TagRoomPhase = 'lobby' | 'playing';
 
+/** 鬼ごっこの舞台（town: 岐阜の町〈お昼〉、station: JR 岐阜駅） */
+export const TAG_STAGE_IDS = ['town', 'station'] as const;
+export type TagStageId = (typeof TAG_STAGE_IDS)[number];
+
+/** 舞台の ID を確かめる（知らない値・無い値は岐阜の町） */
+export function parseTagStage(v: unknown): TagStageId {
+  return (TAG_STAGE_IDS as readonly unknown[]).includes(v) ? (v as TagStageId) : 'town';
+}
+
 export type TagClientMessage =
   | { t: 'hello'; name: string }
   | { t: 'start' }
-  /** ホストが部屋の設定を変える（chain: 足かせと鎖でつなぐか） */
-  | { t: 'opts'; chain: boolean }
+  /** ホストが部屋の設定を変える（chain: 足かせと鎖でつなぐか、stage: 舞台。無ければ変えない） */
+  | { t: 'opts'; chain: boolean; stage?: TagStageId }
   | { t: 'pos'; p: [number, number, number, number] }
   | { t: 'snap'; s: TagSnapshot }
   /** ホストが「決着したのでロビーに戻る」を知らせる */
@@ -64,9 +73,9 @@ export type TagErrorCode = 'full' | 'playing' | 'bad_message' | 'not_host';
 
 export type TagServerMessage =
   | { t: 'welcome'; slot: number }
-  /** chain: ホストが選んだ「足かせと鎖でつなぐか」 */
-  | { t: 'roster'; host: number; phase: TagRoomPhase; players: TagRosterEntry[]; chain: boolean }
-  | { t: 'start'; seed: number; players: TagRosterEntry[]; chain: boolean }
+  /** chain: ホストが選んだ「足かせと鎖でつなぐか」、stage: ホストが選んだ舞台 */
+  | { t: 'roster'; host: number; phase: TagRoomPhase; players: TagRosterEntry[]; chain: boolean; stage: TagStageId }
+  | { t: 'start'; seed: number; players: TagRosterEntry[]; chain: boolean; stage: TagStageId }
   | { t: 'pos'; s: number; p: [number, number, number, number] }
   | { t: 'snap'; s: TagSnapshot }
   | { t: 'left'; s: number }
@@ -133,7 +142,9 @@ export function parseTagClientMessage(text: string): TagClientMessage | null {
     case 'start':
       return { t: 'start' };
     case 'opts':
-      return typeof m.chain === 'boolean' ? { t: 'opts', chain: m.chain } : null;
+      if (typeof m.chain !== 'boolean') return null;
+      if (m.stage === undefined) return { t: 'opts', chain: m.chain };
+      return (TAG_STAGE_IDS as readonly unknown[]).includes(m.stage) ? { t: 'opts', chain: m.chain, stage: m.stage as TagStageId } : null;
     case 'end':
       return { t: 'end' };
     case 'pos': {
@@ -183,11 +194,12 @@ export function parseTagServerMessage(text: string): TagServerMessage | null {
       const players = parseRoster(m.players);
       if (!players || !isNum(m.host) || (m.phase !== 'lobby' && m.phase !== 'playing')) return null;
       // 古いサーバーは chain を送らないので、つなぐ（これまでどおり）とみなす
-      return { t: 'roster', host: m.host, phase: m.phase, players, chain: m.chain !== false };
+      // 舞台も古いサーバーは送らないので、岐阜の町とみなす
+      return { t: 'roster', host: m.host, phase: m.phase, players, chain: m.chain !== false, stage: parseTagStage(m.stage) };
     }
     case 'start': {
       const players = parseRoster(m.players);
-      return players && isNum(m.seed) ? { t: 'start', seed: m.seed, players, chain: m.chain !== false } : null;
+      return players && isNum(m.seed) ? { t: 'start', seed: m.seed, players, chain: m.chain !== false, stage: parseTagStage(m.stage) } : null;
     }
     case 'pos': {
       const p = parsePos(m.p);

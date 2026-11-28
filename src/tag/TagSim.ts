@@ -285,24 +285,42 @@ export interface TagZone {
   z1: number;
 }
 
+/** ミサイルで狭まる舞台の広さと中心（ステージごとに違う） */
+export interface ZoneFrame {
+  sizeX: number;
+  sizeZ: number;
+  cx: number;
+  cz: number;
+}
+
+/** 岐阜の町（お昼）の広さと中心 */
+export const TOWN_ZONE_FRAME: ZoneFrame = { sizeX: TAG_SIZE_X, sizeZ: TAG_SIZE_Z, cx: TAG_ZONE_CENTER_X, cz: TAG_ZONE_CENTER_Z };
+
+/** 町のデータから、ミサイルで狭まる舞台の広さと中心を作る */
+export function zoneFrameOf(town: GifuTown): ZoneFrame {
+  const w = town.world;
+  const c = town.zoneCenter ?? { x: w.sizeX / 2, z: w.sizeZ / 2 };
+  return { sizeX: w.sizeX, sizeZ: w.sizeZ, cx: c.x, cz: c.z };
+}
+
 /** その時刻の移動できる範囲。TAG_ZONE_START までは町全体で、そのあと四方から TAG_ZONE_MIN まで狭まる */
-export function tagZone(time: number): TagZone {
+export function tagZone(time: number, f: ZoneFrame = TOWN_ZONE_FRAME): TagZone {
   const m = Math.max(0, (time - TAG_ZONE_START) * TAG_ZONE_SPEED);
   const half = TAG_ZONE_MIN / 2;
   return {
-    x0: Math.min(m, TAG_ZONE_CENTER_X - half),
-    x1: Math.max(TAG_SIZE_X - m, TAG_ZONE_CENTER_X + half),
-    z0: Math.min(m, TAG_ZONE_CENTER_Z - half),
-    z1: Math.max(TAG_SIZE_Z - m, TAG_ZONE_CENTER_Z + half),
+    x0: Math.min(m, f.cx - half),
+    x1: Math.max(f.sizeX - m, f.cx + half),
+    z0: Math.min(m, f.cz - half),
+    z1: Math.max(f.sizeZ - m, f.cz + half),
   };
 }
 
-/** 外縁が動いている向き（x・z それぞれ）。狭まりきった向きは false */
-export function zoneMoving(time: number): { x: boolean; z: boolean } {
+/** 外縁が動いている向き（x・z それぞれ）。四辺のどれかがまだ進んでいれば true。狭まりきった向きは false */
+export function zoneMoving(time: number, f: ZoneFrame = TOWN_ZONE_FRAME): { x: boolean; z: boolean } {
   if (time <= TAG_ZONE_START) return { x: false, z: false };
-  const z = tagZone(time);
+  const z = tagZone(time, f);
   const half = TAG_ZONE_MIN / 2;
-  return { x: z.x0 < TAG_ZONE_CENTER_X - half, z: z.z0 < TAG_ZONE_CENTER_Z - half };
+  return { x: z.x0 < f.cx - half || z.x1 > f.cx + half, z: z.z0 < f.cz - half || z.z1 > f.cz + half };
 }
 
 /** 落ちてくる隕石（warn の間は空で光っていて、地面に印が出る） */
@@ -407,6 +425,8 @@ export class TagSim {
   private nextHayatoId = 1;
   private nextBoltId = 1;
   private readonly rng: () => number;
+  /** ミサイルで狭まる舞台の広さと中心 */
+  readonly zoneFrame: ZoneFrame;
   /** ゲストに送る出来事（snapshot で送ったら空にする） */
   private readonly outbox: (string | number)[][] = [];
 
@@ -419,6 +439,7 @@ export class TagSim {
     town?: GifuTown,
   ) {
     this.town = town ?? generateGifuTown(1);
+    this.zoneFrame = zoneFrameOf(this.town);
     // 前の鬼ごっこでロケットに壊された町を元に戻す
     resetGifuTown(this.town);
     this.rng = makeRng(seed);
@@ -560,7 +581,12 @@ export class TagSim {
 
   /** いまの移動できる範囲 */
   zone(): TagZone {
-    return tagZone(this.time);
+    return tagZone(this.time, this.zoneFrame);
+  }
+
+  /** 外縁が動いている向き */
+  zoneMoving(): { x: boolean; z: boolean } {
+    return zoneMoving(this.time, this.zoneFrame);
   }
 
   /**
@@ -614,7 +640,7 @@ export class TagSim {
 
   /** 外縁のすぐそば（迫ってくる外縁に押されている）にいる人は、ミサイルに当たって内側へふっとぶ */
   private updateZoneHits(): void {
-    const moving = zoneMoving(this.time);
+    const moving = this.zoneMoving();
     if (!moving.x && !moving.z) return;
     const z = this.zone();
     const near = TAG_PLAYER_HALF + TAG_ZONE_HIT_DIST;

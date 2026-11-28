@@ -34,6 +34,8 @@ export interface GifuTown {
   pristine: Uint8Array;
   /** 今回、別の景色に入れ替わった区画（入れ替えなしなら空） */
   areas?: TagArea[];
+  /** ミサイルで狭まっていく中心（無ければ町の真ん中） */
+  zoneCenter?: { x: number; z: number };
 }
 
 /** 地面の表面のブロックの高さ（この上に立つ） */

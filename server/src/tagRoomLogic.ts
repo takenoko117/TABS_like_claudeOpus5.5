@@ -9,6 +9,7 @@ import {
   type TagRoomPhase,
   type TagRosterEntry,
   type TagServerMessage,
+  type TagStageId,
 } from '../../src/net/tagProtocol';
 
 /** 送り先（席番号・全員）。except の席には送らない */
@@ -26,6 +27,8 @@ export class TagRoom {
   seed = 0;
   /** 足かせと鎖でつなぐか（ホストが選ぶ） */
   chain = true;
+  /** 舞台（ホストが選ぶ） */
+  stage: TagStageId = 'town';
 
   constructor(
     readonly name: string,
@@ -65,7 +68,7 @@ export class TagRoom {
   }
 
   private rosterMsg(): TagRoomOutput {
-    return { to: 'all', msg: { t: 'roster', host: this.host, phase: this.phase, players: this.roster(), chain: this.chain } };
+    return { to: 'all', msg: { t: 'roster', host: this.host, phase: this.phase, players: this.roster(), chain: this.chain, stage: this.stage } };
   }
 
   /** 部屋の一覧に出す内容（誰もいなければ出さない。鬼ごっこの最中は「プレイ中」で、入れない） */
@@ -81,6 +84,7 @@ export class TagRoom {
     if (this.empty) {
       this.phase = 'lobby';
       this.chain = true;
+      this.stage = 'town';
     }
     this.lastActivity = now;
     this.slots[slot] = `かぶくん${slot + 1}`;
@@ -114,12 +118,13 @@ export class TagRoom {
         if (this.phase !== 'lobby') return [];
         this.phase = 'playing';
         this.seed = Math.floor(this.random() * 2 ** 31);
-        return [{ to: 'all', msg: { t: 'start', seed: this.seed, players: this.roster(), chain: this.chain } }, this.rosterMsg()];
+        return [{ to: 'all', msg: { t: 'start', seed: this.seed, players: this.roster(), chain: this.chain, stage: this.stage } }, this.rosterMsg()];
       }
       case 'opts':
         if (!isHost) return [{ to: slot, msg: { t: 'error', code: 'not_host' } }];
         if (this.phase !== 'lobby') return [];
         this.chain = msg.chain;
+        if (msg.stage) this.stage = msg.stage;
         return [this.rosterMsg()];
       case 'pos':
         if (this.phase !== 'playing') return [];

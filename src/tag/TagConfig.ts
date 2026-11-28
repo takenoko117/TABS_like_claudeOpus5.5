@@ -13,6 +13,8 @@ export const TAG_SIZE_Z = 192;
 export const TAG_SIZE_Y = 56;
 /** 地面の高さ（この y に立つ。y < TAG_GROUND が土台） */
 export const TAG_GROUND = 6;
+/** ステージ「JR 岐阜駅」の高さ（1 ブロック = 1.5 m。岐阜シティ・タワー43 の 164 m が入る高さ）。横の広さは GifuStationData */
+export const TAG_STATION_SIZE_Y = 120;
 
 // ---- プレイヤー（かぶくん） ----
 /** 体の半幅（当たり判定の箱） */
@@ -166,7 +168,7 @@ export const TAG_ZONE_START = 60;
 export const TAG_ZONE_SPEED = 0.5;
 /** 狭まりきったときの、移動できる所の一辺（m） */
 export const TAG_ZONE_MIN = 40;
-/** 狭まる中心（町の真ん中） */
+/** 狭まる中心（町の真ん中。ステージごとに GifuTown.zoneCenter で変えられる） */
 export const TAG_ZONE_CENTER_X = TAG_SIZE_X / 2;
 export const TAG_ZONE_CENTER_Z = TAG_SIZE_Z / 2;
 /** 外縁に押されている人（外縁からこの距離より近い）は、ミサイルに当たって内側へふっとぶ */

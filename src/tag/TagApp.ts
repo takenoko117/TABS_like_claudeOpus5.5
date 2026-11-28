@@ -5,7 +5,8 @@ import { TagClient, fetchTagRooms } from '../net/TagClient';
 import { TAG_LIST_POLL_MS, TAG_VS_CAPACITY, normalizeTagName, type TagRoomListing, type TagRosterEntry, type TagServerMessage } from '../net/tagProtocol';
 import { BLOCK_DEFS, B } from '../openworld/OpenWorldConfig';
 import { vx } from '../ui/VoxelIcons';
-import { generateGifuTown, type GifuTown } from './GifuTown';
+import type { GifuTown } from './GifuTown';
+import { TAG_STAGE_IDS, TAG_STAGES, generateTagStage, nextTagStage, parseTagStage, type TagStageId } from './TagStages';
 import { TAG_AREA_NAMES } from './TagAreas';
 import {
   TAG_BEST_KEY,
@@ -23,8 +24,6 @@ import {
   TAG_ZONE_START,
   TAG_PLAYER_COLORS,
   TAG_POS_INTERVAL,
-  TAG_SIZE_X,
-  TAG_SIZE_Z,
   TAG_SNAP_INTERVAL,
   TAG_STAMINA_MAX,
   TAG_STAMINA_RECOVER,
@@ -36,7 +35,7 @@ import {
 } from './TagConfig';
 import { viewDir } from '../openworld/OpenWorldSim';
 import { TagRenderer } from './TagRenderer';
-import { HIT_METEOR, HIT_MISSILE, TagSim, emptyTagInput, zoneMoving, type TagEvent } from './TagSim';
+import { HIT_METEOR, HIT_MISSILE, TagSim, emptyTagInput, type TagEvent } from './TagSim';
 import { TagTouchControls, prefersTouch } from './TagTouch';
 import { StepSmoother } from './KabukunMotion';
 
@@ -58,6 +57,13 @@ const ROOT_ID = 'tag-root';
 const COUNTDOWN = 3;
 const NAME_KEY = 'exblocks-tag-name';
 const ROOM_KEY = 'exblocks-tag-room';
+/** ひとりで遊ぶときに選んだ舞台 */
+const STAGE_KEY = 'exblocks-tag-stage';
+
+/** 舞台ごとのベスト記録の保存先（岐阜の町はこれまでの記録をそのまま使う） */
+function bestKey(stage: TagStageId): string {
+  return stage === 'town' ? TAG_BEST_KEY : `${TAG_BEST_KEY}-${stage}`;
+}
 
 type Screen = 'menu' | 'connecting' | 'lobby' | 'game' | 'result';
 
@@ -69,10 +75,14 @@ export function formatSurvival(sec: number): string {
   return `${m}:${rest < 10 ? '0' : ''}${rest.toFixed(1)}`;
 }
 
-/** 最後に作った町（同じ種の町は使い回す。試合ごとに種を変えて、いくつかの区画を別の景色に入れ替える） */
-let townCache: { variant: number; town: GifuTown } | null = null;
-function getTown(variant: number): GifuTown {
-  if (townCache?.variant !== variant) townCache = { variant, town: generateGifuTown(1, variant) };
+/**
+ * 最後に作った舞台（同じものは使い回す）。岐阜の町は試合ごとに種を変えて、いくつかの区画を別の景色に入れ替える。
+ * JR 岐阜駅はいつも同じ形なので種によらない。
+ */
+let townCache: { key: string; town: GifuTown } | null = null;
+function getTown(stage: TagStageId, variant: number): GifuTown {
+  const key = stage === 'town' ? `town:${variant}` : stage;
+  if (townCache?.key !== key) townCache = { key, town: generateTagStage(stage, variant) };
   return townCache.town;
 }
 
@@ -159,7 +169,11 @@ export class TagApp {
       ['左クリック / F', 'パンチ / ロケット'],
       ['Esc', 'メニュー'],
     ];
-    const best = Number(localStorage.getItem(TAG_BEST_KEY) ?? 0);
+    const best = Number(localStorage.getItem(bestKey(this.soloStage)) ?? 0);
+    const stageButtons = TAG_STAGE_IDS.map(
+      (id) =>
+        `<button type="button" class="vx-key tag-btn tag-stage-btn${id === this.soloStage ? ' on' : ''}" data-stage="${id}"><b>${TAG_STAGES[id].name}</b><small>${TAG_STAGES[id].note}</small></button>`,
+    ).join('');
     return `
       <div class="tag-viewport"></div>
       <div class="tag-flash" data-tag="flash"></div>
@@ -192,7 +206,9 @@ export class TagApp {
       <div class="tag-overlay" data-tag="menu">
         <div class="tag-box vx-panel">
           <h2>${vx('oni', 'vx-lg')} 鬼ごっこ</h2>
-          <p class="tag-sub">かぶくん vs ハヤト ─ 岐阜の町（お昼）</p>
+          <p class="tag-sub">かぶくん vs ハヤト</p>
+          <h3 class="tag-rooms-title">${vx('compass')} 舞台</h3>
+          <div class="tag-stages" data-tag="stages">${stageButtons}</div>
           <ul class="tag-rules">
             <li>${vx('eye')}<span>ハヤトに見つかると、口からレーザーを撃ってくる。赤い照準の線が見えたら物陰へ！</span></li>
             <li>${vx('heart')}<span>レーザーに ${TAG_MAX_HP} 回当たるとアウト。当たってもすぐ動けて、直後の ${TAG_INVULN_TIME} 秒は無敵。</span></li>
@@ -200,7 +216,7 @@ export class TagApp {
             <li>${vx('hourglass')}<span>ハヤトは最初から ${TAG_HAYATO_START} 人。${TAG_HAYATO_SPAWN_INTERVAL} 秒ごとに<b>倍に増える</b>（最大 ${TAG_HAYATO_MAX} 人）。地図にはハヤトが映らないので、曲がり角に注意！</span></li>
             <li>${vx('warn')}<span>${TAG_METEOR_FIRST} 秒たつと、空の高い所に<b>隕石ハヤト</b>が現れる。${TAG_METEOR_STILL_TIME} 秒ほど同じ所にとどまっている人に隕石を落とす。地面に赤い印が出たら走れ！</span></li>
             <li>${vx('boom')}<span>${TAG_ZONE_START} 秒たつと、町の外側に<b>ミサイル</b>が降りはじめ、移動できる所が四方から少しずつ狭まる。赤い壁に押されるとミサイルに当たる。</span></li>
-            <li>${vx('stopwatch')}<span>ひとりなら逃げ切った時間を競う。${best > 0 ? `<b>ベスト ${formatSurvival(best)}</b>` : ''}</span></li>
+            <li>${vx('stopwatch')}<span>ひとりなら逃げ切った時間を競う（舞台ごと）。${best > 0 ? `<b>${TAG_STAGES[this.soloStage].name}のベスト ${formatSurvival(best)}</b>` : ''}</span></li>
             <li>${vx('crown')}<span>オンラインなら、最後まで逃げ切った人の勝ち（最大 6 人）。先にアウトになった人は ${TAG_ONI_DELAY} 秒後に<b>青鬼になって復活</b>し、自分で操作して、生きている人に触れて食べられる。</span></li>
             <li>${vx('handshake')}<span>オンラインでは、生きている人どうしが<b>足かせと鎖</b>で席の順につながる（かぶくんの色は席の色）。となりの人とは ${TAG_CHAIN_LENGTH} m までしか離れられず、ひとりで走ると相手を引きずって遅くなる。息を合わせて逃げるか、相手をハヤトの前へ引きずっていくか……。</span></li>
             <li>${vx('hand')}<span>お邪魔パンチ: ほかの人のすぐ近くでタップ（クリック / F）すると、相手をふっとばして ${TAG_PUNCH_STUN} 秒動けなくする。動けない人をまた殴ると 10 倍ふっとぶ（ハメ技はできない）。</span></li>
@@ -235,6 +251,7 @@ export class TagApp {
           <h2>${vx('people', 'vx-lg')} 部屋 <span data-tag="roomname"></span></h2>
           <p class="tag-sub" data-tag="lobbyinfo"></p>
           <ul class="tag-roster" data-tag="roster"></ul>
+          <button type="button" class="vx-key tag-btn tag-chain-opt" data-tag="stageopt"></button>
           <button type="button" class="vx-key tag-btn tag-chain-opt" data-tag="chainopt"></button>
           <div class="tag-buttons">
             <button type="button" class="vx-key tag-btn primary" data-tag="start">${vx('play')} 鬼ごっこを始める</button>
@@ -294,7 +311,7 @@ export class TagApp {
       this.host.sound.playPlace();
       this.saveName();
       this.online = false;
-      this.startGame(Math.floor(Math.random() * 2 ** 31), [{ slot: 0, name: this.myName() }], 0, 0);
+      this.startGame(Math.floor(Math.random() * 2 ** 31), [{ slot: 0, name: this.myName() }], 0, 0, true, this.soloStage);
     });
     click('join', () => {
       this.host.sound.playPlace();
@@ -306,11 +323,27 @@ export class TagApp {
       this.host.sound.playPlace();
       this.client?.send({ t: 'start' });
     });
+    this.listen(this.el.stages, 'click', (e) => {
+      // ひとりで遊ぶときの舞台
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-stage]');
+      if (!btn) return;
+      this.host.sound.playPlace();
+      this.soloStage = parseTagStage(btn.dataset.stage);
+      localStorage.setItem(STAGE_KEY, this.soloStage);
+      for (const b of this.el.stages.querySelectorAll<HTMLElement>('[data-stage]')) b.classList.toggle('on', b.dataset.stage === this.soloStage);
+      this.refreshMenu();
+    });
+    click('stageopt', () => {
+      // 舞台（ホストだけが変えられる）
+      if (this.mySlot !== this.hostSlot) return;
+      this.host.sound.playPlace();
+      this.client?.send({ t: 'opts', chain: this.roomChain, stage: nextTagStage(this.roomStage) });
+    });
     click('chainopt', () => {
       // 足かせと鎖のあり・なし（ホストだけが変えられる）
       if (this.mySlot !== this.hostSlot) return;
       this.host.sound.playPlace();
-      this.client?.send({ t: 'opts', chain: !this.roomChain });
+      this.client?.send({ t: 'opts', chain: !this.roomChain, stage: this.roomStage });
     });
     this.listen(this.el.rooms, 'click', (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-room]');
@@ -334,7 +367,7 @@ export class TagApp {
       this.host.sound.playPlace();
       this.endGame();
       if (this.online) this.showScreen('lobby');
-      else this.startGame(Math.floor(Math.random() * 2 ** 31), [{ slot: 0, name: this.myName() }], 0, 0);
+      else this.startGame(Math.floor(Math.random() * 2 ** 31), [{ slot: 0, name: this.myName() }], 0, 0, true, this.soloStage);
       this.renderLobby();
     });
     click('tomenu', () => {
@@ -475,12 +508,13 @@ export class TagApp {
         this.roster = m.players;
         this.hostSlot = m.host;
         this.roomChain = m.chain;
+        this.roomStage = m.stage;
         // ホストが抜けて自分の番になったら、ハヤトの動きを引き継ぐ
         if (this.sim && m.host === this.mySlot && !this.sim.authority) this.sim.becomeAuthority();
         this.renderLobby();
         break;
       case 'start':
-        this.startGame(m.seed, m.players, this.mySlot, this.hostSlot, m.chain);
+        this.startGame(m.seed, m.players, this.mySlot, this.hostSlot, m.chain, m.stage);
         break;
       case 'pos':
         this.sim?.setRemotePlayer(m.s, m.p[0], m.p[1], m.p[2], m.p[3]);
@@ -519,6 +553,10 @@ export class TagApp {
       ? `${this.roster.length} 人。そろったら始めてください（1 人でも始められます）。`
       : 'ホストが始めるのを待っています…';
     (this.el.start as HTMLButtonElement).disabled = !isHost;
+    const st = this.el.stageopt as HTMLButtonElement;
+    st.innerHTML = `${vx('compass')} 舞台: <b>${TAG_STAGES[this.roomStage].name}</b>${isHost ? '<small>（タップで切り替え）</small>' : '<small>（ホストが決める）</small>'}`;
+    st.disabled = !isHost;
+    st.classList.add('on');
     const opt = this.el.chainopt as HTMLButtonElement;
     opt.innerHTML = `${vx('handshake')} 足かせと鎖: <b>${this.roomChain ? 'あり' : 'なし'}</b>${isHost ? '<small>（タップで切り替え）</small>' : '<small>（ホストが決める）</small>'}`;
     opt.disabled = !isHost;
@@ -548,11 +586,12 @@ export class TagApp {
 
   // ---- ゲーム ----
 
-  private startGame(seed: number, players: TagRosterEntry[], mySlot: number, hostSlot: number, chain = true): void {
+  private startGame(seed: number, players: TagRosterEntry[], mySlot: number, hostSlot: number, chain = true, stage: TagStageId = 'town'): void {
     this.endGame();
     const roster = players.map((p) => ({ id: p.slot, name: p.name }));
     const authority = !this.online || mySlot === hostSlot;
-    this.sim = new TagSim(seed, roster, roster.some((r) => r.id === mySlot) ? mySlot : null, authority, getTown(seed));
+    this.sim = new TagSim(seed, roster, roster.some((r) => r.id === mySlot) ? mySlot : null, authority, getTown(stage, seed));
+    this.stage = stage;
     // ホストが選んだ「足かせと鎖」（ひとりならもともと無い）
     this.sim.chained = this.sim.chained && chain;
     // スマホは重くならないよう解像度を抑える
@@ -901,9 +940,9 @@ export class TagApp {
       this.client.send({ t: 'end' });
     }
     if (sim.solo) {
-      const best = Number(localStorage.getItem(TAG_BEST_KEY) ?? 0);
+      const best = Number(localStorage.getItem(bestKey(this.stage)) ?? 0);
       const mine = sim.local?.survived ?? 0;
-      if (mine > best) localStorage.setItem(TAG_BEST_KEY, String(mine));
+      if (mine > best) localStorage.setItem(bestKey(this.stage), String(mine));
     }
     if (document.pointerLockElement === this.viewport) document.exitPointerLock();
     this.resultTimer = 1.6;
@@ -915,7 +954,7 @@ export class TagApp {
     this.resultTimer = -1;
     const me = sim.local;
     if (sim.solo) {
-      const best = Number(localStorage.getItem(TAG_BEST_KEY) ?? 0);
+      const best = Number(localStorage.getItem(bestKey(this.stage)) ?? 0);
       const mine = me?.survived ?? 0;
       const record = mine >= best && mine > 0;
       const eaten = this.lastEaten === me?.id;
@@ -956,6 +995,12 @@ export class TagApp {
   private roomTimer: ReturnType<typeof setInterval> | null = null;
   /** いる部屋の「足かせと鎖でつなぐか」 */
   private roomChain = true;
+  /** いる部屋の舞台（ホストが選ぶ） */
+  private roomStage: TagStageId = 'town';
+  /** ひとりで遊ぶときの舞台 */
+  private soloStage: TagStageId = parseTagStage(localStorage.getItem(STAGE_KEY));
+  /** いま遊んでいる舞台 */
+  private stage: TagStageId = 'town';
   /** 怖い曲を続ける残り秒（見失われてもすぐには戻さない） */
   private scaryHold = 0;
   /** 最後の入力でダッシュしようとしていたか（ゲージの表示用） */
@@ -992,7 +1037,7 @@ export class TagApp {
           ? '最大'
           : `あと ${Math.max(0, Math.ceil(sim.nextSpawn - sim.time))} 秒で倍に増える`;
     // ミサイル（移動できる所が狭まる）
-    const zm = zoneMoving(sim.time);
+    const zm = sim.zoneMoving();
     if (sim.phase !== 'playing') this.el.zone.textContent = '';
     else if (sim.time < TAG_ZONE_START) this.el.zone.textContent = `ミサイルまで ${Math.ceil(TAG_ZONE_START - sim.time)} 秒`;
     else this.el.zone.textContent = zm.x || zm.z ? '外からミサイル！ 狭まっている' : '狭まりきった';
@@ -1074,8 +1119,9 @@ export class TagApp {
       // 今回入れ替わった区画の景色も知らせる
       const areas = (this.sim?.town.areas ?? []).map((a) => TAG_AREA_NAMES[a.kind]).join('・');
       const go = chained ? '鎖でつながった！ 息を合わせて にげろ！' : 'にげろ！';
-      this.showCenter(areas ? `${go}
-今回の町: ${areas}` : go, areas || chained ? 2.4 : 1.2);
+      const where = this.stage === 'town' ? (areas ? `今回の町: ${areas}` : '') : `舞台: ${TAG_STAGES[this.stage].name}`;
+      this.showCenter(where ? `${go}
+${where}` : go, where || chained ? 2.4 : 1.2);
     }
     this.centerTimer -= 0.1;
     if (this.countdown <= 0 && this.centerTimer <= 0) this.el.center.classList.remove('on');
@@ -1087,18 +1133,23 @@ export class TagApp {
 
   private buildMinimapBase(): void {
     const world = this.sim!.town.world;
+    const SX = world.sizeX;
+    const SZ = world.sizeZ;
+    // ミニマップの縦横比を舞台に合わせる（幅は固定）
+    const mini = this.el.minimap as HTMLCanvasElement;
+    mini.height = Math.round((mini.width * SZ) / SX);
     const c = document.createElement('canvas');
-    c.width = TAG_SIZE_X;
-    c.height = TAG_SIZE_Z;
+    c.width = SX;
+    c.height = SZ;
     const ctx = c.getContext('2d')!;
-    const img = ctx.createImageData(TAG_SIZE_X, TAG_SIZE_Z);
-    for (let z = 0; z < TAG_SIZE_Z; z++) {
-      for (let x = 0; x < TAG_SIZE_X; x++) {
+    const img = ctx.createImageData(SX, SZ);
+    for (let z = 0; z < SZ; z++) {
+      for (let x = 0; x < SX; x++) {
         const top = world.topVisible(x, z);
         const color = BLOCK_DEFS[top.id]?.color ?? 0;
         // 高い所ほど明るく
         const light = 0.7 + Math.min(0.5, (top.y - 5) / 60);
-        const i = (x + z * TAG_SIZE_X) * 4;
+        const i = (x + z * SX) * 4;
         const water = top.id === B.WATER;
         img.data[i] = Math.min(255, ((color >> 16) & 255) * (water ? 1 : light));
         img.data[i + 1] = Math.min(255, ((color >> 8) & 255) * (water ? 1 : light));
@@ -1115,8 +1166,8 @@ export class TagApp {
     const canvas = this.el.minimap as HTMLCanvasElement;
     if (!sim || !this.minimapBase) return;
     const ctx = canvas.getContext('2d')!;
-    const sx = canvas.width / TAG_SIZE_X;
-    const sz = canvas.height / TAG_SIZE_Z;
+    const sx = canvas.width / sim.world.sizeX;
+    const sz = canvas.height / sim.world.sizeZ;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.minimapBase, 0, 0, canvas.width, canvas.height);
     ctx.font = '10px "DotGothic16", sans-serif';
